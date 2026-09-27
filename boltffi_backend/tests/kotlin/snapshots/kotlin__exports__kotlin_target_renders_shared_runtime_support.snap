@@ -641,6 +641,7 @@ private inline fun <K, V> Map<K, V>.wireSize(
 
 @Suppress("FunctionName")
 private object Native {
+    fun ensureInitialized() {}
     init {
         val androidLibrary = "boltffi"
         val desktopPreferredLibrary = "boltffi_jni"

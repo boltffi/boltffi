@@ -740,6 +740,7 @@ mod tests {
     use crate::reporter::{Reporter, Verbosity};
     use crate::target::{CSharpRuntimeIdentifier, NativeHostPlatform};
     use std::path::{Path, PathBuf};
+    use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
 
     struct CargoManifestBuilder {
@@ -838,11 +839,13 @@ mod tests {
     }
 
     fn unique_temp_dir(prefix: &str) -> PathBuf {
+        static TEMP_DIR_SEQUENCE: AtomicU64 = AtomicU64::new(0);
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("time went backwards")
             .as_nanos();
-        std::env::temp_dir().join(format!("{prefix}-{unique}"))
+        let sequence = TEMP_DIR_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        std::env::temp_dir().join(format!("{prefix}-{unique}-{sequence}"))
     }
 
     fn temp_cdylib_project() -> PathBuf {

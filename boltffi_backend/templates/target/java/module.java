@@ -5,6 +5,7 @@ package {{ package }};
 {%- endfor %}
 
 final class {{ native_owner }} {
+    static void ensureInitialized() {}
 {{ loader }}
 
     private {{ native_owner }}() {}

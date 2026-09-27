@@ -34,7 +34,10 @@ impl DirectWritebackParameter {
     ) -> Result<Option<Self>> {
         let parameter = &params[input];
         if !matches!(parameter.role, ParameterRole::Value)
-            || !matches!(parameter.ty(), Type::DirectRecord(_))
+            || !matches!(
+                parameter.ty(),
+                Type::DirectRecord(_) | Type::CStyleEnum { .. }
+            )
         {
             return Ok(None);
         }

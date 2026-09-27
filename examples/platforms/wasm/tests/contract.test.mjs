@@ -10,7 +10,9 @@ const repositoryRoot = dirname(dirname(dirname(wasmRoot)));
 const rustSourceRoot = join(repositoryRoot, "examples", "demo", "src");
 const generatedDeclarationPath = join(wasmRoot, "dist", "demo.d.ts");
 
-const unsupportedTopLevelFunctions = new Set();
+const unsupportedTopLevelFunctions = new Set([
+  "async_fns/mod.rs::asyncResumedThreadName",
+]);
 
 const unsupportedTypeMembers = new Set();
 
@@ -19,6 +21,7 @@ const coverageGapTypeMembers = new Set();
 const featureScopedRustFiles = new Set([
   "callbacks/csharp_closures.rs",
   "classes/async_factory.rs",
+  "records/mutable.rs",
 ]);
 
 const tsKeywords = new Set([

@@ -1,11 +1,13 @@
 ---
 title: "Constants"
-description: "Export Rust constants as module-level values or associate them with records, enums, and classes across Swift, Kotlin, Java, C#, TypeScript, and Python."
+description: "Export Rust constants as module-level values or associate them with records, enums, and classes across Swift, Kotlin, Java, C#, TypeScript, Python, and C."
 ---
 
 import CodeComparison from "../../components/CodeComparisonWrapper.astro";
 
 # Constants
+
+C examples use the package name `demo` and include `demo.h`. See [C memory management](/docs/c#memory-management) for borrowed inputs and returned owners.
 
 BoltFFI exports two kinds of constants:
 
@@ -18,7 +20,7 @@ Use a global constant for a value that belongs to the package as a whole. Use an
 
 ## Global constants
 
-Mark a standalone public constant with `#[export]`. Swift, Kotlin, TypeScript, and Python expose it at module scope. Java and C# place it on the generated module class because those languages do not have module-level values.
+Mark a standalone public constant with `#[export]`. Swift, Kotlin, TypeScript, Python, and C expose it at module scope. Java and C# place it on the generated module class because those languages do not have module-level values.
 
 <CodeComparison
   title=""
@@ -56,9 +58,11 @@ const version = apiVersion`}
 service_name: str = "BoltFFI"
 
 version = api_version`}
+  c={`uint32_t version = DEMO_API_VERSION;
+const char *service = DEMO_SERVICE_NAME;`}
 />
 
-The Rust name is converted to the naming convention of each target. `API_VERSION` becomes `apiVersion` in Swift, Kotlin, and TypeScript, `API_VERSION` in Java, `ApiVersion` in C#, and `api_version` in Python.
+The Rust name is converted to the naming convention of each target. `API_VERSION` becomes `apiVersion` in Swift, Kotlin, and TypeScript, `API_VERSION` in Java, `ApiVersion` in C#, and `api_version` in Python. In a C package named `demo`, it becomes `DEMO_API_VERSION`.
 
 ## Associated constants
 
@@ -72,6 +76,7 @@ Every public constant in the marked impl is generated on its owner type. The con
 <CodeComparison
   title=""
   rust={`#[data]
+#[derive(Clone, Copy)]
 pub struct Color {
     pub r: u8,
     pub g: u8,
@@ -93,6 +98,7 @@ impl Color {
 
 #[repr(u8)]
 #[data]
+#[derive(Clone, Copy)]
 pub enum Mode {
     Fast = 1,
     Slow = 2,
@@ -269,6 +275,10 @@ class Palette:
 color = Color.BLACK
 mode = Mode.DEFAULT
 limit = Palette.MAX_COLORS`}
+  c={`DemoColor black = demo_color_black();
+uint8_t channels = DEMO_COLOR_CHANNEL_COUNT;
+DemoMode mode = DEMO_MODE_DEFAULT;
+uint8_t maximum = DEMO_PALETTE_MAX_COLORS;`}
 />
 
 `Color.BLACK` uses `Self`, `Color.CHANNEL_COUNT` uses a primitive, `Mode.DEFAULT` aliases an enum variant, and `Palette.MAX_COLORS` belongs to a Rust-backed class. In every target, the value remains attached to the type that owns it.
@@ -328,9 +338,11 @@ default_mode: Mode = Mode.FAST
 
 color = default_color
 mode = default_mode`}
+  c={`DemoColor color = demo_default_color();
+DemoMode mode = DEMO_DEFAULT_MODE;`}
 />
 
-Values such as `Color { ... }` are constructed in Rust and delivered through a generated accessor. The generated API still exposes an ordinary immutable value.
+Values such as `Color { ... }` are constructed in Rust and delivered through a generated accessor. The generated API still exposes an ordinary immutable value. C emits simple constants as package-prefixed macros. Constants that require Rust evaluation use accessor functions; owning values returned by those accessors need cleanup just like function results.
 
 ## Supported values
 

@@ -127,6 +127,7 @@ void boltffi_free_buf(FfiBuf_u8 buf);
 FfiString boltffi_buf_into_string(FfiBuf_u8 buf);
 FfiBuf_u8 boltffi_buf_from_bytes(const uint8_t *ptr, uintptr_t len);
 FfiBuf_u8 boltffi_buf_with_len(uintptr_t len);
+FfiBuf_u8 boltffi_callback_error(const uint8_t *message, uintptr_t length);
 FfiStatus boltffi_last_error_message(FfiString *out);
 void boltffi_clear_last_error(void);
 typedef struct {

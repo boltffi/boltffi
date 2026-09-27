@@ -1,16 +1,19 @@
 use askama::Template;
-use boltffi_binding::{ClassDecl, ConstantOwner, ExportedMethodDecl, Native, NativeSymbol};
+use boltffi_binding::{
+    ClassDecl, ClassId, ConstantOwner, ExportedMethodDecl, HandlePresence, Native, NativeSymbol,
+};
 
 use crate::{
     bridge::c::CBridgeContract,
     core::{Diagnostic, Emitted, RenderContext, Result},
     target::swift::{
-        name_style::Name,
+        SwiftHost,
+        name_style::{GeneratedLocal, Name},
         render::{
             AssociatedConstants, Documentation, SwiftType,
             function::{AssociatedFunction, AssociatedFunctions, Initializer, Receiver},
         },
-        syntax::{Identifier, TypeName},
+        syntax::{ArgumentList, Expression, Identifier, Statement, TypeName},
     },
 };
 
@@ -146,4 +149,108 @@ impl Class {
     ) -> Result<AssociatedFunctions> {
         AssociatedFunction::from_methods(methods, receiver, bridge, context)
     }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ClassHandle {
+    ty: TypeName,
+    presence: HandlePresence,
+}
+
+impl ClassHandle {
+    pub fn new(
+        id: ClassId,
+        presence: HandlePresence,
+        context: &RenderContext<Native>,
+    ) -> Result<Self> {
+        Ok(Self {
+            ty: SwiftType::class(id, context)?,
+            presence,
+        })
+    }
+
+    pub fn api_type(&self) -> TypeName {
+        match self.presence {
+            HandlePresence::Required => self.ty.clone(),
+            HandlePresence::Nullable => self.ty.clone().optional(),
+            _ => self.ty.clone(),
+        }
+    }
+
+    pub fn parameter_argument(&self, value: Expression) -> Expression {
+        match self.presence {
+            HandlePresence::Required => Expression::member(value, "handle"),
+            HandlePresence::Nullable => Expression::nil_coalescing(
+                Expression::member(Expression::new(format!("{value}?")), "handle"),
+                Self::empty(),
+            ),
+            _ => value,
+        }
+    }
+
+    pub fn wrap(&self, handle: Expression) -> Expression {
+        let wrapped = Expression::call(
+            &self.ty,
+            [Expression::labeled("handle", handle.clone())]
+                .into_iter()
+                .collect::<ArgumentList>(),
+        );
+        match self.presence {
+            HandlePresence::Required => wrapped,
+            HandlePresence::Nullable => Expression::conditional(
+                Expression::equal(&handle, Self::empty()),
+                Expression::nil(),
+                wrapped,
+            ),
+            _ => wrapped,
+        }
+    }
+
+    pub fn body(&self, handle: Expression, indent: &str) -> Result<String> {
+        match self.presence {
+            HandlePresence::Required => Ok(Statement::returns(self.wrap(handle)).indented(indent)),
+            HandlePresence::Nullable => {
+                let binding = GeneratedLocal::ReturnHandle.identifier()?;
+                let value = Expression::identifier(binding.clone());
+                Ok([
+                    Statement::let_value(&binding, handle).indented(indent),
+                    Statement::returns(self.wrap(value)).indented(indent),
+                ]
+                .join("\n"))
+            }
+            _ => Ok(Statement::returns(self.wrap(handle)).indented(indent)),
+        }
+    }
+
+    pub fn factory_body(&self, handle: Expression, indent: &str) -> Result<String> {
+        if self.presence != HandlePresence::Required {
+            return Err(SwiftHost::unsupported("nullable class initializer"));
+        }
+        Ok(Statement::returns(Expression::call(
+            "Self",
+            [Expression::labeled("handle", handle)]
+                .into_iter()
+                .collect::<ArgumentList>(),
+        ))
+        .indented(indent))
+    }
+
+    fn empty() -> Expression {
+        Expression::new("0")
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OwnedClassArgument {
+    pub parameter: Identifier,
+    pub local: Identifier,
+    pub release: Identifier,
+    pub presence: HandlePresence,
+}
+
+#[derive(Template)]
+#[template(path = "target/swift/owned_call.swift", escape = "none")]
+pub struct OwnedCallTemplate<'call> {
+    pub arguments: Vec<&'call OwnedClassArgument>,
+    pub invocation: Expression,
 }

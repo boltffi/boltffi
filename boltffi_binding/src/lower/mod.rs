@@ -66,6 +66,7 @@ use boltffi_ast::SourceContract;
 use crate::{BindingError, Bindings, CanonicalName, Decl, PackageInfo};
 
 pub use self::error::{DeclarationFamily, LowerError, LowerErrorKind, UnsupportedType};
+pub use self::records::direct_record_fields;
 pub use self::surface::SurfaceLower;
 
 use self::{ids::DeclarationIds, index::Index, symbol::SymbolAllocator};

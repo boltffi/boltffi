@@ -23,6 +23,84 @@ fn target(host: CSharpHost) -> Target<CSharpHost, CBridge> {
 const CUSTOM_TYPE_DEFAULT: &str = include_str!("fixtures/source/records/custom_type_default.rs");
 
 #[test]
+fn csharp_generated_helpers_do_not_shadow_exported_parameters() {
+    let bindings = bindings(
+        r#"
+        #[export]
+        pub fn notify(status: i32, boltffi_status: i32) {
+            let _ = (status, boltffi_status);
+        }
+
+        #[export]
+        pub fn notify_single(status: i32) {
+            let _ = status;
+        }
+
+        #[export]
+        pub fn notify_text(status: i32, boltffi_status: i32, value: String) {
+            let _ = (status, boltffi_status, value);
+        }
+
+        #[export]
+        pub async fn fetch(
+            cancellation_token: i32,
+            boltffi_cancellation_token: i32,
+            boltffi_status: i32,
+            boltffi_future: i32,
+            boltffi_result: i32,
+        ) -> i32 {
+            cancellation_token + boltffi_cancellation_token + boltffi_status
+                + boltffi_future + boltffi_result
+        }
+
+
+        #[export]
+        pub async fn fetch_single(cancellation_token: i32) -> i32 {
+            cancellation_token
+        }
+        "#,
+    );
+    let output = target(CSharpHost::new().native_library("demo_native"))
+        .render(&bindings)
+        .expect("colliding parameter names should render");
+    let module = output
+        .files()
+        .iter()
+        .find(|file| file.path().as_path() == Path::new("Demo.cs"))
+        .map(|file| file.contents())
+        .expect("generated Demo.cs");
+
+    assert!(
+        module.contains(
+            "FfiStatus boltffiStatus2 = NativeMethods.NativeNotify(status, boltffiStatus)"
+        ),
+        "{module}"
+    );
+    assert!(
+        module.contains("FfiStatus boltffiStatus = NativeMethods.NativeNotifySingle(status)"),
+        "{module}"
+    );
+    assert!(
+        module.contains(
+            "FfiStatus boltffiStatus2 = NativeMethods.NativeNotifyText(status, boltffiStatus"
+        ),
+        "{module}"
+    );
+    assert!(
+        module.contains("CancellationToken boltffiCancellationToken2 = default"),
+        "{module}"
+    );
+    assert!(
+        module.contains("CancellationToken boltffiCancellationToken = default"),
+        "{module}"
+    );
+    assert!(module.contains("boltffiFuture2 =>"), "{module}");
+    assert!(module.contains("out FfiStatus boltffiStatus2"), "{module}");
+    assert!(module.contains("return boltffiResult2;"), "{module}");
+    compile_csharp_with_dotnet_when_available(&output, "csharp-helper-name-collisions");
+}
+
+#[test]
 fn csharp_target_compiles_a_regular_vec_u8_wire_api() {
     let bindings = bindings(
         r#"

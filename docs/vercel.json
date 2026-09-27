@@ -20,17 +20,30 @@
       "permanent": true
     }
   ],
-  "rewrites": [
+  "routes": [
     {
-      "source": "/docs/:slug([^/.]+)",
+      "src": "/.*",
+      "headers": {
+        "X-Content-Type-Options": "nosniff",
+        "X-Frame-Options": "DENY",
+        "Referrer-Policy": "strict-origin-when-cross-origin"
+      },
+      "continue": true
+    },
+    {
+      "src": "^/docs/([^/.]+)/?$",
       "has": [
         {
           "type": "header",
-          "key": "Accept",
+          "key": "accept",
           "value": ".*text/markdown.*"
         }
       ],
-      "destination": "/docs/:slug.md"
+      "dest": "/docs/$1.md",
+      "headers": {
+        "Content-Type": "text/markdown; charset=utf-8",
+        "Vary": "Accept"
+      }
     }
   ],
   "headers": [
@@ -56,14 +69,6 @@
       "source": "/llms-full.txt",
       "headers": [
         { "key": "Content-Type", "value": "text/markdown; charset=utf-8" }
-      ]
-    },
-    {
-      "source": "/(.*)",
-      "headers": [
-        { "key": "X-Content-Type-Options", "value": "nosniff" },
-        { "key": "X-Frame-Options", "value": "DENY" },
-        { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" }
       ]
     }
   ]

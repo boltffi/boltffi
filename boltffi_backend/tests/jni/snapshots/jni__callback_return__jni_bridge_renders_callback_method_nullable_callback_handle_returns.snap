@@ -149,13 +149,13 @@ static uint32_t ___ChildVTable_on_value(uint64_t handle, uint32_t value) {
     }
 
     uint32_t result = (uint32_t)(*env)->CallStaticIntMethod(env, g____ChildVTable_class, g____ChildVTable_on_value_method, (jlong)handle, (jint)value);
-    if (boltffi_jni_clear_exception(env)) {
+    if ((*env)->ExceptionCheck(env)) {
         goto __boltffi_fail;
     }
 
     boltffi_jni_exit(env, attached);
     return result;
-__boltffi_fail:
+__boltffi_fail:;
 
     boltffi_jni_clear_exception(env);
     boltffi_jni_exit(env, attached);
@@ -241,7 +241,7 @@ static BoltFFICallbackHandle ___ListenerVTable_optional_boxed_child(uint64_t han
     }
 
     jlong __boltffi_return_handle = (*env)->CallStaticLongMethod(env, g____ListenerVTable_class, g____ListenerVTable_optional_boxed_child_method, (jlong)handle);
-    if (boltffi_jni_clear_exception(env)) {
+    if ((*env)->ExceptionCheck(env)) {
         goto __boltffi_fail;
     }
 
@@ -249,7 +249,7 @@ static BoltFFICallbackHandle ___ListenerVTable_optional_boxed_child(uint64_t han
 
     boltffi_jni_exit(env, attached);
     return result;
-__boltffi_fail:
+__boltffi_fail:;
 
     boltffi_jni_clear_exception(env);
     boltffi_jni_exit(env, attached);
@@ -266,7 +266,7 @@ static BoltFFICallbackHandle ___ListenerVTable_optional_shared_child(uint64_t ha
     }
 
     jlong __boltffi_return_handle = (*env)->CallStaticLongMethod(env, g____ListenerVTable_class, g____ListenerVTable_optional_shared_child_method, (jlong)handle);
-    if (boltffi_jni_clear_exception(env)) {
+    if ((*env)->ExceptionCheck(env)) {
         goto __boltffi_fail;
     }
 
@@ -274,7 +274,7 @@ static BoltFFICallbackHandle ___ListenerVTable_optional_shared_child(uint64_t ha
 
     boltffi_jni_exit(env, attached);
     return result;
-__boltffi_fail:
+__boltffi_fail:;
 
     boltffi_jni_clear_exception(env);
     boltffi_jni_exit(env, attached);

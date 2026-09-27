@@ -165,6 +165,13 @@ impl PythonCExtBridgeContract {
         )
     }
 
+    pub(crate) fn callback_error(&self) -> Result<&LoadedFunction> {
+        self.support_function(
+            "boltffi_callback_error",
+            "missing CPython callback error support symbol",
+        )
+    }
+
     /// Returns the C typedef selected for a direct source record.
     pub fn source_direct_record(&self, record: RecordId) -> Option<&c::Record> {
         self.source_direct_records.get(&record)

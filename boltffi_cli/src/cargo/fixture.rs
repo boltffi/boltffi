@@ -43,6 +43,7 @@ impl CargoMetadataFixture {
 pub(crate) struct CargoPackageFixture {
     id: String,
     name: String,
+    version: String,
     manifest_path: PathBuf,
     targets: Vec<CargoTargetFixture>,
 }
@@ -54,13 +55,15 @@ impl CargoPackageFixture {
         version: impl Into<String>,
     ) -> Self {
         let package_name = name.into();
+        let version = version.into();
         let manifest_path = manifest_path.as_ref().to_path_buf();
         let package_id =
-            CargoPackageIdFixture::manifest_package(&manifest_path, version.into()).render();
+            CargoPackageIdFixture::manifest_package(&manifest_path, version.clone()).render();
 
         Self {
             id: package_id,
             name: package_name,
+            version,
             manifest_path,
             targets: Vec::new(),
         }
@@ -72,14 +75,19 @@ impl CargoPackageFixture {
         version: impl Into<String>,
     ) -> Self {
         let package_name = name.into();
+        let version = version.into();
         let manifest_path = manifest_path.as_ref().to_path_buf();
-        let package_id =
-            CargoPackageIdFixture::workspace_package(&manifest_path, &package_name, version.into())
-                .render();
+        let package_id = CargoPackageIdFixture::workspace_package(
+            &manifest_path,
+            &package_name,
+            version.clone(),
+        )
+        .render();
 
         Self {
             id: package_id,
             name: package_name,
+            version,
             manifest_path,
             targets: Vec::new(),
         }

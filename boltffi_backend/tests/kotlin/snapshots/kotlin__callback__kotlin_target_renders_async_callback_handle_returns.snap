@@ -11,10 +11,10 @@ import kotlinx.coroutines.launch
 @Suppress("FunctionName")
 private object Native {
     @JvmStatic external fun boltffi_async_callback_complete_Callback_demo_child(callback: Long, context: Long, result: Long): Unit
-    @JvmStatic external fun boltffi_async_callback_complete_Callback_demo_child_failure(callback: Long, context: Long): Unit
+    @JvmStatic external fun boltffi_async_callback_complete_Callback_demo_child_failure(callback: Long, context: Long, exception: Throwable): Unit
     @JvmStatic external fun boltffi_async_callback_complete_Callback_demo_child_error(callback: Long, context: Long, result: Long): Unit
     @JvmStatic external fun boltffi_async_callback_complete_Callback_demo_sibling(callback: Long, context: Long, result: Long): Unit
-    @JvmStatic external fun boltffi_async_callback_complete_Callback_demo_sibling_failure(callback: Long, context: Long): Unit
+    @JvmStatic external fun boltffi_async_callback_complete_Callback_demo_sibling_failure(callback: Long, context: Long, exception: Throwable): Unit
     @JvmStatic external fun boltffi_async_callback_complete_Callback_demo_sibling_error(callback: Long, context: Long, result: Long): Unit
 
     @JvmStatic fun boltffiFutureContinuationCallback(handle: Long, pollResult: Byte) {
@@ -164,7 +164,7 @@ object ListenerCallbacks {
                 val __boltffi_result = impl.child()
                 Native.boltffi_async_callback_complete_Callback_demo_child(callbackToken, callbackContext, ChildBridge.create(__boltffi_result))
             } catch (throwable: Throwable) {
-                Native.boltffi_async_callback_complete_Callback_demo_child_failure(callbackToken, callbackContext)
+                Native.boltffi_async_callback_complete_Callback_demo_child_failure(callbackToken, callbackContext, throwable)
             }
         }
     }
@@ -177,7 +177,7 @@ object ListenerCallbacks {
                 val __boltffi_result = impl.sibling()
                 Native.boltffi_async_callback_complete_Callback_demo_sibling(callbackToken, callbackContext, SiblingBridge.create(__boltffi_result))
             } catch (throwable: Throwable) {
-                Native.boltffi_async_callback_complete_Callback_demo_sibling_failure(callbackToken, callbackContext)
+                Native.boltffi_async_callback_complete_Callback_demo_sibling_failure(callbackToken, callbackContext, throwable)
             }
         }
     }

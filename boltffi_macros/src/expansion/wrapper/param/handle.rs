@@ -106,6 +106,17 @@ impl<'lowered, C> Input<'lowered, C> {
             self.source
                 .class_handle(&self.plan.target, self.plan.presence, self.plan.receive)?;
         let conversion = self.conversion(&class, carrier.zero())?;
+        let owned_values = if self.plan.receive == Receive::ByValue {
+            let handle_type = names::Class::from_type_path(class.ty())?.handle();
+            let storage = names::Parameter::new(ident).storage();
+            vec![quote! {
+                let #storage = unsafe {
+                    #handle_type::take(#ident as usize as *mut #handle_type)
+                };
+            }]
+        } else {
+            Vec::new()
+        };
         let argument = if self.retains_class_handle() {
             quote! { #ident.shared() }
         } else {
@@ -116,6 +127,7 @@ impl<'lowered, C> Input<'lowered, C> {
             items: Vec::new(),
             ffi_parameters: vec![quote! { #ident: #ffi_type }],
             ffi_parameter_types: vec![ffi_type.clone()],
+            owned_values,
             conversions: vec![conversion],
             writebacks: Vec::new(),
             argument,
@@ -147,6 +159,7 @@ impl<'lowered, C> Input<'lowered, C> {
             items: Vec::new(),
             ffi_parameters: vec![quote! { #ident: #ffi_type }],
             ffi_parameter_types: vec![ffi_type.clone()],
+            owned_values: Vec::new(),
             conversions: vec![conversion],
             writebacks: Vec::new(),
             argument: quote! { #ident },
@@ -162,6 +175,7 @@ impl<'lowered, C> Input<'lowered, C> {
         let ty = class.ty();
         let handle_type = names::Class::from_type_path(ty)?.handle();
         let handle_pointer = quote! { #ident as usize as *mut #handle_type };
+        let storage = names::Parameter::new(ident).storage();
         let failure = &self.failure;
         let null_check = matches!(self.plan.presence, HandlePresence::Required).then(|| {
             quote! {
@@ -175,7 +189,7 @@ impl<'lowered, C> Input<'lowered, C> {
         Ok(match (self.plan.receive, class.presence()) {
             (Receive::ByValue, HandlePresence::Required) => quote! {
                 #null_check
-                let #ident: #ty = match unsafe { #handle_type::take(#handle_pointer) } {
+                let #ident: #ty = match #storage {
                     Some(value) => value,
                     None => {
                         ::boltffi::__private::set_last_error(concat!(stringify!(#ident), ": released class handle"));
@@ -187,7 +201,7 @@ impl<'lowered, C> Input<'lowered, C> {
                 let #ident: Option<#ty> = if #ident == #zero {
                     None
                 } else {
-                    Some(match unsafe { #handle_type::take(#handle_pointer) } {
+                    Some(match #storage {
                         Some(value) => value,
                         None => {
                             ::boltffi::__private::set_last_error(concat!(stringify!(#ident), ": released class handle"));

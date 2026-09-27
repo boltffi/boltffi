@@ -57,6 +57,104 @@ struct FileIndex {
     /// marks one declared inside a block: its items are token-backed, so that
     /// case re-parses instead.
     scopes: HashMap<(String, DeclarationKind), Vec<Option<Vec<String>>>>,
+    /// Byte offset of the start of every line, so `offset_of` can reach the
+    /// line a span names without counting newlines from the top each time.
+    line_starts: Vec<usize>,
+    /// `(name, kind)` -> the byte range of each declaration's name, in lexical
+    /// order. `ordinal_of` finds the range holding a span's offset; its position
+    /// in the list is the ordinal `scopes` is keyed by. Names are stored with
+    /// any `r#` stripped, as the lookup strips it too.
+    declarations: HashMap<(String, DeclarationKind), Vec<(usize, usize)>>,
+}
+
+impl FileIndex {
+    fn new(text: String) -> syn::Result<Self> {
+        // The parse is dropped at the end of this scope, inside the invocation
+        // that made it. Everything kept owns its data outright.
+        let scopes = ScopeIndexer::index(&syn::parse_file(&text)?);
+        let line_starts = std::iter::once(0)
+            .chain(
+                text.bytes()
+                    .enumerate()
+                    .filter_map(|(index, byte)| (byte == b'\n').then_some(index + 1)),
+            )
+            .collect();
+        let declarations = Self::lex_declarations(&text);
+        Ok(Self {
+            text,
+            scopes,
+            line_starts,
+            declarations,
+        })
+    }
+
+    /// Every `struct`/`enum` name in `text`, by name and kind, in lexical order.
+    ///
+    /// One pass answers every declaration in the file; the alternative is a
+    /// lex of the whole file per `#[data]`, which is quadratic in a generated
+    /// file holding hundreds of them.
+    fn lex_declarations(text: &str) -> HashMap<(String, DeclarationKind), Vec<(usize, usize)>> {
+        let mut declarations: HashMap<(String, DeclarationKind), Vec<(usize, usize)>> =
+            HashMap::new();
+        let mut declares: Option<DeclarationKind> = None;
+        let mut offset = 0;
+        for token in rustc_lexer::tokenize(text) {
+            let start = offset;
+            offset += token.len;
+            let spelling = &text[start..offset];
+            match token.kind {
+                rustc_lexer::TokenKind::Whitespace
+                | rustc_lexer::TokenKind::LineComment
+                | rustc_lexer::TokenKind::BlockComment { .. } => {}
+                rustc_lexer::TokenKind::Ident if spelling == "struct" => {
+                    declares = Some(DeclarationKind::Record);
+                }
+                rustc_lexer::TokenKind::Ident if spelling == "enum" => {
+                    declares = Some(DeclarationKind::Enumeration);
+                }
+                rustc_lexer::TokenKind::Ident | rustc_lexer::TokenKind::RawIdent => {
+                    if let Some(kind) = declares.take() {
+                        let name = spelling.strip_prefix("r#").unwrap_or(spelling).to_owned();
+                        declarations
+                            .entry((name, kind))
+                            .or_default()
+                            .push((start, spelling.len()));
+                    }
+                }
+                _ => declares = None,
+            }
+        }
+        declarations
+    }
+
+    /// Byte offset of a `proc_macro::Span` location.
+    ///
+    /// The compiler counts both fields from one, and counts the column in
+    /// characters while everything downstream works in bytes. Adding the
+    /// column to a byte offset is only correct for a line that is entirely
+    /// ASCII up to the declaration; `pub /* \u{3b1} */ struct S` is off by the
+    /// extra byte, and the identifier is missed.
+    fn offset_of(&self, location: LineColumn) -> Option<usize> {
+        let line_start = *self.line_starts.get(location.line.checked_sub(1)?)?;
+        let line = self.text[line_start..]
+            .split_once('\n')
+            .map_or(&self.text[line_start..], |(line, _)| line);
+        let column = line
+            .char_indices()
+            .nth(location.column.checked_sub(1)?)
+            .map(|(column, _)| column)?;
+        Some(line_start + column)
+    }
+
+    /// Which declaration of `name` the span at `target_offset` is, counting the
+    /// ones `scopes` counts.
+    fn ordinal_of(&self, name: &str, kind: DeclarationKind, target_offset: usize) -> Option<usize> {
+        let name = name.strip_prefix("r#").unwrap_or(name);
+        self.declarations
+            .get(&(name.to_owned(), kind))?
+            .iter()
+            .position(|&(offset, len)| offset <= target_offset && target_offset < offset + len)
+    }
 }
 
 thread_local! {
@@ -97,10 +195,7 @@ fn file_index(path: &Path) -> syn::Result<Rc<FileIndex>> {
     {
         return Ok(cached);
     }
-    // The parse is dropped at the end of this scope, inside the invocation that
-    // made it. Only `scopes`, which owns its strings, outlives it.
-    let scopes = ScopeIndexer::index(&syn::parse_file(&text)?);
-    let index = Rc::new(FileIndex { text, scopes });
+    let index = Rc::new(FileIndex::new(text)?);
     FILE_INDEXES.with(|files| {
         files
             .borrow_mut()
@@ -196,7 +291,7 @@ pub fn source_position(span: proc_macro::Span) -> Option<(PathBuf, usize)> {
         line: span.line(),
         column: span.column(),
     };
-    let offset = Declaration::source_offset(&index.text, location)?;
+    let offset = index.offset_of(location)?;
     Some((Declaration::canonical(&file), offset))
 }
 
@@ -243,9 +338,9 @@ impl Declaration {
             )
         };
         let index = file_index(&source)?;
-        let invocation_offset =
-            Self::source_offset(&index.text, location).ok_or_else(unlocatable)?;
-        let target_ordinal = Self::declaration_ordinal(&index.text, &name, kind, invocation_offset)
+        let invocation_offset = index.offset_of(location).ok_or_else(unlocatable)?;
+        let target_ordinal = index
+            .ordinal_of(&name, kind, invocation_offset)
             .ok_or_else(unlocatable)?;
         let indexed = index
             .scopes
@@ -365,80 +460,6 @@ impl Declaration {
     fn canonical(path: &Path) -> PathBuf {
         path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
     }
-
-    /// Byte offset of a `proc_macro::Span` location.
-    ///
-    /// The compiler counts both fields from one, and counts the column in
-    /// characters while everything downstream works in bytes. Adding the
-    /// column to a byte offset is only correct for a line that is entirely
-    /// ASCII up to the declaration; `pub /* \u{3b1} */ struct S` is off by the
-    /// extra byte, and the identifier is missed.
-    fn source_offset(source: &str, location: LineColumn) -> Option<usize> {
-        let line_start = std::iter::once(0)
-            .chain(
-                source
-                    .bytes()
-                    .enumerate()
-                    .filter_map(|(index, byte)| (byte == b'\n').then_some(index + 1)),
-            )
-            .nth(location.line.checked_sub(1)?)?;
-        let line = source[line_start..]
-            .split_once('\n')
-            .map_or(&source[line_start..], |(line, _)| line);
-        let column = line
-            .char_indices()
-            .nth(location.column.checked_sub(1)?)
-            .map(|(column, _)| column)?;
-        Some(line_start + column)
-    }
-
-    fn declaration_ordinal(
-        source: &str,
-        name: &str,
-        kind: DeclarationKind,
-        target_offset: usize,
-    ) -> Option<usize> {
-        let keyword = match kind {
-            DeclarationKind::Record => "struct",
-            DeclarationKind::Enumeration => "enum",
-        };
-        let expected_name = name.strip_prefix("r#").unwrap_or(name);
-        let mut expects_name = false;
-        let mut ordinal = 0;
-
-        rustc_lexer::tokenize(source)
-            .scan(0, |offset, token| {
-                let start = *offset;
-                *offset += token.len;
-                Some((token.kind, start, &source[start..*offset]))
-            })
-            .find_map(|(token, offset, spelling)| match token {
-                rustc_lexer::TokenKind::Whitespace
-                | rustc_lexer::TokenKind::LineComment
-                | rustc_lexer::TokenKind::BlockComment { .. } => None,
-                rustc_lexer::TokenKind::Ident if spelling == keyword => {
-                    expects_name = true;
-                    None
-                }
-                rustc_lexer::TokenKind::Ident | rustc_lexer::TokenKind::RawIdent
-                    if expects_name =>
-                {
-                    expects_name = false;
-                    let declaration_name = spelling.strip_prefix("r#").unwrap_or(spelling);
-                    if declaration_name != expected_name {
-                        return None;
-                    }
-                    let current = ordinal;
-                    ordinal += 1;
-                    (offset <= target_offset && target_offset < offset + spelling.len())
-                        .then_some(current)
-                }
-                _ => {
-                    expects_name = false;
-                    None
-                }
-            })
-    }
 }
 
 impl<'target> ScopeFinder<'target> {
@@ -527,7 +548,7 @@ impl<'syntax> Visit<'syntax> for ScopeFinder<'_> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Declaration, DeclarationKind, Scope, ScopeFinder};
+    use super::{DeclarationKind, FileIndex, Scope, ScopeFinder};
     use proc_macro2::LineColumn;
 
     /// `source_offset` feeds `declaration_ordinal`, and the two agree only if
@@ -564,7 +585,9 @@ mod tests {
                 true => DeclarationKind::Enumeration,
                 false => DeclarationKind::Record,
             };
-            let offset = Declaration::source_offset(source, LineColumn { line, column })
+            let index = FileIndex::new(source.to_owned()).expect("fixture parses");
+            let offset = index
+                .offset_of(LineColumn { line, column })
                 .unwrap_or_else(|| panic!("`{name}` has an offset"));
             assert_eq!(
                 &source[offset..offset + name.len()],
@@ -572,7 +595,7 @@ mod tests {
                 "offset for `{name}` should land on the name",
             );
             assert_eq!(
-                Declaration::declaration_ordinal(source, name, kind, offset),
+                index.ordinal_of(name, kind, offset),
                 Some(0),
                 "`{name}` should resolve to its own declaration",
             );

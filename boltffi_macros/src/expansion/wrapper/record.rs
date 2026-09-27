@@ -613,37 +613,17 @@ impl<'receiver> ReceiverKind<'receiver> {
                     TokenStream::new(),
                 )
                 .native()?;
-                let direct_writeback = self.direct_writeback(
-                    receive,
-                    &receiver,
-                    rust_type,
-                    tokens.writebacks().is_empty(),
-                    failure.render()?,
-                )?;
-                let ffi_parameters = tokens
-                    .ffi_parameters()
-                    .iter()
-                    .cloned()
-                    .chain(direct_writeback.ffi_parameters)
-                    .collect();
-                let conversions = tokens
-                    .conversions()
-                    .iter()
-                    .cloned()
-                    .chain(direct_writeback.conversions)
-                    .collect();
-                let writebacks = tokens
-                    .writebacks()
-                    .iter()
-                    .cloned()
-                    .chain(direct_writeback.writebacks)
-                    .collect();
+                let tokens = if receive == Receive::ByMutRef {
+                    tokens.with_direct_writeback(rust_type, &receiver, &failure.render()?)
+                } else {
+                    tokens
+                };
                 Ok((
                     export::ReceiverTokens::new(
-                        ffi_parameters,
-                        conversions,
-                        writebacks,
-                        direct_writeback.requires_failure_return,
+                        tokens.ffi_parameters().to_vec(),
+                        tokens.conversions().to_vec(),
+                        tokens.writebacks().to_vec(),
+                        receive == Receive::ByMutRef,
                     ),
                     export::RustCall::method(receiver, method),
                 ))
@@ -674,28 +654,18 @@ impl<'receiver> ReceiverKind<'receiver> {
                     expansion,
                 )
                 .render()?;
-                let encoded_writeback =
-                    self.encoded_writeback(receive, codec, &receiver, failure, expansion)?;
-                let ffi_parameters = tokens
-                    .ffi_parameters()
-                    .iter()
-                    .cloned()
-                    .chain(encoded_writeback.ffi_parameters)
-                    .collect();
-                let conversions = tokens
-                    .conversions()
-                    .iter()
-                    .cloned()
-                    .chain(encoded_writeback.conversions)
-                    .collect();
-                let writebacks = tokens
-                    .writebacks()
-                    .iter()
-                    .cloned()
-                    .chain(encoded_writeback.writebacks)
-                    .collect();
+                let tokens = if receive == Receive::ByMutRef {
+                    tokens.with_encoded_writeback(codec, &receiver, &failure, expansion)?
+                } else {
+                    tokens
+                };
                 Ok((
-                    export::ReceiverTokens::new(ffi_parameters, conversions, writebacks, true),
+                    export::ReceiverTokens::new(
+                        tokens.ffi_parameters().to_vec(),
+                        tokens.conversions().to_vec(),
+                        tokens.writebacks().to_vec(),
+                        true,
+                    ),
                     export::RustCall::method(receiver, method),
                 ))
             }
@@ -729,33 +699,18 @@ impl<'receiver> ReceiverKind<'receiver> {
                     failure.clone(),
                 )
                 .wasm32()?;
-                let direct_writeback = self.direct_writeback(
-                    receive,
-                    &receiver,
-                    rust_type,
-                    tokens.writebacks().is_empty(),
-                    failure,
-                )?;
-                let ffi_parameters = tokens
-                    .ffi_parameters()
-                    .iter()
-                    .cloned()
-                    .chain(direct_writeback.ffi_parameters)
-                    .collect();
-                let conversions = tokens
-                    .conversions()
-                    .iter()
-                    .cloned()
-                    .chain(direct_writeback.conversions)
-                    .collect();
-                let writebacks = tokens
-                    .writebacks()
-                    .iter()
-                    .cloned()
-                    .chain(direct_writeback.writebacks)
-                    .collect();
+                let tokens = if receive == Receive::ByMutRef {
+                    tokens.with_direct_writeback(rust_type, &receiver, &failure)
+                } else {
+                    tokens
+                };
                 Ok((
-                    export::ReceiverTokens::new(ffi_parameters, conversions, writebacks, true),
+                    export::ReceiverTokens::new(
+                        tokens.ffi_parameters().to_vec(),
+                        tokens.conversions().to_vec(),
+                        tokens.writebacks().to_vec(),
+                        true,
+                    ),
                     export::RustCall::method(receiver, method),
                 ))
             }
@@ -785,28 +740,18 @@ impl<'receiver> ReceiverKind<'receiver> {
                     expansion,
                 )
                 .render()?;
-                let encoded_writeback =
-                    self.encoded_writeback(receive, codec, &receiver, failure, expansion)?;
-                let ffi_parameters = tokens
-                    .ffi_parameters()
-                    .iter()
-                    .cloned()
-                    .chain(encoded_writeback.ffi_parameters)
-                    .collect();
-                let conversions = tokens
-                    .conversions()
-                    .iter()
-                    .cloned()
-                    .chain(encoded_writeback.conversions)
-                    .collect();
-                let writebacks = tokens
-                    .writebacks()
-                    .iter()
-                    .cloned()
-                    .chain(encoded_writeback.writebacks)
-                    .collect();
+                let tokens = if receive == Receive::ByMutRef {
+                    tokens.with_encoded_writeback(codec, &receiver, &failure, expansion)?
+                } else {
+                    tokens
+                };
                 Ok((
-                    export::ReceiverTokens::new(ffi_parameters, conversions, writebacks, true),
+                    export::ReceiverTokens::new(
+                        tokens.ffi_parameters().to_vec(),
+                        tokens.conversions().to_vec(),
+                        tokens.writebacks().to_vec(),
+                        true,
+                    ),
                     export::RustCall::method(receiver, method),
                 ))
             }
@@ -816,79 +761,6 @@ impl<'receiver> ReceiverKind<'receiver> {
             )),
         }
     }
-
-    fn direct_writeback(
-        self,
-        receive: Receive,
-        receiver: &Ident,
-        rust_type: &Type,
-        needs_writeback: bool,
-        failure: TokenStream,
-    ) -> Result<ReceiverWriteback, Error> {
-        if receive != Receive::ByMutRef || !needs_writeback {
-            return Ok(ReceiverWriteback::none());
-        }
-        let out = names::Parameter::new(receiver).writeback();
-        Ok(ReceiverWriteback {
-            ffi_parameters: vec![quote! {
-                #out: *mut <#rust_type as ::boltffi::__private::Passable>::In
-            }],
-            conversions: vec![quote! {
-                if #out.is_null() {
-                    ::boltffi::__private::set_last_error("receiver writeback pointer is null".to_string());
-                    #failure
-                }
-            }],
-            writebacks: vec![quote! {
-                unsafe {
-                    ::core::ptr::write_unaligned(
-                        #out,
-                        <#rust_type as ::boltffi::__private::Passable>::pack(#receiver)
-                    );
-                }
-            }],
-            requires_failure_return: true,
-        })
-    }
-
-    fn encoded_writeback<'expansion, S: boltffi_binding::SurfaceLower>(
-        self,
-        receive: Receive,
-        codec: &'receiver WritePlan,
-        receiver: &Ident,
-        failure: TokenStream,
-        expansion: &'expansion Expansion<'receiver, S>,
-    ) -> Result<ReceiverWriteback, Error> {
-        if receive != Receive::ByMutRef {
-            return Ok(ReceiverWriteback::none());
-        }
-        let out = names::Parameter::new(receiver).writeback();
-        let storage = names::Parameter::new(receiver).storage();
-        let buffer =
-            encoded::outgoing::Value::new(codec.root(), expansion).buffer(quote! { #storage })?;
-        Ok(ReceiverWriteback {
-            ffi_parameters: vec![quote! { #out: *mut ::boltffi::__private::FfiBuf }],
-            conversions: vec![quote! {
-                if #out.is_null() {
-                    ::boltffi::__private::set_last_error("receiver writeback pointer is null".to_string());
-                    #failure
-                }
-            }],
-            writebacks: vec![quote! {
-                unsafe {
-                    ::core::ptr::write(#out, #buffer);
-                }
-            }],
-            requires_failure_return: true,
-        })
-    }
-}
-
-struct ReceiverWriteback {
-    ffi_parameters: Vec<TokenStream>,
-    conversions: Vec<TokenStream>,
-    writebacks: Vec<TokenStream>,
-    requires_failure_return: bool,
 }
 
 struct LayoutCheck {
@@ -915,16 +787,5 @@ impl LayoutCheck {
     fn bytes(bytes: u64) -> Result<usize, Error> {
         usize::try_from(bytes)
             .map_err(|_| Error::SourceSyntaxMismatch("record layout is too large"))
-    }
-}
-
-impl ReceiverWriteback {
-    fn none() -> Self {
-        Self {
-            ffi_parameters: Vec::new(),
-            conversions: Vec::new(),
-            writebacks: Vec::new(),
-            requires_failure_return: false,
-        }
     }
 }

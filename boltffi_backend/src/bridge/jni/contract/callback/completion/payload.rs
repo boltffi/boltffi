@@ -136,6 +136,23 @@ impl CallbackCompletionPayload {
         }
     }
 
+    pub(crate) fn failure_value(&self) -> c::Expression {
+        if self.is_bytes() {
+            c::Expression::call(
+                c::Identifier::parse("boltffi_callback_error").expect("runtime symbol"),
+                c::ArgumentList::from_iter([
+                    c::Expression::literal(c::Literal::null_pointer()),
+                    c::Expression::literal(c::Literal::integer_zero()),
+                ]),
+            )
+        } else {
+            c::Expression::cast(
+                self.c_type.clone(),
+                c::Expression::literal(c::Literal::compound_zero()),
+            )
+        }
+    }
+
     /// Returns the suffix used to deduplicate generated completion invokers.
     pub fn suffix(&self) -> &str {
         &self.suffix

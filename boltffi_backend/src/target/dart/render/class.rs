@@ -1,5 +1,5 @@
 use askama::Template;
-use boltffi_binding::{ClassDecl, ConstantOwner, Native};
+use boltffi_binding::{ClassDecl, ConstantOwner, HandlePresence, Native};
 
 use crate::{
     bridge::c::CBridgeContract,
@@ -98,4 +98,20 @@ impl Class {
     fn members(&self) -> &[String] {
         &self.members
     }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OwnedClassArgument {
+    pub parameter: Identifier,
+    pub local: Identifier,
+    pub release: Identifier,
+    pub presence: HandlePresence,
+}
+
+#[derive(Template)]
+#[template(path = "target/dart/owned_call.dart", escape = "none")]
+pub struct OwnedCallTemplate<'call> {
+    pub owned: Vec<&'call OwnedClassArgument>,
+    pub invocation: String,
+    pub returns_value: bool,
 }

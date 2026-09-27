@@ -2,6 +2,22 @@ import Demo
 import XCTest
 
 final class ErrorEnumsResultsTests: DemoTestCase {
+    func testErrorMessages() throws {
+        demoCase("case:results.error_enums.message.should_preserve_text")
+        try ["", "service failed 東京\u{0}🦀"].forEach { message in
+            XCTAssertThrowsError(try failWithMessage(message: message)) { error in
+                XCTAssertEqual(error as? ServiceError, .failed(message: message))
+            }
+        }
+
+        demoCase("case:results.error_enums.message.should_preserve_optional_text")
+        try [nil, "", "optional failure 東京\u{0}🦀"].forEach { message in
+            XCTAssertThrowsError(try failWithOptionalMessage(message: message)) { error in
+                XCTAssertEqual(error as? ServiceError, .optional(message: message))
+            }
+        }
+    }
+
     func testTypedErrorResultFns() throws {
         demoCase("case:results.error_enums.checked_divide.should_return_quotient")
         XCTAssertEqual(try checkedDivide(a: 10, b: 2), 5)

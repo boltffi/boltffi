@@ -12,7 +12,7 @@ use crate::core::Result;
 
 use boltffi_binding::ClosureSignature;
 
-use super::{Identifier, Type};
+use super::{Identifier, ReturnChannel, Type};
 
 pub use byte_slice::ByteSliceParameter;
 pub use callback_completion::CallbackCompletionParameter;
@@ -43,6 +43,7 @@ pub struct ParameterIndex {
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum ParameterRole {
     Value,
+    OwnedClass(Identifier),
     BytePointer(Identifier),
     ByteLength(Identifier),
     DirectVectorPointer {
@@ -61,6 +62,7 @@ enum ParameterRole {
         name: Identifier,
         signature: ClosureSignature,
         parameters: Vec<Parameter>,
+        return_channel: ReturnChannel,
     },
     ClosureContext(Identifier),
     ClosureRelease(Identifier),
@@ -69,6 +71,7 @@ enum ParameterRole {
         signature: ClosureSignature,
         call_type: Type,
         parameters: Vec<Parameter>,
+        return_channel: ReturnChannel,
     },
 }
 
@@ -76,6 +79,21 @@ impl Parameter {
     /// Creates a value C ABI parameter.
     pub fn new(name: impl Into<String>, ty: Type) -> Result<Self> {
         Self::with_role(name, ty, ParameterRole::Value)
+    }
+
+    pub(crate) fn owned_class(
+        name: impl Into<String>,
+        ty: Type,
+        release: Identifier,
+    ) -> Result<Self> {
+        Self::with_role(name, ty, ParameterRole::OwnedClass(release))
+    }
+
+    pub(crate) fn class_release(&self) -> Option<&Identifier> {
+        match &self.role {
+            ParameterRole::OwnedClass(release) => Some(release),
+            _ => None,
+        }
     }
 
     /// Creates the pointer half of a borrowed byte-slice C ABI parameter group.
@@ -210,6 +228,7 @@ impl Parameter {
         signature: &ClosureSignature,
         ty: Type,
         parameters: Vec<Parameter>,
+        return_channel: ReturnChannel,
     ) -> Result<Self> {
         Self::with_role(
             format!("{name}_call"),
@@ -218,6 +237,7 @@ impl Parameter {
                 name: Identifier::escape(name)?,
                 signature: signature.clone(),
                 parameters,
+                return_channel,
             },
         )
     }
@@ -249,6 +269,7 @@ impl Parameter {
         signature: &ClosureSignature,
         call_type: Type,
         parameters: Vec<Parameter>,
+        return_channel: ReturnChannel,
     ) -> Result<Self> {
         Self::with_role(
             name,
@@ -258,6 +279,7 @@ impl Parameter {
                 signature: signature.clone(),
                 call_type,
                 parameters,
+                return_channel,
             },
         )
     }

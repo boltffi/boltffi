@@ -9,7 +9,7 @@ use syn::punctuated::Punctuated;
 use syn::{Attribute, Ident, Item, LitStr, Token, Type, Visibility, bracketed, parenthesized};
 
 // These identifiers intentionally match `boltffi_bindgen/src/render/*` folder names.
-const TARGETS: &[&str] = &["swift", "kotlin", "java", "csharp", "typescript", "python", "dart"];
+const TARGETS: &[&str] = &["swift", "kotlin", "java", "csharp", "typescript", "python", "dart", "c"];
 
 type AppResult<T> = Result<T, String>;
 
@@ -705,6 +705,11 @@ fn platform_scans(repo_root: &Path) -> Vec<PlatformScan> {
             roots: vec![repo_root.join("examples/platforms/dart/test")],
             suffixes: &["dart"],
         },
+        PlatformScan {
+            name: "c",
+            roots: vec![repo_root.join("examples/platforms/c/tests")],
+            suffixes: &["c", "h"],
+        },
     ]
 }
 
@@ -757,12 +762,29 @@ fn collect_demo_case_call_markers(line: &str, markers: &mut BTreeSet<String>) {
 }
 
 fn strip_line_comment(line: &str) -> &str {
-    let slash_index = line.find("//");
-    let hash_index = line.find('#');
-    match (slash_index, hash_index) {
-        (Some(a), Some(b)) => &line[..a.min(b)],
-        (Some(index), None) | (None, Some(index)) => &line[..index],
-        (None, None) => line,
+    use std::ops::ControlFlow;
+
+    let comment = line.char_indices().try_fold((None, false), |(quote, escaped), (index, character)| {
+        if let Some(delimiter) = quote {
+            if escaped {
+                return ControlFlow::Continue((quote, false));
+            }
+            return match character {
+                '\\' => ControlFlow::Continue((quote, true)),
+                character if character == delimiter => ControlFlow::Continue((None, false)),
+                _ => ControlFlow::Continue((quote, false)),
+            };
+        }
+        match character {
+            '"' | '\'' => ControlFlow::Continue((Some(character), false)),
+            '#' => ControlFlow::Break(index),
+            '/' if line[index..].starts_with("//") => ControlFlow::Break(index),
+            _ => ControlFlow::Continue((None, false)),
+        }
+    });
+    match comment {
+        ControlFlow::Break(index) => &line[..index],
+        ControlFlow::Continue(_) => line,
     }
 }
 
@@ -990,5 +1012,24 @@ fn display_list(values: &[&str]) -> String {
         "none".to_string()
     } else {
         values.join(", ")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::find_case_markers;
+
+    #[test]
+    fn markers_after_urls_and_fragments_are_counted() {
+        let source = r##"
+            CHECK(strcmp(url, "https://example.com/#fragment") == 0, "case:url.roundtrip");
+            CHECK(character == '#', "case:character.roundtrip");
+            CHECK(strcmp(text, "escaped \" // text") == 0, "case:escaped.roundtrip");
+            CHECK(true, "case:actual.assertion"); // case:commented.assertion
+            // CHECK(true, "case:disabled.assertion");
+            # case:python.comment
+        "##;
+        let markers = find_case_markers(source).into_iter().collect::<Vec<_>>();
+        assert_eq!(markers, ["actual.assertion", "character.roundtrip", "escaped.roundtrip", "url.roundtrip"]);
     }
 }

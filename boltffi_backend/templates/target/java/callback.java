@@ -35,21 +35,23 @@ final class {{ callback.callbacks_name() }} {
         return value == null ? 0L : insert(value);
     }
 {% for method in callback.methods() %}
-    static {{ method.jvm_return() }} {{ method.jvm_name() }}(long handle{% for parameter in method.jvm_parameters() %}, {{ parameter.ty() }} {{ parameter.name() }}{% endfor %}) {
+    static {{ method.jvm_return() }} {{ method.jvm_name() }}(long handle{% for parameter in method.jvm_parameters() %}, {{ parameter.ty() }} {{ parameter.name() }}{% endfor %}{% if method.transfers_classes() %}, java.nio.ByteBuffer __boltffi_class_delivery{% endif %}) {
         {{ callback.name() }} implementation = VALUES.get(handle);
         if (implementation == null) throw new IllegalStateException("invalid callback handle");
 {% for statement in method.setup() %}        {{ statement }}
-{% endfor %}{% if let Some(asynchronous) = method.asynchronous() %}        {{ method.public_return() }} __boltffi_future;
+{% endfor %}{% if method.transfers_classes() %}        __boltffi_class_delivery.put(0, (byte) 1);
+{% endif %}{% if let Some(asynchronous) = method.asynchronous() %}        {{ method.public_return() }} __boltffi_future;
         try {
             __boltffi_future = {{ asynchronous.call() }};
         } catch (Throwable __boltffi_failure) {
             __boltffi_future = BoltFfiCallbackFailure.failed(__boltffi_failure);
         }
         if (__boltffi_future == null) {
-            {{ asynchronous.failure() }}
+            Throwable __boltffi_failure = new NullPointerException("async callback returned null");
+            {{ asynchronous.failure("__boltffi_failure") }}
             return;
         }
-        __boltffi_future.whenComplete((__boltffi_result, __boltffi_failure) -> {
+        __boltffi_future.handle((__boltffi_result, __boltffi_failure) -> {
             if (__boltffi_failure != null) {
                 Throwable __boltffi_cause = BoltFfiCallbackFailure.unwrap(__boltffi_failure);
 {% if let Some(error_type) = asynchronous.error_type() %}                if (__boltffi_cause instanceof {{ error_type }}) {
@@ -57,18 +59,19 @@ final class {{ callback.callbacks_name() }} {
                     try {
 {% for statement in asynchronous.error() %}                        {{ statement }}
 {% endfor %}                    } catch (Throwable __boltffi_completion_failure) {
-                        {{ asynchronous.failure() }}
+                        {{ asynchronous.failure("__boltffi_completion_failure") }}
                     }
-                    return;
+                    return null;
                 }
-{% endif %}                {{ asynchronous.failure() }}
-                return;
+{% endif %}                {{ asynchronous.failure("__boltffi_cause") }}
+                return null;
             }
             try {
 {% for statement in asynchronous.success() %}                {{ statement }}
 {% endfor %}            } catch (Throwable __boltffi_completion_failure) {
-                {{ asynchronous.failure() }}
+                {{ asynchronous.failure("__boltffi_completion_failure") }}
             }
+            return null;
         });
 {% else %}{% for statement in method.body() %}        {{ statement }}
 {% endfor %}{% endif %}    }

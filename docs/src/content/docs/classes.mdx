@@ -8,6 +8,8 @@ import TypeTable from "../../components/TypeTableWrapper.astro";
 
 # Classes
 
+C examples use the package name `demo` and include `demo.h`. Printing examples also include `<stdio.h>` and, for `PRIu64`, `<inttypes.h>`. See [C memory management](/docs/c#memory-management) for borrowed inputs and returned owners.
+
 BoltFFI has two ways to expose a struct: as data or as a class.
 
 Data (`#[data]`) is for plain values. A `Point { x, y }` or a `User { id, name, email }`. Data is copied when it crosses the boundary. The target language gets a struct or record with public fields. You can also attach methods, constructors, and [associated constants](/docs/constants#associated-constants) with `#[data(impl)]`. See [Records](/docs/records#methods-and-constructors).
@@ -109,6 +111,10 @@ counter = Counter()
 counter.increment()
 counter.increment()
 print(counter.get())  # 2`}
+  c={`DemoCounter counter = demo_counter_new();
+demo_counter_increment(&counter);
+printf("%d\\n", demo_counter_get(&counter));
+demo_counter_free(&counter);`}
 />
 
 ## Constructors
@@ -160,6 +166,8 @@ const c = Counter.new()`}
     def __init__(self) -> None: ...
 
 c = Counter()`}
+  c={`DemoCounter counter = demo_counter_new();
+demo_counter_free(&counter);`}
 />
 
 ### Named constructors with parameters
@@ -171,11 +179,11 @@ Methods with parameters that return `Self` become additional constructors. In Sw
   rust={`#[export]
 impl Database {
     pub fn new() -> Self {
-        Database { path: ":memory:".into() }
+        Database { path: ":memory:".into(), read_only: false }
     }
     
     pub fn open(path: &str) -> Self {
-        Database { path: path.into() }
+        Database { path: path.into(), read_only: false }
     }
     
     pub fn with_options(
@@ -260,6 +268,8 @@ const db3 = Database.withOptions("data.db", true)`}
 db1 = Database()
 db2 = Database.open("data.db")
 db3 = Database.with_options("data.db", True)`}
+  c={`DemoDatabase database = demo_database_open(demo_string_view("data.db", 7));
+demo_database_free(&database);`}
 />
 
 ### Factory methods (no parameters)
@@ -334,11 +344,13 @@ const cfg = Config.production()`}
     def development(cls) -> "Config": ...
 
 cfg = Config.production()`}
+  c={`DemoConfig config = demo_config_production();
+demo_config_free(&config);`}
 />
 
 ### Fallible constructors
 
-Constructors can return `Result<Self, E>`. The error type must be marked with `#[error]`. The constructor becomes throwing in the target language.
+Constructors can return `Result<Self, E>`. A custom error type must be marked with `#[error]`. The managed targets expose a throwing constructor. C returns a typed result: check `ok` before using `data.value`, and release the result when finished. Its cleanup function also releases the returned class handle; do not free the handle separately.
 
 <CodeComparison
   title=""
@@ -441,6 +453,11 @@ try:
 except DbErrorException as error:
     if error.error == DbError.NOT_FOUND:
         print("file not found")`}
+  c={`DemoDatabaseOpenResult opened = demo_database_open(demo_string_view("data.db", 7));
+if (!opened.ok && opened.data.error == DEMO_DB_ERROR_NOT_FOUND) {
+    fputs("database not found\\n", stderr);
+}
+demo_database_open_result_free(&opened);`}
 />
 
 ## Methods
@@ -583,6 +600,9 @@ try:
     acc.withdraw(50)
 except AccountErrorException as error:
     print(error)`}
+  c={`int64_t demo_account_balance(const DemoAccount *account);
+void demo_account_deposit(const DemoAccount *account, int64_t amount);
+DemoAccountWithdrawResult demo_account_withdraw(const DemoAccount *account, int64_t amount);`}
 />
 
 ### &self vs &mut self
@@ -697,11 +717,13 @@ const t = Config.defaultTimeout()`}
     def max_connections() -> int: ...
 
 t = Config.default_timeout()`}
+  c={`uint32_t timeout = demo_config_default_timeout();
+uint32_t maximum = demo_config_max_connections();`}
 />
 
 ### Async methods
 
-Mark a method `async` and it becomes an async method in the target language. BoltFFI has no built-in executor. You choose your Rust async runtime (Tokio, async-std, etc.), and the target language's async system coordinates with it automatically. See [Async](/docs/async) for more.
+The C target does not generate async methods yet. In the other targets, marking a method `async` produces an async method in the target language. BoltFFI has no built-in executor. You choose your Rust async runtime (Tokio, async-std, etc.), and the target language's async system coordinates with it automatically. See [Async](/docs/async) for more.
 
 <CodeComparison
   title=""
@@ -878,6 +900,11 @@ class User:
 user = User("alice")
 session = Session(user)
 u = session.user()`}
+  c={`void print_session_user(const DemoSession *session) {
+    DemoUser user = demo_session_user(session);
+    printf("%" PRIu64 "\\n", demo_user_id(&user));
+    demo_user_free(&user);
+}`}
 />
 
 ## Skipping methods
@@ -941,6 +968,7 @@ console.log(obj.exported()) // 84`}
 
 obj = MyClass()
 print(obj.exported())  # 84`}
+  c={`int32_t demo_my_class_exported(const DemoMyClass *instance);`}
 />
 
 ## Thread safety
@@ -1043,6 +1071,10 @@ for thread in threads:
     thread.start()
 for thread in threads:
     thread.join()`}
+  c={`DemoSafeCounter counter = demo_safe_counter_new();
+demo_safe_counter_increment(&counter);
+printf("%d\\n", demo_safe_counter_get(&counter));
+demo_safe_counter_free(&counter);`}
 />
 
 ## Single-threaded mode
@@ -1105,6 +1137,8 @@ The difference matters in tight loops. For most applications, 5 microseconds per
 
 ## Memory management
 
-The Rust struct lives in Rust's heap. The target language holds a reference to it. When the target language's object is deallocated (garbage collected, reference count hits zero, etc.), BoltFFI drops the Rust struct.
+The Rust struct lives in Rust's heap. The target language holds a reference to it. In targets with automatic lifetime management, releasing the last foreign reference drops the Rust object. C uses explicit cleanup.
 
-You don't need to manually free anything. But be aware: the Rust object stays alive as long as the target language holds a reference. If you store a class instance in a long-lived collection, the Rust memory stays allocated.
+C callers release a class with its generated `<package>_<class>_free` function. The handle's fields are private implementation details; pass its address to generated methods. A C struct assignment does not retain the Rust object, so keep one owner. A borrowed class parameter does not take ownership; a consuming parameter takes a mutable pointer and clears the handle after the call. The Rust class's threading restrictions also apply to C callers.
+
+In every target, keeping a class handle alive also keeps its Rust object alive.

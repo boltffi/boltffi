@@ -23,6 +23,22 @@ impl Name {
         }
     }
 
+    pub(crate) fn field(
+        key: &boltffi_binding::FieldKey,
+    ) -> crate::core::Result<crate::bridge::c::Identifier> {
+        let spelling = match key {
+            boltffi_binding::FieldKey::Named(name) => Self::new(name).member(),
+            boltffi_binding::FieldKey::Position(position) => format!("field_{position}"),
+            _ => {
+                return Err(crate::core::Error::UnsupportedTarget {
+                    target: "c",
+                    shape: "field key",
+                });
+            }
+        };
+        crate::bridge::c::Identifier::escape(spelling)
+    }
+
     /// PascalCase type spelling (e.g. `Point`, `DemoEngine`).
     pub fn r#type(&self) -> String {
         name_case::upper_camel(&self.source)

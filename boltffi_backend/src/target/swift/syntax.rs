@@ -659,8 +659,10 @@ impl Statement {
         parameter: impl fmt::Display,
         body: impl fmt::Display,
         indent: &str,
+        throwing: bool,
     ) -> String {
-        Self::trailing_closure_scope_with_prefix(callee, parameter, body, indent, "_ = ")
+        let prefix = if throwing { "_ = try " } else { "_ = " };
+        Self::trailing_closure_scope_with_prefix(callee, parameter, body, indent, prefix)
     }
 
     pub fn trailing_closure_scope(

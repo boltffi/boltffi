@@ -15,6 +15,7 @@ pub struct Class {
     pub documentation: Documentation,
     pub class_name: Identifier,
     pub release_method: Identifier,
+    pub register_method: Option<Identifier>,
     pub constants: Vec<ConstantStub>,
     pub init: Vec<AssociatedCallable>,
     pub constructors: Vec<AssociatedCallable>,
@@ -61,12 +62,18 @@ impl Class {
         let streams = package
             .streams_for_class(declaration.id())
             .into_iter()
-            .map(|stream| ClassStream::from_declaration(stream, &class_name, package))
+            .map(|stream| ClassStream::from_declaration(stream, declaration, &class_name, package))
             .collect::<Result<Vec<_>>>()?;
         Ok(Self {
             documentation: Documentation::new(declaration.meta().doc()),
             class_name,
             release_method: symbols.release()?,
+            register_method: package
+                .context
+                .bindings()
+                .passes_class_to_callbacks(declaration.id())
+                .then(|| symbols.register())
+                .transpose()?,
             constants: package.constants_for_owner(ConstantOwner::Class(declaration.id()))?,
             init,
             constructors,

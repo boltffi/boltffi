@@ -6,7 +6,7 @@
 //! in one translation unit without colliding. Prefixing is idempotent: a name
 //! that already carries the package prefix is not doubled.
 
-use boltffi_binding::Native;
+use boltffi_binding::{CanonicalName, Native};
 
 use crate::core::RenderContext;
 
@@ -14,6 +14,7 @@ use super::super::name_style::Name;
 
 /// The package prefix in the three C case forms.
 pub struct PackagePrefix {
+    name: CanonicalName,
     member: String,
     constant: String,
     pascal: String,
@@ -24,6 +25,7 @@ impl PackagePrefix {
     pub fn from_context(context: &RenderContext<Native>) -> Self {
         let name = context.bindings().package().name();
         Self {
+            name: name.clone(),
             member: Name::new(name).member(),
             constant: Name::new(name).constant(),
             pascal: Name::new(name).r#type(),
@@ -51,9 +53,10 @@ impl PackagePrefix {
     }
 
     /// Prefixes a PascalCase type name (idempotent), e.g. `Point` -> `DemoPoint`.
-    pub fn type_name(&self, pascal: &str) -> String {
-        if pascal.starts_with(&self.pascal) {
-            pascal.to_owned()
+    pub fn type_name(&self, name: &CanonicalName) -> String {
+        let pascal = Name::new(name).r#type();
+        if name.parts().starts_with(self.name.parts()) {
+            pascal
         } else {
             format!("{}{}", self.pascal, pascal)
         }

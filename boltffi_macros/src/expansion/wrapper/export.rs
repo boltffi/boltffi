@@ -100,9 +100,11 @@ impl<'expansion, 'lowered> Export<'expansion, 'lowered, boltffi_binding::Native>
         let rust_invocation = wrapper::returns::RustInvocation::new(
             self.rust_call.owner,
             rust_call,
-            self.receiver
-                .conversions
-                .into_iter()
+            wrapper_arguments
+                .owned_values()
+                .iter()
+                .cloned()
+                .chain(self.receiver.conversions)
                 .chain(wrapper_arguments.conversions().iter().cloned())
                 .collect(),
             wrapper_arguments
@@ -211,9 +213,11 @@ impl<'expansion, 'lowered> Export<'expansion, 'lowered, boltffi_binding::Wasm32>
         let rust_invocation = wrapper::returns::RustInvocation::new(
             self.rust_call.owner,
             rust_call,
-            self.receiver
-                .conversions
-                .into_iter()
+            wrapper_arguments
+                .owned_values()
+                .iter()
+                .cloned()
+                .chain(self.receiver.conversions)
                 .chain(wrapper_arguments.conversions().iter().cloned())
                 .collect(),
             wrapper_arguments

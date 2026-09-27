@@ -53,6 +53,7 @@ Mark your Rust types with `#[data]` and functions with `#[export]`:
 use boltffi::*;
 
 #[data]
+#[derive(Clone, Copy)]
 pub struct Point {
     pub x: f64,
     pub y: f64,
@@ -78,7 +79,7 @@ boltffi pack all
 # Produces: ./dist/python/wheelhouse/*.whl with Python package sources
 ```
 
-Use it from Swift, Kotlin, Java, C#, TypeScript, or Python.
+Use it from Swift, Kotlin, Java, C#, TypeScript, Python, or C.
 
 ```swift
 let d = distance(a: Point(x: 0, y: 0), b: Point(x: 3, y: 4)) // 5.0
@@ -106,7 +107,21 @@ import your_crate
 d = your_crate.distance(your_crate.Point(0, 0), your_crate.Point(3, 4))  # 5.0
 ```
 
-The generated bindings use each language's idioms. Swift gets async/await. Kotlin gets coroutines. Java gets CompletableFuture and functional interfaces. C# gets Tasks and async enumerables. TypeScript gets Promises. Errors become native exceptions.
+For C, enable `[targets.c]` in `boltffi.toml`, then run `boltffi pack c --experimental --deny-skipped`. A package named `mylib` exposes:
+
+```c
+#include "mylib.h"
+
+int main(void) {
+    MylibPoint start = {0.0, 0.0};
+    MylibPoint end = {3.0, 4.0};
+    return mylib_distance(start, end) == 5.0 ? 0 : 1;
+}
+```
+
+The C package includes CMake targets and pkg-config files for shared and static linking. See [C linking and memory management](https://boltffi.dev/docs/c) for CMake, Make, Meson, and ownership rules, or run the [C demo](examples/platforms/c).
+
+The generated bindings use each language's idioms. Swift gets async/await. Kotlin gets coroutines. Java gets CompletableFuture and functional interfaces. C# gets Tasks and async enumerables. TypeScript gets Promises. Errors become native exceptions in the managed targets. C uses typed results and explicit cleanup functions.
 
 ## Supported languages
 
@@ -117,7 +132,7 @@ The generated bindings use each language's idioms. Swift gets async/await. Kotli
 | Java     | Full support |
 | C#       | Full support |
 | WASM/TypeScript | Full support |
-| C        | Partial      |
+| C        | [Experimental, synchronous APIs](https://boltffi.dev/docs/experimental#c) |
 | Python   | Full support |
 | C++      | Planned      |
 | Ruby     | Planned      |

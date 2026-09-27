@@ -1,12 +1,14 @@
 ---
 title: "Types"
-description: "Reference how Rust types map to Swift, Kotlin, Java, C#, TypeScript, and Python in BoltFFI, including supported primitives, collections, and performance notes."
+description: "Reference how Rust types map to Swift, Kotlin, Java, C#, TypeScript, Python, and C in BoltFFI, including supported primitives, collections, and performance notes."
 ---
 
 import CodeComparison from "../../components/CodeComparisonWrapper.astro";
 import TypeTable from "../../components/TypeTableWrapper.astro";
 
 # Types
+
+C examples use the package name `demo` and include `demo.h`. See [C memory management](/docs/c#memory-management) for borrowed inputs and returned owners.
 
 When you design a Rust API for BoltFFI, you need to know what happens to your types on the other side. This page shows the mapping for each target language.
 
@@ -17,24 +19,24 @@ When you design a Rust API for BoltFFI, you need to know what happens to your ty
 <TypeTable
   title="Integers"
   mappings={[
-    { rust: "i8", swift: "Int8", kotlin: "Byte", java: "byte", csharp: "sbyte", typescript: "number" },
-    { rust: "i16", swift: "Int16", kotlin: "Short", java: "short", csharp: "short", typescript: "number" },
-    { rust: "i32", swift: "Int32", kotlin: "Int", java: "int", csharp: "int", typescript: "number" },
-    { rust: "i64", swift: "Int64", kotlin: "Long", java: "long", csharp: "long", typescript: "bigint" },
-    { rust: "u8", swift: "UInt8", kotlin: "UByte", java: "byte", csharp: "byte", typescript: "number" },
-    { rust: "u16", swift: "UInt16", kotlin: "UShort", java: "short", csharp: "ushort", typescript: "number" },
-    { rust: "u32", swift: "UInt32", kotlin: "UInt", java: "int", csharp: "uint", typescript: "number" },
-    { rust: "u64", swift: "UInt64", kotlin: "ULong", java: "long", csharp: "ulong", typescript: "bigint" },
+    { rust: "i8", swift: "Int8", kotlin: "Byte", java: "byte", csharp: "sbyte", typescript: "number", c: "int8_t" },
+    { rust: "i16", swift: "Int16", kotlin: "Short", java: "short", csharp: "short", typescript: "number", c: "int16_t" },
+    { rust: "i32", swift: "Int32", kotlin: "Int", java: "int", csharp: "int", typescript: "number", c: "int32_t" },
+    { rust: "i64", swift: "Int64", kotlin: "Long", java: "long", csharp: "long", typescript: "bigint", c: "int64_t" },
+    { rust: "u8", swift: "UInt8", kotlin: "UByte", java: "byte", csharp: "byte", typescript: "number", c: "uint8_t" },
+    { rust: "u16", swift: "UInt16", kotlin: "UShort", java: "short", csharp: "ushort", typescript: "number", c: "uint16_t" },
+    { rust: "u32", swift: "UInt32", kotlin: "UInt", java: "int", csharp: "uint", typescript: "number", c: "uint32_t" },
+    { rust: "u64", swift: "UInt64", kotlin: "ULong", java: "long", csharp: "ulong", typescript: "bigint", c: "uint64_t" },
   ]}
 />
 
 <TypeTable
   title="Floats & Primitives"
   mappings={[
-    { rust: "f32", swift: "Float", kotlin: "Float", java: "float", csharp: "float", typescript: "number" },
-    { rust: "f64", swift: "Double", kotlin: "Double", java: "double", csharp: "double", typescript: "number" },
-    { rust: "bool", swift: "Bool", kotlin: "Boolean", java: "boolean", csharp: "bool", typescript: "boolean" },
-    { rust: "String", swift: "String", kotlin: "String", java: "String", csharp: "string", typescript: "string" },
+    { rust: "f32", swift: "Float", kotlin: "Float", java: "float", csharp: "float", typescript: "number", c: "float" },
+    { rust: "f64", swift: "Double", kotlin: "Double", java: "double", csharp: "double", typescript: "number", c: "double" },
+    { rust: "bool", swift: "Bool", kotlin: "Boolean", java: "boolean", csharp: "bool", typescript: "boolean", c: "bool" },
+    { rust: "String", swift: "String", kotlin: "String", java: "String", csharp: "string", typescript: "string", c: "DemoStringView / DemoString" },
   ]}
 />
 
@@ -43,9 +45,9 @@ When you design a Rust API for BoltFFI, you need to know what happens to your ty
 <TypeTable
   title=""
   mappings={[
-    { rust: "Vec<T>", swift: "[T]", kotlin: "List<T>", java: "List<T>", csharp: "T[]", typescript: "T[]" },
-    { rust: "Option<T>", swift: "T?", kotlin: "T?", java: "T (nullable)", csharp: "T?", typescript: "T | null" },
-    { rust: "Result<T, E>", swift: "throws", kotlin: "throws", java: "throws", csharp: "throws", typescript: "throws" },
+    { rust: "Vec<T>", swift: "[T]", kotlin: "List<T>", java: "List<T>", csharp: "T[]", typescript: "T[]", c: "borrowed Slice / owned Sequence" },
+    { rust: "Option<T>", swift: "T?", kotlin: "T?", java: "T (nullable)", csharp: "T?", typescript: "T | null", c: "has_value + value" },
+    { rust: "Result<T, E>", swift: "throws", kotlin: "throws", java: "throws", csharp: "throws", typescript: "throws", c: "ok + data.value / data.error" },
   ]}
 />
 
@@ -54,11 +56,11 @@ When you design a Rust API for BoltFFI, you need to know what happens to your ty
 <TypeTable
   title=""
   mappings={[
-    { rust: "Duration", swift: "TimeInterval", kotlin: "Duration", java: "Duration", csharp: "long", typescript: "Duration" },
-    { rust: "SystemTime", swift: "Date", kotlin: "Instant", java: "Instant", csharp: "long", typescript: "Date" },
-    { rust: "Uuid", swift: "UUID", kotlin: "UUID", java: "UUID", csharp: "string", typescript: "string" },
-    { rust: "Url", swift: "URL", kotlin: "URI", java: "URI", csharp: "string", typescript: "string" },
-    { rust: "Vec<u8>", swift: "Data", kotlin: "ByteArray", java: "byte[]", csharp: "byte[]", typescript: "Uint8Array" },
+    { rust: "Duration", swift: "TimeInterval", kotlin: "Duration", java: "Duration", csharp: "long", typescript: "Duration", c: "DemoDuration" },
+    { rust: "SystemTime", swift: "Date", kotlin: "Instant", java: "Instant", csharp: "long", typescript: "Date", c: "DemoSystemTime" },
+    { rust: "Uuid", swift: "UUID", kotlin: "UUID", java: "UUID", csharp: "string", typescript: "string", c: "DemoUuid" },
+    { rust: "Url", swift: "URL", kotlin: "URI", java: "URI", csharp: "string", typescript: "string", c: "DemoStringView / DemoString" },
+    { rust: "Vec<u8>", swift: "Data", kotlin: "ByteArray", java: "byte[]", csharp: "byte[]", typescript: "Uint8Array", c: "DemoBytesView / DemoBytes" },
   ]}
 />
 
@@ -134,6 +136,10 @@ def byte_at(data: bytes, index: int) -> int: ...
 sum_value = add(5, 3)
 ts = timestamp_ms()
 b = byte_at(bytes([0x48, 0x69]), 0)`}
+  c={`int32_t sum = demo_add(5, 3);
+int64_t timestamp = demo_timestamp_ms();
+uint8_t bytes[] = {0x48, 0x69};
+uint8_t first = demo_byte_at(demo_bytes_view(bytes, 2), 0);`}
 />
 
 For floating point, `f64` is the default choice. It matches what most languages use for their default float type, and the extra precision rarely hurts. Use `f32` when you're interfacing with graphics APIs, audio processing, or other domains where single precision is the standard.
@@ -179,13 +185,15 @@ def lerp(a: float, b: float, t: float) -> float: ...
 
 area = circle_area(5.0)
 mid = lerp(0.0, 10.0, 0.5)`}
+  c={`double area = demo_circle_area(5.0);
+float midpoint = demo_lerp(0.0f, 10.0f, 0.5f);`}
 />
 
 ## Strings
 
 Strings are where the FFI cost becomes visible. Unlike primitives, strings require memory allocation and copying. Rust's string data lives in Rust's heap; the target language's string lives in its own heap. Crossing the boundary means allocating new memory and copying bytes.
 
-Both `&str` and `String` on the Rust side become owned strings in the target language. There's no way to pass a reference that the target language can use without copying, because Rust's memory model doesn't extend across the FFI boundary. The target language needs its own copy that it can manage with its own garbage collector or reference counting.
+The managed targets expose native strings. C uses a borrowed `DemoStringView` for input and an owned `DemoString` for output. Constructing a C view does not allocate or copy its bytes. A returned C string must be released with `demo_string_free`.
 
 The practical rule: use `&str` for parameters (you're borrowing the caller's data) and `String` for return values (you're transferring ownership). This matches idiomatic Rust and works cleanly with BoltFFI's generated code.
 
@@ -250,6 +258,12 @@ def first_word(s: str) -> str: ...
 msg = greet("World")
 ha = repeat("ha", 3)  # "hahaha"
 word = first_word("hello world")`}
+  c={`DemoString message = demo_greet(demo_string_view("World", 5));
+fwrite(message.ptr, 1, message.len, stdout);
+demo_string_free(&message);
+
+DemoString repeated = demo_repeat(demo_string_view("ha", 2), 3);
+demo_string_free(&repeated);`}
 />
 
 If string handling is your bottleneck, rethink the API. Instead of calling a function once per string in a loop, pass a batch of strings and process them all in one call. Or do the string-heavy work entirely on the Rust side and only return the final result.
@@ -262,12 +276,14 @@ The cost depends on the contents: primitive-only records are fast, records with 
 
 ```rust
 #[data]
+#[derive(Clone, Copy)]
 pub struct Point {
     pub x: f64,
     pub y: f64,
 }
 
 #[data]
+#[derive(Clone, Copy)]
 pub enum Status {
     Pending,
     Active,
@@ -296,7 +312,7 @@ See [Classes](/docs/classes) for constructors, methods, thread safety, and memor
 
 ## Option
 
-`Option<T>` in Rust becomes a nullable type in the target language. `None` becomes `null` or `nil` on the other side.
+`Option<T>` becomes an optional or nullable value in the managed languages. C uses a struct with `has_value` and `value`; the value is valid only when `has_value` is true.
 
 <CodeComparison
   title=""
@@ -349,11 +365,21 @@ def parse_int(s: str) -> int | None: ...
 user = find_user(42)      # "alice"
 num = parse_int("123")    # 123
 bad = parse_int("abc")    # None`}
+  c={`DemoOptionString user = demo_find_user(42);
+if (user.has_value) {
+    fwrite(user.value.ptr, 1, user.value.len, stdout);
+}
+demo_option_string_free(&user);
+
+DemoOptionI32 number = demo_parse_int(demo_string_view("123", 3));
+if (number.has_value) {
+    printf("%d\\n", number.value);
+}`}
 />
 
 ## Result and errors
 
-`Result<T, E>` becomes a throwing function. The `Ok` value is returned normally; the `Err` value becomes a thrown exception. The error type must be marked with `#[error]`.
+`Result<T, E>` becomes a throwing function in the managed languages. C returns a struct with `ok` and a union containing the success value or error. String errors work directly; an exported error type is marked with `#[error]`.
 
 <CodeComparison
   title=""
@@ -473,6 +499,13 @@ try:
     port = parse_port("8080")
 except ParseErrorException as error:
     print(error.error)`}
+  c={`DemoParsePortResult port = demo_parse_port(demo_string_view("8080", 4));
+if (port.ok) {
+    printf("%u\\n", (unsigned)port.data.value);
+} else if (port.data.error == DEMO_PARSE_ERROR_EMPTY) {
+    fputs("empty input\\n", stderr);
+}
+demo_parse_port_result_free(&port);`}
 />
 
 ## Collections
@@ -548,6 +581,11 @@ def filter_positive(values: list[int]) -> list[int]: ...
 total = sum([1, 2, 3, 4, 5])
 nums = range(0, 10)
 pos = filter_positive([-1, 2, -3, 4])`}
+  c={`int32_t input[] = {1, 2, 3, 4, 5};
+DemoI32Slice values = {input, 5};
+int32_t total = demo_sum(values);
+DemoI32Sequence numbers = demo_range(0, 10);
+demo_i32_sequence_free(&numbers);`}
 />
 
 ### Nested collections
@@ -609,6 +647,12 @@ const t = transpose(m)
 m = [[1, 2, 3], [4, 5, 6]]
 t = transpose(m)
 # [[1, 4], [2, 5], [3, 6]]`}
+  c={`int32_t first[] = {1, 2, 3};
+int32_t second[] = {4, 5, 6};
+DemoI32Slice rows[] = {{first, 3}, {second, 3}};
+DemoSliceOfI32Slice matrix = {rows, 2};
+DemoSequenceOfI32Sequence transposed = demo_transpose(matrix);
+demo_sequence_of_i32_sequence_free(&transposed);`}
 />
 
 ## Callbacks
@@ -631,6 +675,8 @@ pub trait Logger {
     fn flush(&self);
 }
 ```
+
+C supports synchronous callback traits with the [C vtable contract](/docs/callbacks#c-vtables); inline closures are not generated for C.
 
 See [Callbacks](/docs/callbacks) for closures, callback traits, and async callbacks.
 
@@ -655,11 +701,11 @@ BoltFFI recognizes certain standard library and common crate types and maps them
 <TypeTable
   title="Built-in Type Mappings"
   mappings={[
-    { rust: "std::time::Duration", swift: "TimeInterval", kotlin: "Duration", java: "Duration", csharp: "long", typescript: "Duration" },
-    { rust: "std::time::SystemTime", swift: "Date", kotlin: "Instant", java: "Instant", csharp: "long", typescript: "Date" },
-    { rust: "uuid::Uuid", swift: "UUID", kotlin: "UUID", java: "UUID", csharp: "string", typescript: "string" },
-    { rust: "url::Url", swift: "URL", kotlin: "URI", java: "URI", csharp: "string", typescript: "string" },
-    { rust: "Vec<u8>", swift: "Data", kotlin: "ByteArray", java: "byte[]", csharp: "byte[]", typescript: "Uint8Array" },
+    { rust: "std::time::Duration", swift: "TimeInterval", kotlin: "Duration", java: "Duration", csharp: "long", typescript: "Duration", c: "DemoDuration" },
+    { rust: "std::time::SystemTime", swift: "Date", kotlin: "Instant", java: "Instant", csharp: "long", typescript: "Date", c: "DemoSystemTime" },
+    { rust: "uuid::Uuid", swift: "UUID", kotlin: "UUID", java: "UUID", csharp: "string", typescript: "string", c: "DemoUuid" },
+    { rust: "url::Url", swift: "URL", kotlin: "URI", java: "URI", csharp: "string", typescript: "string", c: "DemoStringView / DemoString" },
+    { rust: "Vec<u8>", swift: "Data", kotlin: "ByteArray", java: "byte[]", csharp: "byte[]", typescript: "Uint8Array", c: "DemoBytesView / DemoBytes" },
   ]}
 />
 
@@ -710,6 +756,9 @@ def double_duration(d: float) -> float: ...
 
 half = sleep_duration()  # 0.5
 full = double_duration(half)`}
+  c={`DemoDuration half = demo_sleep_duration();
+DemoDuration full = demo_double_duration(half);
+printf("%u ns\\n", full.nanoseconds);`}
 />
 
 ### SystemTime
@@ -759,6 +808,8 @@ def epoch() -> float: ...
 
 current = now()
 unix = epoch()  # 0.0`}
+  c={`DemoSystemTime current = demo_now();
+DemoSystemTime epoch = demo_epoch();`}
 />
 
 ### UUID
@@ -808,6 +859,12 @@ def parse_id(s: str) -> uuid.UUID | None: ...
 
 id = new_id()
 parsed = parse_id("550e8400-e29b-41d4-a716-446655440000")`}
+  c={`DemoUuid id = demo_new_id();
+DemoOptionOfUuid parsed = demo_parse_id(
+    demo_string_view("550e8400-e29b-41d4-a716-446655440000", 36));
+if (parsed.has_value) {
+    printf("%02x\\n", (unsigned)parsed.value.bytes[0]);
+}`}
 />
 
 ### URL
@@ -857,6 +914,13 @@ def with_path(base: str, path: str) -> str: ...
 
 base = base_url()  # "https://example.com/"
 full = with_path(base, "/api/v1")`}
+  c={`DemoString base = demo_base_url();
+DemoString full = demo_with_path(
+    demo_string_view(base.ptr, base.len),
+    demo_string_view("/api/v1", 7));
+fwrite(full.ptr, 1, full.len, stdout);
+demo_string_free(&full);
+demo_string_free(&base);`}
 />
 
 ### Bytes
@@ -906,4 +970,9 @@ def hash(data: bytes) -> bytes: ...
 
 compressed = compress(original_data)
 digest = hash(message)`}
+  c={`uint8_t original[] = {1, 2, 3};
+DemoBytes compressed = demo_compress(demo_bytes_view(original, 3));
+DemoBytes digest = demo_hash(demo_bytes_view(original, 3));
+demo_bytes_free(&compressed);
+demo_bytes_free(&digest);`}
 />

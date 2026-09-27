@@ -8,6 +8,8 @@ import TypeTable from "../../components/TypeTableWrapper.astro";
 
 # Callbacks & Traits
 
+C supports synchronous callback traits through a vtable and a typed handle. Its callback method signatures still use bridge types; see the [C vtable example](#c-vtables). Inline closures and async callback traits are not generated for C.
+
 Target language code can flow into Rust through closures and traits. Pass a closure and the target language provides a lambda. Define a trait and the target language implements it as a protocol or interface. Both enable patterns like event handling, progress reporting, data providers, and transformation functions. BoltFFI generates the appropriate bindings for each form, handling the FFI boundary so implementations on either side can call each other safely.
 
 ## Closures
@@ -304,6 +306,41 @@ class MyHandler:
 
 download("https://example.com", MyHandler())`}
 />
+
+### C vtables
+
+Synchronous callback traits expose a vtable and a typed handle. Supply every vtable slot, including `clone` and `free`, and a nonzero identity that identifies the callback state. Keep the vtable alive for as long as Rust may use it.
+
+This example uses `demo.h` from the [demo library](https://github.com/boltffi/boltffi/tree/main/examples/demo). The callback uses its identity as an integer offset, so it owns no allocated state:
+
+```c
+static uint64_t offset_clone(uint64_t identity) {
+    return identity;
+}
+
+static void offset_free(uint64_t identity) {
+    (void)identity;
+}
+
+static int32_t offset_value(uint64_t identity, int32_t value) {
+    return value + (int32_t)identity;
+}
+
+static const DemoValueCallback offset_vtable = {
+    .free = offset_free,
+    .clone = offset_clone,
+    .on_value = offset_value
+};
+
+static int32_t call_with_offset(void) {
+    DemoValueCallbackHandle callback = demo_value_callback_create(&offset_vtable, 42);
+    return demo_invoke_value_callback(&callback, 1);
+}
+```
+
+`demo_invoke_value_callback` takes ownership and clears the C handle. Rust releases it through the vtable when finished. To keep another reference, call `demo_value_callback_clone` before passing it; release any unconsumed handle with `demo_value_callback_free`. For heap-allocated callback state, the vtable's `clone` and `free` implementations must retain and release that state, including across threads if the Rust API uses it there.
+
+Callback method signatures still use bridge types. Primitive-only callbacks work directly as above; callbacks with strings, records, or results can require manual bridge conversion. They do not yet have the same automatic C conversions as ordinary exported functions. See the [callback tests](https://github.com/boltffi/boltffi/blob/main/examples/platforms/c/tests/callbacks.c) for handle ownership examples.
 
 ### Ownership
 

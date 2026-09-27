@@ -148,13 +148,13 @@ static uint32_t ___ChildVTable_on_value(uint64_t handle, uint32_t value) {
     }
 
     uint32_t result = (uint32_t)(*env)->CallStaticIntMethod(env, g____ChildVTable_class, g____ChildVTable_on_value_method, (jlong)handle, (jint)value);
-    if (boltffi_jni_clear_exception(env)) {
+    if ((*env)->ExceptionCheck(env)) {
         goto __boltffi_fail;
     }
 
     boltffi_jni_exit(env, attached);
     return result;
-__boltffi_fail:
+__boltffi_fail:;
 
     boltffi_jni_clear_exception(env);
     boltffi_jni_exit(env, attached);
@@ -162,10 +162,10 @@ __boltffi_fail:
     return 0;
 }
 
-JNIEXPORT jint JNICALL Java_com_boltffi_demo_Native_boltffi_1callback_1handle_1demo_1child_1on_1value(JNIEnv *env, jclass cls, jlong callback, jint value) {
+JNIEXPORT jint JNICALL Java_com_boltffi_demo_Native_boltffi_1callback_1handle_1demo_1child_1on_1value(JNIEnv *env, jclass cls, jlong __boltffi_callback, jint value) {
     (void)cls;
 
-    BoltFFICallbackHandle *callback_handle = boltffi_jni_callback_handle_ref(callback);
+    BoltFFICallbackHandle *callback_handle = boltffi_jni_callback_handle_ref(__boltffi_callback);
     const ___ChildVTable *vtable = callback_handle == NULL ? NULL : (const ___ChildVTable *)callback_handle->vtable;
     if (callback_handle == NULL || callback_handle->handle == 0 || vtable == NULL || vtable->on_value == NULL) {
         boltffi_jni_throw_runtime(env, "BoltFFI callback handle was null or invalid");
@@ -273,7 +273,7 @@ static void ___ListenerVTable_on_child(uint64_t handle, BoltFFICallbackHandle ch
 
     boltffi_jni_exit(env, attached);
     return;
-__boltffi_fail:
+__boltffi_fail:;
 
     if (__boltffi_child_handle != 0) {
         boltffi_jni_callback_handle_release(boltffi_jni_callback_handle_ref(__boltffi_child_handle));

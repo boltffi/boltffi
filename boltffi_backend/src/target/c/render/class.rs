@@ -1,5 +1,5 @@
 //! Ergonomic owned class handles and semantic sync callables.
-use super::{callable, prefix::PackagePrefix, wrapper};
+use super::{callable, prefix::PackagePrefix};
 use crate::{
     bridge::c,
     core::{Emitted, RenderContext, Result},
@@ -13,10 +13,10 @@ pub fn render(
 ) -> Result<Emitted> {
     let prefix = PackagePrefix::from_context(context);
     let member = Name::new(decl.name()).member();
-    let ty = prefix.type_name(&Name::new(decl.name()).r#type());
+    let ty = prefix.type_name(decl.name());
     let mut out = Emitted::primary("");
     for init in decl.initializers() {
-        let abi = wrapper::find_abi(bridge, init.symbol())?;
+        let abi = bridge.function(init.symbol())?;
         let name = prefix.member(&format!("{}_{}", member, Name::new(init.name()).member()));
         out.append(callable::render(
             abi,
@@ -28,7 +28,7 @@ pub fn render(
         )?)
     }
     for method in decl.methods() {
-        let abi = wrapper::find_abi(bridge, method.target())?;
+        let abi = bridge.function(method.target())?;
         let name = prefix.member(&format!("{}_{}", member, Name::new(method.name()).member()));
         let recv = match method.callable().receiver() {
             Some(r) => callable::Receiver::Class {
@@ -46,7 +46,7 @@ pub fn render(
             context,
         )?)
     }
-    let release = wrapper::find_abi(bridge, decl.release())?;
+    let release = bridge.function(decl.release())?;
     let free = prefix.member(&format!("{}_free", member));
     out.append(Emitted::primary(format!("static inline void {free}({ty} *value) {{ if (value == NULL || value->_boltffi_handle == 0) return; {}(value->_boltffi_handle); value->_boltffi_handle=0; }}\n",release.name())));
     Ok(out)

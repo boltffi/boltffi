@@ -28,14 +28,18 @@ static uint64_t boltffi_jni____closure__to_demo_engine_call(void *user_data) {
     jlong handle = (jlong)(uintptr_t)user_data;
 
     uint64_t result = (uint64_t)(*env)->CallStaticLongMethod(env, g____closure__to_demo_engine_class, g____closure__to_demo_engine_call_method, handle);
-    if (boltffi_jni_clear_exception(env)) {
-
-        boltffi_jni_exit(env, attached);
-        return 0;
+    if ((*env)->ExceptionCheck(env)) {
+        goto __boltffi_fail;
     }
 
     boltffi_jni_exit(env, attached);
     return result;
+__boltffi_fail:;
+
+    boltffi_jni_clear_exception(env);
+    boltffi_jni_exit(env, attached);
+
+        return 0;
 }
 
 static void boltffi_jni____closure__to_demo_engine_release(void *user_data) {

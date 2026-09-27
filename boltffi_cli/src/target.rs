@@ -85,6 +85,18 @@ impl NativeHostPlatform {
         }
     }
 
+    pub fn import_library_filename(self, artifact_name: &str) -> Option<String> {
+        match self {
+            Self::WindowsX86_64 | Self::WindowsAarch64
+                if cfg!(all(target_os = "windows", target_env = "gnu")) =>
+            {
+                Some(format!("lib{artifact_name}.dll.a"))
+            }
+            Self::WindowsX86_64 | Self::WindowsAarch64 => Some(format!("{artifact_name}.dll.lib")),
+            _ => None,
+        }
+    }
+
     pub fn jni_library_filename(self, artifact_name: &str) -> String {
         let libraries = NativeLibraries::from_artifact(artifact_name)
             .expect("Cargo artifact should form portable JVM library names");

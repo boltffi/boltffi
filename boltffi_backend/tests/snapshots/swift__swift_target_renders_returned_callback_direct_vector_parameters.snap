@@ -49,12 +49,12 @@ private final class ListenerProxy: Listener, ListenerBridgeable {
     }
 
     func process(values: [Int32]) -> UInt32 {
-        guard let vtable = handle.vtable?.assumingMemoryBound(to: ___ListenerVTable.self),
+        guard let vtable = self.handle.vtable?.assumingMemoryBound(to: ___ListenerVTable.self),
               let invoke = vtable.pointee.process else {
             fatalError("missing callback vtable entry")
         }
         return values.withUnsafeBufferPointer { boltffiValuesBuffer in
-            return invoke(handle.handle, boltffiValuesBuffer.baseAddress, UInt(boltffiValuesBuffer.count))
+            return invoke(self.handle.handle, boltffiValuesBuffer.baseAddress, UInt(boltffiValuesBuffer.count))
         }
     }
 }

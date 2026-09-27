@@ -117,6 +117,7 @@ For structured data, define a record type:
 
 ```rust
 #[data]
+#[derive(Clone, Copy)]
 pub struct GeoPoint {
     pub lat: f64,
     pub lng: f64,
@@ -162,3 +163,16 @@ impl UserService {
     }
 }
 ```
+
+## C representations
+
+The C target supports custom types in synchronous functions, records, enums, and collections. It generates a package-prefixed alias for the declared representation. A string-backed `Email` in a package named `demo` uses `DemoEmailView` for input and `DemoEmail` for output. Returned values are released with `demo_email_free`.
+
+```c
+DemoEmailView input = {"ali@example.com", 15};
+DemoEmail email = demo_echo_email(input);
+fwrite(email.ptr, 1, email.len, stdout);
+demo_email_free(&email);
+```
+
+This example uses the [demo library's Email type](https://github.com/boltffi/boltffi/tree/main/examples/demo/src/custom_types). A scalar-backed custom type is an alias for that scalar and needs no cleanup. See [memory management](/docs/c#memory-management) for borrowed views and returned owners.

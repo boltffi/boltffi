@@ -11,5 +11,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: rustsec/audit-check@v2.0.0
+        env:
+          RUSTUP_TOOLCHAIN: stable
         with:
           token: ${{ secrets.GITHUB_TOKEN }}

@@ -146,27 +146,25 @@ impl<'expansion, 'lowered, S: boltffi_binding::SurfaceLower> Slice<'expansion, '
         let conversion = encoded::incoming::Value::new(self.codec.root(), self.expansion).decode(
             encoded::incoming::Input::new(&self.target, ident, pointer, length, &self.failure),
         )?;
-        let writeback = self.writeback()?;
-
-        Ok(Tokens {
+        let tokens = Tokens {
             items: Vec::new(),
             ffi_parameters: [
                 quote! { #pointer: #pointer_type },
                 quote! { #length: usize },
             ]
             .into_iter()
-            .chain(writeback.ffi_parameters)
             .collect(),
-            ffi_parameter_types: [pointer_type, quote! { usize }]
-                .into_iter()
-                .chain(writeback.ffi_parameter_types)
-                .collect(),
-            conversions: std::iter::once(conversion)
-                .chain(writeback.conversions)
-                .collect(),
-            writebacks: writeback.writebacks,
+            ffi_parameter_types: [pointer_type, quote! { usize }].into_iter().collect(),
+            owned_values: Vec::new(),
+            conversions: vec![conversion],
+            writebacks: Vec::new(),
             argument: quote! { #ident },
-        })
+        };
+        if self.writeback {
+            tokens.with_encoded_writeback(self.codec, ident, &self.failure, self.expansion)
+        } else {
+            Ok(tokens)
+        }
     }
 
     fn mutable_byte_slice_tokens(self) -> Result<Tokens, Error> {
@@ -188,6 +186,7 @@ impl<'expansion, 'lowered, S: boltffi_binding::SurfaceLower> Slice<'expansion, '
             items: Vec::new(),
             ffi_parameters: vec![quote! { #pointer: *mut u8 }, quote! { #length: usize }],
             ffi_parameter_types: vec![quote! { *mut u8 }, quote! { usize }],
+            owned_values: Vec::new(),
             conversions: vec![conversion],
             writebacks: Vec::new(),
             argument: quote! { #ident },
@@ -201,50 +200,35 @@ impl<'expansion, 'lowered, S: boltffi_binding::SurfaceLower> Slice<'expansion, '
             quote! { *const u8 }
         }
     }
+}
 
-    fn writeback(&self) -> Result<Writeback, Error> {
-        if !self.writeback {
-            return Ok(Writeback::none());
-        }
-        let out = names::Parameter::new(&self.ident).writeback();
-        let storage = names::Parameter::new(&self.ident).storage();
-        let failure = &self.failure;
+impl Tokens {
+    pub fn with_encoded_writeback<S: boltffi_binding::SurfaceLower>(
+        mut self,
+        codec: &WritePlan,
+        ident: &Ident,
+        failure: &TokenStream,
+        expansion: &Expansion<'_, S>,
+    ) -> Result<Self, Error> {
+        let out = names::Parameter::new(ident).writeback();
+        let storage = names::Parameter::new(ident).storage();
         let buffer =
-            encoded::outgoing::Value::new(self.codec.root(), self.expansion).buffer(quote! {
-                #storage
-            })?;
-        Ok(Writeback {
-            ffi_parameters: vec![quote! { #out: *mut ::boltffi::__private::FfiBuf }],
-            ffi_parameter_types: vec![quote! { *mut ::boltffi::__private::FfiBuf }],
-            conversions: vec![quote! {
-                if #out.is_null() {
-                    ::boltffi::__private::set_last_error(concat!(stringify!(#out), ": writeback pointer is null"));
-                    #failure
-                }
-            }],
-            writebacks: vec![quote! {
-                unsafe {
-                    ::core::ptr::write(#out, #buffer);
-                }
-            }],
-        })
-    }
-}
-
-struct Writeback {
-    ffi_parameters: Vec<TokenStream>,
-    ffi_parameter_types: Vec<TokenStream>,
-    conversions: Vec<TokenStream>,
-    writebacks: Vec<TokenStream>,
-}
-
-impl Writeback {
-    fn none() -> Self {
-        Self {
-            ffi_parameters: Vec::new(),
-            ffi_parameter_types: Vec::new(),
-            conversions: Vec::new(),
-            writebacks: Vec::new(),
-        }
+            encoded::outgoing::Value::new(codec.root(), expansion).buffer(quote! { #storage })?;
+        self.ffi_parameters
+            .push(quote! { #out: *mut ::boltffi::__private::FfiBuf });
+        self.ffi_parameter_types
+            .push(quote! { *mut ::boltffi::__private::FfiBuf });
+        self.conversions.push(quote! {
+            if #out.is_null() {
+                ::boltffi::__private::set_last_error(concat!(stringify!(#out), ": writeback pointer is null"));
+                #failure
+            }
+        });
+        self.writebacks.push(quote! {
+            unsafe {
+                ::core::ptr::write(#out, #buffer);
+            }
+        });
+        Ok(self)
     }
 }

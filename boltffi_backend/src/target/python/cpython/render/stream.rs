@@ -1,7 +1,7 @@
 use askama::Template as AskamaTemplate;
 use boltffi_binding::{
-    ByteSize, ClassId, DirectValueType, Native, NativeSymbol, Primitive, ReadPlan, StreamDecl,
-    StreamItemPlan, StreamItemPlanRender, TypeRef, native,
+    ByteSize, CanonicalName, ClassId, DirectValueType, Native, NativeSymbol, Primitive, ReadPlan,
+    StreamDecl, StreamItemPlan, StreamItemPlanRender, TypeRef, native,
 };
 
 use crate::{
@@ -50,7 +50,11 @@ impl Stream {
         bridge: &PythonCExtBridgeContract,
         context: &RenderContext<Native>,
     ) -> Result<Self> {
-        let symbols = Symbols::new(declaration)?;
+        let owner = declaration
+            .owner()
+            .map(|owner| owner_name(owner, context))
+            .transpose()?;
+        let symbols = Symbols::new(declaration, owner)?;
         Ok(Self {
             subscribe: Method::new(
                 symbols.subscribe()?,
@@ -301,15 +305,35 @@ enum ItemKind {
     Encoded,
 }
 
+/// The declared name of a stream's owning class, for name qualification.
+pub fn owner_name<'bindings>(
+    owner: ClassId,
+    context: &RenderContext<'bindings, Native>,
+) -> Result<&'bindings CanonicalName> {
+    context
+        .class(owner)
+        .map(|class| class.name())
+        .ok_or(Error::UnsupportedTarget {
+            target: "python",
+            shape: "stream owner without class declaration",
+        })
+}
+
 pub struct Symbols {
     stem: String,
 }
 
 impl Symbols {
-    pub fn new(declaration: &StreamDecl<Native>) -> Result<Self> {
-        Ok(Self {
-            stem: Name::new(declaration.name()).function_text()?,
-        })
+    /// Extension-module accessor names for one stream, qualified by the owning class.
+    ///
+    /// Without the prefix two classes declaring a stream of the same name emit the same
+    /// accessors, and every subscription decodes through whichever one was registered last.
+    pub fn new(declaration: &StreamDecl<Native>, owner: Option<&CanonicalName>) -> Result<Self> {
+        let stem = match owner {
+            Some(owner) => Name::qualified(owner, declaration.name())?.to_string(),
+            None => Name::new(declaration.name()).function_text()?,
+        };
+        Ok(Self { stem })
     }
 
     pub fn subscribe(&self) -> Result<PythonIdentifier> {

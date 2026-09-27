@@ -12,6 +12,9 @@ pub type Error = BackendError;
 #[derive(Clone, Debug, Eq, ThisError, PartialEq)]
 #[non_exhaustive]
 pub enum BackendError {
+    #[allow(missing_docs)]
+    #[error("C declarations require the same generated name `{name}`")]
+    CNameCollision { name: String },
     /// A host cannot render a binding declaration shape present in the contract.
     #[error("backend `{target}` does not support binding capability {capability:?}: {status:?}")]
     BindingCapability {

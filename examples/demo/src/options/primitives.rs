@@ -117,14 +117,12 @@ pub fn find_even(value: i32) -> Option<i32> {
 #[demo_bench_macros::demo_case(
     "options.primitives.i64.should_find_positive_value",
     justification = "Ensure find_positive_i64 returns Some containing the input when the i64 value is positive.",
-    directions = "Call `options::primitives::find_positive_i64` through the generated binding and assert find_positive_i64 returns Some containing the input when the i64 value is positive.",
-
+    directions = "Call `options::primitives::find_positive_i64` through the generated binding and assert find_positive_i64 returns Some containing the input when the i64 value is positive."
 )]
 #[demo_bench_macros::demo_case(
     "options.primitives.i64.should_return_none_for_non_positive_value",
     justification = "Ensure find_positive_i64 returns None when the i64 value is zero or negative.",
-    directions = "Call `options::primitives::find_positive_i64` through the generated binding and assert find_positive_i64 returns None when the i64 value is zero or negative.",
-
+    directions = "Call `options::primitives::find_positive_i64` through the generated binding and assert find_positive_i64 returns None when the i64 value is zero or negative."
 )]
 #[export]
 pub fn find_positive_i64(value: i64) -> Option<i64> {

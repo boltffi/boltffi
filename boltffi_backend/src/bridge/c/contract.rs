@@ -222,6 +222,16 @@ impl CBridgeContract {
         self.source_streams.get(&stream)
     }
 
+    pub(crate) fn function(&self, symbol: &boltffi_binding::NativeSymbol) -> Result<&Function> {
+        self.functions
+            .iter()
+            .find(|function| function.name() == symbol.name().as_str())
+            .ok_or(Error::BrokenBridgeContract {
+                bridge: "c",
+                invariant: "missing ABI function for source callable",
+            })
+    }
+
     /// Returns C function declarations.
     pub fn functions(&self) -> &[Function] {
         &self.functions

@@ -14,6 +14,12 @@ pub struct Statement(String);
 pub struct ArgumentList(Vec<Expression>);
 
 impl Expression {
+    pub fn from_template(template: &impl askama::Template) -> crate::core::Result<Self> {
+        let mut expression = template.render()?;
+        expression.truncate(expression.trim_end().len());
+        Ok(Self(expression))
+    }
+
     pub fn identifier(identifier: Identifier) -> Self {
         Self(identifier.to_string())
     }
@@ -77,6 +83,13 @@ impl Expression {
         match method.needs_quoting() {
             true => Self(format!("{receiver}[\"{method}\"]({arguments})")),
             false => Self(format!("{receiver}.{method}({arguments})")),
+        }
+    }
+
+    pub fn member(receiver: Self, member: &MemberName) -> Self {
+        match member.needs_quoting() {
+            true => Self(format!("{receiver}[\"{member}\"]")),
+            false => Self(format!("{receiver}.{member}")),
         }
     }
 
@@ -213,6 +226,10 @@ impl Expression {
 }
 
 impl Statement {
+    pub fn assignment(name: Identifier, value: Expression) -> Self {
+        Self(format!("{name} = {value};"))
+    }
+
     pub fn constant(name: Identifier, value: Expression) -> Self {
         Self(format!("const {name} = {value};"))
     }

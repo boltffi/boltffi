@@ -4,14 +4,14 @@
 {%- when None %}
 {%- endmatch %}
 
-JNIEXPORT {{ method.return_type }} JNICALL {{ method.symbol }}(JNIEnv *env, jclass cls, jlong callback{% for parameter in method.parameters %}, {{ parameter.ty }} {{ parameter.name }}{% endfor %}
+JNIEXPORT {{ method.return_type }} JNICALL {{ method.symbol }}(JNIEnv *env, jclass cls, jlong __boltffi_callback{% for parameter in method.parameters %}, {{ parameter.ty }} {{ parameter.name }}{% endfor %}
 {%- match method.completion %}
 {%- when Some with (completion) %}, jlong {{ completion.context }}
 {%- when None %}
 {%- endmatch %}) {
     (void)cls;
 {% include "bridge/jni/method/locals.c" %}
-    BoltFFICallbackHandle *callback_handle = boltffi_jni_callback_handle_ref(callback);
+    BoltFFICallbackHandle *callback_handle = boltffi_jni_callback_handle_ref(__boltffi_callback);
     const {{ method.vtable_type }} *vtable = callback_handle == NULL ? NULL : (const {{ method.vtable_type }} *)callback_handle->vtable;
     if (callback_handle == NULL || callback_handle->handle == 0 || vtable == NULL || vtable->{{ method.slot }} == NULL) {
         boltffi_jni_throw_runtime(env, "BoltFFI callback handle was null or invalid");

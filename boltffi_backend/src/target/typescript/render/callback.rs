@@ -35,6 +35,7 @@ pub struct Callback {
 }
 
 struct Method {
+    method_lookup: Option<Expression>,
     name: InterfaceMemberName,
     import: StringLiteral,
     parameters: Vec<Parameter>,
@@ -172,6 +173,10 @@ impl Local {
 }
 
 impl Method {
+    fn transfers_classes(&self) -> bool {
+        self.method_lookup.is_some()
+    }
+
     fn from_declaration(
         method: &boltffi_binding::ImportedMethodDecl<Wasm32, boltffi_binding::ImportSymbol>,
         context: &RenderContext<Wasm32>,
@@ -188,12 +193,30 @@ impl Method {
         {
             return Err(Self::unsupported("callback method error"));
         }
-        let parameters = method
+        let mut parameters = method
             .callable()
             .params()
             .iter()
             .map(|parameter| Parameter::from_declaration(parameter, context))
             .collect::<Result<Vec<_>>>()?;
+        let transfers_classes = parameters
+            .iter()
+            .any(|parameter| parameter.class_release.is_some());
+        if transfers_classes {
+            parameters
+                .iter_mut()
+                .enumerate()
+                .filter(|(_, parameter)| parameter.class_release.is_none())
+                .try_for_each(|(index, parameter)| {
+                    let local = Identifier::parse(format!("__boltffiArgument{index}"))?;
+                    parameter.setup.push(Statement::constant(
+                        local.clone(),
+                        parameter.argument.clone(),
+                    ));
+                    parameter.argument = Expression::identifier(local);
+                    Ok::<_, Error>(())
+                })?;
+        }
         let return_shape = match &fallible {
             Some((public_type, _))
                 if matches!(method.callable().returns().plan(), ReturnPlan::Void) =>
@@ -203,14 +226,23 @@ impl Method {
             Some((public_type, _)) => ReturnShape::fallible(public_type.clone()),
             None => Self::return_shape(method.callable().returns().plan(), context)?,
         };
-        let invocation = Expression::call_member(
-            Expression::identifier(Identifier::known("callback")),
-            &Name::new(method.name()).member()?,
-            parameters
-                .iter()
-                .map(|parameter| parameter.argument.clone())
-                .collect::<ArgumentList>(),
-        );
+        let callback = Expression::identifier(Identifier::known("callback"));
+        let member = Name::new(method.name()).member()?;
+        let arguments = parameters
+            .iter()
+            .map(|parameter| parameter.argument.clone());
+        let method_lookup =
+            transfers_classes.then(|| Expression::member(callback.clone(), &member));
+        let invocation = match method_lookup {
+            Some(_) => Expression::call(
+                Expression::identifier(Identifier::known("__boltffiInvoke")),
+                Identifier::known("call"),
+                std::iter::once(callback)
+                    .chain(arguments)
+                    .collect::<ArgumentList>(),
+            ),
+            None => Expression::call_member(callback, &member, arguments.collect::<ArgumentList>()),
+        };
         let invocation = match method.callable().returns().plan() {
             ReturnPlan::DirectViaReturnSlot {
                 ty: DirectValueType::Primitive(Primitive::Bool),
@@ -218,6 +250,7 @@ impl Method {
             _ => invocation,
         };
         Ok(Self {
+            method_lookup,
             name: InterfaceMemberName::new(Name::new(method.name()).member()?),
             import: StringLiteral::new(method.target().name().as_str()),
             parameters,
@@ -477,8 +510,11 @@ impl AsyncMethod {
         let (public_return, success_setup, returns_void, fallible) = match method.callable().error()
         {
             boltffi_binding::ErrorDecl::None(_) => {
-                let (public_return, success_setup, returns_void) =
-                    Self::infallible_return(method.callable().returns().plan(), context)?;
+                let (public_return, success_setup, returns_void) = Self::completion_return(
+                    method.callable().returns().plan(),
+                    Expression::identifier(Identifier::known("result")),
+                    context,
+                )?;
                 (public_return, success_setup, returns_void, None)
             }
             boltffi_binding::ErrorDecl::EncodedViaReturnSlot {
@@ -486,40 +522,11 @@ impl AsyncMethod {
                 codec: error_codec,
                 shape: wasm32::BufferShape::Packed,
             } => {
-                let (success, success_setup) = match method.callable().returns().plan() {
-                    ReturnPlan::EncodedViaOutPointer {
-                        ty,
-                        codec,
-                        shape: wasm32::BufferShape::Packed,
-                    } => (
-                        super::Type::from_ref(ty, context)?,
-                        Self::encoding(
-                            codec,
-                            Expression::identifier(Identifier::known("success")),
-                            context,
-                        )?,
-                    ),
-                    ReturnPlan::DirectViaOutPointer {
-                        ty: DirectValueType::Record(id),
-                    } => (
-                        context
-                            .record(*id)
-                            .map(|record| Name::new(record.name()).type_name())
-                            .ok_or_else(|| {
-                                Method::unsupported("callback record without declaration")
-                            })?,
-                        Self::record_encoding(
-                            *id,
-                            Expression::identifier(Identifier::known("success")),
-                            context,
-                        )?,
-                    ),
-                    // As above, for the async shape.
-                    ReturnPlan::Void => (TypeName::void(), Vec::new()),
-                    _ => {
-                        return Err(Method::unsupported("callback async fallible success"));
-                    }
-                };
+                let (success, success_setup, returns_void) = Self::completion_return(
+                    method.callable().returns().plan(),
+                    Expression::identifier(Identifier::known("success")),
+                    context,
+                )?;
                 let error = super::Type::from_ref(error_type, context)?;
                 (
                     TypeName::union(
@@ -530,12 +537,7 @@ impl AsyncMethod {
                         ),
                     ),
                     success_setup,
-                    // A `()` success writes nothing, so the completion reports
-                    // zero pointer, length and capacity. Without this the
-                    // success branch referenced a `resultWriter` only the error
-                    // branch declares, so every success threw and the catch
-                    // reported it as completion code -2.
-                    matches!(method.callable().returns().plan(), ReturnPlan::Void),
+                    returns_void,
                     Some(AsyncFallible {
                         error_setup: Self::encoding(
                             error_codec,
@@ -560,13 +562,17 @@ impl AsyncMethod {
         })
     }
 
-    fn infallible_return(
+    fn completion_return(
         plan: &ReturnPlan<Wasm32, boltffi_binding::IntoRust>,
+        value: Expression,
         context: &RenderContext<Wasm32>,
     ) -> Result<(TypeName, Vec<Statement>, bool)> {
         match plan {
             ReturnPlan::Void => Ok((TypeName::void(), Vec::new(), true)),
             ReturnPlan::DirectViaReturnSlot {
+                ty: DirectValueType::Primitive(primitive),
+            }
+            | ReturnPlan::DirectViaOutPointer {
                 ty: DirectValueType::Primitive(primitive),
             } => {
                 let scalar = Scalar::new(*primitive)?;
@@ -587,9 +593,7 @@ impl AsyncMethod {
                         Statement::expression(Expression::call(
                             Expression::identifier(writer),
                             scalar.write_method(),
-                            [Expression::identifier(Identifier::known("result"))]
-                                .into_iter()
-                                .collect::<ArgumentList>(),
+                            [value].into_iter().collect::<ArgumentList>(),
                         )),
                     ],
                     false,
@@ -599,13 +603,14 @@ impl AsyncMethod {
                 ty,
                 codec,
                 shape: wasm32::BufferShape::Packed,
+            }
+            | ReturnPlan::EncodedViaOutPointer {
+                ty,
+                codec,
+                shape: wasm32::BufferShape::Packed,
             } => Ok((
                 super::Type::from_ref(ty, context)?,
-                Self::encoding(
-                    codec,
-                    Expression::identifier(Identifier::known("result")),
-                    context,
-                )?,
+                Self::encoding(codec, value, context)?,
                 false,
             )),
             ReturnPlan::DirectViaOutPointer {
@@ -615,11 +620,7 @@ impl AsyncMethod {
                     .record(*id)
                     .map(|record| Name::new(record.name()).type_name())
                     .ok_or_else(|| Method::unsupported("callback record without declaration"))?,
-                Self::record_encoding(
-                    *id,
-                    Expression::identifier(Identifier::known("result")),
-                    context,
-                )?,
+                Self::record_encoding(*id, value, context)?,
                 false,
             )),
             _ => Err(Method::unsupported("callback async return")),

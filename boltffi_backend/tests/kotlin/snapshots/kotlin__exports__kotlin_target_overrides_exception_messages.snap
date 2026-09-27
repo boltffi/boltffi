@@ -1,0 +1,393 @@
+---
+source: boltffi_backend/tests/kotlin/exports.rs
+expression: "rendered_fixture(\"enums/error_message\")"
+---
+===== com/boltffi/demo/Demo.kt =====
+@file:OptIn(kotlin.ExperimentalUnsignedTypes::class)
+
+package com.boltffi.demo
+@Suppress("FunctionName")
+private object Native {
+    @JvmStatic external fun boltffi_function_demo_fail(): Unit
+    @JvmStatic external fun boltffi_function_demo_fail_record(): Unit
+    @JvmStatic external fun boltffi_function_demo_fail_optional_record(): Unit
+    @JvmStatic external fun boltffi_function_demo_fail_shadowed(): Unit
+    @JvmStatic external fun boltffi_function_demo_echo_message(message: java.nio.ByteBuffer, __boltffi_message_len: Int): ByteArray?
+    @JvmStatic external fun boltffi_function_demo_echo_message_record(record: java.nio.ByteBuffer, __boltffi_record_len: Int): ByteArray?
+}
+
+
+data class RecordError(
+    override val message: String
+) : Exception(message) {
+    internal fun wireSize(): Int {
+        return 4 + Utf8Codec.maxBytes(this.message)
+    }
+
+    internal fun writeTo(writer: WireWriter) {
+        writer.writeString(this.message)
+    }
+
+    internal fun toByteArray(): ByteArray {
+        val buffer = WireWriterPool.acquire(wireSize())
+        val writer = buffer.writer
+        try {
+            writeTo(writer)
+            return buffer.bytes()
+        } finally {
+            buffer.close()
+        }
+    }
+
+    companion object {
+        internal fun fromReader(reader: WireReader): RecordError {
+            return RecordError(
+                reader.readString()
+            )
+        }
+
+        internal fun fromByteArray(bytes: ByteArray): RecordError {
+            val reader = WireReader(bytes)
+            return fromReader(reader)
+        }
+    }
+}
+
+
+data class OptionalRecordError(
+    override val message: String?
+) : Exception(message) {
+    internal fun wireSize(): Int {
+        return 1 + (this.message?.let { __boltffi_value_0 -> 4 + Utf8Codec.maxBytes(__boltffi_value_0) } ?: 0)
+    }
+
+    internal fun writeTo(writer: WireWriter) {
+        writer.writeOptionalValue(this.message, { writer, __boltffi_value_0 -> writer.writeString(__boltffi_value_0) })
+    }
+
+    internal fun toByteArray(): ByteArray {
+        val buffer = WireWriterPool.acquire(wireSize())
+        val writer = buffer.writer
+        try {
+            writeTo(writer)
+            return buffer.bytes()
+        } finally {
+            buffer.close()
+        }
+    }
+
+    companion object {
+        internal fun fromReader(reader: WireReader): OptionalRecordError {
+            return OptionalRecordError(
+                reader.readOptionalValue({ reader -> reader.readString() })
+            )
+        }
+
+        internal fun fromByteArray(bytes: ByteArray): OptionalRecordError {
+            val reader = WireReader(bytes)
+            return fromReader(reader)
+        }
+    }
+}
+
+
+data class MessageRecord(
+    val message: String,
+    val cause: String
+) {
+    internal fun wireSize(): Int {
+        return 4 + Utf8Codec.maxBytes(this.message) + 4 + Utf8Codec.maxBytes(this.cause)
+    }
+
+    internal fun writeTo(writer: WireWriter) {
+        writer.writeString(this.message)
+        writer.writeString(this.cause)
+    }
+
+    internal fun toByteArray(): ByteArray {
+        val buffer = WireWriterPool.acquire(wireSize())
+        val writer = buffer.writer
+        try {
+            writeTo(writer)
+            return buffer.bytes()
+        } finally {
+            buffer.close()
+        }
+    }
+
+    companion object {
+        internal fun fromReader(reader: WireReader): MessageRecord {
+            return MessageRecord(
+                reader.readString(),
+                reader.readString()
+            )
+        }
+
+        internal fun fromByteArray(bytes: ByteArray): MessageRecord {
+            val reader = WireReader(bytes)
+            return fromReader(reader)
+        }
+    }
+}
+
+
+sealed class ServiceError : Exception() {
+    internal abstract fun wireSize(): Int
+
+    internal abstract fun writeTo(writer: WireWriter)
+
+    internal fun toByteArray(): ByteArray {
+        val buffer = WireWriterPool.acquire(wireSize())
+        val writer = buffer.writer
+        try {
+            writeTo(writer)
+            return buffer.bytes()
+        } finally {
+            buffer.close()
+        }
+    }
+
+
+    data class Failed(
+        override val message: String
+    ) : ServiceError() {
+        internal override fun wireSize(): Int {
+            return 4 + 4 + Utf8Codec.maxBytes(this.message)
+        }
+
+        internal override fun writeTo(writer: WireWriter) {
+            writer.writeU32(0.toUInt())
+            writer.writeString(this.message)
+        }
+    }
+    data class Optional(
+        override val message: String?
+    ) : ServiceError() {
+        internal override fun wireSize(): Int {
+            return 4 + 1 + (this.message?.let { __boltffi_value_0 -> 4 + Utf8Codec.maxBytes(__boltffi_value_0) } ?: 0)
+        }
+
+        internal override fun writeTo(writer: WireWriter) {
+            writer.writeU32(1.toUInt())
+            writer.writeOptionalValue(this.message, { writer, __boltffi_value_0 -> writer.writeString(__boltffi_value_0) })
+        }
+    }
+    data class Detailed(
+        val code: UInt,
+        override val message: String
+    ) : ServiceError() {
+        internal override fun wireSize(): Int {
+            return 4 + 4 + 4 + Utf8Codec.maxBytes(this.message)
+        }
+
+        internal override fun writeTo(writer: WireWriter) {
+            writer.writeU32(2.toUInt())
+            writer.writeU32(this.code)
+            writer.writeString(this.message)
+        }
+    }
+    object Unknown : ServiceError() {
+        internal override fun wireSize(): Int {
+            return 4
+        }
+
+        internal override fun writeTo(writer: WireWriter) {
+            writer.writeU32(3.toUInt())
+        }
+    }
+    data class Text(
+        val field0: String
+    ) : ServiceError() {
+        internal override fun wireSize(): Int {
+            return 4 + 4 + Utf8Codec.maxBytes(this.field0)
+        }
+
+        internal override fun writeTo(writer: WireWriter) {
+            writer.writeU32(4.toUInt())
+            writer.writeString(this.field0)
+        }
+    }
+
+    companion object {
+        internal fun fromReader(reader: WireReader): ServiceError {
+            val tag = reader.readU32()
+            return when (tag) {
+                0.toUInt() -> Failed(reader.readString())
+                1.toUInt() -> Optional(reader.readOptionalValue({ reader -> reader.readString() }))
+                2.toUInt() -> Detailed(reader.readU32(), reader.readString())
+                3.toUInt() -> Unknown
+                4.toUInt() -> Text(reader.readString())
+                else -> throw IllegalArgumentException("unknown ServiceError tag: $tag")
+            }
+        }
+
+        internal fun fromByteArray(bytes: ByteArray): ServiceError {
+            val reader = WireReader(bytes)
+            return fromReader(reader)
+        }
+    }
+}
+
+
+sealed class ShadowedError : Exception() {
+    internal abstract fun wireSize(): Int
+
+    internal abstract fun writeTo(writer: WireWriter)
+
+    internal fun toByteArray(): ByteArray {
+        val buffer = WireWriterPool.acquire(wireSize())
+        val writer = buffer.writer
+        try {
+            writeTo(writer)
+            return buffer.bytes()
+        } finally {
+            buffer.close()
+        }
+    }
+
+
+    data class String(
+        override val message: kotlin.String
+    ) : ShadowedError() {
+        internal override fun wireSize(): Int {
+            return 4 + 4 + Utf8Codec.maxBytes(this.message)
+        }
+
+        internal override fun writeTo(writer: WireWriter) {
+            writer.writeU32(0.toUInt())
+            writer.writeString(this.message)
+        }
+    }
+    data class Optional(
+        override val message: kotlin.String?
+    ) : ShadowedError() {
+        internal override fun wireSize(): Int {
+            return 4 + 1 + (this.message?.let { __boltffi_value_0 -> 4 + Utf8Codec.maxBytes(__boltffi_value_0) } ?: 0)
+        }
+
+        internal override fun writeTo(writer: WireWriter) {
+            writer.writeU32(1.toUInt())
+            writer.writeOptionalValue(this.message, { writer, __boltffi_value_0 -> writer.writeString(__boltffi_value_0) })
+        }
+    }
+
+    companion object {
+        internal fun fromReader(reader: WireReader): ShadowedError {
+            val tag = reader.readU32()
+            return when (tag) {
+                0.toUInt() -> String(reader.readString())
+                1.toUInt() -> Optional(reader.readOptionalValue({ reader -> reader.readString() }))
+                else -> throw IllegalArgumentException("unknown ShadowedError tag: $tag")
+            }
+        }
+
+        internal fun fromByteArray(bytes: ByteArray): ShadowedError {
+            val reader = WireReader(bytes)
+            return fromReader(reader)
+        }
+    }
+}
+
+
+sealed class Message {
+    internal abstract fun wireSize(): Int
+
+    internal abstract fun writeTo(writer: WireWriter)
+
+    internal fun toByteArray(): ByteArray {
+        val buffer = WireWriterPool.acquire(wireSize())
+        val writer = buffer.writer
+        try {
+            writeTo(writer)
+            return buffer.bytes()
+        } finally {
+            buffer.close()
+        }
+    }
+
+
+    data class Plain(
+        val message: String,
+        val cause: String
+    ) : Message() {
+        internal override fun wireSize(): Int {
+            return 4 + 4 + Utf8Codec.maxBytes(this.message) + 4 + Utf8Codec.maxBytes(this.cause)
+        }
+
+        internal override fun writeTo(writer: WireWriter) {
+            writer.writeU32(0.toUInt())
+            writer.writeString(this.message)
+            writer.writeString(this.cause)
+        }
+    }
+    data class Numeric(
+        val message: UInt
+    ) : Message() {
+        internal override fun wireSize(): Int {
+            return 4 + 4
+        }
+
+        internal override fun writeTo(writer: WireWriter) {
+            writer.writeU32(1.toUInt())
+            writer.writeU32(this.message)
+        }
+    }
+
+    companion object {
+        internal fun fromReader(reader: WireReader): Message {
+            val tag = reader.readU32()
+            return when (tag) {
+                0.toUInt() -> Plain(reader.readString(), reader.readString())
+                1.toUInt() -> Numeric(reader.readU32())
+                else -> throw IllegalArgumentException("unknown Message tag: $tag")
+            }
+        }
+
+        internal fun fromByteArray(bytes: ByteArray): Message {
+            val reader = WireReader(bytes)
+            return fromReader(reader)
+        }
+    }
+}
+
+fun fail() {
+    try { Native.boltffi_function_demo_fail() } catch (__boltffi_error: BoltFfiErrorBufferException) { run { val __boltffi_error_reader = WireReader(__boltffi_error.bytes); throw ServiceError.fromReader(__boltffi_error_reader) } }
+}
+
+fun failRecord() {
+    try { Native.boltffi_function_demo_fail_record() } catch (__boltffi_error: BoltFfiErrorBufferException) { run { val __boltffi_error_reader = WireReader(__boltffi_error.bytes); throw RecordError.fromReader(__boltffi_error_reader) } }
+}
+
+fun failOptionalRecord() {
+    try { Native.boltffi_function_demo_fail_optional_record() } catch (__boltffi_error: BoltFfiErrorBufferException) { run { val __boltffi_error_reader = WireReader(__boltffi_error.bytes); throw OptionalRecordError.fromReader(__boltffi_error_reader) } }
+}
+
+fun failShadowed() {
+    try { Native.boltffi_function_demo_fail_shadowed() } catch (__boltffi_error: BoltFfiErrorBufferException) { run { val __boltffi_error_reader = WireReader(__boltffi_error.bytes); throw ShadowedError.fromReader(__boltffi_error_reader) } }
+}
+
+fun echoMessage(message: Message): Message {
+    val __boltffi_message_wire = WireWriterPool.acquire(message.wireSize())
+    val __boltffi_message_writer = __boltffi_message_wire.writer
+    message.writeTo(__boltffi_message_writer)
+    try {
+        val __boltffi_result = Native.boltffi_function_demo_echo_message(__boltffi_message_wire.directBuffer(), __boltffi_message_wire.size()) ?: throw IllegalStateException("null buffer returned")
+        val __boltffi_reader = WireReader(__boltffi_result)
+        return Message.fromReader(__boltffi_reader)
+    } finally {
+        __boltffi_message_wire.close()
+    }
+}
+
+fun echoMessageRecord(record: MessageRecord): MessageRecord {
+    val __boltffi_record_wire = WireWriterPool.acquire(record.wireSize())
+    val __boltffi_record_writer = __boltffi_record_wire.writer
+    record.writeTo(__boltffi_record_writer)
+    try {
+        val __boltffi_result = Native.boltffi_function_demo_echo_message_record(__boltffi_record_wire.directBuffer(), __boltffi_record_wire.size()) ?: throw IllegalStateException("null buffer returned")
+        val __boltffi_reader = WireReader(__boltffi_result)
+        return MessageRecord.fromReader(__boltffi_reader)
+    } finally {
+        __boltffi_record_wire.close()
+    }
+}

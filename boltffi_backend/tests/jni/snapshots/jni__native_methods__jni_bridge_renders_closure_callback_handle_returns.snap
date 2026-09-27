@@ -118,15 +118,19 @@ static BoltFFICallbackHandle boltffi_jni____closure__to_box_demo_listener_call(v
     jlong handle = (jlong)(uintptr_t)user_data;
 
     jlong __boltffi_return_handle = (*env)->CallStaticLongMethod(env, g____closure__to_box_demo_listener_class, g____closure__to_box_demo_listener_call_method, handle);
-    if (boltffi_jni_clear_exception(env)) {
-
-        boltffi_jni_exit(env, attached);
-        return (BoltFFICallbackHandle){0};
+    if ((*env)->ExceptionCheck(env)) {
+        goto __boltffi_fail;
     }
     BoltFFICallbackHandle result = boltffi_create_callback_demo_listener((uint64_t)__boltffi_return_handle);
 
     boltffi_jni_exit(env, attached);
     return result;
+__boltffi_fail:;
+
+    boltffi_jni_clear_exception(env);
+    boltffi_jni_exit(env, attached);
+
+        return (BoltFFICallbackHandle){0};
 }
 
 static void boltffi_jni____closure__to_box_demo_listener_release(void *user_data) {
@@ -206,13 +210,13 @@ static uint32_t ___ListenerVTable_on_value(uint64_t handle, uint32_t value) {
     }
 
     uint32_t result = (uint32_t)(*env)->CallStaticIntMethod(env, g____ListenerVTable_class, g____ListenerVTable_on_value_method, (jlong)handle, (jint)value);
-    if (boltffi_jni_clear_exception(env)) {
+    if ((*env)->ExceptionCheck(env)) {
         goto __boltffi_fail;
     }
 
     boltffi_jni_exit(env, attached);
     return result;
-__boltffi_fail:
+__boltffi_fail:;
 
     boltffi_jni_clear_exception(env);
     boltffi_jni_exit(env, attached);

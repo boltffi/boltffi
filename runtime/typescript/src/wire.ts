@@ -903,9 +903,6 @@ export interface UnexpectedCallbackErrorAllocator {
  * under `panic = "abort"` takes the whole module down. The envelope routes it
  * through `From<UnexpectedFfiCallbackError>` instead.
  *
- * The layout is the marker, a version byte, then the message as an ordinary
- * wire string. `boltffiEncodeUnexpectedCallbackError` in the Swift runtime
- * writes the same bytes.
  */
 export function writeUnexpectedCallbackError(
   allocator: UnexpectedCallbackErrorAllocator,

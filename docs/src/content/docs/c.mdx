@@ -1,0 +1,136 @@
+---
+title: "C"
+description: "Link a C or C++ program to a generated Rust library and manage borrowed inputs, returned allocations, and cleanup."
+---
+
+# C
+
+C callers include a generated header, link the native library, and release returned values explicitly. This page covers linking and memory management. Build the library with [Packaging](/docs/packaging#c-experimental) and choose its name and output directory in [Configuration](/docs/configuration#c-configuration).
+
+Select C in the examples on each API's documentation page. C is experimental; its remaining gaps are listed under [Experimental features](/docs/experimental#c).
+
+## Link a C program
+
+The `distance` function from Getting Started can be called from `main.c`:
+
+```c
+#include <stdio.h>
+#include "mylib.h"
+
+int main(void) {
+    MylibPoint start = {0.0, 0.0};
+    MylibPoint end = {3.0, 4.0};
+    printf("%g\n", mylib_distance(start, end));
+    return 0;
+}
+```
+
+Compile as C11 or later. `pack c` includes CMake and pkg-config files that describe the header, libraries, and static link dependencies.
+
+### CMake
+
+Create a `CMakeLists.txt` next to `main.c`:
+
+```cmake
+cmake_minimum_required(VERSION 3.20)
+project(example LANGUAGES C)
+
+find_package(mylib CONFIG REQUIRED)
+
+add_executable(example main.c)
+set_target_properties(example PROPERTIES C_STANDARD 11 C_STANDARD_REQUIRED YES)
+target_link_libraries(example PRIVATE mylib::mylib)
+
+if(WIN32)
+    add_custom_command(TARGET example POST_BUILD
+        COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+        "$<TARGET_FILE:mylib::mylib>" "$<TARGET_FILE_DIR:example>")
+endif()
+```
+
+Point CMake at the package directory:
+
+```sh
+cmake -S . -B build -DCMAKE_PREFIX_PATH="$PWD/dist/c"
+cmake --build build --config Release
+```
+
+`mylib::mylib` links the shared library. On Windows, the post-build command puts the DLL beside the executable. CMake records the package's library directory in the build's runtime search path on Linux and macOS.
+
+If you add a version to `find_package`, it must match the packaged version exactly. The generated package does not claim ABI compatibility with other versions.
+
+For static linking, use `mylib::mylib_static` and remove the DLL-copy step. Its link dependencies come from the Rust build; the C project does not need to list them itself. Static linking includes the Rust library in the executable. System libraries may still be linked dynamically.
+
+### Make and compiler commands
+
+Add the package to pkg-config's search path:
+
+```sh
+export PKG_CONFIG_PATH="$PWD/dist/c/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+```
+
+On Linux or macOS, compile and run a shared-library consumer:
+
+```sh
+cc -std=c11 main.c $(pkg-config --cflags --libs mylib) \
+  -Wl,-rpath,"$PWD/dist/c/lib" -o example
+./example
+```
+
+For a static consumer, select the `mylib-static` package:
+
+```sh
+cc -std=c11 main.c $(pkg-config --cflags --libs mylib-static) -o example
+./example
+```
+
+That file selects the static library and includes its dependencies. `pkg-config --static --libs mylib` also reports static dependencies, but its `-lmylib` flag alone does not force a compiler to choose the archive when a shared library is present.
+
+These shell examples assume the package path has no spaces. CMake and Meson handle paths with spaces. MSVC consumers can use the CMake package above.
+
+### Meson
+
+With `PKG_CONFIG_PATH` set as above, use the generated pkg-config file:
+
+```text
+project('example', 'c', default_options: ['c_std=c11'])
+
+mylib = dependency('mylib', method: 'pkg-config')
+executable('example', 'main.c', dependencies: mylib)
+```
+
+Use `dependency('mylib-static', method: 'pkg-config')` for static linking.
+
+### Shipping the application
+
+The package can be moved as a directory: its CMake and pkg-config files locate the headers and libraries relative to themselves. Keep `include/` and `lib/` together.
+
+A shared-library application still needs the library at runtime. Put the DLL beside the executable on Windows. On Linux and macOS, install the library in a location the application can load and set its runtime search path for that layout. The compiler command above uses an absolute path for a local build.
+
+If the Rust crate depends on external native libraries, those dependencies must also be available to the consumer's linker and runtime loader. BoltFFI does not bundle third-party shared libraries.
+
+## Memory management
+
+Input views borrow memory. Returned values own their allocations. Constructing a view does not copy the data. Its backing memory must remain valid until the call returns. A nonzero length requires a valid pointer to that many elements. A zero-length byte buffer or sequence may have a null pointer.
+
+String lengths count UTF-8 bytes. Input strings do not need a trailing NUL. Returned strings have a trailing NUL, but `len` excludes it and remains the correct length when the text contains embedded NUL bytes. Byte buffers have no terminator.
+
+Free each returned owner once with its generated cleanup function. Cleanup also frees nested strings and collections. Assigning an owning struct to another C variable only copies its pointers; it does not create a second owner. Freeing one copy invalidates the other.
+
+For example, the [demo library](https://github.com/boltffi/boltffi/tree/main/examples/demo) returns an owning string from `echo_string`. Include `demo.h` and `<stdio.h>` to use this example:
+
+```c
+DemoString message = demo_echo_string(demo_string_view("Hello", 5));
+fwrite(message.ptr, 1, message.len, stdout);
+demo_string_free(&message);
+```
+
+The public API's strings and collections are C allocations. Do not pass them to `boltffi_free_string` or `boltffi_free_buf`; those functions release raw Rust bridge allocations. Use the package-prefixed cleanup function shown by the generated header.
+
+An owning record, collection, or result releases the values it contains. Do not free a nested value separately and then free its owner. See [Errors](/docs/errors#supported-error-types) for result ownership, [Classes](/docs/classes#memory-management) for Rust object handles, and [Callbacks](/docs/callbacks#c-vtables) for callback lifetimes.
+
+## C++ callers
+
+The header includes `extern "C"` guards and can be included from C++. The compatibility test compiles a generated header in C++03 mode with the host C++ compiler. The documentation's C examples use C11 syntax; compound literals and designated initializers may need to be rewritten for the chosen C++ version.
+
+The API still follows C ownership rules. C++ callers can wrap owning values in local RAII types, but BoltFFI does not generate C++ classes or destructors.

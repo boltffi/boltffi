@@ -185,11 +185,23 @@ pub trait StringResultMessageCallback {
     "case:callbacks.sync_traits.string_result_message_callback.should_return_encoded_success",
     justification = "Ensure a callback method returning Result<String, String> returns its encoded success payload.",
     directions = "Call `callbacks::sync_traits::invoke_string_result_message_callback` through the generated binding and assert a callback Result<String, String> returns its encoded success payload."
+,
+    exclude(
+        c,
+        reason = ExclusionReason::ImplementationGap,
+        details = "C target does not yet wrap callback result payloads ergonomically"
+    )
 )]
 #[demo_bench_macros::demo_case(
     "case:callbacks.sync_traits.string_result_message_callback.should_report_string_error",
     justification = "Ensure a callback method returning Result<String, String> reports its encoded String error payload.",
     directions = "Call `callbacks::sync_traits::invoke_string_result_message_callback` through the generated binding with a failing callback and assert the String error is reported by the target language."
+,
+    exclude(
+        c,
+        reason = ExclusionReason::ImplementationGap,
+        details = "C target does not yet wrap callback result payloads ergonomically"
+    )
 )]
 #[export]
 pub fn invoke_string_result_message_callback(

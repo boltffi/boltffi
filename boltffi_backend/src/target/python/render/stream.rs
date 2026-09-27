@@ -1,6 +1,6 @@
 use boltffi_binding::{
-    ByteSize, DirectValueType, Native, ReadPlan, StreamDecl, StreamItemPlan, StreamItemPlanRender,
-    TypeRef, native,
+    ByteSize, ClassDecl, DirectValueType, Native, ReadPlan, StreamDecl, StreamItemPlan,
+    StreamItemPlanRender, TypeRef, native,
 };
 
 use crate::{
@@ -33,10 +33,11 @@ pub struct ClassStream {
 impl ClassStream {
     pub fn from_declaration(
         declaration: &StreamDecl<Native>,
+        owner: &ClassDecl<Native>,
         class_name: &Identifier,
         package: &Package,
     ) -> Result<Self> {
-        let symbols = stream_render::Symbols::new(declaration)?;
+        let symbols = stream_render::Symbols::new(declaration, Some(owner.name()))?;
         let item = StreamItem::from_plan(declaration.item(), package)?;
         let pop_batch_body = item.pop_batch_body(symbols.pop_batch()?)?;
         let uses_wire_helpers = item.uses_wire_helpers;

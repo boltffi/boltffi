@@ -40,7 +40,13 @@ impl AsyncFactory {
             reason = ExclusionReason::ImplementationGap,
             details = "The native Dart target does not emit a binding for an async primary/named class initializer at all -- the class doesn't appear in the generated output, so there is nothing to call."
         )
-    )]
+    ,
+    exclude(
+        c,
+        reason = ExclusionReason::ImplementationGap,
+        details = "C target is sync-only; async initializers are not yet supported"
+    )
+)]
     pub async fn new(value: i32) -> Self {
         Self { value }
     }

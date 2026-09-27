@@ -9,7 +9,7 @@ Packaging takes your Rust library and produces artifacts ready for each packaged
 
 `pack` is for targets where BoltFFI owns the platform package layout, such as an Apple
 XCFramework/SwiftPM package, Android jniLibs, Java JNI output, a C# NuGet package, a WASM npm
-package, or a Python wheel. `generate` writes only the source bindings for a single language and is
+package, a Python wheel, or a C header with native libraries. `generate` writes only the source bindings for a single language and is
 useful when you want to integrate them into an existing project layout yourself.
 
 ## Overview
@@ -20,7 +20,7 @@ The packaging process has three stages:
 2. **Generate** - Create Swift/Kotlin/Java/C#/TypeScript/Python bindings and C headers from your exported API
 3. **Package** - Bundle everything into platform-specific formats
 
-For Apple, this produces an xcframework and SwiftPM package. For Android, this produces jniLibs and Kotlin sources. For Java (JVM), this produces a JNI shared library and Java sources. For C#, this produces a NuGet package containing the bindings and native runtime assets. For WASM, this produces an npm package with TypeScript bindings. For Python, this produces a generated source package plus one or more wheels for the current host.
+For Apple, this produces an xcframework and SwiftPM package. For Android, this produces jniLibs and Kotlin sources. For Java (JVM), this produces a JNI shared library and Java sources. For C#, this produces a NuGet package containing the bindings and native runtime assets. For WASM, this produces an npm package with TypeScript bindings. For Python, this produces a generated source package plus one or more wheels for the current host. For C, it produces a header, shared library, and static library for the current host.
 
 ## Getting Started
 
@@ -844,6 +844,67 @@ boltffi pack python --python python3.12 --python python3.13
 ```
 
 If you omit `--python` and do not configure `[targets.python.wheel].interpreters`, BoltFFI falls back to the first available default interpreter on the host.
+
+## C (experimental)
+
+Enable the [C target](/docs/configuration#c-configuration), then build the header and native libraries for the current host:
+
+```bash
+boltffi pack c --experimental --release --deny-skipped
+```
+
+The Rust library must declare both `cdylib` and `staticlib` crate types:
+
+```toml
+[lib]
+crate-type = ["cdylib", "staticlib"]
+```
+
+`--deny-skipped` makes the command fail if an exported declaration cannot be generated for C. Without it, generation reports skipped declarations and continues with the supported ones. Check that report when sharing a Rust API with other targets.
+
+### Output structure
+
+With the package name and Rust library target both named `mylib`, and output directory `dist/c`, the package contains:
+
+```text
+dist/c/
+├── include/mylib.h
+└── lib/
+    ├── shared library and Windows import library
+    ├── static/
+    │   └── static library
+    ├── cmake/mylib/
+    │   ├── mylibConfig.cmake
+    │   └── mylibConfigVersion.cmake
+    └── pkgconfig/
+        ├── mylib.pc
+        └── mylib-static.pc
+```
+
+Ship `include/` and `lib/` together from the same build. The CMake and pkg-config files use paths relative to the package, so the directory can be moved. No separate C runtime package is needed.
+
+| Host | Shared library | Static library | Import library for the shared library |
+| --- | --- | --- | --- |
+| Linux | `libmylib.so` | `static/libmylib.a` | Not needed |
+| macOS | `libmylib.dylib` | `static/libmylib.a` | Not needed |
+| Windows, MSVC | `mylib.dll` | `static/mylib.lib` | `mylib.dll.lib` |
+| Windows, GNU | `mylib.dll` | `static/libmylib.a` | `libmylib.dll.a` |
+
+`pack c` builds for the machine running the command. Cross-compilation through `--target` or Cargo's `build.target` is rejected. Native C demo jobs cover Linux, macOS, and Windows; that does not imply every architecture or compiler combination has been tested. CMake and pkg-config metadata are generated automatically; Meson can consume the pkg-config file.
+
+See [C configuration](/docs/configuration#c-configuration) for package names and versions. Native binaries keep the selected Cargo library target's name; the metadata points to those filenames, including the Windows import library.
+
+Static link dependencies are collected from the same Rust build as the archive. `--no-build` reuses the header, libraries, and cached link metadata from a previous `pack c` run. Run without `--no-build` after changing the Rust build or if no cached metadata exists.
+
+Compile consumers as C11 or later, or include the header from C++. See [linking a C program](/docs/c#link-a-c-program) for CMake, Make, Meson, and runtime library paths. The [C demo](https://github.com/boltffi/boltffi/tree/main/examples/platforms/c) includes a CMake build and executable tests.
+
+### Header-only generation
+
+```bash
+boltffi generate c --experimental --deny-skipped
+```
+
+This writes `dist/c/boltffi.h` without packaging native libraries. `pack c` copies the public header to `dist/c/include/mylib.h` and builds the matching libraries.
 
 ## Build Profiles
 

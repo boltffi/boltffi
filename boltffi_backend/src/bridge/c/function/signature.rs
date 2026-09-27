@@ -44,6 +44,8 @@ struct AsyncCallbackPayloadType {
 struct FallibleAsyncCallbackSuccess;
 
 trait ReceiveAbi {
+    fn takes_ownership(self) -> bool;
+    fn class_parameter_name(self, name: &str) -> String;
     fn needs_encoded_writeback(self) -> bool;
     fn needs_mutable_pointer(self) -> bool;
     fn direct_param_type(self, ty: &DirectValueType, value: Type) -> Type;
@@ -66,6 +68,14 @@ where
 }
 
 impl ReceiveAbi for Receive {
+    fn class_parameter_name(self, name: &str) -> String {
+        name.to_owned()
+    }
+
+    fn takes_ownership(self) -> bool {
+        self == Receive::ByValue
+    }
+
     fn needs_encoded_writeback(self) -> bool {
         self == Receive::ByMutRef
     }
@@ -95,6 +105,14 @@ impl ReceiveAbi for Receive {
 }
 
 impl ReceiveAbi for () {
+    fn class_parameter_name(self, name: &str) -> String {
+        format!("__boltffi_class_{name}")
+    }
+
+    fn takes_ownership(self) -> bool {
+        true
+    }
+
     fn needs_encoded_writeback(self) -> bool {
         false
     }
@@ -239,12 +257,18 @@ where
         target: &'plan HandleTarget,
         carrier: native::HandleCarrier,
         _: HandlePresence,
-        _: D::Receive,
+        receive: D::Receive,
     ) -> Self::Output {
-        Ok(vec![Parameter::new(
-            self.name.as_str(),
-            Type::handle_target(target, carrier)?,
-        )?])
+        let ty = Type::handle_target(target, carrier)?;
+        let parameter = match target {
+            HandleTarget::Class(class) if receive.takes_ownership() => Parameter::owned_class(
+                receive.class_parameter_name(&self.name),
+                ty,
+                self.signature.names.class_release(*class)?,
+            )?,
+            _ => Parameter::new(self.name.as_str(), ty)?,
+        };
+        Ok(vec![parameter])
     }
 
     fn scalar_option(&mut self, _: Primitive) -> Self::Output {
@@ -712,7 +736,7 @@ impl Signature {
             symbol,
             params,
             returns,
-            self.return_channel(callable.error()),
+            ReturnChannel::from_error(callable.error()),
         )
     }
 
@@ -753,7 +777,7 @@ impl Signature {
                 &symbols.complete,
                 complete_params,
                 self.async_complete_return(callable.returns().plan(), callable.error())?,
-                self.return_channel(callable.error()),
+                ReturnChannel::from_error(callable.error()),
             )?,
             Function::exported(
                 declaration,
@@ -895,6 +919,7 @@ impl Signature {
                         .collect(),
                 },
                 closure_params,
+                ReturnChannel::from_error(error),
             )?,
             Parameter::closure_context(name)?,
             Parameter::closure_release(name)?,
@@ -922,7 +947,13 @@ impl Signature {
                 .chain(return_params.iter().map(|parameter| parameter.ty().clone()))
                 .collect(),
         };
-        Parameter::closure_return("return_out", closure.signature(), call_type, closure_params)
+        Parameter::closure_return(
+            "return_out",
+            closure.signature(),
+            call_type,
+            closure_params,
+            ReturnChannel::from_error(invoke.error()),
+        )
     }
 
     fn return_params<D>(
@@ -999,16 +1030,6 @@ impl Signature {
                 layer: C_BRIDGE_LAYER,
                 shape: "unknown error declaration",
             }),
-        }
-    }
-
-    fn return_channel<D>(&self, error: &ErrorDecl<Native, D>) -> ReturnChannel
-    where
-        D: Direction,
-    {
-        match error {
-            ErrorDecl::EncodedViaReturnSlot { .. } => ReturnChannel::EncodedError,
-            _ => ReturnChannel::Value,
         }
     }
 

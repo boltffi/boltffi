@@ -29,7 +29,9 @@ pub use capture::{
 pub use cfg::ActiveCfg;
 pub use error::ScanError;
 pub use input::ScanInput;
+pub use repr::scan as scan_repr;
 pub use scan::{PackageScan, scan, scan_file, scan_package, scan_source};
+pub use type_expr::primitive_path;
 pub use unsupported::{UnsupportedFeature, UnsupportedInfo};
 
 use path::{ModulePath, ModuleScope};

@@ -22,6 +22,11 @@ import java.util.concurrent.atomic.AtomicBoolean;
 {% for statement in constructor.call().body() %}        {{ statement }}
 {% endfor %}    }
 {% endfor %}
+    {{ class.handle() }} __boltffiTakeHandle() {
+        if (!closed.compareAndSet(false, true)) throw new IllegalStateException("{{ class.name() }} is closed");
+        return handle;
+    }
+
     {{ class.handle() }} rawHandle() {
         if (closed.get()) throw new IllegalStateException("{{ class.name() }} is closed");
         return handle;

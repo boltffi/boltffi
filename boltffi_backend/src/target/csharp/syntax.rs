@@ -219,6 +219,10 @@ impl fmt::Display for Statement {
 }
 
 impl Statement {
+    pub(crate) fn local(name: &Identifier, ty: &TypeFragment, value: &Expression) -> Self {
+        Self(format!("{ty} {name} = {value};"))
+    }
+
     pub(crate) fn new(statement: impl Into<String>) -> Self {
         Self(statement.into())
     }

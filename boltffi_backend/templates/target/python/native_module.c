@@ -1,3 +1,21 @@
+static FfiBuf_u8 boltffi_python_callback_error(void) {
+    PyObject *exception_type = NULL;
+    PyObject *exception = NULL;
+    PyObject *traceback = NULL;
+    PyErr_Fetch(&exception_type, &exception, &traceback);
+    PyErr_NormalizeException(&exception_type, &exception, &traceback);
+    PyObject *message = exception != NULL ? PyObject_Str(exception) : NULL;
+    Py_ssize_t length = 0;
+    const char *bytes = message != NULL ? PyUnicode_AsUTF8AndSize(message, &length) : NULL;
+    FfiBuf_u8 error = {{ callback_error_storage }}((const uint8_t *)bytes, (uintptr_t)length);
+    Py_XDECREF(message);
+    Py_XDECREF(exception_type);
+    Py_XDECREF(exception);
+    Py_XDECREF(traceback);
+    PyErr_Clear();
+    return error;
+}
+
 
 {% if support.uses_wire_arguments() || support.uses_owned_buffers() %}
 static void boltffi_python_write_u16_le(uint8_t *buffer, uint16_t value) {

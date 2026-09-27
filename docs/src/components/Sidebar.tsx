@@ -167,10 +167,19 @@ const sections: Section[] = [
       { id: "apple-packaging", label: "Apple" },
       { id: "android-packaging", label: "Android" },
       { id: "java-packaging", label: "Java" },
+      { id: "c-experimental", label: "C" },
       { id: "c-sharp-generation", label: "C#" },
       { id: "wasm-packaging", label: "WASM" },
       { id: "python-packaging", label: "Python" },
     ]
+  },
+  {
+    id: "c", label: "C (Experimental)", icon: FlaskConical,
+    children: [
+      { id: "link-a-c-program", label: "Linking" },
+      { id: "memory-management", label: "Memory Management" },
+      { id: "c-callers", label: "C++ Callers" },
+    ],
   },
   { 
     id: "configuration", 
@@ -182,6 +191,7 @@ const sections: Section[] = [
       { id: "swiftpm-layouts", label: "SwiftPM Layouts" },
       { id: "android-configuration", label: "Android" },
       { id: "java-configuration", label: "Java" },
+      { id: "c-configuration", label: "C (Experimental)" },
       { id: "c-sharp-configuration", label: "C#" },
       { id: "wasm-configuration", label: "WASM" },
       { id: "python-configuration", label: "Python" },

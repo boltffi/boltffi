@@ -34,6 +34,12 @@ use boltffi::*;
         reason = ExclusionReason::ImplementationGap,
         details = "The native Dart target does not emit a binding for a closure parameter accepting a direct-vector Vec<i32> argument at all -- apply_vector_closure doesn't appear in the generated output, so there is nothing to call."
     )
+,
+    exclude(
+        c,
+        reason = ExclusionReason::ImplementationGap,
+        details = "C target does not yet wrap closure parameters ergonomically"
+    )
 )]
 #[export]
 pub fn apply_vector_closure(f: impl Fn(Vec<i32>) -> i32, values: Vec<i32>) -> i32 {

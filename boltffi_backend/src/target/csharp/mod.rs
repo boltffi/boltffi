@@ -1,6 +1,7 @@
 //! C# target rendered through .NET P/Invoke over the C ABI bridge.
 
 mod codec;
+mod lexical;
 mod name_style;
 mod render;
 mod syntax;
@@ -740,7 +741,7 @@ mod tests {
         assert!(source.contains("public static int Apply(global::System.Func<int, int> f"));
         assert!(source.contains("public static void Notify(global::System.Action<bool> f"));
         assert!(source.contains("global::System.Func<Mode, Mode> f"));
-        assert!(source.contains("GCHandle.Alloc(f)"));
+        assert!(source.contains("new BoltFFIOwnedClosure(f)"));
         assert!(source.contains("GCHandle.FromIntPtr(context).Target!"));
         assert!(source.contains("GCHandle.FromIntPtr(context).Free();"));
         assert!(output.diagnostics().is_empty());

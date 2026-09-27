@@ -11,6 +11,7 @@ description: "Install the BoltFFI CLI and crate dependencies, configure Cargo ou
 - **For iOS**: Xcode 15+ with command line tools
 - **For Android**: Android Studio with NDK installed
 - **For Java**: JDK 8+ with `javac` and a C compiler for the JNI bridge
+- **For C**: a C11 compiler; CMake 3.20+ to run the repository demo
 - **For C#**: .NET SDK 10.0+ for the current C# demo and generated binding tests
 - **For Python**: Python 3.10+ with pip
 
@@ -61,7 +62,6 @@ Add BoltFFI to your library crate:
 
 ```bash
 cargo add boltffi
-cargo add --build boltffi
 ```
 
 Then configure your library crate:
@@ -76,21 +76,11 @@ edition = "2021"
 crate-type = ["staticlib"]
 ```
 
-Add `cdylib` if you also need a standalone Rust shared library outside BoltFFI packaging, including the current C# generate-and-integrate flow:
+C packaging requires both `staticlib` and `cdylib`. Include `cdylib` for a standalone shared library as well:
 
 ```toml
 [lib]
 crate-type = ["staticlib", "cdylib"]
-```
-
-## Create build.rs
-
-Create a `build.rs` file in your project root:
-
-```rust
-fn main() {
-    boltffi::build::generate();
-}
 ```
 
 ## Verify installation

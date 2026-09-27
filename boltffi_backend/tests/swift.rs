@@ -388,13 +388,16 @@ fn swift_target_renders_async_callback_return_shapes() {
 }
 
 #[test]
-fn swift_target_emits_strict_unexpected_callback_error_payload_helper() {
+fn swift_target_uses_the_native_unexpected_callback_error_encoder() {
     let rendered =
         rendered_swift_runtime(SourceFixture::one("callback/async_callback_return_shapes"));
 
-    assert!(rendered.contains("func boltffiEncodeUnexpectedCallbackError(_ error: Error)"));
-    assert!(rendered.contains("boltffiUnexpectedCallbackErrorMarker"));
-    assert!(rendered.contains("boltffiUnexpectedCallbackErrorVersion"));
+    assert!(
+        rendered.contains("func boltffiEncodeUnexpectedCallbackError(_ error: Error) -> FfiBuf_u8")
+    );
+    assert!(rendered.contains(
+        "boltffi_callback_error(message.bindMemory(to: UInt8.self).baseAddress!, UInt(message.count - 1))"
+    ));
 }
 
 #[test]
@@ -416,6 +419,22 @@ fn swift_target_renders_async_callback_handle_returns() {
 #[test]
 fn swift_target_renders_fallible_functions_as_throwing_functions() {
     insta::assert_snapshot!(rendered_fixture("exports/fallible_returns"));
+}
+
+#[test]
+fn swift_target_propagates_errors_through_unit_vector_calls() {
+    let rendered = rendered_fixture("exports/fallible_unit_vectors");
+
+    [
+        "_ = try ids.withUnsafeBufferPointer",
+        "_ = try weights.withUnsafeBufferPointer",
+        "_ = try boltffiPointsStorage.withUnsafeBytes",
+        "_ = try ids.withUnsafeMutableBufferPointer",
+    ]
+    .into_iter()
+    .for_each(|expected| assert!(rendered.contains(expected), "missing `{expected}`"));
+
+    insta::assert_snapshot!(rendered);
 }
 
 #[test]

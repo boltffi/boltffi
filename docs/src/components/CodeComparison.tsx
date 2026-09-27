@@ -9,6 +9,7 @@ import "prismjs/components/prism-typescript";
 import "prismjs/components/prism-java";
 import "prismjs/components/prism-csharp";
 import "prismjs/components/prism-python";
+import "prismjs/components/prism-c";
 
 interface CodeComparisonProps {
   rust: string;
@@ -18,6 +19,7 @@ interface CodeComparisonProps {
   csharp?: string;
   typescript?: string;
   python?: string;
+  c?: string;
   title?: string;
 }
 
@@ -27,13 +29,13 @@ function highlight(code: string, lang: string): string {
   return code;
 }
 
-const CodeComparison = ({ rust, swift, kotlin, java, csharp, typescript, python, title }: CodeComparisonProps) => {
-  const [activeLang, setActiveLang] = useState<"Swift" | "Kotlin" | "Java" | "C#" | "TypeScript" | "Python">("Swift");
+const CodeComparison = ({ rust, swift, kotlin, java, csharp, typescript, python, c, title }: CodeComparisonProps) => {
+  const [activeLang, setActiveLang] = useState<"Swift" | "Kotlin" | "Java" | "C#" | "TypeScript" | "Python" | "C">("Swift");
   const [copiedSide, setCopiedSide] = useState<"left" | "right" | null>(null);
 
   const bindings: Record<string, string> = { Swift: swift, Kotlin: kotlin };
   const langMap: Record<string, string> = { Swift: "swift", Kotlin: "kotlin" };
-  const availableLangs: ("Swift" | "Kotlin" | "Java" | "C#" | "TypeScript" | "Python")[] = ["Swift", "Kotlin"];
+  const availableLangs: ("Swift" | "Kotlin" | "Java" | "C#" | "TypeScript" | "Python" | "C")[] = ["Swift", "Kotlin"];
 
   if (java) {
     bindings.Java = java;
@@ -59,10 +61,16 @@ const CodeComparison = ({ rust, swift, kotlin, java, csharp, typescript, python,
     availableLangs.push("Python");
   }
 
+  if (c) {
+    bindings.C = c;
+    langMap.C = "c";
+    availableLangs.push("C");
+  }
+
   const rustHighlighted = useMemo(() => highlight(rust, "rust"), [rust]);
   const bindingHighlighted = useMemo(
     () => highlight(bindings[activeLang], langMap[activeLang]),
-    [activeLang, swift, kotlin, java, csharp, typescript, python]
+    [activeLang, swift, kotlin, java, csharp, typescript, python, c]
   );
 
   const handleCopy = (code: string, side: "left" | "right") => {
@@ -93,8 +101,9 @@ const CodeComparison = ({ rust, swift, kotlin, java, csharp, typescript, python,
             </pre>
           </div>
           <button
+            aria-label="Copy Rust example"
             onClick={() => handleCopy(rust, "left")}
-            className="absolute top-2 right-10 p-1.5 rounded-md bg-muted/50 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity hover:text-foreground"
+            className="absolute top-2 right-10 p-1.5 rounded-md bg-muted/50 text-muted-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity hover:text-foreground"
           >
             {copiedSide === "left" ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
           </button>
@@ -102,13 +111,14 @@ const CodeComparison = ({ rust, swift, kotlin, java, csharp, typescript, python,
 
         <div className="relative group min-w-0">
           <div className="flex items-center justify-between px-4 py-2 border-b border-border bg-muted/30 h-[42px]">
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1 min-w-0 overflow-x-auto scrollbar-thin pr-8" role="group" aria-label="Example language">
               {availableLangs.map((lang) => (
                 <button
                   key={lang}
+                  aria-pressed={activeLang === lang}
                   onClick={() => setActiveLang(lang)}
                   className={cn(
-                    "px-2.5 py-1 rounded text-xs font-mono transition-colors",
+                    "shrink-0 px-2.5 py-1 rounded text-xs font-mono transition-colors",
                     activeLang === lang
                       ? "bg-primary text-primary-foreground"
                       : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
@@ -118,7 +128,6 @@ const CodeComparison = ({ rust, swift, kotlin, java, csharp, typescript, python,
                 </button>
               ))}
             </div>
-            <span className="text-[10px] font-mono text-muted-foreground uppercase tracking-wider hidden sm:block">Generated</span>
           </div>
           <div className="overflow-x-auto scrollbar-thin not-prose">
             <pre className="p-4 text-[13px] font-mono leading-relaxed text-foreground whitespace-pre !m-0 !bg-transparent !border-0" style={{ margin: 0, background: 'transparent', border: 'none' }}>
@@ -126,8 +135,9 @@ const CodeComparison = ({ rust, swift, kotlin, java, csharp, typescript, python,
             </pre>
           </div>
           <button
+            aria-label={`Copy ${activeLang} example`}
             onClick={() => handleCopy(bindings[activeLang], "right")}
-            className="absolute top-2 right-3 p-1.5 rounded-md bg-muted/50 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity hover:text-foreground"
+            className="absolute top-2 right-3 p-1.5 rounded-md bg-muted/50 text-muted-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity hover:text-foreground"
           >
             {copiedSide === "right" ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
           </button>

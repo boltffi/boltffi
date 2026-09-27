@@ -1,0 +1,174 @@
+#include <math.h>
+#include <string.h>
+
+#include "test.h"
+
+bool test_shapes(void) {
+    DemoShape shape = demo_shape_new(2.0);
+    CHECK(shape.tag == DEMO_SHAPE_CIRCLE && shape.data.circle.radius == 2.0, "case:enums.data_enum.shape.should_support_primary_constructor");
+    demo_shape_free(&shape);
+    shape = demo_shape_unit_circle();
+    CHECK(shape.tag == DEMO_SHAPE_CIRCLE && shape.data.circle.radius == 1.0, "case:enums.data_enum.shape.unit_circle.should_construct_circle");
+    demo_shape_free(&shape);
+    shape = demo_shape_square(3.0);
+    CHECK(shape.tag == DEMO_SHAPE_RECTANGLE && shape.data.rectangle.width == 3.0 && shape.data.rectangle.height == 3.0, "case:enums.data_enum.shape.square.should_construct_rectangle");
+    demo_shape_free(&shape);
+    DemoShapeTryCircleResult circle = demo_shape_try_circle(2.0);
+    CHECK(circle.ok && circle.data.value.tag == DEMO_SHAPE_CIRCLE && circle.data.value.data.circle.radius == 2.0, "case:enums.data_enum.shape.try_circle.should_return_circle_for_positive_radius");
+    demo_shape_try_circle_result_free(&circle);
+    circle = demo_shape_try_circle(0.0);
+    CHECK(!circle.ok && circle.data.error.len == 23 && memcmp(circle.data.error.ptr, "radius must be positive", 23) == 0, "case:enums.data_enum.shape.should_reject_non_positive_circle_radius");
+    demo_shape_try_circle_result_free(&circle);
+    DemoOptionShape optional = demo_shape_maybe_circle(2.0);
+    CHECK(optional.has_value && optional.value.tag == DEMO_SHAPE_CIRCLE && optional.value.data.circle.radius == 2.0, "case:enums.data_enum.shape.maybe_circle.should_return_some_for_positive_radius");
+    demo_option_shape_free(&optional);
+    optional = demo_shape_maybe_circle(-1.0);
+    CHECK(!optional.has_value, "case:enums.data_enum.shape.maybe_circle.should_return_none_for_non_positive_radius");
+    demo_option_shape_free(&optional);
+    const DemoShapeView rectangle = {.tag = DEMO_SHAPE_RECTANGLE, .data.rectangle = {3.0, 4.0}};
+    CHECK(demo_shape_area(&rectangle) == 12.0, "case:enums.data_enum.shape.should_support_numeric_instance_methods");
+    DemoString description = demo_shape_describe(&rectangle);
+    CHECK(description.len == 8 && memcmp(description.ptr, "rect 3x4", 8) == 0, "case:enums.data_enum.shape.should_support_string_instance_methods");
+    demo_string_free(&description);
+    CHECK(demo_shape_variant_count() == 6, "case:enums.data_enum.shape.should_report_variant_count");
+    DemoOptionPoint tip = demo_shape_try_apex_point(2.0);
+    CHECK(tip.has_value && tip.value.x == 0.0 && tip.value.y == 2.0, "case:enums.data_enum.shape.try_apex_point.should_return_some_for_positive_radius");
+    CHECK(!demo_shape_try_apex_point(0.0).has_value, "case:enums.data_enum.shape.try_apex_point.should_return_none_for_non_positive_radius");
+    const DemoShapeView circle_view = {.tag = DEMO_SHAPE_CIRCLE, .data.circle = {2.0}};
+    shape = demo_echo_shape(circle_view);
+    CHECK(shape.tag == DEMO_SHAPE_CIRCLE && shape.data.circle.radius == 2.0, "circle variant round trip");
+    demo_shape_free(&shape);
+    shape = demo_echo_shape(rectangle);
+    CHECK(shape.tag == DEMO_SHAPE_RECTANGLE && shape.data.rectangle.width == 3.0 && shape.data.rectangle.height == 4.0, "rectangle variant round trip");
+    demo_shape_free(&shape);
+    const DemoShapeView triangle = {.tag = DEMO_SHAPE_TRIANGLE, .data.triangle = {{0, 0}, {3, 0}, {0, 4}}};
+    shape = demo_echo_shape(triangle);
+    CHECK(shape.tag == DEMO_SHAPE_TRIANGLE && shape.data.triangle.b.x == 3 && shape.data.triangle.c.y == 4, "triangle variant round trip");
+    demo_shape_free(&shape);
+    shape = demo_echo_shape((DemoShapeView){.tag = DEMO_SHAPE_POINT});
+    CHECK(shape.tag == DEMO_SHAPE_POINT, "case:enums.data_enum.shape.should_roundtrip_core_variants");
+    demo_shape_free(&shape);
+    shape = demo_echo_shape((DemoShapeView){.tag = DEMO_SHAPE_APEX, .data.apex = {{true, {2, 3}}}});
+    CHECK(shape.tag == DEMO_SHAPE_APEX && shape.data.apex.tip.has_value && shape.data.apex.tip.value.x == 2 && shape.data.apex.tip.value.y == 3, "case:enums.data_enum.shape.apex.should_roundtrip_some_point_payload");
+    demo_shape_free(&shape);
+    shape = demo_echo_shape((DemoShapeView){.tag = DEMO_SHAPE_APEX, .data.apex = {{false, {0, 0}}}});
+    CHECK(shape.tag == DEMO_SHAPE_APEX && !shape.data.apex.tip.has_value, "case:enums.data_enum.shape.apex.should_roundtrip_none_payload");
+    demo_shape_free(&shape);
+    const DemoPoint points[] = {{1, 2}, {3, 4}};
+    shape = demo_echo_shape((DemoShapeView){.tag = DEMO_SHAPE_CLUSTER, .data.cluster = {{points, 2}}});
+    CHECK(shape.tag == DEMO_SHAPE_CLUSTER && shape.data.cluster.members.len == 2 && shape.data.cluster.members.ptr[0].x == 1 && shape.data.cluster.members.ptr[1].y == 4, "case:enums.data_enum.shape.should_roundtrip_vector_record_fields");
+    demo_shape_free(&shape);
+    shape = demo_make_circle(3.0);
+    CHECK(shape.tag == DEMO_SHAPE_CIRCLE && shape.data.circle.radius == 3.0, "circle factory");
+    demo_shape_free(&shape);
+    shape = demo_make_rectangle(3.0, 4.0);
+    CHECK(shape.tag == DEMO_SHAPE_RECTANGLE && shape.data.rectangle.width == 3.0 && shape.data.rectangle.height == 4.0, "case:enums.data_enum.shape.should_support_free_function_factories");
+    demo_shape_free(&shape);
+    const DemoShapeView shapes[] = {circle_view, rectangle, {.tag = DEMO_SHAPE_POINT}};
+    DemoSequenceOfShape returned = demo_echo_vec_shape((DemoSliceOfShapeView){shapes, 3});
+    CHECK(returned.len == 3 && returned.ptr[0].tag == DEMO_SHAPE_CIRCLE && returned.ptr[0].data.circle.radius == 2.0 && returned.ptr[1].tag == DEMO_SHAPE_RECTANGLE && returned.ptr[1].data.rectangle.height == 4.0 && returned.ptr[2].tag == DEMO_SHAPE_POINT, "case:enums.data_enum.shape.should_roundtrip_vectors");
+    demo_sequence_of_shape_free(&returned);
+    DemoOptionF64 radius = demo_radius_if_circle(circle_view);
+    CHECK(radius.has_value && radius.value == 2.0, "case:options.complex.shape.should_return_radius_for_circle");
+    CHECK(!demo_radius_if_circle(rectangle).has_value, "case:options.complex.shape.should_return_none_for_non_circle");
+    return true;
+}
+
+bool test_messages(void) {
+    const DemoMessageView text = {.tag = DEMO_MESSAGE_TEXT, .data.text = {{"hello", 5}}};
+    DemoMessage returned = demo_echo_message(text);
+    CHECK(returned.tag == DEMO_MESSAGE_TEXT && returned.data.text.body.len == 5 && memcmp(returned.data.text.body.ptr, "hello", 5) == 0, "case:enums.data_enum.message.text.should_roundtrip_string_payload");
+    demo_message_free(&returned);
+    DemoString summary = demo_message_summary(text);
+    CHECK(summary.len == 11 && memcmp(summary.ptr, "text: hello", 11) == 0, "case:enums.data_enum.message.text.should_render_text_summary");
+    demo_string_free(&summary);
+    const DemoMessageView image = {.tag = DEMO_MESSAGE_IMAGE, .data.image = {{"https://a", 9}, 640, 480}};
+    returned = demo_echo_message(image);
+    CHECK(returned.tag == DEMO_MESSAGE_IMAGE && returned.data.image.url.len == 9 && memcmp(returned.data.image.url.ptr, "https://a", 9) == 0 && returned.data.image.width == 640 && returned.data.image.height == 480, "case:enums.data_enum.message.image.should_roundtrip_url_dimensions_payload");
+    demo_message_free(&returned);
+    summary = demo_message_summary(image);
+    const char image_description[] = "image: 640x480 at https://a";
+    CHECK(summary.len == sizeof(image_description) - 1 && memcmp(summary.ptr, image_description, summary.len) == 0, "case:enums.data_enum.message.image.should_render_image_summary");
+    demo_string_free(&summary);
+    const DemoMessageView ping = {.tag = DEMO_MESSAGE_PING};
+    returned = demo_echo_message(ping);
+    CHECK(returned.tag == DEMO_MESSAGE_PING, "case:enums.data_enum.message.ping.should_roundtrip_unit_variant");
+    demo_message_free(&returned);
+    summary = demo_message_summary(ping);
+    CHECK(summary.len == 4 && memcmp(summary.ptr, "ping", 4) == 0, "case:enums.data_enum.message.ping.should_render_ping_summary");
+    demo_string_free(&summary);
+    return true;
+}
+
+bool test_animals(void) {
+    const DemoAnimalView dog = {.tag = DEMO_ANIMAL_DOG, .data.dog = {{"Rex", 3}, {"collie", 6}}};
+    DemoAnimal returned = demo_echo_animal(dog);
+    CHECK(returned.tag == DEMO_ANIMAL_DOG && returned.data.dog.name.len == 3 && memcmp(returned.data.dog.name.ptr, "Rex", 3) == 0 && returned.data.dog.breed.len == 6 && memcmp(returned.data.dog.breed.ptr, "collie", 6) == 0, "case:enums.data_enum.animal.dog.should_roundtrip_string_payloads");
+    demo_animal_free(&returned);
+    CHECK_STRING(demo_animal_name(dog), "Rex", "case:enums.data_enum.animal.dog.should_derive_name");
+    const DemoAnimalView cat = {.tag = DEMO_ANIMAL_CAT, .data.cat = {{"Milo", 4}, true}};
+    returned = demo_echo_animal(cat);
+    CHECK(returned.tag == DEMO_ANIMAL_CAT && returned.data.cat.name.len == 4 && memcmp(returned.data.cat.name.ptr, "Milo", 4) == 0 && returned.data.cat.indoor, "case:enums.data_enum.animal.cat.should_roundtrip_name_and_bool_payload");
+    demo_animal_free(&returned);
+    CHECK_STRING(demo_animal_name(cat), "Milo", "case:enums.data_enum.animal.cat.should_derive_name");
+    const DemoAnimalView fish = {.tag = DEMO_ANIMAL_FISH, .data.fish = {42}};
+    returned = demo_echo_animal(fish);
+    CHECK(returned.tag == DEMO_ANIMAL_FISH && returned.data.fish.count == 42, "case:enums.data_enum.animal.fish.should_roundtrip_count_payload");
+    demo_animal_free(&returned);
+    CHECK_STRING(demo_animal_name(fish), "42 fish", "case:enums.data_enum.animal.fish.should_derive_count_label");
+    DemoLifecycleEvent event = demo_echo_lifecycle_event((DemoLifecycleEvent){.tag = DEMO_LIFECYCLE_EVENT_TASK_STARTED, .data.task_started = {DEMO_PRIORITY_HIGH, 42}});
+    CHECK(event.tag == DEMO_LIFECYCLE_EVENT_TASK_STARTED && event.data.task_started.priority == DEMO_PRIORITY_HIGH && event.data.task_started.id == 42, "case:enums.data_enum.lifecycle_event.should_roundtrip_priority_payload");
+    event = demo_echo_lifecycle_event((DemoLifecycleEvent){.tag = DEMO_LIFECYCLE_EVENT_TICK});
+    CHECK(event.tag == DEMO_LIFECYCLE_EVENT_TICK, "case:enums.data_enum.lifecycle_event.should_roundtrip_tick_variant");
+    event = demo_make_critical_lifecycle_event(-42);
+    CHECK(event.tag == DEMO_LIFECYCLE_EVENT_TASK_STARTED && event.data.task_started.priority == DEMO_PRIORITY_CRITICAL && event.data.task_started.id == -42, "case:enums.data_enum.lifecycle_event.should_make_critical_event");
+    DemoOptionApiResult result = demo_find_api_result(0);
+    CHECK(result.has_value && result.value.tag == DEMO_API_RESULT_SUCCESS, "case:options.complex.api_result.should_find_success_variant");
+    result = demo_find_api_result(1);
+    CHECK(result.has_value && result.value.tag == DEMO_API_RESULT_ERROR_CODE && result.value.data.error_code.field_0 == -1, "case:options.complex.api_result.should_find_error_code_variant");
+    result = demo_find_api_result(2);
+    CHECK(result.has_value && result.value.tag == DEMO_API_RESULT_ERROR_WITH_DATA && result.value.data.error_with_data.code == -1 && result.value.data.error_with_data.detail == -2, "case:options.complex.api_result.should_find_error_with_data_variant");
+    CHECK(!demo_find_api_result(99).has_value, "case:options.complex.api_result.should_return_none_for_unknown_code");
+    return true;
+}
+
+bool test_filters(void) {
+    DemoFilter returned = demo_echo_filter((DemoFilterView){.tag = DEMO_FILTER_NONE});
+    CHECK(returned.tag == DEMO_FILTER_NONE, "case:enums.complex_variants.filter.none.should_roundtrip_unit_variant");
+    demo_filter_free(&returned);
+    const DemoFilterView named = {.tag = DEMO_FILTER_BY_NAME, .data.by_name = {{"Ali", 3}}};
+    returned = demo_echo_filter(named);
+    CHECK(returned.tag == DEMO_FILTER_BY_NAME && returned.data.by_name.name.len == 3 && memcmp(returned.data.by_name.name.ptr, "Ali", 3) == 0, "case:enums.complex_variants.filter.by_name.should_roundtrip_string_payload");
+    demo_filter_free(&returned);
+    CHECK_STRING(demo_describe_filter(named), "filter by name: Ali", "case:enums.complex_variants.filter.by_name.should_describe_string_payload");
+    const DemoFilterView range = {.tag = DEMO_FILTER_BY_RANGE, .data.by_range = {-2.5, 3.5}};
+    CHECK_STRING(demo_describe_filter(range), "filter by range: -2.5..3.5", "case:enums.complex_variants.filter.by_range.should_describe_numeric_bounds");
+    const DemoStringView tags[] = {{"one", 3}, {"two", 3}};
+    const DemoFilterView tagged = {.tag = DEMO_FILTER_BY_TAGS, .data.by_tags = {{tags, 2}}};
+    returned = demo_echo_filter(tagged);
+    CHECK(returned.tag == DEMO_FILTER_BY_TAGS && returned.data.by_tags.tags.len == 2 && returned.data.by_tags.tags.ptr[0].len == 3 && memcmp(returned.data.by_tags.tags.ptr[0].ptr, "one", 3) == 0 && returned.data.by_tags.tags.ptr[1].len == 3 && memcmp(returned.data.by_tags.tags.ptr[1].ptr, "two", 3) == 0, "case:enums.complex_variants.filter.by_tags.should_roundtrip_string_vector_payload");
+    demo_filter_free(&returned);
+    CHECK_STRING(demo_describe_filter(tagged), "filter by 2 tags", "case:enums.complex_variants.filter.by_tags.should_describe_string_vector_payload");
+    const DemoStringSlice groups[] = {{tags, 2}, {NULL, 0}};
+    const DemoFilterView grouped = {.tag = DEMO_FILTER_BY_GROUPS, .data.by_groups = {{groups, 2}}};
+    returned = demo_echo_filter(grouped);
+    CHECK(returned.tag == DEMO_FILTER_BY_GROUPS && returned.data.by_groups.groups.len == 2 && returned.data.by_groups.groups.ptr[0].len == 2 && returned.data.by_groups.groups.ptr[0].ptr[0].len == 3 && memcmp(returned.data.by_groups.groups.ptr[0].ptr[0].ptr, "one", 3) == 0 && returned.data.by_groups.groups.ptr[1].len == 0, "case:enums.complex_variants.filter.by_groups.should_roundtrip_nested_string_vectors");
+    demo_filter_free(&returned);
+    CHECK_STRING(demo_describe_filter(grouped), "filter by 2 groups", "case:enums.complex_variants.filter.by_groups.should_describe_nested_string_vectors");
+    const DemoPoint points[] = {{1, 2}, {3, 4}};
+    const DemoFilterView anchored = {.tag = DEMO_FILTER_BY_POINTS, .data.by_points = {{points, 2}}};
+    returned = demo_echo_filter(anchored);
+    CHECK(returned.tag == DEMO_FILTER_BY_POINTS && returned.data.by_points.anchors.len == 2 && returned.data.by_points.anchors.ptr[0].x == 1 && returned.data.by_points.anchors.ptr[1].y == 4, "case:enums.complex_variants.filter.by_points.should_roundtrip_record_vector_payload");
+    demo_filter_free(&returned);
+    CHECK_STRING(demo_describe_filter(anchored), "filter by 2 anchor points", "case:enums.complex_variants.filter.by_points.should_describe_record_vector_payload");
+    const DemoApiResponseView success = {.tag = DEMO_API_RESPONSE_SUCCESS, .data.success = {{"ok", 2}}};
+    DemoApiResponse response = demo_echo_api_response(success);
+    CHECK(response.tag == DEMO_API_RESPONSE_SUCCESS && response.data.success.data.len == 2 && memcmp(response.data.success.data.ptr, "ok", 2) == 0, "case:enums.complex_variants.api_response.success.should_roundtrip_string_payload");
+    demo_api_response_free(&response);
+    CHECK(demo_is_success(success), "case:enums.complex_variants.api_response.success.should_identify_success");
+    CHECK(!demo_is_success((DemoApiResponseView){.tag = DEMO_API_RESPONSE_EMPTY}), "case:enums.complex_variants.api_response.empty.should_not_identify_as_success");
+    response = demo_echo_api_response((DemoApiResponseView){.tag = DEMO_API_RESPONSE_REDIRECT, .data.redirect = {{"https://a", 9}}});
+    CHECK(response.tag == DEMO_API_RESPONSE_REDIRECT && response.data.redirect.url.len == 9 && memcmp(response.data.redirect.url.ptr, "https://a", 9) == 0, "case:enums.complex_variants.api_response.redirect.should_roundtrip_url_payload");
+    demo_api_response_free(&response);
+    return true;
+}

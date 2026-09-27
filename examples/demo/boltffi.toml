@@ -64,3 +64,7 @@ output = "../platforms/python/dist"
 [targets.csharp]
 enabled = true
 output = "../platforms/csharp/dist"
+
+[targets.c]
+enabled = true
+output = "../platforms/c/generated"

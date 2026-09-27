@@ -9,10 +9,11 @@ interface Props {
   csharp?: string;
   typescript?: string;
   python?: string;
+  c?: string;
   title?: string;
 }
 
-const { rust, swift, kotlin, java, csharp, typescript, python, title } = Astro.props;
+const { rust, swift, kotlin, java, csharp, typescript, python, c, title } = Astro.props;
 ---
 
 <CodeComparison
@@ -23,6 +24,7 @@ const { rust, swift, kotlin, java, csharp, typescript, python, title } = Astro.p
   csharp={csharp}
   typescript={typescript}
   python={python}
+  c={c}
   title={title}
   client:load
 />

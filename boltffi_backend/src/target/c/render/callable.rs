@@ -7,8 +7,8 @@ use crate::{
     target::c::name_style::Name,
 };
 use boltffi_binding::{
-    ErrorChannel, ErrorPlacement, ExportedCallable, HandleTarget, Native, ParamPlan, Primitive,
-    Receive, ReturnPlan, TypeRef,
+    ErrorChannel, ErrorPlacement, ExportedCallable, HandlePresence, HandleTarget, Native,
+    ParamPlan, Primitive, Receive, ReturnPlan, TypeRef,
 };
 
 pub enum Receiver<'a> {
@@ -17,12 +17,12 @@ pub enum Receiver<'a> {
         c_type: &'a str,
         receive: Receive,
     },
-    EncodedRecord {
-        c_type: &'a str,
-        id: boltffi_binding::RecordId,
+    Encoded {
+        ty: TypeRef,
+        codec: &'a boltffi_binding::ReadPlan,
         receive: Receive,
     },
-    DirectRecord {
+    DirectValue {
         c_type: &'a str,
         receive: Receive,
     },
@@ -39,14 +39,30 @@ pub fn render(
     if callable.execution().uses_async_execution() {
         return unsupported("async callable");
     }
-    let mut state = State::new(abi, context);
+    let parameters = callable
+        .params()
+        .iter()
+        .map(|parameter| {
+            let name = c::Identifier::escape(Name::new(parameter.name()).member())?.to_string();
+            let plan = parameter
+                .payload()
+                .as_value()
+                .ok_or(Error::UnsupportedTarget {
+                    target: "c",
+                    shape: "closure callable parameter",
+                })?;
+            Ok((name, plan))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let mut state = State::new(
+        abi,
+        context,
+        parameters.iter().map(|(name, _)| name.clone()).collect(),
+    );
     state.receiver(receiver)?;
-    for param in callable.params() {
-        let Some(plan) = param.payload().as_value() else {
-            return unsupported("closure callable parameter");
-        };
-        state.param(Name::new(param.name()).member(), plan)?;
-    }
+    parameters
+        .into_iter()
+        .try_for_each(|(name, plan)| state.param(name, plan))?;
     let params = if state.params.is_empty() {
         "void".to_owned()
     } else {
@@ -61,14 +77,15 @@ pub fn render(
         ErrorChannel::Status => return unsupported("status-channel semantic callable"),
         ErrorChannel::Encoded {
             placement: ErrorPlacement::ReturnSlot,
-            ty: TypeRef::String,
+            ty,
+            codec,
             ..
         } => state.render_result(
             callable.returns().plan(),
             wrapper_name,
             result_stem,
-            &params,
-            &args,
+            ty,
+            codec,
         )?,
         ErrorChannel::Encoded { .. } => return unsupported("fallible callable error shape"),
         _ => return unsupported("unknown callable error channel"),
@@ -89,12 +106,16 @@ struct State<'a> {
     next: usize,
 }
 impl<'a> State<'a> {
-    fn new(abi: &'a c::Function, context: &'a RenderContext<'a, Native>) -> Self {
+    fn new(
+        abi: &'a c::Function,
+        context: &'a RenderContext<'a, Native>,
+        param_names: Vec<String>,
+    ) -> Self {
         Self {
             abi,
             context,
             params: vec![],
-            param_names: vec![],
+            param_names,
             args: vec![],
             setup: vec![],
             cleanup: vec![],
@@ -131,21 +152,25 @@ impl<'a> State<'a> {
                 self.params.push(format!("{q}{c_type} *receiver"));
                 self.param_names.push("receiver".to_owned());
                 self.args.push("receiver->_boltffi_handle".into());
-            }
-            Receiver::EncodedRecord {
-                c_type,
-                id,
-                receive,
-            } => {
-                if receive == Receive::ByMutRef {
-                    return unsupported("mutable encoded record receiver");
+                if receive == Receive::ByValue {
+                    self.cleanup
+                        .push("receiver->_boltffi_handle = 0;".to_owned());
                 }
-                let q = "const ";
-                self.params.push(format!("{q}{c_type} *receiver"));
-                self.param_names.push("receiver".to_owned());
-                self.pack_record("receiver", id, true)?;
             }
-            Receiver::DirectRecord { c_type, receive } => match receive {
+            Receiver::Encoded { ty, codec, receive } => {
+                if receive == Receive::ByMutRef {
+                    return self.mutable_encoded("receiver", &ty, &codec.write_self_value());
+                }
+                let c_type = surface::value_type(&ty, self.context, surface::ValueUse::Param)?;
+                self.params.push(format!("const {c_type} *receiver"));
+                self.param_names.push("receiver".to_owned());
+                self.pack_encoded(
+                    "(*receiver)",
+                    &codec.write_self_value(),
+                    surface::ValueUse::Param,
+                )?;
+            }
+            Receiver::DirectValue { c_type, receive } => match receive {
                 Receive::ByRef => {
                     self.params.push(format!("const {c_type} *receiver"));
                     self.param_names.push("receiver".to_owned());
@@ -156,7 +181,12 @@ impl<'a> State<'a> {
                     self.param_names.push("receiver".to_owned());
                     self.args.push("receiver".into())
                 }
-                Receive::ByMutRef => return unsupported("mutable direct record receiver"),
+                Receive::ByMutRef => {
+                    self.params.push(format!("{c_type} *receiver"));
+                    self.param_names.push("receiver".to_owned());
+                    self.args.push("*receiver".to_owned());
+                    self.args.push("receiver".to_owned());
+                }
                 _ => return unsupported("unknown receiver"),
             },
         }
@@ -167,7 +197,6 @@ impl<'a> State<'a> {
         name: String,
         plan: &ParamPlan<Native, boltffi_binding::IntoRust>,
     ) -> Result<()> {
-        self.param_names.push(name.clone());
         match plan {
             ParamPlan::Direct { ty, receive } => {
                 let c = surface::direct_value_type(ty, self.context)?;
@@ -177,7 +206,8 @@ impl<'a> State<'a> {
                         self.args.push(name)
                     }
                     (boltffi_binding::DirectValueType::Record(_), Receive::ByMutRef) => {
-                        return unsupported("mutable direct record parameter");
+                        self.params.push(format!("{c} *{name}"));
+                        self.args.push(name);
                     }
                     _ => {
                         self.params.push(format!("{c} {name}"));
@@ -185,42 +215,25 @@ impl<'a> State<'a> {
                     }
                 }
             }
-            ParamPlan::Encoded { ty, receive, .. } => {
+            ParamPlan::Encoded {
+                ty, codec, receive, ..
+            } => {
                 if *receive == Receive::ByMutRef {
-                    return unsupported("mutable encoded parameter");
+                    return self.mutable_encoded(&name, ty, codec);
                 }
-                match ty {
-                    TypeRef::String | TypeRef::Bytes => {
-                        let c = surface::value_type(ty, self.context, surface::ValueUse::Param)?;
-                        self.params.push(format!("{c} {name}"));
-                        self.pack_view(&name);
-                    }
-                    TypeRef::Record(id) => {
-                        let c = surface::value_type(ty, self.context, surface::ValueUse::Param)?;
-                        let by_ptr = *receive == Receive::ByRef;
-                        self.params.push(if by_ptr {
-                            format!("const {c} *{name}")
-                        } else {
-                            format!("{c} {name}")
-                        });
-                        self.pack_record(&name, *id, by_ptr)?;
-                    }
-                    TypeRef::Optional(inner) if **inner == TypeRef::String => {
-                        let c = surface::value_type(ty, self.context, surface::ValueUse::Param)?;
-                        self.params.push(format!("{c} {name}"));
-                        self.pack_option_string(&name);
-                    }
-                    TypeRef::Sequence(element) => {
-                        let c = surface::value_type(ty, self.context, surface::ValueUse::Param)?;
-                        self.params.push(format!("{c} {name}"));
-                        self.pack_sequence(&name, element)?;
-                    }
-                    _ => return unsupported("encoded callable parameter"),
-                }
+                let c_type = surface::value_type(ty, self.context, surface::ValueUse::Param)?;
+                let borrowed_record =
+                    *receive == Receive::ByRef && matches!(ty, TypeRef::Record(_));
+                let value = if borrowed_record {
+                    self.params.push(format!("const {c_type} *{name}"));
+                    format!("(*{name})")
+                } else {
+                    self.params.push(format!("{c_type} {name}"));
+                    name
+                };
+                self.pack_encoded(&value, codec, surface::ValueUse::Param)?;
             }
-            ParamPlan::ScalarOption { primitive }
-                if matches!(primitive, Primitive::U32 | Primitive::F32) =>
-            {
+            ParamPlan::ScalarOption { primitive } => {
                 let c = surface::value_type(
                     &TypeRef::Optional(Box::new(TypeRef::Primitive(*primitive))),
                     self.context,
@@ -263,183 +276,165 @@ impl<'a> State<'a> {
             }
             ParamPlan::Handle {
                 target: HandleTarget::Callback(id),
+                receive,
+                presence,
                 ..
             } => {
-                let c = super::callback::handle_type_name(*id, self.context)?;
-                self.params.push(format!("{c} {name}"));
-                self.args.push(format!("{name}.raw"));
+                let c_type = super::callback::handle_type_name(*id, self.context)?;
+                let qualifier = if *receive == Receive::ByValue {
+                    ""
+                } else {
+                    "const "
+                };
+                self.params.push(format!("{qualifier}{c_type} *{name}"));
+                self.args.push(if *presence == HandlePresence::Nullable {
+                    format!("{name} == NULL ? (BoltFFICallbackHandle){{0}} : {name}->raw")
+                } else {
+                    format!("{name}->raw")
+                });
+                if *receive == Receive::ByValue {
+                    self.cleanup.push(format!(
+                        "if ({name} != NULL) memset(&{name}->raw, 0, sizeof({name}->raw));"
+                    ));
+                }
             }
             ParamPlan::Handle {
                 target: HandleTarget::Class(id),
                 receive,
+                presence,
                 ..
             } => {
                 let class = self.context.class(*id).ok_or(Error::BrokenBridgeContract {
                     bridge: "c",
                     invariant: "missing class parameter",
                 })?;
-                let c = PackagePrefix::from_context(self.context)
-                    .type_name(&Name::new(class.name()).r#type());
-                if *receive == Receive::ByValue {
-                    // Ownership transfers to the Rust side, which frees the
-                    // handle after the call; invalidate the caller's copy.
-                    self.params.push(format!("{c} *{name}"));
+                let c = PackagePrefix::from_context(self.context).type_name(class.name());
+                let nullable = *presence == HandlePresence::Nullable;
+                if nullable {
+                    self.args
+                        .push(format!("{name} == NULL ? 0 : {name}->_boltffi_handle"));
+                } else {
                     self.args.push(format!("{name}->_boltffi_handle"));
-                    self.cleanup
-                        .push(format!("    {name}->_boltffi_handle = 0;"));
+                }
+                if *receive == Receive::ByValue {
+                    self.params.push(format!("{c} *{name}"));
+                    self.cleanup.push(if nullable {
+                        format!("    if ({name} != NULL) {name}->_boltffi_handle = 0;")
+                    } else {
+                        format!("    {name}->_boltffi_handle = 0;")
+                    });
                 } else {
                     self.params.push(format!("const {c} *{name}"));
-                    self.args.push(format!("{name}->_boltffi_handle"));
                 }
             }
             _ => return unsupported("callable parameter plan"),
         }
         Ok(())
     }
-    fn pack_record(
+    fn mutable_encoded(
         &mut self,
         name: &str,
-        id: boltffi_binding::RecordId,
-        is_ptr: bool,
+        ty: &TypeRef,
+        codec: &boltffi_binding::WritePlan,
     ) -> Result<()> {
-        if !matches!(
-            self.context.record(id),
-            Some(boltffi_binding::RecordDecl::Encoded(_))
-        ) {
-            return unsupported("encoded parameter references direct record");
+        if self
+            .abi
+            .params()
+            .get(self.args.len())
+            .is_some_and(|parameter| matches!(parameter.ty(), c::Type::MutPointer(_)))
+        {
+            let slice = surface::direct_vector_type(
+                &boltffi_binding::DirectVectorElementType::Primitive(
+                    boltffi_binding::DirectVectorPrimitive::writable_bytes(),
+                ),
+                self.context,
+                surface::ValueUse::ParamMut,
+            )?;
+            self.params.push(format!("{slice} {name}"));
+            self.args.push(format!("{name}.ptr"));
+            self.args.push(format!("{name}.len"));
+            return Ok(());
         }
-        let size = self.local("size");
-        let buf = self.local("buf");
-        let writer = self.local("writer");
-        let value = if is_ptr {
-            name.to_owned()
-        } else {
-            format!("&{name}")
-        };
-        self.setup.push(format!(
-            "    uintptr_t {size} = {}({value});",
-            surface::record_helper_name(id, self.context, "size")?
+        let owned_type = surface::value_type(ty, self.context, surface::ValueUse::Return)?;
+        self.params.push(format!("{owned_type} *{name}"));
+        self.pack_encoded(&format!("(*{name})"), codec, surface::ValueUse::Return)?;
+        let raw = self.local("writeback");
+        let updated = self.local("updated");
+        let reader_name = self.local("reader");
+        self.setup.push(format!("FfiBuf_u8 {raw} = {{0}};"));
+        self.args.push(format!("&{raw}"));
+        let mut reader =
+            crate::target::c::codec::read::Reader::new(self.context, format!("&{reader_name}"));
+        let decode = reader.decode(&codec.read_plan(), &updated)?;
+        let free_original = surface::free_owned(ty, &format!("(*{name})"), self.context)?;
+        let free_updated = surface::free_owned(ty, &updated, self.context)?;
+        self.cleanup.push(format!(
+            "{owned_type} {updated} = {{0}};\n\
+            BoltFFICWireReader {reader_name} = {{{raw}.ptr, {raw}.len, 0, true}};\n\
+            {{\n{decode}\n}}\n\
+            if ({reader_name}.ok && {reader_name}.offset == {reader_name}.len) {{\n\
+                {free_original}\n*{name} = {updated};\n\
+            }} else {{\n{free_updated}\n}}\nboltffi_free_buf({raw});"
         ));
-        self.setup.push(format!(
-            "    FfiBuf_u8 {buf} = boltffi_buf_with_len({size});"
-        ));
-        self.setup.push(format!(
-            "    BoltFFICWireWriter {writer} = {{ {buf}.ptr, {buf}.len, 0, true }};"
-        ));
-        self.setup.push(format!(
-            "    {}(&{writer}, {value});",
-            surface::record_helper_name(id, self.context, "encode")?
-        ));
-        self.args.push(format!("{buf}.ptr"));
-        self.args.push(format!("{buf}.len"));
-        self.cleanup.push(format!("    boltffi_free_buf({buf});"));
         Ok(())
     }
-    fn pack_view(&mut self, name: &str) {
-        let buf = self.local("buf");
-        let writer = self.local("writer");
-        let p = package_member(self.context);
-        self.setup.push(format!(
-            "    FfiBuf_u8 {buf}=boltffi_buf_with_len(4+{name}.len);"
-        ));
-        self.setup.push(format!(
-            "    BoltFFICWireWriter {writer}={{{buf}.ptr,{buf}.len,0,true}};"
-        ));
-        self.setup.push(format!("    boltffi_c_{p}_write_u32(&{writer},(uint32_t){name}.len); boltffi_c_{p}_write(&{writer},{name}.ptr,{name}.len);"));
-        self.args.push(format!("{buf}.ptr"));
-        self.args.push(format!("{buf}.len"));
-        self.cleanup.push(format!("    boltffi_free_buf({buf});"));
-    }
-    fn pack_sequence(&mut self, name: &str, element: &TypeRef) -> Result<()> {
-        let size = self.local("size");
-        let i = self.local("i");
-        let buf = self.local("buf");
-        let writer = self.local("writer");
-        let p = package_member(self.context);
-        let element_size = match element {
-            TypeRef::Primitive(v) => format!(
-                "{}",
-                match v {
-                    Primitive::Bool | Primitive::I8 | Primitive::U8 => 1,
-                    Primitive::I16 | Primitive::U16 => 2,
-                    Primitive::I32 | Primitive::U32 | Primitive::F32 => 4,
-                    _ => 8,
-                }
-            ),
-            TypeRef::String | TypeRef::Bytes => format!("4 + {name}.ptr[{i}].len"),
-            TypeRef::Record(id)
-                if matches!(
-                    self.context.record(*id),
-                    Some(boltffi_binding::RecordDecl::Direct(_))
-                ) =>
-            {
-                format!(
-                    "sizeof({})",
-                    surface::value_type(element, self.context, surface::ValueUse::Field)?
-                )
-            }
-            TypeRef::Record(id) => format!(
-                "{}(&{name}.ptr[{i}])",
-                surface::record_helper_name(*id, self.context, "size")?
-            ),
-            _ => return unsupported("encoded sequence parameter element"),
-        };
-        self.setup.push(format!("    uintptr_t {size}=4; for (uintptr_t {i}=0; {i}<{name}.len; ++{i}) {size}+={element_size};"));
-        self.setup.push(format!("    FfiBuf_u8 {buf}=boltffi_buf_with_len({size}); BoltFFICWireWriter {writer}={{{buf}.ptr,{buf}.len,0,true}}; boltffi_c_{p}_write_u32(&{writer},(uint32_t){name}.len);"));
-        match element {
-            TypeRef::String | TypeRef::Bytes => self.setup.push(format!("    for (uintptr_t {i}=0; {i}<{name}.len; ++{i}) {{ boltffi_c_{p}_write_u32(&{writer},(uint32_t){name}.ptr[{i}].len); boltffi_c_{p}_write(&{writer},{name}.ptr[{i}].ptr,{name}.ptr[{i}].len); }}")),
-            TypeRef::Primitive(v) => {
-                let write = surface::wire_write_stmt(*v, &format!("{name}.ptr[{i}]"), &p);
-                self.setup
-                    .push(format!("    for (uintptr_t {i}=0; {i}<{name}.len; ++{i}) {write}"));
-            }
-            TypeRef::Record(id) if matches!(self.context.record(*id),Some(boltffi_binding::RecordDecl::Encoded(_)))=>self.setup.push(format!("    for (uintptr_t {i}=0; {i}<{name}.len; ++{i}) {}(&{writer},&{name}.ptr[{i}]);",surface::record_helper_name(*id,self.context,"encode")?)),
-            _=>self.setup.push(format!("    boltffi_c_{p}_write(&{writer},{name}.ptr,{name}.len*({element_size}));"))
+    fn pack_encoded(
+        &mut self,
+        value: &str,
+        codec: &boltffi_binding::WritePlan,
+        usage: surface::ValueUse,
+    ) -> Result<()> {
+        if matches!(
+            codec.root().owned_wire_encoding(),
+            boltffi_binding::OwnedWireEncoding::Utf8String
+                | boltffi_binding::OwnedWireEncoding::RawBytes
+        ) {
+            self.args.push(format!("(const uint8_t *)({value}).ptr"));
+            self.args.push(format!("({value}).len"));
+            return Ok(());
         }
-        self.args.push(format!("{buf}.ptr"));
-        self.args.push(format!("{buf}.len"));
-        self.cleanup.push(format!("    boltffi_free_buf({buf});"));
+        let size = self.local("size");
+        let buffer = self.local("buffer");
+        let writer_name = self.local("writer");
+        let mut sizer = crate::target::c::codec::size::Sizer::new(self.context, value, usage);
+        let size_statements = sizer.measure(codec, &size)?;
+        let mut writer = crate::target::c::codec::write::Writer::new(
+            self.context,
+            format!("&{writer_name}"),
+            value,
+            usage,
+        );
+        let encode = writer.encode(codec)?;
+        self.setup.push(format!(
+            "uintptr_t {size} = 0;\n{{\n{size_statements}\n}}\n\
+             FfiBuf_u8 {buffer} = boltffi_buf_with_len({size});\n\
+             BoltFFICWireWriter {writer_name} = {{{buffer}.ptr, {buffer}.len, 0, true}};\n\
+             {{\n{encode}\n}}"
+        ));
+        self.args.push(format!("{buffer}.ptr"));
+        self.args.push(format!("{buffer}.len"));
+        self.cleanup.push(format!("boltffi_free_buf({buffer});"));
         Ok(())
     }
     fn pack_scalar_option(&mut self, name: &str, primitive: Primitive) {
         let buf = self.local("buf");
         let writer = self.local("writer");
         let p = package_member(self.context);
+        let present_size = 1 + primitive.wire_size().get();
+        self.setup
+            .push(format!("    uint8_t {buf}[{present_size}];"));
         self.setup.push(format!(
-            "    FfiBuf_u8 {buf}=boltffi_buf_with_len({name}.has_value ? 5 : 1);"
-        ));
-        self.setup.push(format!(
-            "    BoltFFICWireWriter {writer}={{{buf}.ptr,{buf}.len,0,true}};"
+            "    BoltFFICWireWriter {writer}={{{buf},sizeof({buf}),0,true}};"
         ));
         self.setup.push(format!(
             "    boltffi_c_{p}_write_u8(&{writer},{name}.has_value ? 1 : 0);"
         ));
-        let value_write = match primitive {
-            Primitive::U32 => format!("boltffi_c_{p}_write_u32(&{writer},{name}.value);"),
-            Primitive::F32 => format!("boltffi_c_{p}_write_f32(&{writer},{name}.value);"),
-            _ => return,
-        };
+        let value_write = surface::wire_write_stmt(primitive, &format!("{name}.value"), &p)
+            .replace("boltffi_writer", &format!("&{writer}"));
         self.setup
             .push(format!("    if ({name}.has_value) {value_write}"));
-        self.args.push(format!("{buf}.ptr"));
-        self.args.push(format!("{buf}.len"));
-        self.cleanup.push(format!("    boltffi_free_buf({buf});"));
-    }
-    fn pack_option_string(&mut self, name: &str) {
-        let buf = self.local("buf");
-        let writer = self.local("writer");
-        let p = package_member(self.context);
-        self.setup.push(format!("    FfiBuf_u8 {buf}=boltffi_buf_with_len(1 + ({name}.has_value ? 4 + {name}.value.len : 0));"));
-        self.setup.push(format!(
-            "    BoltFFICWireWriter {writer}={{{buf}.ptr,{buf}.len,0,true}};"
-        ));
-        self.setup.push(format!(
-            "    boltffi_c_{p}_write_u8(&{writer},{name}.has_value ? 1 : 0);"
-        ));
-        self.setup.push(format!("    if ({name}.has_value) {{ boltffi_c_{p}_write_u32(&{writer},(uint32_t){name}.value.len); boltffi_c_{p}_write(&{writer},{name}.value.ptr,{name}.value.len); }}"));
-        self.args.push(format!("{buf}.ptr"));
-        self.args.push(format!("{buf}.len"));
-        self.cleanup.push(format!("    boltffi_free_buf({buf});"));
+        self.args.push(buf);
+        self.args.push(format!("{writer}.offset"));
     }
     fn render_infallible(
         &mut self,
@@ -465,7 +460,7 @@ impl<'a> State<'a> {
             ReturnPlan::DirectViaReturnSlot { .. } => {
                 let result = self.reserved_local("result");
                 b.push_str(&format!(
-                    "    {semantic} {result} = ({semantic}){}({args});\n",
+                    "    {semantic} {result} = {}({args});\n",
                     self.abi.name()
                 ));
                 for l in &self.cleanup {
@@ -474,13 +469,16 @@ impl<'a> State<'a> {
                 }
                 b.push_str(&format!("    return {result};\n"))
             }
-            ReturnPlan::HandleViaReturnSlot {
-                target: HandleTarget::Class(_),
-                ..
-            } => {
+            ReturnPlan::HandleViaReturnSlot { carrier, .. } => {
                 let result = self.reserved_local("result");
+                let field = match carrier {
+                    boltffi_binding::native::HandleCarrier::U64
+                    | boltffi_binding::native::HandleCarrier::USize => "_boltffi_handle",
+                    boltffi_binding::native::HandleCarrier::CallbackHandle => "raw",
+                    _ => return unsupported("returned handle carrier"),
+                };
                 b.push_str(&format!(
-                    "    {semantic} {result}; {result}._boltffi_handle = {}({args});\n",
+                    "    {semantic} {result}; {result}.{field} = {}({args});\n",
                     self.abi.name()
                 ));
                 for l in &self.cleanup {
@@ -489,7 +487,7 @@ impl<'a> State<'a> {
                 }
                 b.push_str(&format!("    return {result};\n"))
             }
-            ReturnPlan::EncodedViaReturnSlot { ty, .. } => {
+            ReturnPlan::EncodedViaReturnSlot { ty, codec, .. } => {
                 let raw = self.reserved_local("raw");
                 let result = self.reserved_local("result");
                 b.push_str(&format!(
@@ -500,20 +498,12 @@ impl<'a> State<'a> {
                     b.push_str(l);
                     b.push('\n')
                 }
-                let context = self.context;
-                b.push_str(&decode_owned(
-                    ty,
-                    &raw,
-                    &result,
-                    context,
-                    true,
-                    &mut |stem| self.reserved_local(stem),
-                )?);
+                b.push_str(&self.decode_owned(ty, codec, &raw, &result, true)?);
                 b.push_str(&format!("    return {result};\n"))
             }
             ReturnPlan::ScalarOptionViaReturnSlot {
-                primitive: scalar @ (Primitive::U32 | Primitive::F32),
-                ..
+                primitive: scalar,
+                enum_target,
             } => {
                 let p = package_member(self.context);
                 let raw = self.reserved_local("raw");
@@ -528,10 +518,13 @@ impl<'a> State<'a> {
                     b.push_str(l);
                     b.push('\n');
                 }
-                let value_read = match scalar {
-                    Primitive::U32 => format!("boltffi_c_{p}_read_u32(&{reader})"),
-                    _ => format!("boltffi_c_{p}_read_f32(&{reader})"),
-                };
+                let mut value_read = surface::wire_read_expr(*scalar, &p)
+                    .replace("boltffi_reader", &format!("&{reader}"));
+                if let Some(target) = enum_target {
+                    let enum_type =
+                        surface::value_type(target, self.context, surface::ValueUse::Return)?;
+                    value_read = format!("({enum_type}){value_read}");
+                }
                 b.push_str(&format!("    {semantic} {result}; memset(&{result},0,sizeof({result})); BoltFFICWireReader {reader}={{{raw}.ptr,{raw}.len,0,true}}; uint8_t {tag}=boltffi_c_{p}_read_u8(&{reader}); if ({tag}==1) {{ {result}.has_value=true; {result}.value={value_read}; }} boltffi_free_buf({raw}); return {result};\n"));
             }
             ReturnPlan::DirectVecViaReturnSlot { element } => {
@@ -546,7 +539,15 @@ impl<'a> State<'a> {
                     b.push('\n')
                 }
                 let elem = surface::direct_vector_element_type(element, self.context)?;
-                b.push_str(&format!("    {semantic} {result}; {result}.len={raw}.len/sizeof({elem}); {result}.ptr=({elem} *)malloc({raw}.len); if ({raw}.len) memcpy({result}.ptr,{raw}.ptr,{raw}.len); boltffi_free_buf({raw});\n    return {result};\n"));
+                b.push_str(&format!(
+                    "    {semantic} {result} = {{0}};\n\
+                    if ({raw}.len != 0 && {raw}.len % sizeof({elem}) == 0) {{\n\
+                        {result}.ptr = ({elem} *)malloc({raw}.len);\n\
+                        if ({result}.ptr != NULL) {{\n\
+                            memcpy({result}.ptr, {raw}.ptr, {raw}.len);\n\
+                            {result}.len = {raw}.len / sizeof({elem});\n\
+                        }}\n}}\nboltffi_free_buf({raw});\nreturn {result};\n"
+                ));
             }
             _ => return unsupported("callable return plan"),
         }
@@ -558,31 +559,48 @@ impl<'a> State<'a> {
         plan: &ReturnPlan<Native, boltffi_binding::OutOfRust>,
         name: &str,
         stem: &str,
-        params: &str,
-        args: &str,
+        error_type: &TypeRef,
+        error_codec: &boltffi_binding::ReadPlan,
     ) -> Result<String> {
+        let params = if self.params.is_empty() {
+            "void".to_owned()
+        } else {
+            self.params.join(", ")
+        };
+        let args = self.args.join(", ");
         let ok = return_type(plan, self.context)?;
-        let package_type_prefix = package_pascal(self.context);
+        let error_c_type =
+            surface::value_type(error_type, self.context, surface::ValueUse::Return)?;
         let result_ty = format!("{stem}Result");
         let raw_decl = raw_success_decl(plan, self.context)?;
         let success = self.reserved_local("success");
         let error = self.reserved_local("error");
         let result = self.reserved_local("result");
-        let error_reader = self.reserved_local("error_reader");
         let mut call_args = args.to_owned();
-        if !call_args.is_empty() {
-            call_args.push_str(", ")
-        }
-        call_args.push_str(&format!("&{success}"));
+        let success_field = if raw_decl.is_some() {
+            format!("{ok} value;")
+        } else {
+            String::new()
+        };
+        let success_declaration = match raw_decl {
+            Some(raw_type) => {
+                if !call_args.is_empty() {
+                    call_args.push_str(", ");
+                }
+                call_args.push_str(&format!("&{success}"));
+                format!("{raw_type} {success};")
+            }
+            None => String::new(),
+        };
         let mut b = format!(
-            "typedef struct {{ bool ok; union {{ {ok} value; {package_type_prefix}String error; }} data; }} {result_ty};\nstatic inline {result_ty} {name}({params}) {{\n"
+            "typedef struct {{ bool ok; union {{ {success_field} {error_c_type} error; }} data; }} {result_ty};\nstatic inline {result_ty} {name}({params}) {{\n"
         );
         for l in &self.setup {
             b.push_str(l);
             b.push('\n')
         }
         b.push_str(&format!(
-            "    {raw_decl} {success};\n    FfiBuf_u8 {error} = {}({call_args});\n",
+            "    {success_declaration}\n    FfiBuf_u8 {error} = {}({call_args});\n",
             self.abi.name()
         ));
         for l in &self.cleanup {
@@ -590,19 +608,74 @@ impl<'a> State<'a> {
             b.push('\n')
         }
         b.push_str(&format!("    {result_ty} {result}; memset(&{result},0,sizeof({result}));\n    if ({error}.len == 0) {{ {result}.ok=true;\n"));
-        let context = self.context;
-        b.push_str(&decode_success(
-            plan,
-            &success,
-            &format!("{result}.data.value"),
-            context,
-            &mut |stem| self.reserved_local(stem),
+        b.push_str(&self.decode_success(plan, &success, &format!("{result}.data.value"))?);
+        b.push_str(&format!(
+            "        return {result};\n    }}\n    {result}.ok=false;\n"
+        ));
+        b.push_str(&self.decode_owned(
+            error_type,
+            error_codec,
+            &error,
+            &format!("{result}.data.error"),
+            false,
         )?);
-        let package = package_member(self.context);
-        b.push_str(&format!("        return {result};\n    }}\n    {result}.ok=false; BoltFFICWireReader {error_reader}={{{error}.ptr,{error}.len,0,true}}; boltffi_c_{package}_copy_string(&{error_reader},&{result}.data.error); boltffi_free_buf({error}); return {result};\n}}\n"));
+        b.push_str(&format!("    return {result};\n}}\n"));
         let free_success = free_success_stmt(plan, "value", self.context)?;
-        b.push_str(&format!("static inline void {name}_result_free({result_ty} *value) {{ if (value == NULL) return; if (value->ok) {{ {free_success} }} else {{ {package}_string_free(&value->data.error); }} memset(value,0,sizeof(*value)); }}\n"));
+        let free_error = surface::free_owned(error_type, "value->data.error", self.context)?;
+        b.push_str(&format!("static inline void {name}_result_free({result_ty} *value) {{ if (value == NULL) return; if (value->ok) {{ {free_success} }} else {{ {free_error} }} memset(value,0,sizeof(*value)); }}\n"));
         Ok(b)
+    }
+    fn decode_success(
+        &mut self,
+        plan: &ReturnPlan<Native, boltffi_binding::OutOfRust>,
+        raw: &str,
+        out: &str,
+    ) -> Result<String> {
+        match plan {
+            ReturnPlan::Void => Ok(String::new()),
+            ReturnPlan::DirectViaOutPointer { .. } => Ok(format!("        {out}={raw};\n")),
+            ReturnPlan::HandleViaOutPointer { carrier, .. } => {
+                let field = match carrier {
+                    boltffi_binding::native::HandleCarrier::U64
+                    | boltffi_binding::native::HandleCarrier::USize => "_boltffi_handle",
+                    boltffi_binding::native::HandleCarrier::CallbackHandle => "raw",
+                    _ => return unsupported("returned handle carrier"),
+                };
+                Ok(format!("        {out}.{field}={raw};\n"))
+            }
+            ReturnPlan::EncodedViaOutPointer { ty, codec, .. } => {
+                self.decode_owned(ty, codec, raw, out, false)
+            }
+            _ => unsupported("fallible success decode"),
+        }
+    }
+    fn decode_owned(
+        &mut self,
+        ty: &TypeRef,
+        codec: &boltffi_binding::ReadPlan,
+        raw: &str,
+        destination: &str,
+        declare: bool,
+    ) -> Result<String> {
+        let value_type = surface::value_type(ty, self.context, surface::ValueUse::Return)?;
+        let declaration = if declare {
+            format!("{value_type} {destination};")
+        } else {
+            String::new()
+        };
+        let reader_name = self.local("reader");
+        let mut reader =
+            crate::target::c::codec::read::Reader::new(self.context, format!("&{reader_name}"));
+        let decode = reader.decode(codec, destination)?;
+        let free = surface::free_owned(ty, destination, self.context)?;
+        Ok(format!(
+            "{declaration}\nmemset(&{destination}, 0, sizeof({destination}));\n\
+         BoltFFICWireReader {reader_name} = {{{raw}.ptr, {raw}.len, 0, true}};\n\
+         {{\n{decode}\n}}\n\
+         if (!{reader_name}.ok || {reader_name}.offset != {reader_name}.len) {{\n\
+         {free}\nmemset(&{destination}, 0, sizeof({destination}));\n}}\n\
+         boltffi_free_buf({raw});\n"
+        ))
     }
 }
 
@@ -631,16 +704,28 @@ fn return_type(
                 bridge: "c",
                 invariant: "missing returned class",
             })?;
-            Ok(PackagePrefix::from_context(context).type_name(&Name::new(c.name()).r#type()))
+            Ok(PackagePrefix::from_context(context).type_name(c.name()))
         }
-        ReturnPlan::ScalarOptionViaReturnSlot {
-            primitive: Primitive::U32,
+        ReturnPlan::HandleViaReturnSlot {
+            target: HandleTarget::Callback(id),
             ..
-        } => Ok(format!("{}OptionU32", package_pascal(context))),
-        ReturnPlan::ScalarOptionViaReturnSlot {
-            primitive: Primitive::F32,
+        }
+        | ReturnPlan::HandleViaOutPointer {
+            target: HandleTarget::Callback(id),
             ..
-        } => Ok(format!("{}OptionF32", package_pascal(context))),
+        } => super::callback::handle_type_name(*id, context),
+        ReturnPlan::ScalarOptionViaReturnSlot {
+            primitive,
+            enum_target,
+        } => surface::value_type(
+            &TypeRef::Optional(Box::new(
+                enum_target
+                    .clone()
+                    .unwrap_or(TypeRef::Primitive(*primitive)),
+            )),
+            context,
+            surface::ValueUse::Return,
+        ),
         ReturnPlan::DirectVecViaReturnSlot { element } => {
             surface::direct_vector_type(element, context, surface::ValueUse::Return)
         }
@@ -650,71 +735,28 @@ fn return_type(
 fn raw_success_decl(
     plan: &ReturnPlan<Native, boltffi_binding::OutOfRust>,
     context: &RenderContext<Native>,
-) -> Result<String> {
+) -> Result<Option<String>> {
     match plan {
-        ReturnPlan::DirectViaOutPointer { ty } => surface::direct_value_type(ty, context),
-        ReturnPlan::EncodedViaOutPointer { .. } => Ok("FfiBuf_u8".to_owned()),
-        ReturnPlan::HandleViaOutPointer { .. } => Ok("uint64_t".to_owned()),
+        ReturnPlan::Void => Ok(None),
+        ReturnPlan::DirectViaOutPointer { ty } => surface::direct_value_type(ty, context).map(Some),
+        ReturnPlan::EncodedViaOutPointer { .. } => Ok(Some("FfiBuf_u8".to_owned())),
+        ReturnPlan::HandleViaOutPointer {
+            target, carrier, ..
+        } => c::TypeFragment::anonymous(&c::Type::handle_target(target, *carrier)?)
+            .map(|ty| Some(ty.to_string())),
         _ => unsupported("fallible success transport"),
     }
 }
-fn decode_success(
-    plan: &ReturnPlan<Native, boltffi_binding::OutOfRust>,
-    raw: &str,
-    out: &str,
-    context: &RenderContext<Native>,
-    namer: &mut dyn FnMut(&str) -> String,
-) -> Result<String> {
-    match plan {
-        ReturnPlan::DirectViaOutPointer { .. } => Ok(format!(
-            "        {out}=({}){raw};\n",
-            return_type(plan, context)?
-        )),
-        ReturnPlan::HandleViaOutPointer { .. } => {
-            Ok(format!("        {out}._boltffi_handle={raw};\n"))
-        }
-        ReturnPlan::EncodedViaOutPointer { ty, .. } => {
-            decode_owned(ty, raw, out, context, false, namer)
-        }
-        _ => unsupported("fallible success decode"),
-    }
-}
+
 fn free_success_stmt(
     plan: &ReturnPlan<Native, boltffi_binding::OutOfRust>,
     field: &str,
     context: &RenderContext<Native>,
 ) -> Result<String> {
-    let p = package_member(context);
     match plan {
-        ReturnPlan::EncodedViaOutPointer {
-            ty: TypeRef::String,
-            ..
-        } => Ok(format!("{p}_string_free(&value->data.{field});")),
-        ReturnPlan::EncodedViaOutPointer {
-            ty: TypeRef::Bytes, ..
-        } => Ok(format!("{p}_bytes_free(&value->data.{field});")),
-        ReturnPlan::EncodedViaOutPointer {
-            ty: TypeRef::Record(id),
-            ..
-        } => Ok(format!(
-            "{}(&value->data.{field});",
-            surface::record_helper_name(*id, context, "free")?
-        )),
-        ReturnPlan::EncodedViaOutPointer {
-            ty: TypeRef::Sequence(element),
-            ..
-        } => match element.as_ref() {
-            TypeRef::String => Ok(format!("{p}_string_sequence_free(&value->data.{field});")),
-            TypeRef::Record(id) => Ok(format!(
-                "{p}_{}_sequence_free(&value->data.{field});",
-                Name::new(context.record(*id).expect("record").name()).member()
-            )),
-            TypeRef::Primitive(v) => Ok(format!(
-                "{p}_{}_sequence_free(&value->data.{field});",
-                primitive_member(*v)
-            )),
-            _ => unsupported("result sequence free"),
-        },
+        ReturnPlan::EncodedViaOutPointer { ty, .. } => {
+            surface::free_owned(ty, &format!("value->data.{field}"), context)
+        }
         ReturnPlan::HandleViaOutPointer {
             target: HandleTarget::Class(id),
             ..
@@ -725,100 +767,24 @@ fn free_success_stmt(
                 class.release().name().as_str()
             ))
         }
-        ReturnPlan::DirectViaOutPointer { .. } => Ok(String::new()),
+        ReturnPlan::HandleViaOutPointer {
+            target: HandleTarget::Callback(id),
+            ..
+        } => {
+            let callback = context.callback(*id).ok_or(Error::BrokenBridgeContract {
+                bridge: "c",
+                invariant: "missing returned callback",
+            })?;
+            let free = PackagePrefix::from_context(context)
+                .member(&format!("{}_free", Name::new(callback.name()).member()));
+            Ok(format!("{free}(&value->data.{field});"))
+        }
+        ReturnPlan::Void | ReturnPlan::DirectViaOutPointer { .. } => Ok(String::new()),
         _ => unsupported("result success free"),
-    }
-}
-fn primitive_member(v: Primitive) -> &'static str {
-    match v {
-        Primitive::Bool => "bool",
-        Primitive::I8 => "i8",
-        Primitive::U8 => "u8",
-        Primitive::I16 => "i16",
-        Primitive::U16 => "u16",
-        Primitive::I32 => "i32",
-        Primitive::U32 => "u32",
-        Primitive::I64 => "i64",
-        Primitive::U64 => "u64",
-        Primitive::USize => "usize",
-        Primitive::F32 => "f32",
-        Primitive::F64 => "f64",
-        _ => "unsupported",
-    }
-}
-
-pub(super) fn decode_owned(
-    ty: &TypeRef,
-    raw: &str,
-    out: &str,
-    context: &RenderContext<Native>,
-    declare: bool,
-    namer: &mut dyn FnMut(&str) -> String,
-) -> Result<String> {
-    let p = package_member(context);
-    let c = surface::value_type(ty, context, surface::ValueUse::Return)?;
-    let init = if declare {
-        format!("{c} {out}; ")
-    } else {
-        String::new()
-    };
-    let reader = namer("reader");
-    match ty {
-        TypeRef::String => Ok(format!(
-            "    {init}memset(&{out},0,sizeof({out})); BoltFFICWireReader {reader}={{{raw}.ptr,{raw}.len,0,true}}; boltffi_c_{p}_copy_string(&{reader},&{out}); boltffi_free_buf({raw});\n"
-        )),
-        TypeRef::Bytes => Ok(format!(
-            "    {init}memset(&{out},0,sizeof({out})); BoltFFICWireReader {reader}={{{raw}.ptr,{raw}.len,0,true}}; boltffi_c_{p}_copy_bytes(&{reader},&{out}); boltffi_free_buf({raw});\n"
-        )),
-        TypeRef::Record(id) => Ok(format!(
-            "    {init}BoltFFICWireReader {reader}={{{raw}.ptr,{raw}.len,0,true}}; {}(&{reader},&{out}); boltffi_free_buf({raw});\n",
-            surface::record_helper_name(*id, context, "decode")?
-        )),
-        TypeRef::Sequence(element) => {
-            let elem = surface::value_type(element, context, surface::ValueUse::Field)?;
-            let count = namer("count");
-            let index = namer("i");
-            let decode = match element.as_ref() {
-                TypeRef::String => format!(
-                    "if (!boltffi_c_{p}_copy_string(&{reader},&{out}.ptr[{index}])) {{ {p}_string_sequence_free(&{out}); break; }}"
-                ),
-                TypeRef::Primitive(v) => format!(
-                    "{out}.ptr[{index}] = {};",
-                    surface::wire_read_expr(*v, &p).replace("boltffi_reader", &reader)
-                ),
-                TypeRef::Record(id)
-                    if matches!(
-                        context.record(*id),
-                        Some(boltffi_binding::RecordDecl::Direct(_))
-                    ) =>
-                {
-                    format!("boltffi_c_{p}_read(&{reader},&{out}.ptr[{index}],sizeof({elem}));")
-                }
-                TypeRef::Record(id) => format!(
-                    "if (!{}(&{reader},&{out}.ptr[{index}])) {{ {p}_{}_sequence_free(&{out}); break; }}",
-                    surface::record_helper_name(*id, context, "decode")?,
-                    Name::new(context.record(*id).expect("record").name()).member()
-                ),
-                _ => return unsupported("owned sequence return element"),
-            };
-            Ok(format!(
-                "    {init}memset(&{out},0,sizeof({out})); BoltFFICWireReader {reader}={{{raw}.ptr,{raw}.len,0,true}}; uint32_t {count}=boltffi_c_{p}_read_u32(&{reader}); {out}.ptr=({elem} *)calloc({count},sizeof({elem})); {out}.len={count}; if ({count} && {out}.ptr == NULL) {reader}.ok=false; for (uintptr_t {index}=0; {reader}.ok && {index}<{count}; ++{index}) {{ {decode} }} boltffi_free_buf({raw});\n"
-            ))
-        }
-        TypeRef::Optional(inner) if **inner == TypeRef::String => {
-            let tag = namer("tag");
-            Ok(format!(
-                "    {init}memset(&{out},0,sizeof({out})); BoltFFICWireReader {reader}={{{raw}.ptr,{raw}.len,0,true}}; uint8_t {tag}=boltffi_c_{p}_read_u8(&{reader}); if ({tag} == 1) {{ if (!boltffi_c_{p}_copy_string(&{reader},&{out}.value)) {{ {p}_string_free(&{out}.value); }} else {{ {out}.has_value=true; }} }} else if ({tag} != 0) {{ {reader}.ok=false; }} boltffi_free_buf({raw});\n"
-            ))
-        }
-        _ => unsupported("owned encoded return"),
     }
 }
 fn package_member(context: &RenderContext<Native>) -> String {
     Name::new(context.bindings().package().name()).member()
-}
-fn package_pascal(context: &RenderContext<Native>) -> String {
-    Name::new(context.bindings().package().name()).r#type()
 }
 fn unsupported<T>(shape: &'static str) -> Result<T> {
     Err(Error::UnsupportedTarget { target: "c", shape })

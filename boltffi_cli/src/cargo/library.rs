@@ -10,6 +10,7 @@ use super::{Cargo, CargoMetadata};
 pub struct SelectedLibrary {
     package_id: String,
     package_name: String,
+    package_version: String,
     cargo_manifest_path: PathBuf,
     package_manifest_path: PathBuf,
     source_path: PathBuf,
@@ -63,6 +64,10 @@ impl SelectedLibrary {
         &self.package_name
     }
 
+    pub fn package_version(&self) -> &str {
+        &self.package_version
+    }
+
     pub fn cargo_manifest_path(&self) -> &Path {
         &self.cargo_manifest_path
     }
@@ -95,6 +100,7 @@ impl SelectedLibrary {
         Self {
             package_id: package.id.clone(),
             package_name: package.name.clone(),
+            package_version: package.version.clone(),
             cargo_manifest_path: cargo_manifest_path.to_path_buf(),
             package_manifest_path: package.manifest_path.clone(),
             source_path: target.src_path.clone(),
@@ -125,6 +131,7 @@ impl SelectedLibrary {
                 package_name
             ),
             package_name,
+            package_version: "0.1.0".to_owned(),
             cargo_manifest_path: package_manifest_path.clone(),
             package_manifest_path,
             source_path,
@@ -217,6 +224,7 @@ mod tests {
         .expect("configured library selection");
 
         assert_eq!(library.package_name(), "ffi-package");
+        assert_eq!(library.package_version(), "1.2.3");
         assert!(library.package_id().contains("#ffi-package@1.2.3"));
         assert_eq!(library.cargo_manifest_path(), cargo_manifest_path);
         assert_eq!(library.manifest_path(), selected_manifest_path);

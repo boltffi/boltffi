@@ -29,6 +29,10 @@ class ScalarsTests(DemoTestCase):
     def test_add_i32(self) -> None:
         self.assertEqual(demo.add_i32(10, 20), 30, "case:primitives.scalars.i32.should_add_two_values")
 
+    def test_named_status(self) -> None:
+        self.demo_case("case:primitives.scalars.named_status.should_accept_both_names")
+        demo.notify_status_collision(7, 11)
+
     def test_add_alias(self) -> None:
         self.assertEqual(demo.add(10, 20), 30, "case:primitives.scalars.i32.should_add_with_benchmark_alias")
 

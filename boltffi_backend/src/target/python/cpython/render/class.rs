@@ -3,7 +3,7 @@ use boltffi_binding::{ClassDecl, Native};
 
 use crate::{
     bridge::{
-        c::{Identifier, TypeFragment},
+        c::{Identifier, Statement, TypeFragment},
         python_cext::{ExtensionMethod, MethodFlags, MethodName, PythonCExtBridgeContract},
     },
     core::{Emitted, Error, RenderContext, Result},
@@ -27,7 +27,19 @@ struct ReleaseTemplate {
     parser: Identifier,
 }
 
+#[derive(AskamaTemplate)]
+#[template(path = "target/python/class_handle.c", escape = "none")]
+struct ClassHandleTemplate {
+    class_name: PythonIdentifier,
+    type_object: Identifier,
+    register: ExtensionMethod,
+    boxer: Identifier,
+    handle_type: TypeFragment,
+    box_primitive: Identifier,
+}
+
 pub struct Class {
+    handles: Option<ClassHandleTemplate>,
     release: Release,
     callables: Vec<function::Function>,
 }
@@ -66,20 +78,44 @@ impl Class {
                 context,
             )
         });
+        let callables = initializers.chain(methods).collect::<Result<Vec<_>>>()?;
+        let release = Release::new(declaration, bridge)?;
+        let handles = context
+            .bindings()
+            .passes_class_to_callbacks(declaration.id())
+            .then(|| {
+                Ok::<_, Error>(ClassHandleTemplate {
+                    register: ExtensionMethod::new(
+                        MethodName::parse(symbols.register()?.as_str())?,
+                        symbols.register_wrapper()?,
+                        MethodFlags::FastCall,
+                    )?,
+                    type_object: symbols.type_object()?,
+                    boxer: symbols.boxer()?,
+                    handle_type: release.handle.c_type()?,
+                    box_primitive: release.handle.boxer()?,
+                    class_name: symbols.class_name,
+                })
+            })
+            .transpose()?;
         Ok(Self {
-            release: Release::new(declaration, bridge)?,
-            callables: initializers.chain(methods).collect::<Result<Vec<_>>>()?,
+            handles,
+            release,
+            callables,
         })
     }
 
     pub fn render(self) -> Result<Emitted> {
+        let handles = self.handles.map(|handles| handles.render()).transpose()?;
         let release = self.release.render()?;
         let callables = self
             .callables
             .into_iter()
             .map(function::Function::render)
             .collect::<Result<Vec<_>>>()?;
-        let source = std::iter::once(release)
+        let source = handles
+            .into_iter()
+            .chain(std::iter::once(release))
             .chain(
                 callables
                     .into_iter()
@@ -91,8 +127,21 @@ impl Class {
     }
 
     pub fn methods(&self) -> impl Iterator<Item = &ExtensionMethod> {
-        std::iter::once(self.release.method())
+        self.handles
+            .iter()
+            .map(|handles| &handles.register)
+            .chain(std::iter::once(self.release.method()))
             .chain(self.callables.iter().flat_map(function::Function::methods))
+    }
+
+    pub fn cleanup(&self) -> Option<Statement> {
+        self.handles
+            .as_ref()
+            .map(|handles| Statement::new(format!("Py_CLEAR({})", handles.type_object)))
+    }
+
+    pub fn has_registered_type(&self) -> bool {
+        self.handles.is_some()
     }
 
     pub fn primitives(&self) -> Vec<primitive::Runtime> {
@@ -179,6 +228,22 @@ impl Symbols {
 
     pub fn release(&self) -> Result<PythonIdentifier> {
         PythonIdentifier::parse(format!("_boltffi_{}_release", self.stem))
+    }
+
+    pub fn register(&self) -> Result<PythonIdentifier> {
+        PythonIdentifier::parse(format!("_boltffi_{}_register", self.stem))
+    }
+
+    pub fn register_wrapper(&self) -> Result<Identifier> {
+        Identifier::parse(format!("boltffi_python_class_{}_register", self.stem))
+    }
+
+    pub fn type_object(&self) -> Result<Identifier> {
+        Identifier::parse(format!("boltffi_python_class_{}_type", self.stem))
+    }
+
+    pub fn boxer(&self) -> Result<Identifier> {
+        Identifier::parse(format!("boltffi_python_class_{}_box", self.stem))
     }
 
     fn callable(&self, name: &boltffi_binding::CanonicalName) -> Result<PythonIdentifier> {

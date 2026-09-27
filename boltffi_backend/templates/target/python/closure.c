@@ -81,7 +81,11 @@ static {{ returns.c_type }} {{ invoke }}(void *context{% for param in params %}{
 {%- endif %}
 done:
     if (PyErr_Occurred()) {
+{%- if let Some(fallible) = fallible_return %}
+        {{ fallible.error.value }} = boltffi_python_callback_error();
+{%- else %}
         PyErr_Print();
+{%- endif %}
     }
 {%- for param in params %}
     Py_XDECREF({{ param.object }});

@@ -11,6 +11,8 @@ final class ScalarsTests: DemoTestCase {
         XCTAssertEqual(echoU16(v: 55_000), 55_000, "case:primitives.scalars.u16.should_roundtrip_large_value")
         XCTAssertEqual(echoI32(v: -42), -42, "case:primitives.scalars.i32.should_roundtrip_negative_value")
         XCTAssertEqual(addI32(a: 10, b: 20), 30, "case:primitives.scalars.i32.should_add_two_values")
+        demoCase("case:primitives.scalars.named_status.should_accept_both_names")
+        notifyStatusCollision(status: 7, boltffiStatus: 11)
         XCTAssertEqual(echoU32(v: 4_000_000_000), 4_000_000_000, "case:primitives.scalars.u32.should_roundtrip_large_value")
         XCTAssertEqual(echoI64(v: -9_999_999_999), -9_999_999_999, "case:primitives.scalars.i64.should_roundtrip_large_negative_value")
         XCTAssertEqual(echoU64(v: 9_999_999_999), 9_999_999_999, "case:primitives.scalars.u64.should_roundtrip_large_value")

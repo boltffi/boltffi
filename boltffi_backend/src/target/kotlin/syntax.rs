@@ -187,6 +187,13 @@ impl TypeName {
         Self::new("String")
     }
 
+    pub fn is_string(&self) -> bool {
+        matches!(
+            self.0.as_str(),
+            "String" | "String?" | "kotlin.String" | "kotlin.String?"
+        )
+    }
+
     pub fn byte() -> Self {
         Self::new("Byte")
     }
@@ -397,7 +404,7 @@ impl Expression {
 
     pub fn sum_of(self, parameter: Identifier, body: Self) -> Self {
         Self(format!(
-            "{self}.sumOf {{ {parameter} -> ({body}).toInt() }}"
+            "{self}.sumOf {{ {parameter} -> val __boltffi_size: kotlin.Int = {body}; __boltffi_size }}"
         ))
     }
 

@@ -49,11 +49,11 @@ private final class ListenerProxy: Listener, ListenerBridgeable {
     }
 
     func onValue(value: UInt32) -> UInt32 {
-        guard let vtable = handle.vtable?.assumingMemoryBound(to: ___ListenerVTable.self),
+        guard let vtable = self.handle.vtable?.assumingMemoryBound(to: ___ListenerVTable.self),
               let invoke = vtable.pointee.on_value else {
             fatalError("missing callback vtable entry")
         }
-        return invoke(handle.handle, value)
+        return invoke(self.handle.handle, value)
     }
 }
 

@@ -171,13 +171,13 @@ static uint32_t ___ListenerVTable_on_value(uint64_t handle, uint32_t value) {
     }
 
     uint32_t result = (uint32_t)(*env)->CallStaticIntMethod(env, g____ListenerVTable_class, g____ListenerVTable_on_value_method, (jlong)handle, (jint)value);
-    if (boltffi_jni_clear_exception(env)) {
+    if ((*env)->ExceptionCheck(env)) {
         goto __boltffi_fail;
     }
 
     boltffi_jni_exit(env, attached);
     return result;
-__boltffi_fail:
+__boltffi_fail:;
 
     boltffi_jni_clear_exception(env);
     boltffi_jni_exit(env, attached);
@@ -211,7 +211,7 @@ static void ___ListenerVTable_on_name(uint64_t handle, const uint8_t *name_ptr, 
 
     boltffi_jni_exit(env, attached);
     return;
-__boltffi_fail:
+__boltffi_fail:;
 
     if (name != NULL) {
         (*env)->DeleteLocalRef(env, name);
@@ -224,10 +224,10 @@ __boltffi_fail:
     return;
 }
 
-JNIEXPORT jint JNICALL Java_com_boltffi_demo_Native_boltffi_1callback_1handle_1demo_1listener_1on_1value(JNIEnv *env, jclass cls, jlong callback, jint value) {
+JNIEXPORT jint JNICALL Java_com_boltffi_demo_Native_boltffi_1callback_1handle_1demo_1listener_1on_1value(JNIEnv *env, jclass cls, jlong __boltffi_callback, jint value) {
     (void)cls;
 
-    BoltFFICallbackHandle *callback_handle = boltffi_jni_callback_handle_ref(callback);
+    BoltFFICallbackHandle *callback_handle = boltffi_jni_callback_handle_ref(__boltffi_callback);
     const ___ListenerVTable *vtable = callback_handle == NULL ? NULL : (const ___ListenerVTable *)callback_handle->vtable;
     if (callback_handle == NULL || callback_handle->handle == 0 || vtable == NULL || vtable->on_value == NULL) {
         boltffi_jni_throw_runtime(env, "BoltFFI callback handle was null or invalid");
@@ -241,11 +241,11 @@ __boltffi_error:
     return 0;
 }
 
-JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1callback_1handle_1demo_1listener_1on_1name(JNIEnv *env, jclass cls, jlong callback, jobject name, jint __boltffi_name_len) {
+JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1callback_1handle_1demo_1listener_1on_1name(JNIEnv *env, jclass cls, jlong __boltffi_callback, jobject name, jint __boltffi_name_len) {
     (void)cls;
 
     void *__boltffi_name_ptr = NULL;
-    BoltFFICallbackHandle *callback_handle = boltffi_jni_callback_handle_ref(callback);
+    BoltFFICallbackHandle *callback_handle = boltffi_jni_callback_handle_ref(__boltffi_callback);
     const ___ListenerVTable *vtable = callback_handle == NULL ? NULL : (const ___ListenerVTable *)callback_handle->vtable;
     if (callback_handle == NULL || callback_handle->handle == 0 || vtable == NULL || vtable->on_name == NULL) {
         boltffi_jni_throw_runtime(env, "BoltFFI callback handle was null or invalid");

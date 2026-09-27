@@ -42,10 +42,15 @@ pub struct ClosureRegistration {
     release: Identifier,
     callback_handle: Option<CallbackClosureHandle>,
     returns: JvmMethodReturn,
+    return_channel: c::ReturnChannel,
     arguments: Vec<ClosureArgument>,
 }
 
 impl ClosureRegistration {
+    pub(crate) fn returns_error(&self) -> bool {
+        self.return_channel == c::ReturnChannel::EncodedError
+    }
+
     /// Returns the closure invocation signature.
     pub fn signature(&self) -> &ClosureSignature {
         &self.signature

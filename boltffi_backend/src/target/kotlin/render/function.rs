@@ -18,7 +18,7 @@ use crate::{
         render::{
             Documentation,
             callback::CallbackHandle,
-            class::ClassHandle,
+            class::{ClassHandle, OwnedCallTemplate, OwnedClassArgument},
             closure::Closure,
             direct_vector::DirectVector,
             enumeration::Enumeration,
@@ -76,6 +76,7 @@ pub struct ReceiverCarrier {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExportedParameter {
+    owned_class: Option<OwnedClassArgument>,
     signature: signature::Parameter,
     native_arguments: Vec<Expression>,
     mutation: Option<ParameterMutation>,
@@ -84,6 +85,7 @@ pub struct ExportedParameter {
 }
 
 struct NativeArgument {
+    owned_class: Option<OwnedClassArgument>,
     expressions: Vec<Expression>,
     mutation: Option<ParameterMutation>,
     setup: Vec<Statement>,
@@ -401,10 +403,15 @@ impl<'render> ExportedCallRenderer<'render> {
                     .flat_map(|parameter| parameter.native_arguments().iter().cloned()),
             )
             .collect::<Vec<_>>();
-        let native_call = NativeCall::new(
+        let owned = parameters
+            .iter()
+            .filter_map(|parameter| parameter.owned_class.as_ref())
+            .collect::<Vec<_>>();
+        let native_call = OwnedCallTemplate::expression(
             Identifier::escape(symbol.name().as_str())?,
             native_arguments,
-        );
+            owned,
+        )?;
         let error_conversion = ErrorConversion::from_channel(callable.error().channel())?;
         let setup = receiver_setup
             .into_iter()
@@ -428,7 +435,7 @@ impl<'render> ExportedCallRenderer<'render> {
                 returns,
                 setup,
                 call: function_return.return_statements(
-                    error_conversion.wrap(native_call.expression(), self.host, self.context)?,
+                    error_conversion.wrap(native_call.clone(), self.host, self.context)?,
                     self.host,
                     self.context,
                 )?,
@@ -450,7 +457,7 @@ impl<'render> ExportedCallRenderer<'render> {
                 call: Vec::new(),
                 cleanup: Vec::new(),
                 async_call: Some(AsyncCall::new(
-                    AsyncStart::new(native_call.expression(), setup, cleanup),
+                    AsyncStart::new(native_call, setup, cleanup),
                     AsyncProtocolFunctions::new(poll, complete, cancel, free)?,
                     function_return,
                     error_conversion,
@@ -584,6 +591,7 @@ impl ExportedParameter {
             ),
         };
         Ok(Self {
+            owned_class: native_argument.owned_class,
             native_arguments: native_argument.expressions,
             mutation: native_argument.mutation,
             signature: signature::Parameter::new(name, ty),
@@ -652,6 +660,7 @@ struct NativeArgumentRender<'context> {
 impl NativeArgument {
     fn direct(expression: Expression) -> Self {
         Self {
+            owned_class: None,
             expressions: vec![expression],
             mutation: None,
             setup: Vec::new(),
@@ -662,6 +671,7 @@ impl NativeArgument {
     fn encoded(write: EncodedWrite, mutation: Option<ParameterMutation>) -> Self {
         let (setup, expressions, cleanup) = write.into_direct_parts();
         Self {
+            owned_class: None,
             expressions,
             mutation,
             setup,
@@ -971,9 +981,23 @@ impl<'plan> ParamPlanRender<'plan, Native, IntoRust> for NativeArgumentRender<'_
         target: &'plan HandleTarget,
         _carrier: <Native as Surface>::HandleCarrier,
         presence: HandlePresence,
-        _receive: <IntoRust as Direction>::Receive,
+        receive: <IntoRust as Direction>::Receive,
     ) -> Self::Output {
         match target {
+            HandleTarget::Class(class) if receive == Receive::ByValue => {
+                let declaration = self.context.class(*class).ok_or_else(|| {
+                    KotlinHost::unsupported("missing class declaration for ownership transfer")
+                })?;
+                let local = self.source_name.generated("owned_handle")?;
+                let mut argument = NativeArgument::direct(Expression::identifier(local.clone()));
+                argument.owned_class = Some(OwnedClassArgument {
+                    parameter: self.name.clone(),
+                    local,
+                    release: Identifier::escape(declaration.release().name().as_str())?,
+                    presence,
+                });
+                Ok(argument)
+            }
             HandleTarget::Class(class) => ClassHandle::new(*class, presence, self.context)
                 .and_then(|handle| {
                     handle

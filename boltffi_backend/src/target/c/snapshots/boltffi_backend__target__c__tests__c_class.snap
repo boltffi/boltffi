@@ -131,6 +131,7 @@ void boltffi_free_buf(FfiBuf_u8 buf);
 FfiString boltffi_buf_into_string(FfiBuf_u8 buf);
 FfiBuf_u8 boltffi_buf_from_bytes(const uint8_t *ptr, uintptr_t len);
 FfiBuf_u8 boltffi_buf_with_len(uintptr_t len);
+FfiBuf_u8 boltffi_callback_error(const uint8_t *message, uintptr_t length);
 FfiStatus boltffi_last_error_message(FfiString *out);
 void boltffi_clear_last_error(void);
 typedef struct {
@@ -146,18 +147,31 @@ uint32_t boltffi_method_class_demo_engine_score(uint64_t receiver, ___Point poin
 #endif
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 
 typedef struct { const uint8_t *ptr; uintptr_t len; } DemoBytesView;
 typedef struct { const char *ptr; uintptr_t len; } DemoStringView;
 typedef struct { uint8_t *ptr; uintptr_t len; } DemoBytes;
 typedef struct { char *ptr; uintptr_t len; } DemoString;
-typedef struct { bool has_value; uint32_t value; } DemoOptionU32;
-typedef struct { bool has_value; float value; } DemoOptionF32;
 typedef struct { bool has_value; DemoStringView value; } DemoOptionStringView;
 typedef struct { bool has_value; DemoString value; } DemoOptionString;
 typedef struct { const DemoStringView *ptr; uintptr_t len; } DemoStringSlice;
 typedef struct { DemoString *ptr; uintptr_t len; } DemoStringSequence;
+typedef struct { bool has_value; bool value; } DemoOptionBool;
+typedef struct { bool has_value; int8_t value; } DemoOptionI8;
+typedef struct { bool has_value; uint8_t value; } DemoOptionU8;
+typedef struct { bool has_value; int16_t value; } DemoOptionI16;
+typedef struct { bool has_value; uint16_t value; } DemoOptionU16;
+typedef struct { bool has_value; int32_t value; } DemoOptionI32;
+typedef struct { bool has_value; uint32_t value; } DemoOptionU32;
+typedef struct { bool has_value; int64_t value; } DemoOptionI64;
+typedef struct { bool has_value; uint64_t value; } DemoOptionU64;
+typedef struct { bool has_value; intptr_t value; } DemoOptionISize;
+typedef struct { bool has_value; uintptr_t value; } DemoOptionUSize;
+typedef struct { bool has_value; float value; } DemoOptionF32;
+typedef struct { bool has_value; double value; } DemoOptionF64;
 typedef ___Point DemoPoint;
+typedef struct { bool has_value; DemoPoint value; } DemoOptionPoint;
 typedef struct { uint64_t _boltffi_handle; } DemoEngine;
 typedef struct { const bool *ptr; uintptr_t len; } DemoBoolSlice;
 typedef struct { bool *ptr; uintptr_t len; } DemoBoolMutSlice;
@@ -286,7 +300,9 @@ static inline void *boltffi_c_demo_alloc(uintptr_t count, uintptr_t size) {
 static inline bool boltffi_c_demo_copy_string(BoltFFICWireReader *r, DemoString *out) {
     uint32_t n = boltffi_c_demo_read_u32(r); char *copy;
     if (!r->ok || (uintptr_t)n > r->len - r->offset) return false;
-    copy = (char *)boltffi_c_demo_alloc((uintptr_t)n + 1, 1);
+    uintptr_t allocation_size = (uintptr_t)n + 1;
+    if (allocation_size == 0) { r->ok = false; return false; }
+    copy = (char *)boltffi_c_demo_alloc(allocation_size, 1);
     if (copy == NULL) { r->ok = false; return false; }
     boltffi_c_demo_read(r, copy, n); copy[n] = '\0'; out->ptr = copy; out->len = n; return r->ok;
 }
@@ -325,7 +341,7 @@ static inline DemoEngine demo_engine_new(uint64_t seed) {
     return boltffi_result;
 }
 static inline uint32_t demo_engine_score(const DemoEngine *receiver, DemoPoint point) {
-    uint32_t boltffi_result = (uint32_t)boltffi_method_class_demo_engine_score(receiver->_boltffi_handle, point);
+    uint32_t boltffi_result = boltffi_method_class_demo_engine_score(receiver->_boltffi_handle, point);
     return boltffi_result;
 }
 static inline void demo_engine_free(DemoEngine *value) { if (value == NULL || value->_boltffi_handle == 0) return; boltffi_release_class_demo_engine(value->_boltffi_handle); value->_boltffi_handle=0; }

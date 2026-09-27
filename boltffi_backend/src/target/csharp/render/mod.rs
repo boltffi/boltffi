@@ -33,13 +33,14 @@ use crate::{
     core::{
         AuxChunk, Diagnostic, Emitted, Error, FilePath, GeneratedFile, GeneratedOutput, HelperId,
         RenderContext, RenderedDeclaration, Result,
+        lexical::{LexicalPlan, NameStem, Scope, with_lexical_plan},
     },
 };
 
 use super::{
     codec::{ReadExpression, Reader, Writer, primitive_read_method, primitive_write_method},
     name_style::{Name, Namespace},
-    syntax::{ArgumentList, Expression, Identifier, Literal, Statement, TypeFragment},
+    syntax::{ArgumentList, Expression, Identifier, Literal, Statement, Syntax, TypeFragment},
     type_name,
 };
 use documentation::Documentation;
@@ -51,6 +52,68 @@ struct Parameter {
     name: Identifier,
     ty: TypeFragment,
     marshal_i1: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct FunctionNames {
+    status: Identifier,
+    cancellation_token: Identifier,
+    future: Identifier,
+    result: Identifier,
+    handle: Identifier,
+}
+
+impl FunctionNames {
+    fn new(parameters: &[Parameter], asynchronous: bool) -> Result<Self> {
+        with_lexical_plan::<Syntax, _>(|lexical| {
+            let scope = lexical.root();
+            for parameter in parameters {
+                lexical.reserve_external(scope, parameter.name.clone());
+            }
+            let has_parameter = |name| {
+                parameters
+                    .iter()
+                    .any(|parameter| parameter.name.as_str() == name)
+            };
+            let status = allocate_helper(
+                lexical,
+                scope,
+                if asynchronous || has_parameter("status") {
+                    "boltffiStatus"
+                } else {
+                    "status"
+                },
+            )?;
+            let cancellation_token = allocate_helper(
+                lexical,
+                scope,
+                if has_parameter("cancellationToken") {
+                    "boltffiCancellationToken"
+                } else {
+                    "cancellationToken"
+                },
+            )?;
+            let future = allocate_helper(lexical, scope, "boltffiFuture")?;
+            let result = allocate_helper(lexical, scope, "boltffiResult")?;
+            let handle = allocate_helper(lexical, scope, "boltffiHandle")?;
+            Ok(Self {
+                status,
+                cancellation_token,
+                future,
+                result,
+                handle,
+            })
+        })
+    }
+}
+
+fn allocate_helper<'plan>(
+    lexical: &mut LexicalPlan<'plan, Syntax>,
+    scope: Scope<'plan, Syntax>,
+    stem: &str,
+) -> Result<Identifier> {
+    let declaration = lexical.allocate(scope, &NameStem::new(stem))?;
+    Ok(lexical.declare(declaration, Clone::clone).into_parts().0)
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -100,6 +163,7 @@ pub(super) struct Function {
     native_return_type: TypeFragment,
     return_marshal_i1: bool,
     checks_status: bool,
+    names: FunctionNames,
     is_static: bool,
     extension_owner: Option<TypeFragment>,
     return_after_status: Option<Expression>,
@@ -127,6 +191,40 @@ struct FunctionTemplate<'function> {
 struct NativeFunctionTemplate<'function> {
     function: &'function Function,
 }
+
+#[derive(Template)]
+#[template(path = "target/csharp/owned_call.cs", escape = "none")]
+struct OwnedCallTemplate<'call> {
+    arguments: &'call [OwnedArgument],
+    invocation: &'call Expression,
+    asynchronous: bool,
+    returns_value: bool,
+}
+
+enum OwnedArgument {
+    Class {
+        parameter: Identifier,
+        class: TypeFragment,
+        local: Identifier,
+        presence: HandlePresence,
+    },
+    Closure {
+        parameter: Identifier,
+        local: Identifier,
+    },
+}
+
+impl OwnedArgument {
+    fn local(&self) -> &Identifier {
+        match self {
+            Self::Class { local, .. } | Self::Closure { local, .. } => local,
+        }
+    }
+}
+
+#[derive(Template)]
+#[template(path = "target/csharp/owned_closure.cs", escape = "none")]
+struct OwnedClosureTemplate;
 
 #[derive(Template)]
 #[template(path = "target/csharp/status.cs", escape = "none")]
@@ -478,6 +576,7 @@ impl Function {
         let mut encoded_writeback = None;
         let mut parameter_writebacks = Vec::new();
         let mut setup = Vec::new();
+        let mut owned_arguments = Vec::new();
         let mut requires_wire_runtime = false;
         let mut requires_callback_runtime = false;
         let mut requires_copy_buffer = false;
@@ -685,7 +784,7 @@ impl Function {
                     target,
                     carrier,
                     presence,
-                    ..
+                    receive,
                 }) => {
                     let ParameterGroup::Value(index) = group else {
                         return broken_contract("handle parameter does not use one C value slot");
@@ -696,16 +795,35 @@ impl Function {
                         return broken_contract("handle parameter does not match the C bridge");
                     }
                     let (public_type, argument) = match target {
-                        HandleTarget::Class(class) => (
-                            type_name::class(*class, context)?,
-                            match presence {
-                                HandlePresence::Required => format!("{name}.Handle"),
-                                HandlePresence::Nullable => {
-                                    format!("{name}?.Handle ?? 0")
+                        HandleTarget::Class(class) => {
+                            let public_type = type_name::class(*class, context)?;
+                            let argument = match receive {
+                                Receive::ByValue => {
+                                    let local = Identifier::parse(format!(
+                                        "__boltffiOwnedHandle{}",
+                                        owned_arguments.len()
+                                    ))?;
+                                    let argument = Expression::member(
+                                        local.clone(),
+                                        Identifier::parse("Handle")?,
+                                    );
+                                    owned_arguments.push(OwnedArgument::Class {
+                                        parameter: name.clone(),
+                                        class: public_type.clone(),
+                                        local,
+                                        presence: *presence,
+                                    });
+                                    argument.to_string()
                                 }
-                                _ => return unsupported("unknown handle presence"),
-                            },
-                        ),
+                                Receive::ByRef | Receive::ByMutRef => match presence {
+                                    HandlePresence::Required => format!("{name}.Handle"),
+                                    HandlePresence::Nullable => format!("{name}?.Handle ?? 0"),
+                                    _ => return unsupported("unknown handle presence"),
+                                },
+                                _ => return unsupported("unknown class handle receive mode"),
+                            };
+                            (public_type, argument)
+                        }
                         HandleTarget::Callback(callback) => {
                             requires_callback_runtime = true;
                             let ty = type_name::callback(*callback, context)?;
@@ -908,7 +1026,7 @@ impl Function {
                     parameters.push(closure.parameter);
                     native_parameters.extend(closure.native_parameters);
                     invocation_arguments.extend(closure.invocation_arguments);
-                    setup.push(closure.setup);
+                    owned_arguments.push(closure.ownership);
                     requires_wire_runtime |= closure.requires_wire_runtime;
                     requires_copy_buffer |= closure.requires_copy_buffer;
                     closure_helpers.push(closure.helper);
@@ -1281,16 +1399,32 @@ impl Function {
             invocation_arguments.append(&mut completion_invocation_arguments);
         }
 
-        let invocation = Expression::call(
+        let mut invocation = Expression::call(
             Expression::member(Identifier::parse("NativeMethods")?, native_name.clone()),
             ArgumentList::new(invocation_arguments),
         );
+        if !owned_arguments.is_empty() {
+            let transfer = OwnedCallTemplate {
+                arguments: &owned_arguments,
+                invocation: &invocation,
+                asynchronous: async_symbols.is_some(),
+                returns_value: true,
+            }
+            .render()?;
+            if async_symbols.is_some() {
+                invocation = Expression::new(transfer);
+            } else {
+                setup.push(Statement::new(transfer));
+                invocation = Expression::identifier(Identifier::parse("__boltffiCallResult")?);
+            }
+        }
         let receiver = callable.receiver().is_some();
         let extension_owner = match (&call_site, receiver) {
             (CallSite::Enumeration { owner, .. }, true) => Some(direct_type(owner, context)?),
             _ => None,
         };
         let is_static = !receiver || extension_owner.is_some();
+        let names = FunctionNames::new(&parameters, async_symbols.is_some())?;
         let asynchronous = async_symbols
             .map(|symbols| {
                 AsyncCall::new(
@@ -1317,6 +1451,7 @@ impl Function {
                 encoded_writeback.as_ref(),
                 encoded_error.as_ref(),
                 handle_return.as_ref(),
+                &names,
             )?),
             None => (!setup.is_empty()
                 || encoded_return.is_some()
@@ -1335,6 +1470,7 @@ impl Function {
                     encoded_error.as_ref(),
                     handle_return.as_ref(),
                     &parameter_writebacks,
+                    &names.status,
                 )
             })
             .transpose()?,
@@ -1380,6 +1516,7 @@ impl Function {
                 false => return_marshal_i1,
             },
             checks_status,
+            names,
             is_static,
             extension_owner,
             return_after_status,
@@ -1415,6 +1552,10 @@ impl Function {
                 id: helper.id.clone(),
                 text: helper.source.to_string().into(),
             });
+        }
+        if !self.closure_helpers.is_empty() {
+            emitted =
+                emitted.with_aux(AuxChunk::ForwardDecl(OwnedClosureTemplate.render()?.into()));
         }
         let emitted = match self.checks_status || self.asynchronous.is_some() {
             true => emitted.with_aux(AuxChunk::ForwardDecl(StatusTemplate.render()?.into())),
@@ -1624,6 +1765,7 @@ fn render_callable_body(
     encoded_error: Option<&EncodedError>,
     handle_return: Option<&HandleReturn>,
     parameter_writebacks: &[MutableParameterWriteback],
+    status: &Identifier,
 ) -> Result<Statement> {
     let mut lines = setup.iter().map(ToString::to_string).collect::<Vec<_>>();
     if let Some(error) = encoded_error {
@@ -1662,7 +1804,7 @@ fn render_callable_body(
         )),
         None if checks_status => {
             lines.push(format!(
-                "FfiStatus status = {invocation};\nif (status.code != 0)\n{{\n    throw new global::System.InvalidOperationException($\"BoltFFI call failed with status code {{status.code}}\");\n}}"
+                "FfiStatus {status} = {invocation};\nif ({status}.code != 0)\n{{\n    throw new global::System.InvalidOperationException($\"BoltFFI call failed with status code {{{status}.code}}\");\n}}"
             ));
             match (encoded_writeback, return_after_status) {
                 (Some(encoded), _) => lines.push(render_buffer_return(encoded)),
@@ -1690,12 +1832,14 @@ fn render_async_body(
     encoded_writeback: Option<&EncodedReturn>,
     encoded_error: Option<&EncodedError>,
     handle_return: Option<&HandleReturn>,
+    names: &FunctionNames,
 ) -> Result<Statement> {
     if encoded_writeback.is_some() {
         return unsupported("mutable encoded value in async function");
     }
-    let future = Identifier::parse("boltffiFuture")?;
-    let status = Identifier::parse("boltffiStatus")?;
+    let future = &names.future;
+    let status = &names.status;
+    let cancellation_token = &names.cancellation_token;
     let complete = Expression::call(
         Expression::member(
             Identifier::parse("NativeMethods")?,
@@ -1715,7 +1859,7 @@ fn render_async_body(
         Some(error) => {
             completion.push(format!("FfiBuf {} = {complete};", error.buffer));
             completion.push(format!(
-                "BoltFFIAsync.ThrowIfStatus({status}, cancellationToken);"
+                "BoltFFIAsync.ThrowIfStatus({status}, {cancellation_token});"
             ));
             completion.push(render_encoded_error_check(error));
             if let Some(encoded) = encoded_return {
@@ -1728,42 +1872,37 @@ fn render_async_body(
             let encoded = encoded_return.unwrap();
             completion.push(format!("FfiBuf {} = {complete};", encoded.buffer));
             completion.push(format!(
-                "BoltFFIAsync.ThrowIfStatus({status}, cancellationToken);"
+                "BoltFFIAsync.ThrowIfStatus({status}, {cancellation_token});"
             ));
             completion.push(render_buffer_return(encoded));
         }
         None if handle_return.is_some() => {
             let handle = handle_return.unwrap();
-            let local = Identifier::parse("boltffiHandle")?;
+            let local = &names.handle;
             completion.push(format!("{} {local} = {complete};", handle.native_type));
             completion.push(format!(
-                "BoltFFIAsync.ThrowIfStatus({status}, cancellationToken);"
+                "BoltFFIAsync.ThrowIfStatus({status}, {cancellation_token});"
             ));
             completion.push(format!(
                 "return {};",
-                handle_value_expression(
-                    handle.ty.clone(),
-                    &local,
-                    handle.nullable,
-                    handle.callback,
-                )
+                handle_value_expression(handle.ty.clone(), local, handle.nullable, handle.callback,)
             ));
         }
         None if returns_void => {
             completion.push(format!("{complete};"));
             completion.push(format!(
-                "BoltFFIAsync.ThrowIfStatus({status}, cancellationToken);"
+                "BoltFFIAsync.ThrowIfStatus({status}, {cancellation_token});"
             ));
         }
         None => {
             completion.push(format!(
-                "{} boltffiResult = {complete};",
-                asynchronous.complete_return_type
+                "{} {} = {complete};",
+                asynchronous.complete_return_type, names.result
             ));
             completion.push(format!(
-                "BoltFFIAsync.ThrowIfStatus({status}, cancellationToken);"
+                "BoltFFIAsync.ThrowIfStatus({status}, {cancellation_token});"
             ));
-            completion.push("return boltffiResult;".to_owned());
+            completion.push(format!("return {};", names.result));
         }
     }
 
@@ -1773,7 +1912,7 @@ fn render_async_body(
     };
     let mut lines = setup.iter().map(ToString::to_string).collect::<Vec<_>>();
     lines.push(format!(
-        "return BoltFFIAsync.{call}(\n    () => {start},\n    NativeMethods.{},\n    {future} =>\n    {{\n{}\n    }},\n    NativeMethods.{},\n    NativeMethods.{},\n    cancellationToken);",
+        "return BoltFFIAsync.{call}(\n    () => {start},\n    NativeMethods.{},\n    {future} =>\n    {{\n{}\n    }},\n    NativeMethods.{},\n    NativeMethods.{},\n    {cancellation_token});",
         asynchronous.poll_name,
         indent(&completion.join("\n"), 8),
         asynchronous.cancel_name,

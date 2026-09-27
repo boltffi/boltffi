@@ -8,6 +8,8 @@ import TypeTable from "../../components/TypeTableWrapper.astro";
 
 # Records
 
+C examples use the package name `demo` and include `demo.h`. See [C memory management](/docs/c#memory-management) for borrowed inputs and returned owners.
+
 Records are value types: structs and enums marked with `#[data]`. When a record crosses the boundary, it gets copied. The target language receives its own copy of the data.
 
 Classes are different. A class lives in Rust, and the target language holds a reference to it. See [Classes](/docs/classes) for when to use one over the other. Records may also define [associated constants](/docs/constants#associated-constants).
@@ -27,12 +29,14 @@ The bytes pack together and move across the boundary with no per-field overhead.
 <CodeComparison
   title=""
   rust={`#[data]
+#[derive(Clone, Copy)]
 pub struct Point {
     pub x: f64,
     pub y: f64,
 }
 
 #[data]
+#[derive(Clone, Copy)]
 pub struct Rect {
     pub x: f64,
     pub y: f64,
@@ -162,6 +166,9 @@ class Rect:
 r = Rect(0, 0, 100, 100)
 p = Point(50, 50)
 inside = r.contains(p)`}
+  c={`DemoRect rectangle = {0.0, 0.0, 10.0, 10.0};
+DemoPoint point = {3.0, 4.0};
+bool inside = demo_rect_contains(&rectangle, point);`}
 />
 
 ### Structs with strings or collections
@@ -171,6 +178,7 @@ These take longer to cross the boundary. A struct with two strings means two all
 <CodeComparison
   title=""
   rust={`#[data]
+#[derive(Clone)]
 pub struct User {
     pub id: u64,
     pub name: String,
@@ -178,6 +186,7 @@ pub struct User {
 }
 
 #[data]
+#[derive(Clone)]
 pub struct SearchResult {
     pub query: String,
     pub matches: Vec<User>,
@@ -296,6 +305,9 @@ class SearchResult:
 def search_users(query: str) -> SearchResult: ...
 
 result = search_users("alice")`}
+  c={`DemoSearchResult result = demo_search_users(demo_string_view("Ali", 3));
+printf("%zu matches\\n", (size_t)result.matches.len);
+demo_search_result_free(&result);`}
 />
 
 ### Nested structs
@@ -305,6 +317,7 @@ A struct can contain other structs, and BoltFFI handles them recursively. There'
 <CodeComparison
   title=""
   rust={`#[data]
+#[derive(Clone)]
 pub struct Address {
     pub street: String,
     pub city: String,
@@ -312,6 +325,7 @@ pub struct Address {
 }
 
 #[data]
+#[derive(Clone)]
 pub struct Company {
     pub name: String,
     pub address: Address,
@@ -455,15 +469,24 @@ def company_summary(c: Company) -> str: ...
 addr = Address("123 Main", "Seattle", "98101")
 co = Company("Acme", addr, 50)
 summary = company_summary(co)`}
+  c={`DemoCompanyView company = {
+    {"Acme", 4},
+    {{"Main St", 7}, {"Amsterdam", 9}, {"1000", 4}},
+    20
+};
+DemoString summary = demo_company_summary(company);
+fwrite(summary.ptr, 1, summary.len, stdout);
+demo_string_free(&summary);`}
 />
 
 ### Optional fields
 
-`Option<T>` in Rust becomes a nullable type in the target language. `None` becomes `null` or `nil` on the other side.
+`Option<T>` becomes nullable in the managed languages. In C, an optional field has `has_value` and `value`; read `value` only when `has_value` is true.
 
 <CodeComparison
   title=""
   rust={`#[data]
+#[derive(Clone)]
 pub struct Profile {
     pub username: String,
     pub display_name: Option<String>,
@@ -580,15 +603,25 @@ p = Profile(
     1000
 )
 label = display_label(p)`}
+  c={`DemoProfileView profile = {
+    .username = {"ali", 3},
+    .display_name = {.has_value = false},
+    .bio = {.has_value = false},
+    .follower_count = 0
+};
+DemoString label = demo_display_label(profile);
+fwrite(label.ptr, 1, label.len, stdout);
+demo_string_free(&label);`}
 />
 
 ## Default values
 
-Use `#[boltffi::default(...)]` on a field to give it a default value. The generated constructor will have that parameter as optional.
+Use `#[boltffi::default(...)]` on a field to give it a default value. Targets with default constructor arguments make that parameter optional. C uses aggregate initialization, so C callers must supply the field values explicitly.
 
 <CodeComparison
   title=""
   rust={`#[data]
+#[derive(Clone)]
 pub struct Config {
     pub name: String,
     #[boltffi::default(3)]
@@ -664,6 +697,12 @@ class Config:
     host: str = "localhost"
 
 cfg = Config("myapp")`}
+  c={`DemoConfigView config = {
+    .name = {"app", 3},
+    .retries = 3,
+    .enabled = true,
+    .host = {"localhost", 9}
+};`}
 />
 
 ### Supported default values
@@ -677,7 +716,7 @@ cfg = Config("myapp")`}
 | Enum variants | `#[boltffi::default(Status::Pending)]` |
 | None | `#[boltffi::default(None)]` |
 
-Option fields automatically default to `nil`/`null` if no explicit default is provided.
+In targets with default constructor arguments, option fields default to `nil`/`null` when no explicit default is provided. In C, initialize `has_value` to `false` for an absent value.
 
 ## Enums
 
@@ -690,6 +729,7 @@ Enums with no associated data become native enum types that you can switch on, c
 <CodeComparison
   title=""
   rust={`#[data]
+#[derive(Clone, Copy)]
 pub enum Status {
     Pending,
     Active,
@@ -770,6 +810,10 @@ class Status(IntEnum):
 def status_label(s: Status) -> str: ...
 
 label = status_label(Status.ACTIVE)`}
+  c={`DemoStatus status = DEMO_STATUS_ACTIVE;
+DemoString label = demo_status_label(status);
+fwrite(label.ptr, 1, label.len, stdout);
+demo_string_free(&label);`}
 />
 
 ### Enums with associated data
@@ -910,6 +954,13 @@ def describe_state(s: LoadState) -> str: ...
 
 state = LoadStateLoading(0.5)
 desc = describe_state(state)`}
+  c={`DemoLoadStateView state = {
+    .tag = DEMO_LOAD_STATE_LOADING,
+    .data.loading = {.progress = 0.5}
+};
+DemoString description = demo_describe_state(state);
+fwrite(description.ptr, 1, description.len, stdout);
+demo_string_free(&description);`}
 />
 
 ## Methods and constructors
@@ -923,6 +974,7 @@ Functions that return `Self` become constructors or factory methods. `fn new(...
 <CodeComparison
   title=""
   rust={`#[data]
+#[derive(Clone, Copy)]
 pub struct Point {
     pub x: f64,
     pub y: f64,
@@ -1073,6 +1125,13 @@ class Point:
 p = Point.origin()
 q = Point.from_polar(2.0, math.pi / 4)
 u = Point.try_unit(3.0, 4.0)`}
+  c={`DemoPoint point = demo_point_new(3.0, 4.0);
+DemoPoint origin = demo_point_origin();
+DemoPointTryUnitResult unit = demo_point_try_unit(point.x, point.y);
+if (unit.ok) {
+    printf("%g, %g\\n", unit.data.value.x, unit.data.value.y);
+}
+demo_point_try_unit_result_free(&unit);`}
 />
 
 ### Instance methods
@@ -1149,11 +1208,17 @@ class Point:
 p = Point(3.0, 4.0)
 d = p.distance()       # 5.0
 sum_value = p.add(q)`}
+  c={`DemoPoint point = {3.0, 4.0};
+DemoPoint offset = {1.0, 2.0};
+double distance = demo_point_distance(&point);
+DemoPoint moved = demo_point_add(&point, offset);`}
 />
 
 ### Mutating methods
 
 Functions that take `&mut self` modify the value in place. In Swift this generates a `mutating` method that reassigns `self`. In Kotlin, Java, C#, and TypeScript the method returns a new copy with the updated values. The same value-copy cost from instance methods applies here since the record is copied both in and out.
+
+C methods take a pointer and update the record or enum in place. If it has owned fields, pass an owning value returned by the generated API. The method replaces old fields and releases their allocations. Do not fill those fields with string literals or borrowed pointers before passing the value to a mutable method.
 
 <CodeComparison
   title=""
@@ -1206,6 +1271,9 @@ class Point:
 p = Point(1.0, 2.0)
 p = p.scale(3.0)
 # p is now Point(3.0, 6.0)`}
+  c={`DemoPoint point = {3.0, 4.0};
+demo_point_scale(&point, 2.0);
+printf("%g, %g\\n", point.x, point.y);`}
 />
 
 ### Static methods
@@ -1253,6 +1321,7 @@ class Point:
     def dimensions() -> int: ...
 
 dims = Point.dimensions()  # 2`}
+  c={`uint32_t dimensions = demo_point_dimensions();`}
 />
 
 ### Enum methods
@@ -1262,6 +1331,7 @@ The same `#[data(impl)]` works on enums. Methods and constructors follow the sam
 <CodeComparison
   title=""
   rust={`#[data]
+#[derive(Clone, Copy)]
 pub enum Direction {
     North,
     East,
@@ -1357,4 +1427,7 @@ class Direction(IntEnum):
 
 d = Direction.NORTH.opposite()
 e = Direction.from_degrees(90)`}
+  c={`DemoDirection north = DEMO_DIRECTION_NORTH;
+DemoDirection south = demo_direction_opposite(&north);
+DemoDirection east = demo_direction_from_degrees(90.0);`}
 />

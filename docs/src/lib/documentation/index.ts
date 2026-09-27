@@ -35,7 +35,7 @@ const DOCUMENTATION_SECTIONS: readonly DocumentationSection[] = [
   },
   {
     title: 'Build and package',
-    pages: ['packaging', 'configuration'],
+    pages: ['packaging', 'c', 'configuration'],
   },
   {
     title: 'Internals and experimental features',
@@ -148,7 +148,7 @@ export class DocumentationCorpus {
     return [
       '# BoltFFI',
       '',
-      '> BoltFFI generates native bindings and distributable packages for Rust libraries targeting Swift, Kotlin, Java, C#, TypeScript, and Python.',
+      '> BoltFFI generates native bindings and distributable packages for Rust libraries targeting Swift, Kotlin, Java, C#, TypeScript, Python, and experimental C.',
       '',
       'Use these Markdown pages as the source of truth for BoltFFI APIs and generated target-language behavior. Start with Getting Started for a new integration, then use the page that matches the Rust API being exported.',
       '',

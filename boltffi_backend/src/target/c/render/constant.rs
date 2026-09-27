@@ -14,7 +14,7 @@ use crate::{
     target::c::name_style::Name,
 };
 
-use super::{prefix::PackagePrefix, wrapper};
+use super::{callable, prefix::PackagePrefix};
 
 /// Renders one constant's ergonomic surface.
 pub fn render(
@@ -65,42 +65,38 @@ pub fn render(
     };
     let constant_name = Name::new(decl.name());
     match decl.value() {
-        ConstantValueDecl::Inline { value, .. } => {
+        ConstantValueDecl::Inline { value, ty, .. } => {
             let constant = prefix.constant(&join(&owner_constant, constant_name.constant()));
-            let literal = render_default(value);
+            let literal = match value {
+                DefaultValue::String(value) => {
+                    c::Literal::byte_string(value.as_bytes()).to_string()
+                }
+                _ => super::default_value::render(
+                    ty,
+                    value,
+                    super::surface::ValueUse::Return,
+                    context,
+                )?
+                .to_string(),
+            };
             Ok(Emitted::primary(format!("#define {constant} {literal}\n")))
         }
-        ConstantValueDecl::Accessor { symbol, .. } => {
-            let abi = wrapper::find_abi(bridge, symbol)?;
+        ConstantValueDecl::Accessor {
+            symbol,
+            callable: accessor,
+        } => {
+            let abi = bridge.function(symbol)?;
             let name = prefix.member(&join(&owner_member, constant_name.member()));
             let wrapper_name = Identifier::escape(name)?;
-            wrapper::forward(abi, wrapper_name.as_str())
-        }
-        _ => Ok(Emitted::primary(String::new())),
-    }
-}
-
-fn render_default(value: &DefaultValue) -> String {
-    match value {
-        DefaultValue::Bool(true) => "true".to_owned(),
-        DefaultValue::Bool(false) => "false".to_owned(),
-        DefaultValue::Integer(integer) => integer.get().to_string(),
-        DefaultValue::Float(float) => float.to_f64().to_string(),
-        DefaultValue::String(string) => format!("{string:?}"),
-        DefaultValue::EnumVariant {
-            enum_name,
-            variant_name,
-            ..
-        } => {
-            // The ABI spellings join owner and variant (e.g. `MODE_FAST`),
-            // unchanged by the ergonomic prefix.
-            format!(
-                "{}_{}",
-                Name::new(enum_name).constant(),
-                Name::new(variant_name).constant()
+            callable::render(
+                abi,
+                accessor,
+                wrapper_name.as_str(),
+                &format!("{}{}", owner_constant, constant_name.r#type()),
+                callable::Receiver::None,
+                context,
             )
         }
-        DefaultValue::Null => "0".to_owned(),
-        _ => "0".to_owned(),
+        _ => Ok(Emitted::primary(String::new())),
     }
 }

@@ -74,7 +74,7 @@ static void ___ListenerVTable_on_name(uint64_t handle, const uint8_t *name_ptr, 
 
     boltffi_jni_exit(env, attached);
     return;
-__boltffi_fail:
+__boltffi_fail:;
 
     if (name != NULL) {
         (*env)->DeleteLocalRef(env, name);

@@ -53,6 +53,7 @@ impl ClosureRegistrationConstructor {
             class,
             call_type,
             closure.signature(),
+            closure.return_channel(),
             callback_argument,
             callbacks,
             closure
@@ -73,6 +74,7 @@ impl ClosureRegistrationConstructor {
             class,
             returned.call_type(),
             returned.signature(),
+            returned.return_channel(),
             callback_handle,
             callbacks,
             returned
@@ -102,6 +104,7 @@ impl ClosureRegistrationConstructor {
         class: &JvmClassPath,
         call_type: &c::Type,
         signature: &ClosureSignature,
+        return_channel: c::ReturnChannel,
         callback_argument: bool,
         callbacks: &[c::Callback],
         arguments: Vec<ClosureArgument>,
@@ -137,6 +140,7 @@ impl ClosureRegistrationConstructor {
                 .transpose()?,
             returns: JvmMethodReturn::from_c_type(returns, callbacks)?,
             arguments,
+            return_channel,
         })
     }
 }

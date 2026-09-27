@@ -2,7 +2,7 @@ use boltffi_binding::ClosureSignature;
 
 use crate::core::{Error, Result};
 
-use super::super::{C_BRIDGE_CONTRACT, Identifier, Type};
+use super::super::{C_BRIDGE_CONTRACT, Identifier, ReturnChannel, Type};
 use super::{Parameter, ParameterGroup, ParameterIndex};
 
 /// C ABI out-pointer that receives one returned closure registration.
@@ -14,10 +14,15 @@ pub struct ClosureReturnParameter {
     output: ParameterIndex,
     call_type: Type,
     parameters: Vec<Parameter>,
+    return_channel: ReturnChannel,
     parameter_groups: Vec<ParameterGroup>,
 }
 
 impl ClosureReturnParameter {
+    pub(crate) fn return_channel(&self) -> ReturnChannel {
+        self.return_channel
+    }
+
     /// Returns the output parameter name.
     pub fn name(&self) -> &str {
         self.name.as_str()
@@ -56,6 +61,7 @@ impl ClosureReturnParameter {
         signature: &ClosureSignature,
         call_type: &Type,
         parameters: &[Parameter],
+        return_channel: ReturnChannel,
     ) -> Result<Self> {
         let Some(parameter) = params.get(output) else {
             return Err(Error::BrokenBridgeContract {
@@ -76,6 +82,7 @@ impl ClosureReturnParameter {
             output: ParameterIndex::new(output),
             call_type: call_type.clone(),
             parameters: parameters.to_vec(),
+            return_channel,
             parameter_groups: ParameterGroup::from_params(parameters)?,
         })
     }

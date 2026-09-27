@@ -6,6 +6,7 @@ expression: "format!(\"===== Demo.java =====\\n{}\\n===== Point.java =====\\n{}\
 package com.boltffi.demo;
 
 final class Native {
+    static void ensureInitialized() {}
     static {
         String virtualMachineName = System.getProperty("java.vm.name", "")
             .toLowerCase(java.util.Locale.ROOT);

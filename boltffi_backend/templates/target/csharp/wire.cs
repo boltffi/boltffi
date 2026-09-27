@@ -9,6 +9,12 @@
         internal static FfiBuf FromBytes(byte[] bytes) =>
             NativeMethods.BufFromBytes(bytes, (nuint)bytes.Length);
 
+        internal static FfiBuf FromUnexpectedCallbackError(global::System.Exception error)
+        {
+            byte[] message = global::System.Text.Encoding.UTF8.GetBytes(error.ToString());
+            return NativeMethods.CallbackError(message, (nuint)message.Length);
+        }
+
         internal static FfiBuf FromRawArray<T>(T[] values) where T : unmanaged =>
             FromBytes(global::System.Runtime.InteropServices.MemoryMarshal.AsBytes(global::System.MemoryExtensions.AsSpan(values)).ToArray());
 

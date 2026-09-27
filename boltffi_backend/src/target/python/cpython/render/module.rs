@@ -25,6 +25,7 @@ use crate::{
 #[template(path = "target/python/native_module.c", escape = "none")]
 struct NativeModuleTemplate {
     module_name: String,
+    callback_error_storage: Identifier,
     method_table: Identifier,
     module_definition: Identifier,
     free_function: Identifier,
@@ -89,6 +90,7 @@ impl<'render, 'bindings> NativeModule<'render, 'bindings> {
         let methods = declarations.methods(bridge);
         let support = ModuleSupport::new(bridge, declarations.support())?;
         let source = NativeModuleTemplate {
+            callback_error_storage: self.bridge.callback_error()?.storage_name().clone(),
             module_name: bridge.module().as_str().to_owned(),
             method_table: bridge.symbols().method_table().clone(),
             module_definition: bridge.symbols().module_definition().clone(),
@@ -234,6 +236,11 @@ impl ModuleDeclarations {
                 self.enums
                     .iter()
                     .map(|enumeration| enumeration.declaration.cleanup()),
+            )
+            .chain(
+                self.classes
+                    .iter()
+                    .filter_map(|class| class.declaration.cleanup()),
             )
             .collect()
     }
@@ -687,6 +694,7 @@ struct ModuleSupport {
     encoded_records: bool,
     data_enums: bool,
     record_types: bool,
+    class_types: bool,
     c_style_enums: bool,
     callback_handles: bool,
     async_functions: bool,
@@ -728,6 +736,10 @@ impl ModuleSupport {
             encoded_records,
             data_enums,
             record_types: !artifacts.records.is_empty(),
+            class_types: artifacts
+                .classes
+                .iter()
+                .any(|class| class.has_registered_type()),
             c_style_enums: !artifacts.enums.is_empty(),
             callback_handles: !artifacts.callbacks.is_empty(),
             async_functions,
@@ -810,7 +822,7 @@ impl ModuleSupport {
     }
 
     fn uses_registered_types(&self) -> bool {
-        self.record_types || self.c_style_enums
+        self.record_types || self.c_style_enums || self.class_types
     }
 
     fn uses_native_record_types(&self) -> bool {

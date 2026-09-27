@@ -41,7 +41,7 @@ impl Shape {
         "enums.data_enum.shape.should_support_primary_constructor",
         justification = "Ensure the generated Shape primary constructor builds a Circle variant with the requested radius.",
         directions = "Call `enums::data_enum::Shape::new` through the generated binding and assert the generated Shape primary constructor builds a Circle variant with the requested radius."
-    )]
+)]
     pub fn new(radius: f64) -> Self {
         Shape::Circle { radius }
     }
@@ -50,7 +50,7 @@ impl Shape {
         "enums.data_enum.shape.unit_circle.should_construct_circle",
         justification = "Ensure Shape::unit_circle constructs a Circle variant with unit radius.",
         directions = "Call `enums::data_enum::Shape::unit_circle` through the generated binding and assert Shape::unit_circle constructs a Circle variant with unit radius."
-    )]
+)]
     pub fn unit_circle() -> Self {
         Shape::Circle { radius: 1.0 }
     }
@@ -59,7 +59,7 @@ impl Shape {
         "enums.data_enum.shape.square.should_construct_rectangle",
         justification = "Ensure Shape::square constructs a Rectangle variant whose width and height match the side length.",
         directions = "Call `enums::data_enum::Shape::square` through the generated binding and assert Shape::square constructs a Rectangle variant whose width and height match the side length."
-    )]
+)]
     pub fn square(side: f64) -> Self {
         Shape::Rectangle {
             width: side,
@@ -71,12 +71,12 @@ impl Shape {
         "enums.data_enum.shape.try_circle.should_return_circle_for_positive_radius",
         justification = "Ensure Shape::try_circle returns a Circle variant for a positive radius.",
         directions = "Call `enums::data_enum::Shape::try_circle` through the generated binding and assert Shape::try_circle returns a Circle variant for a positive radius."
-    )]
+)]
     #[demo_bench_macros::demo_case(
         "enums.data_enum.shape.should_reject_non_positive_circle_radius",
         justification = "Ensure Shape::try_circle returns a language-native error when radius is zero or negative.",
         directions = "Call `enums::data_enum::Shape::try_circle` through the generated binding and assert Shape::try_circle returns a language-native error when radius is zero or negative."
-    )]
+)]
     pub fn try_circle(radius: f64) -> Result<Self, String> {
         if radius <= 0.0 {
             Err("radius must be positive".to_string())
@@ -99,7 +99,7 @@ impl Shape {
             reason = ExclusionReason::CoverageGap,
             details = "This C# regression case is not asserted by the Java demo suite yet. Add it when Java demo coverage expands for optional data-enum constructors."
         )
-    )]
+)]
     #[demo_bench_macros::demo_case(
         "enums.data_enum.shape.maybe_circle.should_return_none_for_non_positive_radius",
         justification = "Ensure Shape::maybe_circle returns None for a non-positive radius.",
@@ -114,7 +114,7 @@ impl Shape {
             reason = ExclusionReason::CoverageGap,
             details = "This C# regression case is not asserted by the Java demo suite yet. Add it when Java demo coverage expands for optional data-enum constructors."
         )
-    )]
+)]
     pub fn maybe_circle(radius: f64) -> Option<Self> {
         if radius > 0.0 {
             Some(Shape::Circle { radius })
@@ -127,7 +127,7 @@ impl Shape {
         "enums.data_enum.shape.should_support_numeric_instance_methods",
         justification = "Ensure Shape instance methods can wire-encode the receiver and return numeric results.",
         directions = "Call `enums::data_enum::Shape::area` through the generated binding and assert Shape instance methods can wire-encode the receiver and return numeric results."
-    )]
+)]
     pub fn area(&self) -> f64 {
         match self {
             Shape::Circle { radius } => std::f64::consts::PI * radius * radius,
@@ -145,7 +145,7 @@ impl Shape {
         "enums.data_enum.shape.should_support_string_instance_methods",
         justification = "Ensure Shape instance methods can wire-encode the receiver and return string results.",
         directions = "Call `enums::data_enum::Shape::describe` through the generated binding and assert Shape instance methods can wire-encode the receiver and return string results."
-    )]
+)]
     pub fn describe(&self) -> String {
         match self {
             Shape::Circle { radius } => format!("circle r={}", radius),
@@ -162,7 +162,7 @@ impl Shape {
         "enums.data_enum.shape.should_report_variant_count",
         justification = "Ensure the generated Shape static method can return primitive metadata about the data enum.",
         directions = "Call `enums::data_enum::Shape::variant_count` through the generated binding and assert the generated Shape static method can return primitive metadata about the data enum."
-    )]
+)]
     pub fn variant_count() -> u32 {
         6
     }
@@ -175,12 +175,12 @@ impl Shape {
         "enums.data_enum.shape.try_apex_point.should_return_some_for_positive_radius",
         justification = "Ensure Shape::try_apex_point returns Some(Point) for a positive radius while resolving Point as the record type.",
         directions = "Call `enums::data_enum::Shape::try_apex_point` through the generated binding and assert Shape::try_apex_point returns Some(Point) for a positive radius while resolving Point as the record type."
-    )]
+)]
     #[demo_bench_macros::demo_case(
         "enums.data_enum.shape.try_apex_point.should_return_none_for_non_positive_radius",
         justification = "Ensure Shape::try_apex_point returns None for a non-positive radius while resolving Point as the record type.",
         directions = "Call `enums::data_enum::Shape::try_apex_point` through the generated binding and assert Shape::try_apex_point returns None for a non-positive radius while resolving Point as the record type."
-    )]
+)]
     pub fn try_apex_point(radius: f64) -> Option<Point> {
         if radius > 0.0 {
             Some(Point { x: 0.0, y: radius })

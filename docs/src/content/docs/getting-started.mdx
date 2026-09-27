@@ -1,6 +1,6 @@
 ---
 title: "Getting Started"
-description: "Set up a BoltFFI Rust library, install prerequisites, configure packaging, and generate bindings for Apple, Android, Java, C#, WASM, and Python targets."
+description: "Set up a BoltFFI Rust library, install prerequisites, configure packaging, and generate bindings for Apple, Android, Java, C#, WASM, Python, and C targets."
 ---
 
 # Getting Started
@@ -16,6 +16,7 @@ This guide walks you through creating a Rust library and packaging it for use in
 - For C#: .NET SDK 10.0+ for the current C# demo and generated binding tests
 - For WASM: Node.js 18+ and wasm-pack (`cargo install wasm-pack`)
 - For Python, Python 3.10+ with pip
+- For C, a C11 compiler such as GCC, Clang, or MSVC
 
 ## Install BoltFFI
 
@@ -61,6 +62,7 @@ Replace `src/lib.rs`:
 use boltffi::*;
 
 #[data]
+#[derive(Clone, Copy)]
 pub struct Point {
     pub x: f64,
     pub y: f64,
@@ -217,6 +219,46 @@ p1 = mylib.Point(0, 0)
 p2 = mylib.Point(3, 4)
 print(mylib.distance(p1, p2))  # 5.0
 ```
+
+## Use in C
+
+Enable the experimental target in `boltffi.toml`:
+
+```toml
+[targets.c]
+enabled = true
+output = "dist/c"
+```
+
+Then build the header and libraries:
+
+```sh
+boltffi pack c --experimental --deny-skipped
+```
+
+Save this as `main.c`:
+
+```c
+#include <stdio.h>
+#include "mylib.h"
+
+int main(void) {
+    MylibPoint start = {0.0, 0.0};
+    MylibPoint end = {3.0, 4.0};
+    printf("%g\n", mylib_distance(start, end));
+    return 0;
+}
+```
+
+On Linux or macOS:
+
+```sh
+cc -std=c11 main.c -I dist/c/include -L dist/c/lib -lmylib \
+  -Wl,-rpath,"$PWD/dist/c/lib" -o example
+./example
+```
+
+The program prints `5`. See [linking a C program](/docs/c#link-a-c-program) for Windows commands and [memory management](/docs/c#memory-management) for cleanup rules.
 
 ## What you learned
 

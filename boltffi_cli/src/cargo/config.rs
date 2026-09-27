@@ -113,12 +113,8 @@ pub(crate) fn cargo_config_file_candidates_with_inputs(
     });
 
     resolved_cargo_home
+        .or_else(|| home_directory.map(|home_directory| home_directory.join(".cargo")))
         .into_iter()
-        .chain(
-            home_directory
-                .into_iter()
-                .map(|home_directory| home_directory.join(".cargo")),
-        )
         .flat_map(|config_root| {
             ["config.toml", "config"]
                 .into_iter()
@@ -521,6 +517,41 @@ debug = "line-directives-only"
 
         assert!(candidates.contains(&workspace_directory.join(".cargo").join("config.toml")));
         assert!(candidates.contains(&home_directory.join(".cargo").join("config")));
+    }
+
+    #[test]
+    fn explicit_cargo_home_replaces_the_default_configuration_directory() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time went backwards")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("boltffi-explicit-cargo-home-{unique}"));
+        let workspace = root.join("workspace");
+        let home_directory = root.join("home");
+        let cargo_home = root.join("cargo");
+        fs::create_dir_all(&workspace).expect("create workspace");
+        fs::create_dir_all(home_directory.join(".cargo")).expect("create default cargo home");
+        fs::create_dir_all(&cargo_home).expect("create explicit cargo home");
+        fs::write(
+            home_directory.join(".cargo/config.toml"),
+            "[profile.dev]\ndebug = true\n",
+        )
+        .expect("write default configuration");
+        fs::write(
+            cargo_home.join("config.toml"),
+            "[profile.dev]\ndebug = false\n",
+        )
+        .expect("write explicit configuration");
+
+        let candidates = cargo_config_file_candidates_with_inputs(
+            vec![workspace.clone()],
+            Some(workspace),
+            Some(cargo_home.clone()),
+            Some(home_directory),
+        );
+
+        assert_eq!(candidates, vec![cargo_home.join("config.toml")]);
+        fs::remove_dir_all(root).expect("remove fixture");
     }
 
     #[test]

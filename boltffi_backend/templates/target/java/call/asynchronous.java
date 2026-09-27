@@ -3,12 +3,14 @@
 {% for statement in asynchronous.create_acquire() %}                {{ statement }}
 {% endfor %}{% if asynchronous.has_create_cleanup() %}                try {
 {% for statement in asynchronous.create_prepare() %}                    {{ statement }}
-{% endfor %}                    return {{ asynchronous.create() }};
+{% endfor %}                    {% for statement in asynchronous.create() %}{{ statement }}
+{% endfor %}
                 } finally {
 {% for statement in asynchronous.create_cleanup() %}                    {{ statement }}
 {% endfor %}                }
 {% else %}{% for statement in asynchronous.create_prepare() %}                {{ statement }}
-{% endfor %}                return {{ asynchronous.create() }};
+{% endfor %}                {% for statement in asynchronous.create() %}{{ statement }}
+{% endfor %}
 {% endif %}            },
             (future, continuation) -> {{ asynchronous.poll() }},
             (future) -> {

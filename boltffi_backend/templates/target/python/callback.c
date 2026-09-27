@@ -14,9 +14,6 @@ static uint64_t {{ clone }}(uint64_t handle) {
 
 {%- for method in methods %}
 static {{ method.returns.c_type }} {{ method.function }}(uint64_t handle{% if let Some(fallible) = method.fallible_return %}{% for declaration in fallible.declarations %}, {{ declaration }}{% endfor %}{% endif %}{% for param in method.params %}{% for declaration in param.declarations %}, {{ declaration }}{% endfor %}{% endfor %}{% if let Some(completion) = method.completion %}, {{ completion.declaration }}, {{ completion.data_declaration }}{% endif %}) {
-{%- for param in method.params %}
-    PyObject *{{ param.object }} = NULL;
-{%- endfor %}
     PyObject *callback = NULL;
     PyObject *arguments = NULL;
     PyObject *result = NULL;
@@ -62,12 +59,14 @@ static {{ method.returns.c_type }} {{ method.function }}(uint64_t handle{% if le
         goto done;
     }
 {%- for param in method.params %}
-    {{ param.object }} = {{ param.expression }};
+    PyObject *{{ param.object }} = {{ param.expression }};
     if ({{ param.object }} == NULL) {
         goto done;
     }
+{%- if param.class_release.is_some() %}
+    {{ param.name }} = 0;
+{%- endif %}
     PyTuple_SET_ITEM(arguments, {{ loop.index0 }}, {{ param.object }});
-    {{ param.object }} = NULL;
 {%- endfor %}
     result = PyObject_CallObject(callback, arguments);
     if (result == NULL) {
@@ -181,13 +180,23 @@ static {{ method.returns.c_type }} {{ method.function }}(uint64_t handle{% if le
 {%- endif %}
 done:
     if (PyErr_Occurred()) {
-        PyErr_Print();
-{%- if let Some(completion) = method.completion %}
+{%- if let Some(fallible) = method.fallible_return %}
+        {{ fallible.error.value }} = boltffi_python_callback_error();
+{%- elif let Some(completion) = method.completion %}
         completion_status = FFI_STATUS_INTERNAL_ERROR;
+{%- if completion.payload.fallible %}
+        {{ completion.payload.value() }} = boltffi_python_callback_error();
+{%- else %}
+        PyErr_Print();
+{%- endif %}
+{%- else %}
+        PyErr_Print();
 {%- endif %}
     }
 {%- for param in method.params %}
-    Py_XDECREF({{ param.object }});
+{%- if let Some(release) = param.class_release %}
+    if ({{ param.name }} != 0) {{ release }}({{ param.name }});
+{%- endif %}
 {%- endfor %}
 {%- if method.wire_payload %}
     Py_XDECREF(return_wire);

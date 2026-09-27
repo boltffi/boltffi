@@ -1,6 +1,6 @@
 ---
 title: "Errors"
-description: "Map Rust Result<T, E> into native error handling in Swift, Kotlin, Java, C#, TypeScript, and Python with BoltFFI using string errors and structured error types."
+description: "Map Rust Result<T, E> into native error handling in Swift, Kotlin, Java, C#, TypeScript, Python, and C with BoltFFI using string errors and structured error types."
 ---
 
 import CodeComparison from "../../components/CodeComparisonWrapper.astro";
@@ -8,9 +8,13 @@ import TypeTable from "../../components/TypeTableWrapper.astro";
 
 # Errors
 
-Rust represents fallible operations with `Result<T, E>`. Target languages have different conventions: Swift uses `throws`, Kotlin, Java, and C# use exceptions, and TypeScript uses try/catch. BoltFFI converts `Result` return types into the native error handling mechanism of each platform. When a function returns `Err`, it becomes a thrown error or exception in the target language.
+C examples use the package name `demo` and include `demo.h`. See [C memory management](/docs/c#memory-management) for borrowed inputs and returned owners.
+
+Rust represents fallible operations with `Result<T, E>`. Target languages have different conventions: Swift uses `throws`, Kotlin, Java, and C# use exceptions, and TypeScript uses try/catch. BoltFFI converts `Result` return types into the native error handling mechanism of each platform. When a function returns `Err`, it becomes a thrown error or exception in those targets. C returns a struct with an `ok` flag and a union holding the value or error; callers check the flag and free the result.
 
 ## Supported Error Types
+
+In C, read `data.value` when `ok` is true and `data.error` when it is false. `Result<(), E>` has no success value to read. The result owns whichever union member is active, including nested allocations or a returned class handle. Call the result's generated cleanup function once; do not free the active member separately and then free the result.
 
 The error type in `Result<T, E>` can be:
 
@@ -24,6 +28,7 @@ The `#[error]` attribute marks types as error types. Generated bindings expose t
 - Kotlin: error types extend `Exception`
 - Java: error enums and classes include a nested `Exception` type that extends `RuntimeException`
 - C#: generated methods throw `BoltException` for string errors or typed `*Exception` wrappers that expose the original error value
+- C: the typed result contains the error record, enum, or string in `data.error`
 
 ## String Errors
 
@@ -34,6 +39,7 @@ String errors use generic wrapper types:
 - Java: `RuntimeException`
 - C#: `BoltException`
 - TypeScript: `FfiException`
+- C: `DemoString` in the active result union for a package named `demo`
 
 Custom error types are thrown directly or wrapped as the native target requires.
 
@@ -105,11 +111,18 @@ try:
     n = parse_int("42")
 except RuntimeError as error:
     print(error)`}
+  c={`DemoParseIntResult parsed = demo_parse_int(demo_string_view("42", 2));
+if (parsed.ok) {
+    printf("%d\\n", parsed.data.value);
+} else {
+    fwrite(parsed.data.error.ptr, 1, parsed.data.error.len, stderr);
+}
+demo_parse_int_result_free(&parsed);`}
 />
 
 ## Struct Errors
 
-For structured error information, define a struct with `#[error]`. The struct becomes a throwable error type in both languages.
+For structured error information, define a struct with `#[error]`. The managed targets expose it through their error or exception types. C puts the error record in the result's `data.error` field.
 
 <CodeComparison
   title=""
@@ -243,6 +256,12 @@ try:
 except ParseErrorException as error:
     details = error.error
     print(f"{details.line}:{details.column}: {details.message}")`}
+  c={`DemoParseConfigResult parsed = demo_parse_config(demo_string_view("invalid", 7));
+if (!parsed.ok) {
+    printf("line %u, column %u\\n", parsed.data.error.line, parsed.data.error.column);
+    fwrite(parsed.data.error.message.ptr, 1, parsed.data.error.message.len, stderr);
+}
+demo_parse_config_result_free(&parsed);`}
 />
 
 ## Enum Errors
@@ -415,11 +434,17 @@ except AuthErrorException as error:
             print("Please log in again")
         case AuthError.ACCOUNT_LOCKED:
             print("Account is locked")`}
+  c={`DemoLoginResult login = demo_login(
+    demo_string_view("alice", 5), demo_string_view("wrong", 5));
+if (!login.ok && login.data.error == DEMO_AUTH_ERROR_INVALID_CREDENTIALS) {
+    fputs("invalid credentials\\n", stderr);
+}
+demo_login_result_free(&login);`}
 />
 
 ### Enums with Payloads
 
-When enum variants carry associated data, the error becomes a sealed type hierarchy.
+When enum variants carry associated data, the managed targets expose a sealed type hierarchy or tagged union. C uses the enum's `tag` and `data` union inside the result's `data.error` field.
 
 <CodeComparison
   title=""
@@ -605,9 +630,16 @@ except ApiErrorException as error:
         print("User not found")
     elif isinstance(details, ApiErrorRateLimited):
         print(f"Try again in {details.retry_after}s")`}
+  c={`DemoFetchUserResult fetched = demo_fetch_user(42);
+if (!fetched.ok && fetched.data.error.tag == DEMO_API_ERROR_RATE_LIMITED) {
+    printf("retry in %u seconds\\n", fetched.data.error.data.rate_limited.retry_after);
+}
+demo_fetch_user_result_free(&fetched);`}
 />
 
 ## Async Errors
+
+C does not generate async functions yet. This section applies to the other targets.
 
 Async functions that return `Result` work the same way. The error is delivered through the target language's native error handling when the async operation completes.
 

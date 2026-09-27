@@ -5,10 +5,10 @@ use crate::config::Config;
 use crate::reporter::Reporter;
 
 use super::{
-    PackAllOptions, PackAndroidOptions, PackAppleOptions, PackCSharpOptions, PackDartOptions,
-    PackJavaOptions, PackKmpOptions, PackPythonOptions, PackWasmOptions, pack_android, pack_apple,
-    pack_csharp, pack_dart, pack_kmp, pack_prepared_java, pack_python, pack_wasm,
-    prepare_java_pack,
+    PackAllOptions, PackAndroidOptions, PackAppleOptions, PackCOptions, PackCSharpOptions,
+    PackDartOptions, PackJavaOptions, PackKmpOptions, PackPythonOptions, PackWasmOptions,
+    pack_android, pack_apple, pack_c, pack_csharp, pack_dart, pack_kmp, pack_prepared_java,
+    pack_python, pack_wasm, prepare_java_pack,
 };
 
 pub(super) fn pack_all(
@@ -113,6 +113,18 @@ pub(super) fn pack_all(
         pack_dart(
             config,
             PackDartOptions {
+                execution: options.execution.clone(),
+                experimental: options.experimental,
+            },
+            reporter,
+        )?;
+        packed_any = true;
+    }
+
+    if config.should_process(Target::C, options.experimental) {
+        pack_c(
+            config,
+            PackCOptions {
                 execution: options.execution.clone(),
                 experimental: options.experimental,
             },

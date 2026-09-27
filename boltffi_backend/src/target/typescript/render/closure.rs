@@ -345,6 +345,10 @@ impl ClosureAdapter {
         self.name.clone()
     }
 
+    pub fn unregister(&self) -> &Identifier {
+        &self.unregister
+    }
+
     pub fn register(&self) -> Identifier {
         self.register.clone()
     }

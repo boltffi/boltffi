@@ -99,6 +99,7 @@ pub struct Tokens {
     items: Vec<TokenStream>,
     ffi_parameters: Vec<TokenStream>,
     ffi_parameter_types: Vec<TokenStream>,
+    owned_values: Vec<TokenStream>,
     conversions: Vec<TokenStream>,
     writebacks: Vec<TokenStream>,
     argument: TokenStream,
@@ -119,6 +120,10 @@ impl Tokens {
 
     pub fn conversions(&self) -> &[TokenStream] {
         &self.conversions
+    }
+
+    pub fn owned_values(&self) -> &[TokenStream] {
+        &self.owned_values
     }
 
     pub fn writebacks(&self) -> &[TokenStream] {

@@ -13,14 +13,14 @@
 use crate::{
     bridge::{
         c::{ArgumentList, Expression, Identifier, Literal, TypeFragment},
-        jni::{ClosureArgument, ClosureRegistration, name::LookupText},
+        jni::{ClosureArgument, ClosureCParameter, ClosureRegistration, name::LookupText},
     },
     core::Result,
 };
 
 use super::{
-    ClosureBytesArgumentView, ClosureCParameterView, ClosureDirectVectorArgumentView,
-    ClosureHandleArgumentView, ClosureRecordArgumentView,
+    ClosureBytesArgumentView, ClosureDirectVectorArgumentView, ClosureHandleArgumentView,
+    ClosureRecordArgumentView,
 };
 
 pub struct ClosureRegistrationView {
@@ -36,20 +36,21 @@ pub struct ClosureRegistrationView {
     pub returns_void: bool,
     pub returns_byte_array: bool,
     pub returns_bytes: bool,
+    pub returns_error: bool,
     pub returns_record: bool,
     pub returns_callback_handle: bool,
     pub callback_handle_constructor: Option<Identifier>,
     pub method_signature: LookupText,
     pub call_method_suffix: String,
     pub failure_value: Expression,
-    pub c_parameters: Vec<ClosureCParameterView>,
+    pub c_parameters: Vec<ClosureCParameter>,
     pub byte_arrays: Vec<ClosureBytesArgumentView>,
     pub direct_vectors: Vec<ClosureDirectVectorArgumentView>,
     pub records: Vec<ClosureRecordArgumentView>,
     pub closure_handles: Vec<ClosureHandleArgumentView>,
     pub jni_arguments: ArgumentList,
     pub has_jni_arguments: bool,
-    pub handle_parameters: Vec<ClosureCParameterView>,
+    pub handle_parameters: Vec<ClosureCParameter>,
     pub handle_byte_arrays: Vec<ClosureBytesArgumentView>,
     pub handle_direct_vectors: Vec<ClosureDirectVectorArgumentView>,
     pub handle_records: Vec<ClosureRecordArgumentView>,
@@ -73,6 +74,7 @@ impl ClosureRegistrationView {
             returns_void: registration.returns_void(),
             returns_byte_array: registration.returns_byte_array(),
             returns_bytes: registration.returns_bytes(),
+            returns_error: registration.returns_error(),
             returns_record: registration.returns_record(),
             returns_callback_handle: registration.returns_callback_handle(),
             callback_handle_constructor: registration.callback_handle_constructor().cloned(),
@@ -87,7 +89,6 @@ impl ClosureRegistrationView {
             c_parameters: arguments
                 .iter()
                 .flat_map(ClosureArgument::c_parameters)
-                .map(ClosureCParameterView::from_parameter)
                 .collect(),
             byte_arrays: arguments
                 .iter()
@@ -114,7 +115,6 @@ impl ClosureRegistrationView {
             handle_parameters: arguments
                 .iter()
                 .flat_map(ClosureArgument::handle_parameters)
-                .map(ClosureCParameterView::from_parameter)
                 .collect(),
             handle_byte_arrays: arguments
                 .iter()

@@ -1,13 +1,17 @@
-use boltffi_ast::{RecordDef as SourceRecord, TypeExpr};
+use boltffi_ast::{
+    Primitive as SourcePrimitive, RecordDef as SourceRecord, ReprAttr, ReprItem, TypeExpr,
+};
 
 use crate::{
-    CanonicalName, DirectFieldDecl, DirectRecordDecl, EncodedFieldDecl, EncodedRecordDecl,
-    ExportedMethodDecl, FieldKey, InitializerDecl, NativeSymbol, RecordDecl, ValueRef,
+    CanonicalName, DirectFieldDecl, DirectFieldType, DirectRecordDecl, EncodedFieldDecl,
+    EncodedRecordDecl, ExportedMethodDecl, FieldKey, InitializerDecl, NativeSymbol, RecordDecl,
+    ValueRef,
 };
 
 use super::{
     LowerError, codecs, error::UnsupportedType, ids::DeclarationIds, index::Index, layout,
-    metadata, methods, primitive, surface::SurfaceLower, symbol::SymbolAllocator, types,
+    layout::PortableAlignment, metadata, methods, primitive, surface::SurfaceLower,
+    symbol::SymbolAllocator, types,
 };
 
 /// Lowers every record in the source contract.
@@ -40,17 +44,61 @@ pub fn lower<S: SurfaceLower>(
 /// A record with no `repr` items qualifies because `#[data]` materializes
 /// `#[repr(C)]` on the emitted struct; expansion verifies the resulting
 /// layout against the lowered record layout with compile-time assertions.
-/// A record that declares a different `repr` keeps the layout intent it
-/// wrote and crosses encoded. Records whose size or field offsets change
-/// between supported native ABI alignment profiles also cross encoded.
+/// `repr(C)` with `align(N)` or `packed(N)` qualifies only while the
+/// modifier leaves that layout unchanged on every supported ABI; any other
+/// repr keeps the layout intent it wrote and crosses encoded. Records whose
+/// size or field offsets change between supported native ABI alignment
+/// profiles also cross encoded.
 pub fn is_direct(record: &SourceRecord) -> bool {
-    primitive::has_effective_repr_c(&record.repr)
-        && !record.fields.is_empty()
-        && record
-            .fields
-            .iter()
-            .all(|field| primitive::direct_field_type(&field.type_expr).is_some())
-        && layout::has_portable_byte_layout(record)
+    direct_record_fields(
+        &record.repr,
+        record.fields.iter().map(|field| match &field.type_expr {
+            TypeExpr::Primitive(field_primitive) => Some(*field_primitive),
+            _ => None,
+        }),
+    )
+}
+
+/// Classifies record fields for direct-vs-encoded crossing from the
+/// record's repr and per-field primitives, `None` marking a field whose
+/// type is not a primitive.
+///
+/// The record classification rule itself, split out of `is_direct` and
+/// exported so a lane that cannot run the full lowering pass classifies a
+/// record through the same rule: at least one field, every field an
+/// admissible fixed-width primitive, byte layout agreement across the
+/// supported native ABI alignment profiles, and a repr that keeps the
+/// natural `repr(C)` layout.
+pub fn direct_record_fields<I>(repr: &ReprAttr, field_primitives: I) -> bool
+where
+    I: IntoIterator<Item = Option<SourcePrimitive>>,
+{
+    let Some(field_types) = field_primitives
+        .into_iter()
+        .map(|field_primitive| {
+            field_primitive.and_then(|field_primitive| DirectFieldType::new(field_primitive.into()))
+        })
+        .collect::<Option<Vec<_>>>()
+    else {
+        return false;
+    };
+    !field_types.is_empty()
+        && layout::portable_alignment(&field_types)
+            .is_some_and(|alignment| keeps_natural_c_layout(repr, &alignment))
+}
+
+/// `align(N)` must not raise the alignment under the narrowest profile and
+/// `packed(N)` must not lower it under the widest, so the compiled struct
+/// has the natural layout the C bridge declares on every supported ABI.
+fn keeps_natural_c_layout(repr: &ReprAttr, alignment: &PortableAlignment) -> bool {
+    repr.items.is_empty()
+        || (repr.items.iter().any(|item| matches!(item, ReprItem::C))
+            && repr.items.iter().all(|item| match item {
+                ReprItem::C => true,
+                ReprItem::Align(bytes) => u64::from(*bytes) <= alignment.least,
+                ReprItem::Packed(bytes) => u64::from(bytes.unwrap_or(1)) >= alignment.greatest,
+                _ => false,
+            }))
 }
 
 fn lower_one<S: SurfaceLower>(
@@ -351,6 +399,89 @@ mod tests {
         record.repr = ReprAttr::new(vec![ReprItem::Transparent]);
 
         let bindings = lower_record::<Native>(record);
+
+        encoded_record(&bindings);
+    }
+
+    fn repr_record(fields: Vec<(&str, Primitive)>, repr: Vec<ReprItem>) -> RecordDef {
+        let mut record = record(
+            "demo::Cell",
+            "cell",
+            fields
+                .into_iter()
+                .map(|(field_name, primitive)| field(field_name, TypeExpr::Primitive(primitive)))
+                .collect(),
+        );
+        record.repr = ReprAttr::new(repr);
+        record
+    }
+
+    #[test]
+    fn classifies_alignment_that_changes_nothing_as_direct() {
+        let bindings = lower_record::<Native>(repr_record(
+            vec![("value", Primitive::U32)],
+            vec![ReprItem::C, ReprItem::Align(4)],
+        ));
+
+        direct_record(&bindings);
+    }
+
+    #[test]
+    fn classifies_over_aligned_record_as_encoded() {
+        let bindings = lower_record::<Native>(repr_record(
+            vec![("a", Primitive::U32), ("b", Primitive::U32)],
+            vec![ReprItem::C, ReprItem::Align(8)],
+        ));
+
+        encoded_record(&bindings);
+    }
+
+    #[test]
+    fn classifies_alignment_raised_only_on_32_bit_x86_as_encoded() {
+        let bindings = lower_record::<Native>(repr_record(
+            vec![("value", Primitive::U64)],
+            vec![ReprItem::C, ReprItem::Align(8)],
+        ));
+
+        encoded_record(&bindings);
+    }
+
+    #[test]
+    fn classifies_packing_that_changes_nothing_as_direct() {
+        let bindings = lower_record::<Native>(repr_record(
+            vec![("tag", Primitive::U8), ("flag", Primitive::Bool)],
+            vec![ReprItem::C, ReprItem::Packed(None)],
+        ));
+
+        direct_record(&bindings);
+    }
+
+    #[test]
+    fn classifies_packed_record_as_encoded() {
+        let bindings = lower_record::<Native>(repr_record(
+            vec![("tag", Primitive::U8), ("count", Primitive::U32)],
+            vec![ReprItem::C, ReprItem::Packed(None)],
+        ));
+
+        encoded_record(&bindings);
+    }
+
+    #[test]
+    fn classifies_packing_below_wide_scalar_alignment_as_encoded() {
+        let bindings = lower_record::<Native>(repr_record(
+            vec![("value", Primitive::U64)],
+            vec![ReprItem::C, ReprItem::Packed(Some(4))],
+        ));
+
+        encoded_record(&bindings);
+    }
+
+    #[test]
+    fn classifies_alignment_without_repr_c_as_encoded() {
+        let bindings = lower_record::<Native>(repr_record(
+            vec![("value", Primitive::U32)],
+            vec![ReprItem::Align(4)],
+        ));
 
         encoded_record(&bindings);
     }

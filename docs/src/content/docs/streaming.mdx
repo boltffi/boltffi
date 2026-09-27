@@ -8,6 +8,8 @@ import TypeTable from "../../components/TypeTableWrapper.astro";
 
 # Streaming
 
+The C target does not generate streams yet. These examples apply to the other targets. See [C limitations](/docs/experimental#c).
+
 Streams provide continuous data flow from Rust to target languages. Unlike async functions that return a single value, streams deliver multiple values over time. BoltFFI generates native stream types that integrate with each platform's concurrency model, and handles the underlying buffering and synchronization.
 
 ## The ffi_stream Attribute

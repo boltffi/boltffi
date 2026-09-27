@@ -260,10 +260,6 @@ impl Expression {
         Self(format!("await {value}"))
     }
 
-    pub(crate) fn is_none(value: Expression) -> Self {
-        Self(format!("{value} is None"))
-    }
-
     pub(crate) fn empty_list() -> Self {
         Self::new("[]")
     }

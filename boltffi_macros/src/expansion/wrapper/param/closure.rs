@@ -135,8 +135,6 @@ impl<'expansion, 'lowered> Input<'expansion, 'lowered, Native> {
         let closure = closure_binding.native_binding(NativeBinding {
             ident: ident.clone(),
             callback: callback.clone(),
-            context: context.clone(),
-            release: release.clone(),
             owner: owner.clone(),
             rust_parameters: invoke_parameters.rust_parameters.clone(),
             body,
@@ -152,6 +150,20 @@ impl<'expansion, 'lowered> Input<'expansion, 'lowered, Native> {
             return_type.clone(),
         )?;
         let release_type = closure_binding.native_release_function_type();
+        let ownership = match self.closure.presence() {
+            HandlePresence::Nullable => quote! {
+                let #owner = #release.map(|release| {
+                    ::boltffi::__private::NativeCallbackOwner::new(#context, release)
+                });
+            },
+            _ => quote! {
+                let #owner = ::boltffi::__private::NativeCallbackOwner::new(#context, #release);
+            },
+        };
+        let (owned_values, conversions) = match self.closure {
+            ForeignClosure::Parameter(_) => (vec![ownership], vec![closure]),
+            ForeignClosure::Return(_) => (Vec::new(), vec![ownership, closure]),
+        };
 
         Ok(Tokens {
             items: Vec::new(),
@@ -165,7 +177,8 @@ impl<'expansion, 'lowered> Input<'expansion, 'lowered, Native> {
                 quote! { *mut ::core::ffi::c_void },
                 release_type,
             ],
-            conversions: vec![closure],
+            owned_values,
+            conversions,
             writebacks: Vec::new(),
             argument: quote! { #ident },
         })
@@ -233,7 +246,6 @@ impl<'expansion, 'lowered> Input<'expansion, 'lowered, Wasm32> {
         let closure = closure_binding.wasm_binding(
             ident,
             &owner,
-            &free,
             &invoke_parameters.rust_parameters,
             body,
             &self.failure,
@@ -254,17 +266,28 @@ impl<'expansion, 'lowered> Input<'expansion, 'lowered, Wasm32> {
             })
             .collect::<Vec<_>>();
 
+        let ownership = quote! {
+            let #owner = (#ident != 0).then(|| {
+                ::boltffi::__private::WasmCallbackOwner::new(#ident, #free)
+            });
+        };
+        let conversion = quote! {
+            unsafe extern "C" {
+                fn #call(handle: u32 #(, #ffi_parameters)*) #return_type;
+                fn #free(handle: u32);
+            }
+            #closure
+        };
+        let (owned_values, conversions) = match self.closure {
+            ForeignClosure::Parameter(_) => (vec![ownership], vec![conversion]),
+            ForeignClosure::Return(_) => (Vec::new(), vec![ownership, conversion]),
+        };
         Ok(Tokens {
             items: Vec::new(),
             ffi_parameters: vec![quote! { #ident: u32 }],
             ffi_parameter_types: vec![quote! { u32 }],
-            conversions: vec![quote! {
-                unsafe extern "C" {
-                    fn #call(handle: u32 #(, #ffi_parameters)*) #return_type;
-                    fn #free(handle: u32);
-                }
-                #closure
-            }],
+            owned_values,
+            conversions,
             writebacks: Vec::new(),
             argument: quote! { #ident },
         })
@@ -622,6 +645,46 @@ impl<'expansion, 'lowered, S: boltffi_binding::SurfaceLower>
         )
     }
 
+    fn error_expression(
+        &self,
+        result: &RustFallibleReturn,
+        bytes: TokenStream,
+    ) -> Result<TokenStream, Error> {
+        let ErrorDecl::EncodedViaReturnSlot { ty, codec, .. } = self.error else {
+            return Err(Error::SourceSyntaxMismatch(
+                "fallible closure requires an encoded error",
+            ));
+        };
+        let declared = self.encoded_expression(
+            codec,
+            &result.error_type,
+            &result.error_source,
+            bytes.clone(),
+        )?;
+        Ok(encoded::callback_error::classified_callback_error_value(
+            ty,
+            &result.error_type,
+            bytes,
+            declared,
+        ))
+    }
+
+    fn packed_error_expression(
+        &self,
+        result: &RustFallibleReturn,
+        packed: TokenStream,
+    ) -> Result<TokenStream, Error> {
+        let error = self.error_expression(result, quote! { __boltffi_error_bytes.as_slice() })?;
+        Ok(quote! {
+            {
+                let __boltffi_error_bytes = unsafe {
+                    ::boltffi::__private::take_packed_bytes(#packed)
+                };
+                #error
+            }
+        })
+    }
+
     fn packed_expression(
         &self,
         codec: &'lowered WritePlan,
@@ -672,36 +735,24 @@ impl<'expansion, 'lowered> ForeignClosureReturn<'expansion, 'lowered, Native> {
                     ty: DirectValueType::Primitive(primitive),
                 },
                 ErrorDecl::EncodedViaReturnSlot {
-                    codec,
                     shape: native::BufferShape::Buffer,
                     ..
                 },
             ) => {
                 let ffi_type = wrapper::type_ref::primitive(*primitive)?;
                 let result = self.rust_fallible_return()?;
-                let error = self.encoded_expression(
-                    codec,
-                    &result.error_type,
-                    &result.error_source,
-                    quote! { __boltffi_error_bytes },
-                )?;
+                let error = self.error_expression(&result, quote! { __boltffi_error_bytes })?;
                 Ok(ForeignClosureReturnTokens::NativeFallibleDirectPrimitive { ffi_type, error })
             }
             (
                 ReturnPlan::DirectViaOutPointer { .. },
                 ErrorDecl::EncodedViaReturnSlot {
-                    codec,
                     shape: native::BufferShape::Buffer,
                     ..
                 },
             ) => {
                 let result = self.rust_fallible_return()?;
-                let error = self.encoded_expression(
-                    codec,
-                    &result.error_type,
-                    &result.error_source,
-                    quote! { __boltffi_error_bytes },
-                )?;
+                let error = self.error_expression(&result, quote! { __boltffi_error_bytes })?;
                 Ok(ForeignClosureReturnTokens::NativeFallibleDirectPassable {
                     ok_type: result.ok_type,
                     error,
@@ -714,7 +765,6 @@ impl<'expansion, 'lowered> ForeignClosureReturn<'expansion, 'lowered, Native> {
                     ..
                 },
                 ErrorDecl::EncodedViaReturnSlot {
-                    codec: error_codec,
                     shape: native::BufferShape::Buffer,
                     ..
                 },
@@ -726,29 +776,18 @@ impl<'expansion, 'lowered> ForeignClosureReturn<'expansion, 'lowered, Native> {
                     &result.ok_source,
                     quote! { __boltffi_success_bytes },
                 )?;
-                let error = self.encoded_expression(
-                    error_codec,
-                    &result.error_type,
-                    &result.error_source,
-                    quote! { __boltffi_error_bytes },
-                )?;
+                let error = self.error_expression(&result, quote! { __boltffi_error_bytes })?;
                 Ok(ForeignClosureReturnTokens::NativeFallibleEncoded { ok, error })
             }
             (
                 ReturnPlan::Void,
                 ErrorDecl::EncodedViaReturnSlot {
-                    codec,
                     shape: native::BufferShape::Buffer,
                     ..
                 },
             ) => {
                 let result = self.rust_fallible_return()?;
-                let error = self.encoded_expression(
-                    codec,
-                    &result.error_type,
-                    &result.error_source,
-                    quote! { __boltffi_error_bytes },
-                )?;
+                let error = self.error_expression(&result, quote! { __boltffi_error_bytes })?;
                 Ok(ForeignClosureReturnTokens::NativeFallibleVoid { error })
             }
             (
@@ -822,36 +861,26 @@ impl<'expansion, 'lowered> ForeignClosureReturn<'expansion, 'lowered, Wasm32> {
                     ty: DirectValueType::Primitive(primitive),
                 },
                 ErrorDecl::EncodedViaReturnSlot {
-                    codec,
                     shape: wasm32::BufferShape::Packed,
                     ..
                 },
             ) => {
                 let ffi_type = wrapper::type_ref::primitive(*primitive)?;
                 let result = self.rust_fallible_return()?;
-                let error = self.packed_expression(
-                    codec,
-                    &result.error_type,
-                    &result.error_source,
-                    quote! { __boltffi_error_packed },
-                )?;
+                let error =
+                    self.packed_error_expression(&result, quote! { __boltffi_error_packed })?;
                 Ok(ForeignClosureReturnTokens::WasmFallibleDirectPrimitive { ffi_type, error })
             }
             (
                 ReturnPlan::DirectViaOutPointer { .. },
                 ErrorDecl::EncodedViaReturnSlot {
-                    codec,
                     shape: wasm32::BufferShape::Packed,
                     ..
                 },
             ) => {
                 let result = self.rust_fallible_return()?;
-                let error = self.packed_expression(
-                    codec,
-                    &result.error_type,
-                    &result.error_source,
-                    quote! { __boltffi_error_packed },
-                )?;
+                let error =
+                    self.packed_error_expression(&result, quote! { __boltffi_error_packed })?;
                 Ok(ForeignClosureReturnTokens::WasmFallibleDirectPassable {
                     ok_type: result.ok_type,
                     error,
@@ -864,7 +893,6 @@ impl<'expansion, 'lowered> ForeignClosureReturn<'expansion, 'lowered, Wasm32> {
                     ..
                 },
                 ErrorDecl::EncodedViaReturnSlot {
-                    codec: error_codec,
                     shape: wasm32::BufferShape::Packed,
                     ..
                 },
@@ -876,29 +904,20 @@ impl<'expansion, 'lowered> ForeignClosureReturn<'expansion, 'lowered, Wasm32> {
                     &result.ok_source,
                     quote! { __boltffi_success.assume_init() },
                 )?;
-                let error = self.packed_expression(
-                    error_codec,
-                    &result.error_type,
-                    &result.error_source,
-                    quote! { __boltffi_error_packed },
-                )?;
+                let error =
+                    self.packed_error_expression(&result, quote! { __boltffi_error_packed })?;
                 Ok(ForeignClosureReturnTokens::WasmFallibleEncoded { ok, error })
             }
             (
                 ReturnPlan::Void,
                 ErrorDecl::EncodedViaReturnSlot {
-                    codec,
                     shape: wasm32::BufferShape::Packed,
                     ..
                 },
             ) => {
                 let result = self.rust_fallible_return()?;
-                let error = self.packed_expression(
-                    codec,
-                    &result.error_type,
-                    &result.error_source,
-                    quote! { __boltffi_error_packed },
-                )?;
+                let error =
+                    self.packed_error_expression(&result, quote! { __boltffi_error_packed })?;
                 Ok(ForeignClosureReturnTokens::WasmFallibleVoid { error })
             }
             (
@@ -1328,8 +1347,6 @@ impl ClosureBinding {
         let NativeBinding {
             ident,
             callback,
-            context,
-            release,
             owner,
             rust_parameters,
             body,
@@ -1337,21 +1354,18 @@ impl ClosureBinding {
         } = input;
         match self {
             Self::ImplTrait(_) => Ok(quote! {
-                let #owner = ::boltffi::__private::NativeCallbackOwner::new(#context, #release);
                 let #ident = move |#(#rust_parameters),*| {
                     #body
                 };
             }),
             Self::Boxed(_, ty) => Ok(quote! {
-                let #owner = ::boltffi::__private::NativeCallbackOwner::new(#context, #release);
                 let #ident: #ty = Box::new(move |#(#rust_parameters),*| {
                     #body
                 });
             }),
             Self::NullableBoxed(_, ty) => Ok(quote! {
-                let #ident: #ty = match (#callback, #release) {
-                    (Some(#callback), Some(#release)) => {
-                        let #owner = ::boltffi::__private::NativeCallbackOwner::new(#context, #release);
+                let #ident: #ty = match (#callback, #owner) {
+                    (Some(#callback), Some(#owner)) => {
                         Some(Box::new(move |#(#rust_parameters),*| {
                             #body
                         }) as _)
@@ -1370,41 +1384,33 @@ impl ClosureBinding {
         &self,
         ident: &Ident,
         owner: &Ident,
-        free: &Ident,
         rust_parameters: &[TokenStream],
         body: TokenStream,
         failure: &TokenStream,
     ) -> Result<TokenStream, Error> {
         match self {
             Self::ImplTrait(_) => Ok(quote! {
-                if #ident == 0 {
+                let Some(#owner) = #owner else {
                     ::boltffi::__private::set_last_error(concat!(stringify!(#ident), ": null closure handle"));
                     #failure
-                }
-                let #owner = ::boltffi::__private::WasmCallbackOwner::new(#ident, #free);
+                };
                 let #ident = move |#(#rust_parameters),*| {
                     #body
                 };
             }),
             Self::Boxed(_, ty) => Ok(quote! {
-                if #ident == 0 {
+                let Some(#owner) = #owner else {
                     ::boltffi::__private::set_last_error(concat!(stringify!(#ident), ": null closure handle"));
                     #failure
-                }
-                let #owner = ::boltffi::__private::WasmCallbackOwner::new(#ident, #free);
+                };
                 let #ident: #ty = Box::new(move |#(#rust_parameters),*| {
                     #body
                 });
             }),
             Self::NullableBoxed(_, ty) => Ok(quote! {
-                let #ident: #ty = if #ident == 0 {
-                    None
-                } else {
-                    let #owner = ::boltffi::__private::WasmCallbackOwner::new(#ident, #free);
-                    Some(Box::new(move |#(#rust_parameters),*| {
-                        #body
-                    }) as _)
-                };
+                let #ident: #ty = #owner.map(|#owner| {
+                    Box::new(move |#(#rust_parameters),*| { #body }) as _
+                });
             }),
         }
     }
@@ -1413,8 +1419,6 @@ impl ClosureBinding {
 struct NativeBinding {
     ident: Ident,
     callback: Ident,
-    context: Ident,
-    release: Ident,
     owner: Ident,
     rust_parameters: Vec<TokenStream>,
     body: TokenStream,

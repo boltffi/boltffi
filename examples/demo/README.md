@@ -121,8 +121,8 @@ just demo-verify
 
 This packs the artifacts, runs each platform's own test entry point, and fails on the first regression. Supported host → platforms:
 
-- **macOS**: apple, kotlin, java, wasm, python
-- **Linux / Windows**: java, wasm, python
+- **macOS**: apple, kotlin, java, wasm, python, csharp, dart, c
+- **Linux / Windows**: java, wasm, python, csharp, dart, c
 
 Scope it down when iterating:
 
@@ -155,3 +155,7 @@ Short version: **touch this crate, add `#[benchmark_candidate]` if it should be 
 - `lib.rs` calls `uniffi::setup_scaffolding!()` only behind `#[cfg(feature = "uniffi")]`. If you add new UniFFI-exported types, make sure they live under that feature's umbrella; otherwise the default build will fail to compile against UniFFI attributes.
 - The `classes` module has two flavors: `thread_safe.rs` (wrapped in a `Mutex`) and `unsafe_single_threaded.rs` (plain `UnsafeCell`-style). They exist specifically to contrast method-call overhead, so keep both shapes when adding new class-style examples.
 - `out.txt`, `dist/`, `target/`, `benchmarks/generated/`, and `rust-boltffi/` under this directory are build artifacts; do not commit them.
+
+## C consumer
+
+The [C example](../platforms/c) includes a small program, a CMake build, and tests for the synchronous API. Run `bash examples/platforms/c/test-demo.sh` from the repository root. It enables the `c-demo` fixtures, packages the header and libraries, and runs the C consumers. See the [C guide](https://boltffi.dev/docs/c) for linking and ownership rules.

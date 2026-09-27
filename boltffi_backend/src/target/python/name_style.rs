@@ -56,18 +56,23 @@ impl Name {
         Identifier::escape(self.enum_member())
     }
 
-    pub fn associated_constant(
-        owner: &CanonicalName,
-        constant: &CanonicalName,
-    ) -> Result<Identifier> {
+    /// A `snake_case` name prefixed with its owner's, so two owners may declare the same member.
+    pub fn qualified(owner: &CanonicalName, member: &CanonicalName) -> Result<Identifier> {
         let name = owner
             .parts()
             .iter()
-            .chain(constant.parts())
+            .chain(member.parts())
             .map(NamePart::as_str)
             .collect::<Vec<_>>()
             .join("_");
         Identifier::escape(name)
+    }
+
+    pub fn associated_constant(
+        owner: &CanonicalName,
+        constant: &CanonicalName,
+    ) -> Result<Identifier> {
+        Self::qualified(owner, constant)
     }
 
     pub fn position_field(position: u32) -> Result<Identifier> {

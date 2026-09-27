@@ -356,6 +356,13 @@ impl BindingExpansion {
     pub(crate) fn surface(&self) -> BindingMetadataSurface {
         self.surface
     }
+
+    pub(crate) fn fixture_outputs(mut self, builds_staticlib: bool, builds_cdylib: bool) -> Self {
+        self.library = self
+            .library
+            .fixture_outputs(builds_staticlib, builds_cdylib);
+        self
+    }
 }
 
 #[cfg(test)]

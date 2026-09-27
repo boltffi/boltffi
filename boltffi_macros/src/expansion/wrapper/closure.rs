@@ -166,6 +166,7 @@ impl<'expansion, 'lowered, S: boltffi_binding::SurfaceLower> Parameter<'expansio
         }
         let conversions = tokens.conversions();
         Ok(ParameterTokens {
+            owned_values: tokens.owned_values().to_vec(),
             items: tokens.items().to_vec(),
             ffi_parameters: tokens.ffi_parameters().to_vec(),
             ffi_parameter_types: tokens.ffi_parameter_types().to_vec(),
@@ -194,6 +195,7 @@ impl<'expansion, 'lowered, S: boltffi_binding::SurfaceLower> Parameter<'expansio
             ))?;
 
         Ok(ParameterTokens {
+            owned_values: Vec::new(),
             items: Vec::new(),
             ffi_parameters: vec![quote! { #pointer: *const u8 }, quote! { #length: usize }],
             ffi_parameter_types: vec![quote! { *const u8 }, quote! { usize }],
@@ -290,6 +292,7 @@ impl<'expansion, 'lowered> Parameter<'expansion, 'lowered, Wasm32> {
 }
 
 struct ParameterTokens {
+    owned_values: Vec<TokenStream>,
     items: Vec<TokenStream>,
     ffi_parameters: Vec<TokenStream>,
     ffi_parameter_types: Vec<TokenStream>,
@@ -344,7 +347,8 @@ impl From<Vec<ParameterTokens>> for InvokeParameters {
                 .collect(),
             conversions: tokens
                 .iter()
-                .map(|token| token.conversion.clone())
+                .flat_map(|token| token.owned_values.iter().cloned())
+                .chain(tokens.iter().map(|token| token.conversion.clone()))
                 .collect(),
             arguments: tokens.iter().map(|token| token.argument.clone()).collect(),
         }

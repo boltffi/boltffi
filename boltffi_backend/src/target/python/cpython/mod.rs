@@ -1264,7 +1264,8 @@ mod tests {
         assert!(extension.contains("static PyObject *boltffi_python_callable_wrapper_boltffi_method_class_demo_engine_reset"));
         assert!(extension.contains("static PyObject *boltffi_python_callable_wrapper_boltffi_method_class_demo_engine_marker"));
         assert!(extension.contains("static PyObject *boltffi_python_callable_wrapper_boltffi_method_class_demo_engine_make_marker"));
-        assert!(extension.contains("boltffi_python_parse_u64(args[0], &receiver)"));
+        assert!(extension.contains("PyObject_GetAttrString(__boltffi_class_owner, \"_handle\")"));
+        assert!(extension.contains("boltffi_python_parse_u64(__boltffi_class_handle, &receiver)"));
         assert!(
             extension.contains("boltffi_python_boltffi_method_class_demo_engine_value(receiver)")
         );
@@ -1284,15 +1285,11 @@ mod tests {
         assert!(init.contains("def __del__(self) -> None:"));
         assert!(init.contains("_native._boltffi_engine_release(handle)"));
         assert!(init.contains("def value(self) -> int:"));
-        assert!(init.contains("return _native._boltffi_engine_value(self._handle)"));
+        assert!(init.contains("return _native._boltffi_engine_value(self)"));
         assert!(init.contains("def reset(self) -> None:"));
-        assert!(init.contains("_native._boltffi_engine_reset(self._handle)"));
+        assert!(init.contains("_native._boltffi_engine_reset(self)"));
         assert!(init.contains("def marker(self) -> Marker:"));
-        assert!(
-            init.contains(
-                "return Marker._from_handle(_native._boltffi_engine_marker(self._handle))"
-            )
-        );
+        assert!(init.contains("return Marker._from_handle(_native._boltffi_engine_marker(self))"));
         assert!(init.contains("def make_marker(value: int) -> Marker:"));
         assert!(
             init.contains("return Marker._from_handle(_native._boltffi_engine_make_marker(value))")
@@ -1528,23 +1525,84 @@ mod tests {
         assert!(extension.contains("int32_t *items = NULL;"));
         assert!(extension.contains("boltffi_python_box_i32(items[item_index])"));
         assert!(extension.contains(
-            "{\"subscribe_values\", (PyCFunction)boltffi_python_stream_wrapper_boltffi_stream_demo_event_bus_subscribe_values_subscribe, METH_FASTCALL, NULL}"
+            "{\"event_bus_subscribe_values\", (PyCFunction)boltffi_python_stream_wrapper_boltffi_stream_demo_event_bus_subscribe_values_subscribe, METH_FASTCALL, NULL}"
         ));
         assert!(
             init.contains("def subscribe_values(self) -> \"EventBusSubscribeValuesSubscription\":")
         );
         assert!(init.contains(
-            "return EventBusSubscribeValuesSubscription._from_handle(_native.subscribe_values(self._handle))"
+            "return EventBusSubscribeValuesSubscription._from_handle(_native.event_bus_subscribe_values(self._handle))"
         ));
         assert!(init.contains("class EventBusSubscribeValuesSubscription:"));
         assert!(init.contains("def pop_batch(self, max_count: int = 16) -> list[int]:"));
         assert!(init.contains(
-            "return _native.subscribe_values_pop_batch(self._require_handle(), max_count)"
+            "return _native.event_bus_subscribe_values_pop_batch(self._require_handle(), max_count)"
         ));
         assert!(stub.contains(
             "def subscribe_values(self) -> \"EventBusSubscribeValuesSubscription\": ..."
         ));
         assert!(stub.contains("def pop_batch(self, max_count: int = 16) -> list[int]: ..."));
+    }
+
+    #[test]
+    fn python_target_keeps_same_named_streams_of_two_classes_apart() {
+        let output = target()
+            .render(&bindings(
+                r#"
+                use std::sync::Arc;
+                use boltffi::EventSubscription;
+
+                pub struct Ints;
+                pub struct Floats;
+
+                #[export(single_threaded)]
+                impl Ints {
+                    pub fn new() -> Self {
+                        Self
+                    }
+
+                    #[ffi_stream(item = i32)]
+                    pub fn items(&self) -> Arc<EventSubscription<i32>> {
+                        todo!()
+                    }
+                }
+
+                #[export(single_threaded)]
+                impl Floats {
+                    pub fn new() -> Self {
+                        Self
+                    }
+
+                    #[ffi_stream(item = f64)]
+                    pub fn items(&self) -> Arc<EventSubscription<f64>> {
+                        todo!()
+                    }
+                }
+                "#,
+            ))
+            .expect("Python target should render same-named streams on two classes");
+        let extension = extension(&output);
+        let init = file(&output, "demo/__init__.py");
+
+        // the accessors carry the owner, so neither registration shadows the other
+        assert!(extension.contains("{\"ints_items\", (PyCFunction)"));
+        assert!(extension.contains("{\"floats_items\", (PyCFunction)"));
+        assert!(!extension.contains("{\"items\", (PyCFunction)"));
+        assert!(init.contains(
+            "return IntsItemsSubscription._from_handle(_native.ints_items(self._handle))"
+        ));
+        assert!(init.contains(
+            "return FloatsItemsSubscription._from_handle(_native.floats_items(self._handle))"
+        ));
+        // …and each subscription pops through its own item decoder
+        assert!(
+            init.contains("return _native.ints_items_pop_batch(self._require_handle(), max_count)")
+        );
+        assert!(
+            init.contains(
+                "return _native.floats_items_pop_batch(self._require_handle(), max_count)"
+            )
+        );
     }
 
     #[test]

@@ -65,7 +65,10 @@ pub fn data(attribute: TokenStream, item: TokenStream) -> TokenStream {
     let expanded = if is_impl {
         expand(item)
     } else {
-        expand_data(data::repr::materialize(item))
+        match data::repr::materialize(item) {
+            Ok(item) => expand_data(item),
+            Err(error) => error,
+        }
     };
     append_capture(expanded, captured)
 }
@@ -73,7 +76,11 @@ pub fn data(attribute: TokenStream, item: TokenStream) -> TokenStream {
 #[proc_macro_attribute]
 pub fn error(_attribute: TokenStream, item: TokenStream) -> TokenStream {
     let captured = capture_if_enabled(|| capture::error_item_tokens(item.clone()));
-    append_capture(expand_data(data::repr::materialize(item)), captured)
+    let expanded = match data::repr::materialize(item) {
+        Ok(item) => expand_data(item),
+        Err(error) => error,
+    };
+    append_capture(expanded, captured)
 }
 
 #[proc_macro_attribute]

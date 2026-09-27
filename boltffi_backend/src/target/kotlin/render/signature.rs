@@ -40,3 +40,21 @@ impl Parameter {
         &self.ty
     }
 }
+
+pub fn validate_exception_fields<'a>(
+    scope: &TypeName,
+    fields: impl IntoIterator<Item = (&'a Identifier, &'a TypeName)>,
+) -> Result<Option<Identifier>> {
+    fields.into_iter().try_fold(None, |message, (name, ty)| {
+        match (name.as_str(), ty.is_string()) {
+            ("message", true) => Ok(Some(name.clone())),
+            ("message" | "cause", _) | ("localizedMessage", true) => {
+                Err(Error::KotlinNameCollision {
+                    scope: scope.to_string(),
+                    name: name.to_string(),
+                })
+            }
+            _ => Ok(message),
+        }
+    })
+}

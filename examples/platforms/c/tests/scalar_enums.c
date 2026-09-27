@@ -1,0 +1,53 @@
+#include "test.h"
+
+bool test_scalar_enums(void) {
+    const DemoStatus statuses[] = {DEMO_STATUS_ACTIVE, DEMO_STATUS_INACTIVE, DEMO_STATUS_PENDING};
+    CHECK(demo_echo_status(statuses[0]) == statuses[0] && demo_echo_status(statuses[1]) == statuses[1] && demo_echo_status(statuses[2]) == statuses[2], "case:enums.c_style.status.should_roundtrip_values");
+    CHECK_STRING(demo_status_to_string(DEMO_STATUS_PENDING), "pending", "case:enums.c_style.status.should_render_labels");
+    CHECK(demo_is_active(DEMO_STATUS_ACTIVE) && !demo_is_active(DEMO_STATUS_INACTIVE), "case:enums.c_style.status.should_identify_active_values");
+    DemoSequenceOfStatus returned_statuses = demo_echo_vec_status((DemoSliceOfStatus){statuses, 3});
+    CHECK(returned_statuses.len == 3 && memcmp(returned_statuses.ptr, statuses, sizeof(statuses)) == 0, "case:enums.c_style.status.should_roundtrip_vectors");
+    demo_sequence_of_status_free(&returned_statuses);
+    CHECK(demo_direction_new(2) == DEMO_DIRECTION_EAST && demo_direction_new(3) == DEMO_DIRECTION_WEST, "case:enums.c_style.direction.should_construct_from_raw_value");
+    CHECK(demo_direction_cardinal() == DEMO_DIRECTION_NORTH, "case:enums.c_style.direction.should_return_cardinal_value");
+    CHECK(demo_direction_from_degrees(90) == DEMO_DIRECTION_EAST && demo_direction_from_degrees(-90) == DEMO_DIRECTION_WEST, "case:enums.c_style.direction.should_construct_from_degrees");
+    const DemoDirection north = DEMO_DIRECTION_NORTH;
+    const DemoDirection east = DEMO_DIRECTION_EAST;
+    CHECK(demo_direction_opposite(&north) == DEMO_DIRECTION_SOUTH && demo_direction_opposite(&east) == DEMO_DIRECTION_WEST, "case:enums.c_style.direction.should_return_opposite_from_method");
+    CHECK(demo_direction_horizontal_or(&north, DEMO_DIRECTION_WEST) == DEMO_DIRECTION_WEST && demo_direction_horizontal_or(&east, DEMO_DIRECTION_WEST) == DEMO_DIRECTION_EAST, "case:enums.c_style.direction.should_return_method_parameter_value");
+    CHECK(demo_direction_is_horizontal(&east) && !demo_direction_is_horizontal(&north), "case:enums.c_style.direction.should_identify_horizontal_values");
+    CHECK_STRING(demo_direction_label(&north), "N", "case:enums.c_style.direction.should_render_compass_label");
+    CHECK(demo_direction_count() == 4, "case:enums.c_style.direction.should_report_variant_count");
+    CHECK(demo_echo_direction(DEMO_DIRECTION_WEST) == DEMO_DIRECTION_WEST, "case:enums.c_style.direction.should_roundtrip_value");
+    CHECK(demo_opposite_direction(DEMO_DIRECTION_WEST) == DEMO_DIRECTION_EAST, "case:enums.c_style.direction.should_return_opposite_from_free_function");
+    CHECK(demo_direction_to_degrees(DEMO_DIRECTION_WEST) == 270 && demo_direction_to_degrees(DEMO_DIRECTION_EAST) == 90, "case:enums.c_style.direction.should_return_degrees");
+    DemoSequenceOfDirection directions = demo_generate_directions(5);
+    CHECK(directions.len == 5 && directions.ptr[0] == DEMO_DIRECTION_NORTH && directions.ptr[1] == DEMO_DIRECTION_EAST && directions.ptr[2] == DEMO_DIRECTION_SOUTH && directions.ptr[3] == DEMO_DIRECTION_WEST && directions.ptr[4] == DEMO_DIRECTION_NORTH, "case:enums.c_style.direction.should_generate_sequence");
+    CHECK(demo_count_north((DemoSliceOfDirection){directions.ptr, directions.len}) == 2, "case:enums.c_style.direction.should_count_north_values");
+    demo_sequence_of_direction_free(&directions);
+    DemoOptionDirection optional_direction = demo_find_direction(1);
+    CHECK(optional_direction.has_value && optional_direction.value == DEMO_DIRECTION_EAST, "case:enums.c_style.direction.find_direction.should_return_some_for_known_id");
+    CHECK(!demo_find_direction(99).has_value, "case:enums.c_style.direction.find_direction.should_return_none_for_unknown_id");
+    DemoOptionOfSequenceOfDirection optional_directions = demo_find_directions(2);
+    CHECK(optional_directions.has_value && optional_directions.value.len == 2 && optional_directions.value.ptr[0] == DEMO_DIRECTION_NORTH && optional_directions.value.ptr[1] == DEMO_DIRECTION_EAST, "case:enums.c_style.direction.find_directions.should_return_sequence_for_positive_count");
+    demo_option_of_sequence_of_direction_free(&optional_directions);
+    optional_directions = demo_find_directions(0);
+    CHECK(!optional_directions.has_value, "case:enums.c_style.direction.find_directions.should_return_none_for_non_positive_count");
+    demo_option_of_sequence_of_direction_free(&optional_directions);
+    CHECK(demo_echo_priority(DEMO_PRIORITY_CRITICAL) == DEMO_PRIORITY_CRITICAL, "case:enums.repr_int.priority.should_roundtrip_value");
+    CHECK_STRING(demo_priority_label(DEMO_PRIORITY_CRITICAL), "critical", "case:enums.repr_int.priority.should_render_label");
+    CHECK(demo_is_high_priority(DEMO_PRIORITY_HIGH) && demo_is_high_priority(DEMO_PRIORITY_CRITICAL) && !demo_is_high_priority(DEMO_PRIORITY_LOW), "case:enums.repr_int.priority.should_identify_high_priority");
+    CHECK(demo_echo_log_level(DEMO_LOG_LEVEL_WARN) == DEMO_LOG_LEVEL_WARN, "case:enums.repr_int.log_level.should_roundtrip_value");
+    CHECK(demo_should_log(DEMO_LOG_LEVEL_ERROR, DEMO_LOG_LEVEL_WARN) && !demo_should_log(DEMO_LOG_LEVEL_DEBUG, DEMO_LOG_LEVEL_WARN), "case:enums.repr_int.log_level.should_compare_against_minimum");
+    const DemoLogLevel levels[] = {DEMO_LOG_LEVEL_ERROR, DEMO_LOG_LEVEL_TRACE, DEMO_LOG_LEVEL_WARN};
+    DemoSequenceOfLogLevel returned_levels = demo_echo_vec_log_level((DemoSliceOfLogLevel){levels, 3});
+    CHECK(returned_levels.len == 3 && memcmp(returned_levels.ptr, levels, sizeof(levels)) == 0, "case:enums.repr_int.log_level.should_roundtrip_vectors");
+    demo_sequence_of_log_level_free(&returned_levels);
+    CHECK(DEMO_HTTP_CODE_OK == 200 && DEMO_HTTP_CODE_NOT_FOUND == 404 && DEMO_HTTP_CODE_SERVER_ERROR == 500, "case:enums.repr_int.http_code.should_expose_discriminant_values");
+    CHECK(demo_echo_http_code(DEMO_HTTP_CODE_OK) == DEMO_HTTP_CODE_OK && demo_echo_http_code(DEMO_HTTP_CODE_NOT_FOUND) == DEMO_HTTP_CODE_NOT_FOUND && demo_echo_http_code(DEMO_HTTP_CODE_SERVER_ERROR) == DEMO_HTTP_CODE_SERVER_ERROR, "case:enums.repr_int.http_code.should_roundtrip_values");
+    CHECK(demo_http_code_not_found() == DEMO_HTTP_CODE_NOT_FOUND, "case:enums.repr_int.http_code.should_return_not_found");
+    CHECK(DEMO_SIGN_NEGATIVE == -1 && DEMO_SIGN_ZERO == 0 && DEMO_SIGN_POSITIVE == 1, "case:enums.repr_int.sign.should_expose_signed_discriminant_values");
+    CHECK(demo_echo_sign(DEMO_SIGN_NEGATIVE) == DEMO_SIGN_NEGATIVE && demo_echo_sign(DEMO_SIGN_ZERO) == DEMO_SIGN_ZERO && demo_echo_sign(DEMO_SIGN_POSITIVE) == DEMO_SIGN_POSITIVE, "case:enums.repr_int.sign.should_roundtrip_signed_values");
+    CHECK(demo_sign_negative() == DEMO_SIGN_NEGATIVE, "case:enums.repr_int.sign.should_return_negative");
+    return true;
+}

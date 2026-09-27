@@ -5,17 +5,16 @@ use boltffi_binding::NativeSymbol;
 
 use crate::{
     bridge::jni::{
-        CallbackCompletionInvoker, CallbackCompletionPayload, CallbackCompletionPayloadValue,
-        CallbackHandleLifecycle, CallbackHandleMethod, DirectStreamBatchMethod, JniBridgeContract,
-        NativeMethod, NativeParameter, NativeParameterKind, NativeReturn, SuccessOutValue,
-        SuccessOutWriter,
+        CallbackCompletionInvoker, CallbackCompletionPayloadValue, CallbackHandleLifecycle,
+        CallbackHandleMethod, DirectStreamBatchMethod, JniBridgeContract, NativeMethod,
+        NativeParameter, NativeParameterKind, NativeReturn, SuccessOutValue, SuccessOutWriter,
     },
     core::{Error, Result},
     target::java::{
-        JavaVersion,
+        JavaHost, JavaVersion,
         primitive::Primitive,
         render::signature::{Parameter, ReturnType, ValueType},
-        syntax::{ArgumentList, Expression, Identifier, TypeIdentifier, TypeName},
+        syntax::{ArgumentList, Expression, Identifier, Statement, TypeIdentifier, TypeName},
     },
     target::jvm::method::{Parameter as JvmParameter, Parameters as JvmParameters, SlotWidth},
 };
@@ -24,6 +23,14 @@ use crate::{
 #[template(path = "target/java/native_method.java", escape = "none")]
 struct MethodTemplate<'method> {
     method: &'method Method,
+}
+
+#[derive(AskamaTemplate)]
+#[template(path = "target/java/native_argument.java", escape = "none")]
+struct NativeArgumentTemplate<'argument> {
+    ty: &'argument Carrier,
+    name: &'argument Identifier,
+    value: Expression,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -39,6 +46,7 @@ enum Carrier {
     PrimitiveArray(Primitive),
     ByteArray,
     DirectBuffer,
+    Throwable,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -171,22 +179,29 @@ impl Method {
         invoker: &CallbackCompletionInvoker,
         version: JavaVersion,
     ) -> Result<Vec<Self>> {
+        let payload = invoker.payload().map(|payload| {
+            Parameter::new(
+                Identifier::known("result"),
+                Carrier::from_completion(payload.value()),
+            )
+        });
         Ok([
             Some(Self::callback_completion_method(
                 invoker.success_method().as_str(),
-                invoker.payload(),
+                payload.clone(),
                 version,
             )?),
             Some(Self::callback_completion_method(
                 invoker.failure_method().as_str(),
-                None,
+                Some(Parameter::new(
+                    Identifier::known("exception"),
+                    Carrier::Throwable,
+                )),
                 version,
             )?),
             invoker
                 .error_method()
-                .map(|method| {
-                    Self::callback_completion_method(method.as_str(), invoker.payload(), version)
-                })
+                .map(|method| Self::callback_completion_method(method.as_str(), payload, version))
                 .transpose()?,
         ]
         .into_iter()
@@ -235,6 +250,34 @@ impl Method {
             self.name.clone(),
             arguments.into_iter().collect::<ArgumentList>(),
         ))
+    }
+
+    pub fn bind_arguments(
+        &self,
+        arguments: Vec<Expression>,
+        version: JavaVersion,
+    ) -> Result<(Vec<Statement>, Vec<Expression>)> {
+        if arguments.len() != self.parameters.len() {
+            return Err(JavaHost::broken_bridge_contract(
+                "Java native argument count does not match the JNI signature",
+            ));
+        }
+        self.parameters
+            .as_slice()
+            .iter()
+            .zip(arguments)
+            .enumerate()
+            .map(|(index, (parameter, value))| {
+                let name = Identifier::parse_for(format!("__boltffiArgument{index}"), version)?;
+                let declaration = Statement::from_template(&NativeArgumentTemplate {
+                    ty: parameter.ty(),
+                    name: &name,
+                    value,
+                })?;
+                Ok((declaration, Expression::identifier(name)))
+            })
+            .collect::<Result<Vec<_>>>()
+            .map(|bindings| bindings.into_iter().unzip())
     }
 
     pub fn render(&self) -> Result<String> {
@@ -310,7 +353,7 @@ impl Method {
 
     fn callback_completion_method(
         name: &str,
-        payload: Option<&CallbackCompletionPayload>,
+        payload: Option<Parameter<Carrier>>,
         version: JavaVersion,
     ) -> Result<Self> {
         Self::new(
@@ -326,12 +369,7 @@ impl Method {
                 ),
             ]
             .into_iter()
-            .chain(payload.map(|payload| {
-                Parameter::new(
-                    Identifier::known("result"),
-                    Carrier::from_completion(payload.value()),
-                )
-            }))
+            .chain(payload)
             .collect(),
             MethodReturn::Void,
         )
@@ -409,7 +447,9 @@ impl Carrier {
     fn slot_width(self) -> SlotWidth {
         match self {
             Self::Primitive(primitive) => primitive.slot_width(),
-            Self::PrimitiveArray(_) | Self::ByteArray | Self::DirectBuffer => SlotWidth::Single,
+            Self::PrimitiveArray(_) | Self::ByteArray | Self::DirectBuffer | Self::Throwable => {
+                SlotWidth::Single
+            }
         }
     }
 }
@@ -421,6 +461,7 @@ impl fmt::Display for Carrier {
             Self::PrimitiveArray(primitive) => write!(formatter, "{primitive}[]"),
             Self::ByteArray => formatter.write_str("byte[]"),
             Self::DirectBuffer => formatter.write_str("java.nio.ByteBuffer"),
+            Self::Throwable => formatter.write_str("Throwable"),
         }
     }
 }

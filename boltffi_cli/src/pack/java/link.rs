@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 
 use boltffi_backend::target::jvm::{LibraryName, NativeLibraries};
 
+use crate::build::native_link::{NativeLinkMetadata, parse_native_static_libraries};
 use crate::build::{BindingExpansion, CargoBuildProfile, OutputCallback, run_command_streaming};
 use crate::cargo::SelectedLibrary;
 use crate::cli::{CliError, Result};
@@ -350,11 +351,6 @@ pub(crate) struct JniLinkerArgs<'a> {
     pub(crate) native_static_libraries: &'a [String],
     pub(crate) rpath_flag: Option<&'a str>,
     pub(crate) emit_debug_info: bool,
-}
-
-pub(crate) struct NativeLinkMetadata {
-    pub(crate) native_static_libraries: Vec<String>,
-    pub(crate) native_link_search_paths: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -885,18 +881,6 @@ pub(crate) fn bundled_jvm_shared_library_path(
     existing_jvm_shared_library_path(artifact_directory, host_target, library)
 }
 
-pub(crate) fn parse_native_static_libraries(line: &str) -> Option<Vec<String>> {
-    let sanitized = strip_ansi_escape_codes(line);
-    let (_, flags) = sanitized.split_once("native-static-libs:")?;
-    let parsed: Vec<String> = flags
-        .split_whitespace()
-        .map(str::to_string)
-        .filter(|flag| !flag.is_empty())
-        .collect();
-
-    (!parsed.is_empty()).then_some(parsed)
-}
-
 pub(crate) fn extract_library_filenames(output: &str) -> Vec<String> {
     output
         .lines()
@@ -923,46 +907,6 @@ pub(crate) fn select_windows_static_library_filename(
         .iter()
         .find(|filename| *filename == &msvc_name || *filename == &gnu_name)
         .cloned()
-}
-
-pub(crate) fn extract_native_static_libraries(output: &str) -> Option<Vec<String>> {
-    output
-        .lines()
-        .filter_map(parse_native_static_libraries)
-        .next_back()
-}
-
-pub(crate) fn extract_link_search_paths(output: &str) -> Vec<String> {
-    #[derive(serde::Deserialize)]
-    struct BuildScriptExecutedMessage {
-        reason: String,
-        #[serde(default)]
-        linked_paths: Vec<String>,
-    }
-
-    let mut linked_paths = Vec::new();
-
-    for line in output
-        .lines()
-        .map(str::trim)
-        .filter(|line| line.starts_with('{'))
-    {
-        let Ok(message) = serde_json::from_str::<BuildScriptExecutedMessage>(line) else {
-            continue;
-        };
-
-        if message.reason != "build-script-executed" {
-            continue;
-        }
-
-        for linked_path in message.linked_paths {
-            if !linked_paths.contains(&linked_path) {
-                linked_paths.push(linked_path);
-            }
-        }
-    }
-
-    linked_paths
 }
 
 pub(crate) fn link_search_path_flags(link_search_paths: &[String]) -> Vec<String> {
@@ -1476,56 +1420,7 @@ pub(crate) fn query_native_link_metadata(
         });
     }
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    let combined = format!("{stdout}\n{stderr}");
-    let native_link_search_paths = extract_link_search_paths(&stdout);
-    let native_static_libraries =
-        extract_native_static_libraries(&combined).ok_or_else(|| CliError::CommandFailed {
-            command: "cargo rustc --print=native-static-libs did not emit link metadata"
-                .to_string(),
-            status: None,
-        })?;
-
-    Ok(NativeLinkMetadata {
-        native_static_libraries,
-        native_link_search_paths,
-    })
-}
-
-fn strip_ansi_escape_codes(input: &str) -> String {
-    let bytes = input.as_bytes();
-    let mut output = String::with_capacity(input.len());
-    let mut index = 0;
-
-    while index < bytes.len() {
-        if bytes[index] == 0x1b {
-            index += 1;
-
-            if index >= bytes.len() {
-                break;
-            }
-
-            if bytes[index] == b'[' {
-                index += 1;
-                while index < bytes.len() {
-                    let byte = bytes[index];
-                    index += 1;
-                    if (0x40..=0x7e).contains(&byte) {
-                        break;
-                    }
-                }
-                continue;
-            }
-
-            continue;
-        }
-
-        output.push(bytes[index] as char);
-        index += 1;
-    }
-
-    output
+    NativeLinkMetadata::from_output(&output)
 }
 
 fn resolve_static_library_filename(
@@ -1641,11 +1536,10 @@ mod tests {
         bundled_jvm_shared_library_path, clang_native_static_library_flags,
         clang_release_optimization_flags, clang_style_jni_linker_args,
         clang_undefined_symbol_policy_flags, compiler_tool_version_suffix, desktop_jni_strip_mode,
-        existing_jvm_shared_library_path, extract_library_filenames, extract_link_search_paths,
-        extract_native_static_libraries, handle_missing_linux_strip_program,
-        link_search_path_flags, linux_strip_program_candidates, msvc_link_search_path_flags,
-        msvc_native_static_library_flags, msvc_rustflag_linker_args, msvc_style_jni_linker_args,
-        parse_native_static_libraries, resolve_jni_include_directories_with_overrides,
+        existing_jvm_shared_library_path, extract_library_filenames,
+        handle_missing_linux_strip_program, link_search_path_flags, linux_strip_program_candidates,
+        msvc_link_search_path_flags, msvc_native_static_library_flags, msvc_rustflag_linker_args,
+        msvc_style_jni_linker_args, resolve_jni_include_directories_with_overrides,
         resolve_jvm_native_link_input, resolve_linux_strip_program,
         select_windows_static_library_filename, should_generate_apple_dsym_sidecars,
         target_prefixed_binutils_prefix, target_prefixed_strip_tool_candidates,
@@ -1734,44 +1628,6 @@ mod tests {
     }
 
     #[test]
-    fn parses_native_static_library_flags_from_cargo_output() {
-        let parsed = parse_native_static_libraries(
-            "note: native-static-libs: -framework Security -lresolv -lc++",
-        )
-        .expect("expected static library flags");
-
-        assert_eq!(parsed, vec!["-framework", "Security", "-lresolv", "-lc++"]);
-    }
-
-    #[test]
-    fn parses_native_static_library_flags_from_ansi_colored_cargo_output() {
-        let parsed =
-            parse_native_static_libraries("note: native-static-libs: -lSystem -lc -lm\u{1b}[0m")
-                .expect("expected static library flags");
-
-        assert_eq!(parsed, vec!["-lSystem", "-lc", "-lm"]);
-    }
-
-    #[test]
-    fn preserves_repeated_framework_prefixes_in_native_static_library_flags() {
-        let parsed = parse_native_static_libraries(
-            "note: native-static-libs: -framework Security -framework SystemConfiguration -lobjc",
-        )
-        .expect("expected static library flags");
-
-        assert_eq!(
-            parsed,
-            vec![
-                "-framework",
-                "Security",
-                "-framework",
-                "SystemConfiguration",
-                "-lobjc",
-            ]
-        );
-    }
-
-    #[test]
     fn apple_dsym_bundle_path_appends_bundle_suffix() {
         let path = PathBuf::from("/tmp/native/libdemo.dylib");
 
@@ -1790,32 +1646,6 @@ mod tests {
             &path,
             JavaHostTarget::DarwinArm64
         ));
-    }
-
-    #[test]
-    fn extracts_last_native_static_library_line_from_combined_output() {
-        let parsed = extract_native_static_libraries(
-            "Compiling demo\nnote: native-static-libs: -lSystem\nFinished\nnote: native-static-libs: -framework CoreFoundation -lSystem\n",
-        )
-        .expect("expected static library flags");
-
-        assert_eq!(parsed, vec!["-framework", "CoreFoundation", "-lSystem"]);
-    }
-
-    #[test]
-    fn extracts_link_search_paths_from_build_script_messages() {
-        let linked_paths = extract_link_search_paths(
-            r#"{"reason":"compiler-artifact","package_id":"path+file:///tmp/demo#0.1.0"}
-{"reason":"build-script-executed","package_id":"path+file:///tmp/dep#0.1.0","linked_paths":["native=/tmp/out","framework=/tmp/frameworks","native=/tmp/out"]}"#,
-        );
-
-        assert_eq!(
-            linked_paths,
-            vec![
-                "native=/tmp/out".to_string(),
-                "framework=/tmp/frameworks".to_string(),
-            ]
-        );
     }
 
     #[test]

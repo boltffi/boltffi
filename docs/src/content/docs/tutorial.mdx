@@ -1,11 +1,11 @@
 ---
 title: "Tutorial"
-description: "Build a complete counter library with BoltFFI from Rust code to Swift, Kotlin, and C# usage, including exports, records, classes, and packaging."
+description: "Build a complete counter library with BoltFFI from Rust code to Swift, Kotlin, C#, and C usage, including exports, records, classes, and packaging."
 ---
 
 # Tutorial
 
-This tutorial walks through building a counter library in Rust and using it from Swift, Kotlin, and C#.
+This tutorial walks through building a counter library in Rust and using it from Swift, Kotlin, C#, and C.
 
 ## Create the Rust library
 
@@ -137,6 +137,34 @@ counter.Reset();
 Console.WriteLine(counter.Get());        // 0
 ```
 
+## Use from C
+
+Enable `[targets.c]` with `enabled = true` in `boltffi.toml`, then run:
+
+```sh
+boltffi pack c --experimental --deny-skipped
+```
+
+With the package name `counter`, the class stays `Counter` because its name already contains the package prefix. Save this as `main.c` and [link it against the packaged library](/docs/c#link-a-c-program), using `counter` in place of `mylib`:
+
+```c
+#include <inttypes.h>
+#include <stdio.h>
+#include "counter.h"
+
+int main(void) {
+    Counter counter = counter_new(0);
+    printf("%" PRId64 "\n", counter_increment(&counter));
+    printf("%" PRId64 "\n", counter_increment(&counter));
+    counter_reset(&counter);
+    printf("%" PRId64 "\n", counter_get(&counter));
+    counter_free(&counter);
+    return 0;
+}
+```
+
+C owns the class handle until `counter_free` releases it. Copying the C struct does not retain another reference to the Rust object.
+
 ## Adding error handling
 
 Extend the counter to reject negative values:
@@ -214,7 +242,26 @@ try {
 }
 ```
 
+In C, both the constructor and method return typed results. Each result owns its success or error value:
+
+```c
+CounterNewResult created = counter_new(0, 0);
+if (created.ok) {
+    CounterDecrementResult changed = counter_decrement(&created.data.value);
+    if (!changed.ok) {
+        CounterString message = changed.data.error.message;
+        fwrite(message.ptr, 1, message.len, stderr);
+    }
+    counter_decrement_result_free(&changed);
+}
+counter_new_result_free(&created);
+```
+
+The final call releases either the constructed counter or the constructor's error. The borrowed `message` above is freed with `changed`; it must not be freed separately.
+
 ## Adding async
+
+The C target does not generate async methods yet. This part of the tutorial applies to the other targets; a C build reports those methods as skipped.
 
 Make the counter persist to a file asynchronously:
 

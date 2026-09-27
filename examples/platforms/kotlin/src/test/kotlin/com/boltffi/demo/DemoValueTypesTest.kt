@@ -90,6 +90,8 @@ class DemoValueTypesTest {
         assertEquals(55_000u.toUShort(), echoU16(55_000u.toUShort()), "case:primitives.scalars.u16.should_roundtrip_large_value")
         assertEquals(-42, echoI32(-42), "case:primitives.scalars.i32.should_roundtrip_negative_value")
         assertEquals(30, addI32(10, 20), "case:primitives.scalars.i32.should_add_two_values")
+        demoCase("case:primitives.scalars.named_status.should_accept_both_names")
+        notifyStatusCollision(7, 11)
         assertEquals(4_000_000_000u, echoU32(4_000_000_000u), "case:primitives.scalars.u32.should_roundtrip_large_value")
         assertEquals(-9_999_999_999L, echoI64(-9_999_999_999L), "case:primitives.scalars.i64.should_roundtrip_large_negative_value")
         assertEquals(9_999_999_999uL, echoU64(9_999_999_999uL), "case:primitives.scalars.u64.should_roundtrip_large_value")

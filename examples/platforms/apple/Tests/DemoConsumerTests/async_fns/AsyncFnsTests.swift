@@ -6,6 +6,9 @@ final class AsyncFnsTests: DemoTestCase {
         demoCase("case:async_fns.basic.add.should_return_sum")
         let sum = try await asyncAdd(a: 3, b: 7)
         XCTAssertEqual(sum, 10)
+        demoCase("case:async_fns.named_cancellation_token.should_preserve_both_values")
+        let namedTokenSum = try await asyncCancellationTokenCollision(cancellationToken: 7, boltffiCancellationToken: 11)
+        XCTAssertEqual(namedTokenSum, 18)
         demoCase("case:async_fns.basic.echo.should_prefix_message")
         let echoedMessage = try await asyncEcho(message: "hello async")
         XCTAssertEqual(echoedMessage, "Echo: hello async")
@@ -61,5 +64,11 @@ final class AsyncFnsTests: DemoTestCase {
             parameters: record.parameters
         )
         XCTAssertEqual(createdRecord, record)
+    }
+
+    func testAsyncCallsResumeOffTheWakingThread() async throws {
+        demoCase("case:async_fns.native_wake.resumed_thread.should_not_be_the_waking_thread")
+        let resumedThread = try await asyncResumedThreadName()
+        XCTAssertNotEqual(resumedThread, "boltffi-demo-waker")
     }
 }

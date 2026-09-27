@@ -18,6 +18,7 @@ use crate::{
             default_value::DefaultExpression,
             field::EncodedField,
             function::{ExportedCall, ExportedCallRenderer, ReceiverCarrier, ReceiverMutation},
+            signature::validate_exception_fields,
         },
         syntax::{ArgumentList, Expression, Identifier, Statement, TypeName},
     },
@@ -36,6 +37,7 @@ pub struct Record {
     documentation: Documentation,
     body: RecordBody,
     error: bool,
+    error_message: Option<Identifier>,
     fields: Vec<Field>,
     constants: AssociatedConstants,
     initializers: Vec<ExportedCall>,
@@ -81,11 +83,21 @@ impl Record {
         bridge: &JniBridgeContract,
         context: &RenderContext<Native>,
     ) -> Result<Self> {
-        match declaration {
+        let mut record = match declaration {
             RecordDecl::Direct(record) => Self::from_direct(record, host, bridge, context),
             RecordDecl::Encoded(record) => Self::from_encoded(record, host, bridge, context),
             _ => Err(KotlinHost::unsupported("unknown record declaration")),
+        }?;
+        if record.error {
+            record.error_message = validate_exception_fields(
+                record.name(),
+                record
+                    .fields()
+                    .iter()
+                    .map(|field| (field.name(), field.ty())),
+            )?;
         }
+        Ok(record)
     }
 
     pub fn render(self) -> Result<Emitted> {
@@ -153,10 +165,11 @@ impl Record {
     }
 
     pub fn error_message(&self) -> Option<&Identifier> {
-        self.fields
-            .iter()
-            .find(|field| field.is_string_message())
-            .map(|field| field.name())
+        self.error_message.as_ref()
+    }
+
+    pub fn overrides_message(&self, name: &Identifier) -> bool {
+        self.error_message.as_ref() == Some(name)
     }
 
     pub fn fields(&self) -> &[Field] {
@@ -273,6 +286,7 @@ impl Record {
                 )?,
             },
             error: record.is_error_payload(),
+            error_message: None,
             constants: AssociatedConstants::from_owner(
                 ConstantOwner::Record(record.id()),
                 host,
@@ -319,6 +333,7 @@ impl Record {
             documentation: Documentation::new(record.meta().doc()),
             body: RecordBody::Encoded { size },
             error: record.is_error_payload(),
+            error_message: None,
             constants: AssociatedConstants::from_owner(
                 ConstantOwner::Record(record.id()),
                 host,
@@ -451,10 +466,6 @@ impl Field {
 
     pub fn documentation(&self) -> &Documentation {
         &self.documentation
-    }
-
-    pub fn is_string_message(&self) -> bool {
-        self.name.to_string() == "message" && self.ty.to_string() == "String"
     }
 
     pub fn ty(&self) -> &TypeName {

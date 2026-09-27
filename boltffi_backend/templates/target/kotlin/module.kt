@@ -13,6 +13,7 @@ import kotlinx.coroutines.channels.awaitClose
 
 @Suppress("FunctionName")
 private object Native {
+    fun ensureInitialized() {}
 {{ native_library_loader }}
 
 {%- for function in native_functions %}

@@ -4,6 +4,32 @@ import demo
 
 
 class ErrorEnumResultTests(DemoTestCase):
+    def test_error_messages(self) -> None:
+        self.demo_case("case:results.error_enums.message.should_preserve_text")
+        message = "service failed 東京\u0000🦀"
+        self.assert_typed_error_value(
+            demo.ServiceErrorException,
+            demo.ServiceErrorFailed(message),
+            lambda: demo.fail_with_message(message),
+        )
+
+        self.demo_case("case:results.error_enums.message.should_preserve_optional_text")
+        self.assert_typed_error_value(
+            demo.ServiceErrorException,
+            demo.ServiceErrorOptional(message),
+            lambda: demo.fail_with_optional_message(message),
+        )
+        self.assert_typed_error_value(
+            demo.ServiceErrorException,
+            demo.ServiceErrorOptional(None),
+            lambda: demo.fail_with_optional_message(None),
+        )
+        self.assert_typed_error_value(
+            demo.ServiceErrorException,
+            demo.ServiceErrorOptional(""),
+            lambda: demo.fail_with_optional_message(""),
+        )
+
     def test_typed_result_returns(self) -> None:
         self.demo_case("case:results.error_enums.checked_divide.should_return_quotient")
         self.assertEqual(demo.checked_divide(10, 2), 5)

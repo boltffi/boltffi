@@ -81,7 +81,7 @@ static void ___CollectorVTable_on_values(uint64_t handle, const int32_t *values_
 
     boltffi_jni_exit(env, attached);
     return;
-__boltffi_fail:
+__boltffi_fail:;
 
     if (values != NULL) {
         (*env)->DeleteLocalRef(env, values);

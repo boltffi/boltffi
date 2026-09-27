@@ -5,23 +5,25 @@
 //! bridge layer stacked on top. The host's syntax fragments are the C fragments
 //! the bridge already emits (`crate::bridge::c`).
 
+mod codec;
 pub mod name_style;
 mod render;
 pub mod syntax;
+mod values;
 
 pub use self::syntax::Syntax;
 
 use boltffi_binding::{
-    Bindings, CallbackDecl, ClassDecl, ConstantDecl, CustomTypeDecl, EnumDecl, FunctionDecl,
-    Native, RecordDecl, StreamDecl,
+    Bindings, CallbackDecl, ClassDecl, ConstantDecl, CustomTypeDecl, DeclarationRef, EnumDecl,
+    FunctionDecl, Native, RecordDecl, StreamDecl,
 };
 
 use crate::{
     bridge::c::CBridge,
     core::{
-        BindingCapability, BridgeCapability, CapabilityRequirements, Emitted, Error,
-        GeneratedOutput, HostCapabilities, RenderContext, RenderedDeclaration, Result, Target,
-        contract::sealed, host,
+        BindingCapability, BridgeCapability, CapabilityRequirements, CoverageMode, CoverageReport,
+        DeclarationLabel, Emitted, Error, GeneratedOutput, HostCapabilities, RenderContext,
+        RenderedDeclaration, Result, Target, UnsupportedDeclaration, contract::sealed, host,
     },
 };
 
@@ -63,10 +65,7 @@ impl host::HostBackend for CHost {
             .stable(BindingCapability::Callbacks)
             .unsupported(BindingCapability::Streams, "not yet implemented in C host")
             .stable(BindingCapability::Constants)
-            .unsupported(
-                BindingCapability::CustomTypes,
-                "not yet implemented in C host",
-            )
+            .stable(BindingCapability::CustomTypes)
     }
 
     fn bridge_capabilities(&self) -> CapabilityRequirements<BridgeCapability> {
@@ -142,29 +141,84 @@ impl host::HostBackend for CHost {
 
     fn custom_type(
         &self,
-        _decl: &CustomTypeDecl,
+        _: &CustomTypeDecl,
         _bridge: &Self::Bridge,
         _context: &RenderContext<Self::Surface>,
     ) -> Result<Emitted> {
-        Err(Error::UnsupportedTarget {
-            target: "c",
-            shape: "custom type",
-        })
+        Ok(Emitted::primary(""))
     }
 
     fn assemble<'decl>(
         &self,
-        _bindings: &Bindings<Self::Surface>,
+        bindings: &Bindings<Self::Surface>,
         _bridge: &Self::Bridge,
-        _context: &RenderContext<Self::Surface>,
-        declarations: Vec<RenderedDeclaration<'decl, Self::Surface>>,
+        context: &RenderContext<Self::Surface>,
+        mut declarations: Vec<RenderedDeclaration<'decl, Self::Surface>>,
     ) -> Result<GeneratedOutput> {
-        // Partial coverage may skip declarations; the semantic surface may
-        // only emit types whose declarations actually rendered.
-        let rendered: std::collections::HashSet<boltffi_binding::DeclarationId> = declarations
+        let mut coverage = CoverageReport::new();
+        let mut record_definitions = std::collections::BTreeMap::new();
+        let mut rendered: std::collections::HashSet<boltffi_binding::DeclarationId> = declarations
             .iter()
             .map(|declaration| declaration.declaration().id())
             .collect();
+        declarations.iter().try_for_each(|declaration| {
+            let DeclarationRef::Record(RecordDecl::Encoded(record)) = declaration.declaration()
+            else {
+                return Ok(());
+            };
+            let definition = render::surface::record_codec(record, context);
+            match definition {
+                Ok(definition) => {
+                    record_definitions.insert(record.id(), definition);
+                }
+                Err(Error::UnsupportedTarget { shape, .. })
+                    if matches!(context.coverage_mode(), CoverageMode::Partial) =>
+                {
+                    rendered.remove(&declaration.declaration().id());
+                    coverage.push(UnsupportedDeclaration::new(
+                        DeclarationLabel::from_ref(declaration.declaration()),
+                        shape,
+                    ));
+                }
+                Err(error) => return Err(error),
+            }
+            Ok(())
+        })?;
+        declarations.retain(|declaration| rendered.contains(&declaration.declaration().id()));
+        loop {
+            let previous_count = declarations.len();
+            declarations = declarations
+                .into_iter()
+                .filter_map(|declaration| {
+                    let mut references = std::collections::BTreeSet::new();
+                    declaration
+                        .declaration()
+                        .append_referenced_declarations(&mut references);
+                    if references
+                        .iter()
+                        .all(|reference| rendered.contains(reference))
+                    {
+                        return Some(Ok(declaration));
+                    }
+                    let shape = "depends on a declaration without a C binding";
+                    if !matches!(context.coverage_mode(), CoverageMode::Partial) {
+                        return Some(Err(Error::UnsupportedTarget { target: "c", shape }));
+                    }
+                    coverage.push(UnsupportedDeclaration::new(
+                        DeclarationLabel::from_ref(declaration.declaration()),
+                        shape,
+                    ));
+                    rendered.remove(&declaration.declaration().id());
+                    None
+                })
+                .collect::<Result<Vec<_>>>()?;
+            if declarations.len() == previous_count {
+                break;
+            }
+        }
+        declarations.sort_by_key(|declaration| {
+            !matches!(declaration.declaration(), DeclarationRef::Callback(_))
+        });
         let emitted = declarations
             .into_iter()
             .map(|declaration| declaration.into_parts().1)
@@ -175,14 +229,14 @@ impl host::HostBackend for CHost {
         // this appended layer, so open a second block for the facade.
         let file = crate::core::FilePlan::all(crate::core::FilePath::new("boltffi.h")?)
             .with_preamble(format!(
-                "\n{}\n#ifdef __cplusplus\nextern \"C\" {{\n#endif\n{}",
-                render::surface::render(_bindings, _context, &rendered)?,
-                render::result::preamble()
+                "\n{}\n#ifdef __cplusplus\nextern \"C\" {{\n#endif\n",
+                render::surface::render(bindings, context, &rendered, &record_definitions)?,
             ))
             .with_postamble("\n#ifdef __cplusplus\n}\n#endif\n");
-        crate::core::FileLayout::new()
+        let output = crate::core::FileLayout::new()
             .with_file(file)
-            .assemble(emitted)
+            .assemble(emitted)?;
+        Ok(output.with_coverage(coverage))
     }
 }
 
@@ -241,21 +295,20 @@ mod tests {
             BindingCapability::Constants,
             BindingCapability::Classes,
             BindingCapability::Callbacks,
+            BindingCapability::CustomTypes,
         ] {
             assert!(
                 capabilities.status(capability).is_stable(),
                 "capability {capability:?} should be stable for the C host"
             );
         }
-        for capability in [BindingCapability::Streams, BindingCapability::CustomTypes] {
-            assert!(
-                matches!(
-                    capabilities.status(capability),
-                    CapabilityStatus::Unsupported { .. }
-                ),
-                "capability {capability:?} should be unsupported for the C host"
-            );
-        }
+        assert!(
+            matches!(
+                capabilities.status(BindingCapability::Streams),
+                CapabilityStatus::Unsupported { .. }
+            ),
+            "streams should be unsupported for the C host"
+        );
     }
 
     #[test]
@@ -278,6 +331,187 @@ mod tests {
             .contents();
         assert!(header.contains("static inline int32_t demo_add(int32_t left, int32_t right) {"));
         assert!(header.contains("boltffi_function_demo_add(left, right)"));
+    }
+
+    #[test]
+    fn renders_static_record_and_enum_methods_without_receivers() {
+        let bindings = bindings(
+            r#"
+            #[repr(C)]
+            #[data]
+            pub struct Point { pub x: f64 }
+
+            #[data]
+            pub struct Person { pub name: String }
+
+            #[repr(u8)]
+            #[data]
+            pub enum Mode { Fast = 1, Slow = 2 }
+
+            #[data(impl)]
+            impl Point {
+                pub fn dimensions() -> u32 { 1 }
+            }
+
+            #[data(impl)]
+            impl Person {
+                pub fn minimum_age() -> u32 { 0 }
+            }
+
+            #[data(impl)]
+            impl Mode {
+                pub fn count() -> u32 { 2 }
+            }
+            "#,
+        );
+        let target = CHost::new().into_target(&bindings).expect("target");
+        let header = render_header(&target.render(&bindings).expect("render"));
+        assert!(header.contains("static inline uint32_t demo_point_dimensions(void)"));
+        assert!(header.contains("static inline uint32_t demo_person_minimum_age(void)"));
+        assert!(header.contains("static inline uint32_t demo_mode_count(void)"));
+    }
+
+    #[test]
+    fn nested_record_maps_have_complete_c_types_and_cleanup() {
+        let bindings = bindings(
+            r#"
+            #[data]
+            pub struct Settings { pub entries: std::collections::HashMap<String, bool> }
+
+            #[data]
+            pub struct Profile { pub settings: Settings }
+
+            #[export]
+            pub fn echo_profile(profile: Profile) -> Profile { profile }
+
+            #[export]
+            pub fn add(left: i32, right: i32) -> i32 { left + right }
+            "#,
+        );
+        let target = CHost::new().into_target(&bindings).expect("target");
+        let output = target.render(&bindings).expect("render nested maps");
+        let header = render_header(&output);
+        assert!(header.contains("static inline int32_t demo_add("));
+        assert!(header.contains("DemoSettings"));
+        assert!(header.contains("DemoProfile"));
+        assert!(header.contains("static inline DemoProfile demo_echo_profile("));
+        assert!(header.contains("demo_profile_free"));
+        assert!(output.coverage().unsupported().is_empty());
+    }
+
+    #[test]
+    fn partial_coverage_removes_types_that_depend_on_skipped_declarations() {
+        let bindings = bindings(
+            r#"
+            #[data]
+            pub enum Mode { Ready }
+            #[data(impl)]
+            impl Mode {
+                pub async fn next(&self) -> Self { Self::Ready }
+            }
+            #[data]
+            pub struct Event { pub mode: Mode, pub text: String }
+            #[export]
+            pub fn echo(event: Event) -> Event { event }
+            #[export]
+            pub fn add(left: i32, right: i32) -> i32 { left + right }
+        "#,
+        );
+        let target = CHost::new().into_target(&bindings).expect("target");
+        let output = target
+            .render_partial(&bindings)
+            .expect("partial C bindings");
+        let header = render_header(&output);
+        assert!(header.contains("static inline int32_t demo_add("));
+        assert!(!header.contains("typedef ___Mode DemoMode;"));
+        assert!(!header.contains("struct DemoEvent"));
+        assert!(!header.contains("static inline DemoEvent demo_echo("));
+        assert!(target.render(&bindings).is_err());
+    }
+
+    #[test]
+    fn options_of_vectors_and_vectors_of_options_have_distinct_types() {
+        let bindings = bindings(
+            r#"
+            #[export]
+            pub fn optional(values: Option<Vec<i32>>) -> Option<Vec<i32>> { values }
+            #[export]
+            pub fn elements(values: Vec<Option<i32>>) -> Vec<Option<i32>> { values }
+            #[export]
+            pub fn nested(values: Vec<Option<Vec<i32>>>) -> Vec<Option<Vec<i32>>> { values }
+        "#,
+        );
+        let target = CHost::new().into_target(&bindings).expect("target");
+        let output = target.render(&bindings).expect("render nested containers");
+        let header = render_header(&output);
+        assert!(header.contains(
+            "static inline DemoOptionOfI32Sequence demo_optional(DemoOptionOfI32Slice values)"
+        ));
+        assert!(header.contains(
+            "static inline DemoSequenceOfOptionI32 demo_elements(DemoSliceOfOptionI32 values)"
+        ));
+        assert!(header.contains("static inline DemoSequenceOfOptionOfI32Sequence demo_nested(DemoSliceOfOptionOfI32Slice values)"));
+    }
+
+    #[test]
+    fn named_records_cannot_shadow_builtin_c_values() {
+        let bindings = bindings(
+            r#"
+            #[data]
+            pub struct StringView { pub count: u32 }
+        "#,
+        );
+        let target = CHost::new().into_target(&bindings).expect("target");
+        let error = target
+            .render(&bindings)
+            .expect_err("C names must remain unambiguous");
+        assert!(error.to_string().contains("DemoStringView"));
+    }
+
+    #[test]
+    fn prefixes_type_names_by_complete_name_parts() {
+        let bindings = bindings(
+            r#"
+            #[repr(C)]
+            #[data]
+            pub struct Demographic { pub count: u32 }
+
+            #[repr(C)]
+            #[data]
+            pub struct DemoState { pub value: u32 }
+            "#,
+        );
+        let target = CHost::new().into_target(&bindings).expect("target");
+        let header = render_header(&target.render(&bindings).expect("render"));
+        assert!(header.contains("typedef ___Demographic DemoDemographic;"));
+        assert!(header.contains("typedef ___DemoState DemoState;"));
+        assert!(!header.contains("DemoDemoState"));
+    }
+
+    #[test]
+    fn nullable_class_handles_accept_null_and_owned_handles_are_cleared() {
+        let bindings = bindings(
+            r#"
+            pub struct Engine;
+
+            #[export]
+            impl Engine {
+                pub fn new() -> Self { Self }
+            }
+
+            #[export]
+            pub fn inspect(engine: Option<Engine>) -> bool { engine.is_some() }
+
+            #[export]
+            pub fn consume(engine: Engine) {}
+            "#,
+        );
+        let target = CHost::new().into_target(&bindings).expect("target");
+        let header = render_header(&target.render(&bindings).expect("render"));
+        assert!(header.contains("demo_inspect(DemoEngine *engine)"));
+        assert!(header.contains("engine == NULL ? 0 : engine->_boltffi_handle"));
+        assert!(header.contains("demo_consume(DemoEngine *engine)"));
+        assert!(header.contains("engine->_boltffi_handle = 0;"));
     }
 
     #[test]
@@ -379,6 +613,23 @@ mod tests {
             #[export]
             pub fn greet(name: String) -> String { name }
 
+            #[export]
+            pub fn reserved_local(text: Option<String>, boltffi_size_0: u32) -> u32 { boltffi_size_0 }
+
+            #[data]
+            pub struct KeywordFields { pub r#type: String }
+
+            #[export]
+            pub fn echo_keywords(value: KeywordFields) -> KeywordFields { value }
+
+            #[export]
+            pub fn try_point(x: f64) -> Result<Point, String> {
+                Ok(Point { x, y: 0.0 })
+            }
+
+            #[export]
+            pub fn try_number(value: f64) -> Result<f64, String> { Ok(value) }
+
             #[repr(C)]
             #[data]
             pub struct Pair {
@@ -408,6 +659,12 @@ mod tests {
                 pub fn new(seed: u64) -> Self { todo!() }
                 pub fn score(&self, point: crate::Point) -> u32 { 0 }
             }
+
+            #[export]
+            pub fn has_engine(engine: Option<Engine>) -> bool { engine.is_some() }
+
+            #[export]
+            pub fn consume_engine(engine: Engine) {}
             "#,
         );
         let target = CHost::new().into_target(&bindings).expect("target");
@@ -536,6 +793,9 @@ mod tests {
                 listener.notify(code);
                 listener.on_value(value)
             }
+
+            #[export]
+            pub fn try_listener() -> Result<Box<dyn Listener>, String> { panic!() }
             "#,
         );
         let target = CHost::new().into_target(&bindings).expect("target");
@@ -555,9 +815,9 @@ mod tests {
             "int64_t boltffi_function_demo_install(BoltFFICallbackHandle listener, uint32_t code, uint32_t value)"
         ));
         assert!(header.contains(
-            "static inline int64_t demo_install(DemoListenerHandle listener, uint32_t code, uint32_t value)"
+            "static inline int64_t demo_install(DemoListenerHandle *listener, uint32_t code, uint32_t value)"
         ));
-        assert!(header.contains("boltffi_function_demo_install(listener.raw, code, value)"));
+        assert!(header.contains("boltffi_function_demo_install(listener->raw, code, value)"));
 
         if Command::new("cc").arg("--version").output().is_err() {
             eprintln!("skipping: no C toolchain");
@@ -615,7 +875,7 @@ int main(void) {
         .on_value = listener_on_value,
     };
     DemoListenerHandle callback = demo_listener_create(&listener, 42);
-    return demo_install(callback, 7, 9) == 9 ? 0 : 1;
+    return demo_install(&callback, 7, 9) == 9 && callback.raw.handle == 0 ? 0 : 1;
 }
 "#;
         std::fs::write(dir.join("abi_shim.c"), abi_shim).expect("write ABI shim");
@@ -679,12 +939,13 @@ int main(void) {
         );
         let target = CHost::new().into_target(&bindings).expect("target");
         let header = render_header(&target.render(&bindings).expect("render"));
-        assert!(header.contains("typedef struct {\n    bool ok;\n    union {\n        int32_t value;\n        DemoDivisionError error;\n    } data;\n} DemoDivideResult;"));
+        assert!(header.contains("int32_t value; DemoDivisionError error;"));
+        assert!(header.contains("} DemoDivideResult;"));
         assert!(
             header.contains("static inline DemoDivideResult demo_divide(int32_t value, int32_t b)")
         );
         assert!(header.contains(
-            "FfiBuf_u8 boltffi_encoded_error = boltffi_function_demo_divide(value, b, &boltffi_value);"
+            "FfiBuf_u8 boltffi_error = boltffi_function_demo_divide(value, b, &boltffi_success);"
         ));
         assert!(!header.contains("boltffi_status_t"));
     }
@@ -703,8 +964,7 @@ int main(void) {
         let header = render_header(&target.render(&bindings).expect("render"));
 
         assert!(header.contains("DemoString error;"));
-        assert!(header.contains("BoltFFICWireReader boltffi_error_reader"));
-        assert!(header.contains("copy_string(&boltffi_error_reader,&boltffi_result.data.error)"));
+        assert!(header.contains("&(boltffi_result.data.error)"));
         assert!(header.contains("static inline DemoParseResult demo_parse(int32_t value)"));
     }
 
@@ -732,7 +992,7 @@ int main(void) {
             header.contains("static inline DemoEngineNewResult demo_engine_new(uint32_t seed)")
         );
         assert!(header.contains("boltffi_result.data.value._boltffi_handle=boltffi_success;"));
-        assert!(header.contains("copy_string(&boltffi_error_reader,&boltffi_result.data.error)"));
+        assert!(header.contains("&(boltffi_result.data.error)"));
     }
 
     #[test]
@@ -761,6 +1021,17 @@ int main(void) {
 
             #[export]
             pub fn echo_string(value: String) -> String { value }
+
+            #[export]
+            pub fn replace_text(value: &mut String) { *value = "updated".to_owned(); }
+
+            #[export]
+            pub fn fill_bytes(value: &mut [u8]) { value.fill(7); }
+
+            #[data(impl)]
+            impl Payload {
+                pub fn rename(&mut self) { self.name = "updated".to_owned(); }
+            }
         "#,
         );
         let target = CHost::new().into_target(&bindings).expect("target");
@@ -802,6 +1073,26 @@ FfiBuf_u8 boltffi_function_demo_echo_payload(const uint8_t *ptr, uintptr_t len) 
 FfiBuf_u8 boltffi_function_demo_echo_string(const uint8_t *ptr, uintptr_t len) {
     FfiBuf_u8 b=boltffi_buf_with_len(len); if (len) memcpy(b.ptr,ptr,len); return b;
 }
+FfiStatus boltffi_function_demo_replace_text(const uint8_t *ptr, uintptr_t len, FfiBuf_u8 *out) {
+    (void)ptr; (void)len;
+    *out = boltffi_buf_with_len(11);
+    uint8_t encoded[] = {7, 0, 0, 0, 'u', 'p', 'd', 'a', 't', 'e', 'd'};
+    memcpy(out->ptr, encoded, sizeof(encoded));
+    return FFI_STATUS_OK;
+}
+FfiStatus boltffi_function_demo_fill_bytes(uint8_t *ptr, uintptr_t len) {
+    memset(ptr, 7, len);
+    return FFI_STATUS_OK;
+}
+FfiStatus boltffi_method_record_demo_payload_rename(const uint8_t *ptr, uintptr_t len, FfiBuf_u8 *out) {
+    (void)ptr; (void)len;
+    DemoPayloadView replacement = {0};
+    replacement.name = demo_string_view("updated", 7);
+    *out = boltffi_buf_with_len(boltffi_c_demo_size_payload(&replacement));
+    BoltFFICWireWriter writer = {out->ptr, out->len, 0, true};
+    boltffi_c_demo_encode_payload(&writer, &replacement);
+    return FFI_STATUS_OK;
+}
 int main(void) {
     uint8_t bytes[] = {1,2,3}; float values[] = {1.5f,2.5f};
     DemoPayloadView input;
@@ -813,10 +1104,16 @@ int main(void) {
     input.mode=(DemoMode)1;
     DemoPayload output=demo_echo_payload(input);
     if (output.name.len != 5 || memcmp(output.name.ptr,"hello",5) || output.bytes.len != 3 || output.count.value != 42 || output.values.len != 2 || fabsf(output.values.ptr[1]-2.5f)>.001f) return 1;
+    demo_payload_rename(&output);
+    if (output.name.len != 7 || memcmp(output.name.ptr, "updated", 7) || output.bytes.len != 0 || output.values.len != 0) return 3;
     demo_payload_free(&output); demo_payload_free(&output);
     DemoString text=demo_echo_string(demo_string_view("wire",4));
     if (text.len != 4 || memcmp(text.ptr,"wire",4)) return 2;
+    demo_replace_text(&text);
+    if (text.len != 7 || memcmp(text.ptr, "updated", 7)) return 4;
     demo_string_free(&text); demo_string_free(&text);
+    demo_fill_bytes((DemoU8MutSlice){bytes, 3});
+    if (bytes[0] != 7 || bytes[2] != 7) return 5;
     return 0;
 }
 "#).expect("source");

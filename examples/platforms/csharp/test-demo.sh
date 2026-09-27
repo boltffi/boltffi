@@ -25,17 +25,23 @@ while [[ $# -gt 0 ]]; do
 done
 
 cargo_profile="debug"
+native_test_command=(cargo test --manifest-path "$demo_dir/Cargo.toml" \
+  --features csharp-demo --test class_ownership)
 pack_command=(cargo run --quiet --manifest-path "$manifest_path" -p boltffi_cli -- \
   --cargo-arg=--features \
   --cargo-arg=csharp-demo \
   pack csharp)
 if [[ "$configuration" == "Release" ]]; then
   cargo_profile="release"
+  native_test_command+=(--release)
   pack_command+=(--release)
 fi
 
 package_dir="$script_dir/dist/packages"
 packages_cache="$script_dir/dist/.nuget/packages"
+
+echo "=== native class ownership tests ($cargo_profile) ==="
+"${native_test_command[@]}"
 
 echo "=== boltffi pack csharp ($cargo_profile) ==="
 (cd "$demo_dir" && "${pack_command[@]}")

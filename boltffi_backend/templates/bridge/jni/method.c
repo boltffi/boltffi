@@ -7,6 +7,9 @@ JNIEXPORT {{ method.return_type }} JNICALL {{ method.symbol }}(JNIEnv *env, jcla
 {% include "bridge/jni/method/call.c" %}
 {%- if method.has_error_label %}
 __boltffi_error:
+{%- for cleanup in method.owned_class_cleanup %}
+    {{ cleanup }};
+{%- endfor %}
 {%- include "bridge/jni/method/cleanup_arrays.c" %}
 {%- include "bridge/jni/method/error_return.c" %}
 {%- endif %}

@@ -554,7 +554,8 @@ private let typeMemberCoverageGaps: Set<String> = [
 
 private let featureScopedRustFiles: Set<String> = [
     "callbacks/csharp_closures.rs",
-    "classes/async_factory.rs"
+    "classes/async_factory.rs",
+    "records/mutable.rs"
 ]
 
 private func typeMemberCoverageKey(_ rustTypeMember: RustTypeMember) -> String {
@@ -567,12 +568,15 @@ private let rustToSwiftCoverageFile: [String: String] = [
     "bytes/mod.rs": "bytes/BytesTests.swift",
     "callbacks/async_traits.rs": "callbacks/AsyncTraitsTests.swift",
     "callbacks/closures.rs": "callbacks/ClosuresTests.swift",
+    "callbacks/errors.rs": "callbacks/CallbackErrorTests.swift",
     "callbacks/sync_traits.rs": "callbacks/SyncTraitsTests.swift",
+    "callbacks/class_handles.rs": "callbacks/ClassHandlesTests.swift",
     "classes/async_methods.rs": "classes/AsyncMethodsTests.swift",
     "classes/borrowed.rs": "classes/BorrowedTests.swift",
     "classes/constructor_matrix.rs": "classes/ConstructorCoverageMatrixTests.swift",
     "classes/constructors.rs": "classes/ConstructorsTests.swift",
     "classes/methods.rs": "classes/MethodsTests.swift",
+    "classes/ownership.rs": "classes/OwnershipTests.swift",
     "classes/static_methods.rs": "classes/StaticMethodsTests.swift",
     "classes/streams.rs": "classes/StreamsTests.swift",
     "classes/thread_safe.rs": "classes/ThreadSafeTests.swift",

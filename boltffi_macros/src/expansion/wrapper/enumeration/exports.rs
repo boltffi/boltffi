@@ -178,7 +178,9 @@ impl<'lowered> Receiver<'lowered> {
         expansion: &'expansion Expansion<'lowered, Native>,
     ) -> Result<(export::ReceiverTokens, export::RustCall), Error> {
         match self {
-            Self::Direct { ty } => Self::render_direct_native(rust_type, &ty, receive, method),
+            Self::Direct { ty } => {
+                Self::render_direct_native(rust_type, &ty, receive, method, failure.render()?)
+            }
             Self::Encoded { codec } => {
                 Self::render_encoded_native(source, codec, receive, method, failure, expansion)
             }
@@ -195,7 +197,9 @@ impl<'lowered> Receiver<'lowered> {
         expansion: &'expansion Expansion<'lowered, Wasm32>,
     ) -> Result<(export::ReceiverTokens, export::RustCall), Error> {
         match self {
-            Self::Direct { ty } => Self::render_direct_wasm32(rust_type, &ty, receive, method),
+            Self::Direct { ty } => {
+                Self::render_direct_wasm32(rust_type, &ty, receive, method, failure.render()?)
+            }
             Self::Encoded { codec } => {
                 Self::render_encoded_wasm32(source, codec, receive, method, failure, expansion)
             }
@@ -207,12 +211,8 @@ impl<'lowered> Receiver<'lowered> {
         ty: &DirectValueType,
         receive: Receive,
         method: Ident,
+        failure: TokenStream,
     ) -> Result<(export::ReceiverTokens, export::RustCall), Error> {
-        if receive == Receive::ByMutRef {
-            return Err(Error::UnsupportedExpansion(
-                "mutable enum receiver without writeback",
-            ));
-        }
         let receiver = names::Locals::new(method.span()).receiver();
         let tokens = wrapper::param::direct::Input::new(
             ty,
@@ -222,12 +222,17 @@ impl<'lowered> Receiver<'lowered> {
             TokenStream::new(),
         )
         .native()?;
+        let tokens = if receive == Receive::ByMutRef {
+            tokens.with_direct_writeback(rust_type, &receiver, &failure)
+        } else {
+            tokens
+        };
         Ok((
             export::ReceiverTokens::new(
                 tokens.ffi_parameters().to_vec(),
                 tokens.conversions().to_vec(),
                 tokens.writebacks().to_vec(),
-                false,
+                receive == Receive::ByMutRef,
             ),
             export::RustCall::method(receiver, method),
         ))
@@ -238,12 +243,8 @@ impl<'lowered> Receiver<'lowered> {
         ty: &DirectValueType,
         receive: Receive,
         method: Ident,
+        failure: TokenStream,
     ) -> Result<(export::ReceiverTokens, export::RustCall), Error> {
-        if receive == Receive::ByMutRef {
-            return Err(Error::UnsupportedExpansion(
-                "mutable enum receiver without writeback",
-            ));
-        }
         let receiver = names::Locals::new(method.span()).receiver();
         let tokens = wrapper::param::direct::Input::new(
             ty,
@@ -253,12 +254,17 @@ impl<'lowered> Receiver<'lowered> {
             TokenStream::new(),
         )
         .wasm32()?;
+        let tokens = if receive == Receive::ByMutRef {
+            tokens.with_direct_writeback(rust_type, &receiver, &failure)
+        } else {
+            tokens
+        };
         Ok((
             export::ReceiverTokens::new(
                 tokens.ffi_parameters().to_vec(),
                 tokens.conversions().to_vec(),
                 tokens.writebacks().to_vec(),
-                false,
+                receive == Receive::ByMutRef,
             ),
             export::RustCall::method(receiver, method),
         ))
@@ -272,25 +278,31 @@ impl<'lowered> Receiver<'lowered> {
         failure: associated_fn::ReceiverFailure<'expansion, 'lowered, Native>,
         expansion: &'expansion Expansion<'lowered, Native>,
     ) -> Result<(export::ReceiverTokens, export::RustCall), Error> {
-        if receive == Receive::ByMutRef {
-            return Err(Error::UnsupportedExpansion(
-                "mutable encoded enum receiver without writeback",
-            ));
-        }
         let receiver = names::Locals::new(method.span()).receiver();
         let source_type = TypeExpr::enumeration(
             source.id.clone(),
             SourcePath::single(source.name.spelling()),
         );
+        let failure = failure.render()?;
+        let target = if receive == Receive::ByMutRef {
+            rust_api::DecodeTarget::received(receive, &source_type)?
+        } else {
+            rust_api::DecodeTarget::by_value(&source_type)?
+        };
         let tokens = wrapper::param::encoded::Input::new(
             codec,
             <Native as boltffi_binding::SurfaceLower>::encoded_param_shape(),
-            rust_api::DecodeTarget::by_value(&source_type)?,
+            target,
             receiver.clone(),
-            failure.render()?,
+            failure.clone(),
             expansion,
         )
         .render()?;
+        let tokens = if receive == Receive::ByMutRef {
+            tokens.with_encoded_writeback(codec, &receiver, &failure, expansion)?
+        } else {
+            tokens
+        };
         Ok((
             export::ReceiverTokens::new(
                 tokens.ffi_parameters().to_vec(),
@@ -310,25 +322,31 @@ impl<'lowered> Receiver<'lowered> {
         failure: associated_fn::ReceiverFailure<'expansion, 'lowered, Wasm32>,
         expansion: &'expansion Expansion<'lowered, Wasm32>,
     ) -> Result<(export::ReceiverTokens, export::RustCall), Error> {
-        if receive == Receive::ByMutRef {
-            return Err(Error::UnsupportedExpansion(
-                "mutable encoded enum receiver without writeback",
-            ));
-        }
         let receiver = names::Locals::new(method.span()).receiver();
         let source_type = TypeExpr::enumeration(
             source.id.clone(),
             SourcePath::single(source.name.spelling()),
         );
+        let failure = failure.render()?;
+        let target = if receive == Receive::ByMutRef {
+            rust_api::DecodeTarget::received(receive, &source_type)?
+        } else {
+            rust_api::DecodeTarget::by_value(&source_type)?
+        };
         let tokens = wrapper::param::encoded::Input::new(
             codec,
             <Wasm32 as boltffi_binding::SurfaceLower>::encoded_param_shape(),
-            rust_api::DecodeTarget::by_value(&source_type)?,
+            target,
             receiver.clone(),
-            failure.render()?,
+            failure.clone(),
             expansion,
         )
         .render()?;
+        let tokens = if receive == Receive::ByMutRef {
+            tokens.with_encoded_writeback(codec, &receiver, &failure, expansion)?
+        } else {
+            tokens
+        };
         Ok((
             export::ReceiverTokens::new(
                 tokens.ffi_parameters().to_vec(),

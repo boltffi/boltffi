@@ -46,6 +46,12 @@ impl Parameter {
         })
     }
 
+    pub fn bind_argument(&mut self, local: Identifier) {
+        self.setup
+            .push(Statement::value(local.clone(), self.argument.clone()));
+        self.argument = Expression::identifier(local);
+    }
+
     pub fn public(&self) -> &SignatureParameter {
         &self.public
     }
@@ -174,11 +180,12 @@ impl<'plan> ParamPlanRender<'plan, Native, OutOfRust> for Renderer<'_> {
         match target {
             HandleTarget::Class(class) => {
                 let handle = ClassHandle::new(*class, presence, self.context)?;
+                let raw = self.source_name.generated("handle")?;
                 Ok(Parameter {
                     public: SignatureParameter::new(self.name.clone(), handle.ty()?),
-                    jvm: SignatureParameter::new(self.name.clone(), TypeName::long()),
+                    jvm: SignatureParameter::new(raw.clone(), TypeName::long()),
                     setup: Vec::new(),
-                    argument: handle.value_expression(value)?,
+                    argument: handle.value_expression(Expression::identifier(raw))?,
                 })
             }
             HandleTarget::Callback(callback) => {

@@ -2106,3 +2106,18 @@ mod thread_safe_counter_ffi {
         unsafe { boltffi_release_class_boltffi_tests_classes_thread_safe_counter(handle) };
     }
 }
+
+#[test]
+fn raw_identifiers_and_storage_names_preserve_class_arguments() {
+    let counter = unsafe { boltffi_init_class_boltffi_tests_classes_test_counter_new(42) };
+    assert_eq!(
+        unsafe { boltffi_function_boltffi_tests_classes_borrow_keyword_counter(counter) },
+        42
+    );
+    assert_eq!(
+        unsafe {
+            boltffi_function_boltffi_tests_classes_consume_counter_with_storage_name(counter, 7)
+        },
+        49
+    );
+}

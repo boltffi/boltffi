@@ -6,6 +6,23 @@ import {
 import { wireErr, wireOk } from "@boltffi/runtime";
 
 export async function run() {
+  globalThis.demoCase("case:results.error_enums.message.should_preserve_text");
+  ["", "service failed 東京\u0000🦀"].forEach((message) => {
+    assert.throws(() => demo.failWithMessage(message), (error) => {
+      assert.ok(error instanceof demo.ServiceErrorException);
+      assert.deepEqual(error.value, { tag: "Failed", message });
+      return true;
+    });
+  });
+  globalThis.demoCase("case:results.error_enums.message.should_preserve_optional_text");
+  [null, "", "optional failure 東京\u0000🦀"].forEach((message) => {
+    assert.throws(() => demo.failWithOptionalMessage(message), (error) => {
+      assert.ok(error instanceof demo.ServiceErrorException);
+      assert.deepEqual(error.value, { tag: "Optional", message });
+      return true;
+    });
+  });
+
   globalThis.demoCase("case:results.error_enums.checked_divide.should_return_quotient");
   assert.equal(demo.checkedDivide(10, 2), 5);
   globalThis.demoCase("case:results.error_enums.checked_divide.should_reject_division_by_zero");

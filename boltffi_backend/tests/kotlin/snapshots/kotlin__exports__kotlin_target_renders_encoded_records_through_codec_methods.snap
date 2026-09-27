@@ -20,7 +20,7 @@ data class User(
     val tags: List<String>
 ) {
     internal fun wireSize(): Int {
-        return 4 + Utf8Codec.maxBytes(this.name) + 4 + 1 + 1 + (this.nickname?.let { __boltffi_value_0 -> 4 + Utf8Codec.maxBytes(__boltffi_value_0) } ?: 0) + 4 + this.tags.sumOf { __boltffi_value_0 -> (4 + Utf8Codec.maxBytes(__boltffi_value_0)).toInt() }
+        return 4 + Utf8Codec.maxBytes(this.name) + 4 + 1 + 1 + (this.nickname?.let { __boltffi_value_0 -> 4 + Utf8Codec.maxBytes(__boltffi_value_0) } ?: 0) + 4 + this.tags.sumOf { __boltffi_value_0 -> val __boltffi_size: kotlin.Int = 4 + Utf8Codec.maxBytes(__boltffi_value_0); __boltffi_size }
     }
 
     internal fun writeTo(writer: WireWriter) {

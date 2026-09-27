@@ -34,11 +34,45 @@ pub struct Function {
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 struct Parameter {
+    owned: Option<OwnedArgument>,
     name: Identifier,
     ty: TypeName,
     setup: Vec<Statement>,
     arguments: Vec<Expression>,
     cleanup: Vec<Statement>,
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+enum OwnedArgument {
+    Class {
+        parameter: Identifier,
+        class: TypeName,
+        local: Identifier,
+        release: Identifier,
+    },
+    Closure {
+        parameter: Identifier,
+        local: Identifier,
+        register: Identifier,
+        unregister: Identifier,
+    },
+}
+
+impl OwnedArgument {
+    fn local(&self) -> &Identifier {
+        match self {
+            Self::Class { local, .. } | Self::Closure { local, .. } => local,
+        }
+    }
+}
+
+#[derive(AskamaTemplate)]
+#[template(path = "target/typescript/owned_call.ts", escape = "none")]
+struct OwnedCallTemplate<'call> {
+    owned: Vec<&'call OwnedArgument>,
+    arguments: Vec<(Identifier, Expression)>,
+    symbol: Identifier,
+    invocation: Expression,
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -464,6 +498,43 @@ impl Function {
             )
     }
 
+    fn native_call(
+        symbol: Identifier,
+        arguments: ArgumentList,
+        parameters: &[Parameter],
+    ) -> Result<Expression> {
+        let owned = parameters
+            .iter()
+            .filter_map(|parameter| parameter.owned.as_ref())
+            .collect::<Vec<_>>();
+        if owned.is_empty() {
+            return Ok(Expression::native_call(symbol, arguments));
+        }
+        let arguments = arguments
+            .into_iter()
+            .enumerate()
+            .map(|(index, value)| {
+                Ok((
+                    Identifier::parse(format!("__boltffiArgument{index}"))?,
+                    value,
+                ))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let invocation = Expression::native_call(
+            symbol.clone(),
+            arguments
+                .iter()
+                .map(|(name, _)| Expression::identifier(name.clone()))
+                .collect(),
+        );
+        Expression::from_template(&OwnedCallTemplate {
+            owned,
+            arguments,
+            symbol,
+            invocation,
+        })
+    }
+
     fn from_callable(
         name: &boltffi_binding::CanonicalName,
         symbol: &str,
@@ -541,7 +612,7 @@ impl Function {
                     .into_iter()
                     .chain(returns.arguments.iter().cloned())
                     .collect::<ArgumentList>();
-                let native_call = Expression::native_call(symbol, arguments);
+                let native_call = Self::native_call(symbol, arguments, &parameters)?;
                 let call = match receiver
                     .as_ref()
                     .and_then(|receiver| receiver.mutation.as_ref())
@@ -568,7 +639,7 @@ impl Function {
                     return Err(Self::unsupported("asynchronous mutable receiver"));
                 }
                 let async_call = returns.render_async(
-                    Expression::native_call(symbol, arguments),
+                    Self::native_call(symbol, arguments, &parameters)?,
                     protocol,
                     &failure,
                     &options_name,
@@ -925,16 +996,14 @@ impl Parameter {
                 .ok_or_else(|| Function::unsupported("closure parameter"))?;
         let handle = Identifier::parse(format!("__boltffi_{name}_handle"))?;
         Ok(Self {
+            owned: Some(OwnedArgument::Closure {
+                parameter: name.clone(),
+                local: handle.clone(),
+                register: adapter.register(),
+                unregister: adapter.unregister().clone(),
+            }),
             ty: adapter.parameter_type(),
-            setup: vec![Statement::constant(
-                handle.clone(),
-                Expression::invoke(
-                    adapter.register(),
-                    [Expression::identifier(name.clone())]
-                        .into_iter()
-                        .collect::<ArgumentList>(),
-                ),
-            )],
+            setup: Vec::new(),
             arguments: vec![Expression::identifier(handle)],
             cleanup: Vec::new(),
             name,
@@ -1012,6 +1081,7 @@ impl Parameter {
 
     fn direct(name: Identifier, primitive: Primitive) -> Result<Self> {
         Ok(Self {
+            owned: None,
             ty: Type::primitive(primitive)?,
             arguments: vec![Expression::identifier(name.clone())],
             name,
@@ -1030,6 +1100,7 @@ impl Parameter {
             .map(|enumeration| TypeName::named(Name::new(enumeration.name()).type_name()))
             .ok_or_else(|| Function::unsupported("enum without declaration"))?;
         Ok(Self {
+            owned: None,
             ty,
             arguments: vec![Expression::identifier(name.clone())],
             name,
@@ -1064,6 +1135,7 @@ impl Parameter {
             let allocation = Identifier::parse(format!("__boltffi_{name}_allocation"))?;
             let allocation_value = Expression::identifier(allocation.clone());
             return Ok(Self {
+                owned: None,
                 ty,
                 setup: vec![Statement::constant(
                     allocation,
@@ -1102,6 +1174,7 @@ impl Parameter {
         let Some(allocation_method) = allocation_method else {
             let writer_value = Expression::identifier(writer.clone());
             return Ok(Self {
+                owned: None,
                 ty,
                 setup: std::iter::once(Statement::constant(
                     writer.clone(),
@@ -1130,6 +1203,7 @@ impl Parameter {
         let allocation = Identifier::parse(format!("__boltffi_{name}_allocation"))?;
         let allocation_value = Expression::identifier(allocation.clone());
         Ok(Self {
+            owned: None,
             ty,
             setup: vec![Statement::constant(
                 allocation.clone(),
@@ -1192,6 +1266,7 @@ impl Parameter {
             false => vec![free],
         };
         Ok(Self {
+            owned: None,
             ty: vector.parameter_type()?,
             setup: vec![Statement::constant(
                 allocation.clone(),
@@ -1211,6 +1286,7 @@ impl Parameter {
     fn scalar_option(name: Identifier, primitive: Primitive) -> Result<Self> {
         let option = ScalarOption::new(primitive)?;
         Ok(Self {
+            owned: None,
             ty: option.ty()?,
             arguments: vec![option.argument(Expression::identifier(name.clone()))],
             name,
@@ -1263,6 +1339,7 @@ impl Parameter {
             [writer_value.clone()].into_iter().collect::<ArgumentList>(),
         )));
         Ok(Self {
+            owned: None,
             ty: Name::new(record.name()).type_name(),
             setup: vec![
                 Statement::constant(
@@ -1300,6 +1377,7 @@ impl Parameter {
         name: Identifier,
         id: ClassId,
         presence: HandlePresence,
+        receive: Receive,
         context: &RenderContext<Wasm32>,
     ) -> Result<Self> {
         let class = context
@@ -1311,15 +1389,40 @@ impl Parameter {
             HandlePresence::Nullable => class.clone().nullable(),
             _ => return Err(Function::unsupported("unknown class handle presence")),
         };
-        Ok(Self {
-            ty,
-            arguments: vec![Expression::static_call(
+        let local = Identifier::parse(format!("__boltffi_{name}_owned_handle"))?;
+        let owned = if receive == Receive::ByValue {
+            Some(OwnedArgument::Class {
+                parameter: name.clone(),
+                class: class.clone(),
+                local: local.clone(),
+                release: Identifier::parse(
+                    context
+                        .class(id)
+                        .ok_or_else(|| {
+                            Function::unsupported(
+                                "missing class declaration for ownership transfer",
+                            )
+                        })?
+                        .release()
+                        .name()
+                        .as_str(),
+                )?,
+            })
+        } else {
+            None
+        };
+        let arguments = match &owned {
+            Some(_) => vec![Expression::identifier(local)],
+            None => vec![Expression::static_call(
                 class,
                 Identifier::known("_toHandle"),
-                [Expression::identifier(name.clone())]
-                    .into_iter()
-                    .collect::<ArgumentList>(),
+                [Expression::identifier(name.clone())].into_iter().collect(),
             )],
+        };
+        Ok(Self {
+            owned,
+            ty,
+            arguments,
             name,
             setup: Vec::new(),
             cleanup: Vec::new(),
@@ -1354,6 +1457,7 @@ impl Parameter {
             _ => return Err(Function::unsupported("unknown callback handle presence")),
         };
         Ok(Self {
+            owned: None,
             name,
             ty,
             setup: vec![Statement::constant(handle.clone(), registered)],
@@ -1808,14 +1912,14 @@ impl<'plan> ParamPlanRender<'plan, Wasm32, IntoRust> for ParameterRenderer<'_> {
         target: &'plan HandleTarget,
         carrier: wasm32::HandleCarrier,
         presence: HandlePresence,
-        _receive: Receive,
+        receive: Receive,
     ) -> Self::Output {
         if !matches!(carrier, wasm32::HandleCarrier::U32) {
             return Err(Function::unsupported("unknown handle carrier"));
         }
         match target {
             HandleTarget::Class(id) => {
-                Parameter::class_handle(self.name.clone(), *id, presence, self.context)
+                Parameter::class_handle(self.name.clone(), *id, presence, receive, self.context)
             }
             HandleTarget::Callback(id) => {
                 Parameter::callback_handle(self.name.clone(), *id, presence, self.context)

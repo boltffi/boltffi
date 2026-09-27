@@ -1,11 +1,12 @@
 mod expansion;
+pub mod native_link;
 
 use std::io::{BufRead, BufReader};
 use std::process::{Command, Stdio};
 use std::sync::mpsc;
 use std::thread;
 
-use crate::cli::Result;
+use crate::cli::{CliError, Result};
 use crate::config::Config;
 use crate::target::{Platform, RustTarget};
 use crate::toolchain::{AndroidToolchain, AndroidToolchainError};
@@ -186,6 +187,33 @@ impl<'a> Builder<'a> {
         self.build_targets(targets)
     }
 
+    pub fn build_host_with_native_link_metadata(&self) -> Result<native_link::NativeLinkMetadata> {
+        if !matches!(self.options.selection, BuildSelection::Expanded(_)) {
+            return Err(CliError::CommandFailed {
+                command: "native link metadata requires a selected binding expansion".to_owned(),
+                status: None,
+            });
+        }
+        let mut command = self.host_command()?;
+        command.arg("--print=native-static-libs");
+        let output = command.output().map_err(|source| CliError::CommandFailed {
+            command: format!("cargo rustc --print=native-static-libs: {source}"),
+            status: None,
+        })?;
+        if let Some(on_output) = self.options.on_output.as_ref() {
+            String::from_utf8_lossy(&output.stderr)
+                .lines()
+                .for_each(on_output);
+        }
+        if !output.status.success() {
+            return Err(CliError::CommandFailed {
+                command: format!("cargo rustc: {}", String::from_utf8_lossy(&output.stderr)),
+                status: output.status.code(),
+            });
+        }
+        native_link::NativeLinkMetadata::from_output(&output)
+    }
+
     pub fn build_wasm_with_triple(&self, triple: &str) -> Result<Vec<BuildResult>> {
         let command_args = self.cargo_build_command_args();
         let mut command = Command::new("cargo");
@@ -202,6 +230,24 @@ impl<'a> Builder<'a> {
             triple: triple.to_string(),
             success,
         }])
+    }
+
+    fn host_command(&self) -> Result<Command> {
+        let command_args = self.cargo_build_command_args();
+        let mut command = Command::new("cargo");
+        self.apply_cargo_build_prefix(&mut command, &command_args);
+        self.apply_common_build_args(&mut command);
+        command.args(&command_args.command_args);
+        command.arg("--message-format=json-render-diagnostics");
+        self.apply_expansion(&mut command)?;
+        command.env_remove("IPHONEOS_DEPLOYMENT_TARGET");
+        command.envs(
+            self.options
+                .extra_env
+                .iter()
+                .map(|(key, value)| (key, value)),
+        );
+        Ok(command)
     }
 
     fn build_single_target(
@@ -474,12 +520,7 @@ name = "demo"
                 extra_env: Vec::new(),
             },
         );
-        let command_args = builder.cargo_build_command_args();
-        let mut command = Command::new("cargo");
-        builder.apply_cargo_build_prefix(&mut command, &command_args);
-        builder.apply_common_build_args(&mut command);
-        command.args(&command_args.command_args);
-        builder.apply_expansion(&mut command).unwrap();
+        let command = builder.host_command().unwrap();
         let arguments = command
             .get_args()
             .map(|argument| argument.to_string_lossy().into_owned())
@@ -498,6 +539,12 @@ name = "demo"
         assert_eq!(
             &arguments[arguments.len() - 4..],
             ["--lib", "--", "--cfg", "boltffi_binding_expansion"]
+        );
+        assert!(!arguments.iter().any(|argument| argument == "--target"));
+        assert!(
+            command
+                .get_envs()
+                .any(|(key, value)| { key == "BOLTFFI_BINDING_EXPANSION" && value.is_some() })
         );
     }
 

@@ -49,6 +49,7 @@ interface TypeMapping {
   java?: string;
   csharp?: string;
   typescript?: string;
+  c?: string;
 }
 
 const CODE_LANGUAGES: readonly CodeLanguage[] = [
@@ -59,6 +60,7 @@ const CODE_LANGUAGES: readonly CodeLanguage[] = [
   { property: 'csharp', label: 'C#', fence: 'csharp' },
   { property: 'typescript', label: 'TypeScript', fence: 'typescript' },
   { property: 'python', label: 'Python', fence: 'python' },
+  { property: 'c', label: 'C', fence: 'c' },
 ];
 
 const TYPE_LANGUAGES: readonly TypeLanguage[] = [
@@ -68,6 +70,7 @@ const TYPE_LANGUAGES: readonly TypeLanguage[] = [
   { property: 'java', label: 'Java' },
   { property: 'csharp', label: 'C#' },
   { property: 'typescript', label: 'TypeScript' },
+  { property: 'c', label: 'C' },
 ];
 
 export class DocumentationMarkdown {
@@ -296,6 +299,7 @@ class EstreeValue {
       java: values.get('java'),
       csharp: values.get('csharp'),
       typescript: values.get('typescript'),
+      c: values.get('c'),
     };
   }
 

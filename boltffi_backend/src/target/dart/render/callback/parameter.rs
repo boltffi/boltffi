@@ -1,3 +1,4 @@
+use super::super::class::OwnedClassArgument;
 use boltffi_binding::{
     DirectValueType, DirectVectorElementType, HandlePresence, HandleTarget, Native, OutOfRust,
     OutgoingParam, ParamPlan,
@@ -19,6 +20,7 @@ use super::super::super::{
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CallbackParameter {
+    received_class: Option<ReceivedClass>,
     signature: Parameter,
     entry_setup: Vec<String>,
     entry_argument: String,
@@ -26,7 +28,24 @@ pub struct CallbackParameter {
     proxy_arguments: Vec<String>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ReceivedClass {
+    pub owned: OwnedClassArgument,
+    pub carrier: String,
+    pub pending: Identifier,
+    pub wrapper: Identifier,
+    pub class: TypeFragment,
+}
+
 impl CallbackParameter {
+    pub fn received_class(&self) -> Option<&ReceivedClass> {
+        self.received_class.as_ref()
+    }
+
+    pub fn owned_class(&self) -> Option<&OwnedClassArgument> {
+        self.received_class.as_ref().map(|class| &class.owned)
+    }
+
     pub fn from_declaration(
         parameter: &boltffi_binding::ParamDecl<Native, OutOfRust>,
         group: &ParameterGroup,
@@ -288,45 +307,60 @@ impl CallbackParameter {
         let native_name =
             super::super::super::native::parameter_name(parameters.parameter(*index).name())?;
         let required_type = type_name::handle(target, HandlePresence::Required, context)?;
-        let (entry_argument, proxy_argument) = match target {
-            HandleTarget::Class(_) => match presence {
-                HandlePresence::Required => (
-                    format!("{required_type}._({native_name})"),
-                    format!("{name}._handle"),
-                ),
-                HandlePresence::Nullable => (
-                    format!("{native_name} == 0 ? null : {required_type}._({native_name})"),
-                    format!("{name}?._handle ?? 0"),
-                ),
-                _ => return super::unsupported("unknown callback class-handle presence"),
-            },
-            HandleTarget::Callback(_) => match presence {
-                HandlePresence::Required => (
-                    format!("{required_type}Bridge.wrap({native_name})"),
-                    format!("{required_type}Bridge.create({name})"),
-                ),
-                HandlePresence::Nullable => (
-                    format!(
+        let public_type = type_name::handle(target, presence, context)?;
+        match target {
+            HandleTarget::Class(class) => {
+                let declaration = context.class(*class).ok_or(Error::BrokenBridgeContract {
+                    bridge: "c",
+                    invariant: "missing class declaration for ownership transfer",
+                })?;
+                let owned = OwnedClassArgument {
+                    parameter: name.clone(),
+                    local: Identifier::parse(format!("_l${name}OwnedHandle"))?,
+                    release: Identifier::parse(declaration.release().name().as_str())?,
+                    presence,
+                };
+                let received = ReceivedClass {
+                    carrier: native_name,
+                    pending: Identifier::parse(format!("_l${name}Pending"))?,
+                    wrapper: Identifier::parse(format!("_l${name}Received"))?,
+                    class: required_type,
+                    owned,
+                };
+                let mut parameter = Self::new(
+                    name,
+                    public_type,
+                    Vec::new(),
+                    received.wrapper.to_string(),
+                    Vec::new(),
+                    vec![received.owned.local.to_string()],
+                );
+                parameter.received_class = Some(received);
+                Ok(parameter)
+            }
+            HandleTarget::Callback(_) => {
+                let entry_argument = match presence {
+                    HandlePresence::Required => {
+                        format!("{required_type}Bridge.wrap({native_name})")
+                    }
+                    HandlePresence::Nullable => format!(
                         "{native_name}.handle == 0 ? null : {required_type}Bridge.wrap({native_name})"
                     ),
-                    format!("{required_type}Bridge.create({name})"),
-                ),
-                _ => return super::unsupported("unknown callback callback-handle presence"),
-            },
-            HandleTarget::Stream(_) => {
-                return super::unsupported("callback stream handle parameter");
+                    _ => return super::unsupported("unknown callback callback-handle presence"),
+                };
+                let proxy_argument = format!("{required_type}Bridge.create({name})");
+                Ok(Self::new(
+                    name,
+                    public_type,
+                    Vec::new(),
+                    entry_argument,
+                    Vec::new(),
+                    vec![proxy_argument],
+                ))
             }
-            _ => return super::unsupported("unknown callback handle target"),
-        };
-        let public_type = type_name::handle(target, presence, context)?;
-        Ok(Self::new(
-            name,
-            public_type,
-            Vec::new(),
-            entry_argument,
-            Vec::new(),
-            vec![proxy_argument],
-        ))
+            HandleTarget::Stream(_) => super::unsupported("callback stream handle parameter"),
+            _ => super::unsupported("unknown callback handle target"),
+        }
     }
 
     fn new(
@@ -338,6 +372,7 @@ impl CallbackParameter {
         proxy_arguments: Vec<String>,
     ) -> Self {
         Self {
+            received_class: None,
             signature: Parameter::new(name, public_type),
             entry_setup,
             entry_argument,

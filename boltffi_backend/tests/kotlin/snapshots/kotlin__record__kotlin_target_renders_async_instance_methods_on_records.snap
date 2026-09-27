@@ -1,0 +1,194 @@
+---
+source: boltffi_backend/tests/kotlin/record.rs
+expression: rendered
+---
+===== com/boltffi/demo/Demo.kt =====
+@file:OptIn(kotlin.ExperimentalUnsignedTypes::class)
+
+package com.boltffi.demo
+
+import kotlinx.coroutines.launch
+@Suppress("FunctionName")
+private object Native {
+    @JvmStatic external fun boltffi_method_record_demo_marker_fetch(`receiver`: java.nio.ByteBuffer, __boltffi_receiver_len: Int): Long
+    @JvmStatic external fun boltffi_async_method_record_demo_marker_fetch_poll(handle: Long, callback_data: Long): Byte
+    @JvmStatic external fun boltffi_async_method_record_demo_marker_fetch_complete(handle: Long): Int
+    @JvmStatic external fun boltffi_async_method_record_demo_marker_fetch_cancel(handle: Long): Unit
+    @JvmStatic external fun boltffi_async_method_record_demo_marker_fetch_free(handle: Long): Unit
+    @JvmStatic external fun boltffi_async_method_record_demo_marker_fetch_panic_message(handle: Long): ByteArray?
+    @JvmStatic external fun boltffi_method_record_demo_label_measure(`receiver`: java.nio.ByteBuffer, __boltffi_receiver_len: Int): Long
+    @JvmStatic external fun boltffi_async_method_record_demo_label_measure_poll(handle: Long, callback_data: Long): Byte
+    @JvmStatic external fun boltffi_async_method_record_demo_label_measure_complete(handle: Long): Int
+    @JvmStatic external fun boltffi_async_method_record_demo_label_measure_cancel(handle: Long): Unit
+    @JvmStatic external fun boltffi_async_method_record_demo_label_measure_free(handle: Long): Unit
+    @JvmStatic external fun boltffi_async_method_record_demo_label_measure_panic_message(handle: Long): ByteArray?
+    @JvmStatic external fun boltffi_method_record_demo_point_length(`receiver`: java.nio.ByteBuffer): Long
+    @JvmStatic external fun boltffi_async_method_record_demo_point_length_poll(handle: Long, callback_data: Long): Byte
+    @JvmStatic external fun boltffi_async_method_record_demo_point_length_complete(handle: Long): Double
+    @JvmStatic external fun boltffi_async_method_record_demo_point_length_cancel(handle: Long): Unit
+    @JvmStatic external fun boltffi_async_method_record_demo_point_length_free(handle: Long): Unit
+    @JvmStatic external fun boltffi_async_method_record_demo_point_length_panic_message(handle: Long): ByteArray?
+
+    @JvmStatic fun boltffiFutureContinuationCallback(handle: Long, pollResult: Byte) {
+        BoltFfiAsync.resume(handle, pollResult)
+    }
+}
+
+
+object Marker {
+    internal fun wireSize(): Int = 0
+
+    internal fun writeTo(writer: WireWriter) {
+    }
+
+    internal fun toByteArray(): ByteArray = ByteArray(0)
+
+    internal fun fromReader(reader: WireReader): Marker {
+        return Marker
+    }
+
+    internal fun fromByteArray(bytes: ByteArray): Marker {
+        require(bytes.size == 0)
+        return Marker
+    }
+
+    suspend fun fetch(): UInt {
+        return boltffiCallAsync(
+            createFuture = {
+                val __boltffi_marker_wire = WireWriterPool.acquire(this.wireSize())
+                val __boltffi_marker_writer = __boltffi_marker_wire.writer
+                this.writeTo(__boltffi_marker_writer)
+                try {
+                    Native.boltffi_method_record_demo_marker_fetch(__boltffi_marker_wire.directBuffer(), __boltffi_marker_wire.size())
+                } finally {
+                    __boltffi_marker_wire.close()
+                }
+            },
+            poll = { future, contHandle -> Native.boltffi_async_method_record_demo_marker_fetch_poll(future, contHandle) },
+            complete = { future ->
+                Native.boltffi_async_method_record_demo_marker_fetch_complete(future).toUInt()
+            },
+            free = { future -> Native.boltffi_async_method_record_demo_marker_fetch_free(future) },
+            cancel = { future -> Native.boltffi_async_method_record_demo_marker_fetch_cancel(future) },
+        )
+    }
+}
+
+
+data class Label(
+    val text: String
+) {
+    internal fun wireSize(): Int {
+        return 4 + Utf8Codec.maxBytes(this.text)
+    }
+
+    internal fun writeTo(writer: WireWriter) {
+        writer.writeString(this.text)
+    }
+
+    internal fun toByteArray(): ByteArray {
+        val buffer = WireWriterPool.acquire(wireSize())
+        val writer = buffer.writer
+        try {
+            writeTo(writer)
+            return buffer.bytes()
+        } finally {
+            buffer.close()
+        }
+    }
+
+    companion object {
+        internal fun fromReader(reader: WireReader): Label {
+            return Label(
+                reader.readString()
+            )
+        }
+
+        internal fun fromByteArray(bytes: ByteArray): Label {
+            val reader = WireReader(bytes)
+            return fromReader(reader)
+        }
+    }
+
+    suspend fun measure(): UInt {
+        return boltffiCallAsync(
+            createFuture = {
+                val __boltffi_label_wire = WireWriterPool.acquire(this.wireSize())
+                val __boltffi_label_writer = __boltffi_label_wire.writer
+                this.writeTo(__boltffi_label_writer)
+                try {
+                    Native.boltffi_method_record_demo_label_measure(__boltffi_label_wire.directBuffer(), __boltffi_label_wire.size())
+                } finally {
+                    __boltffi_label_wire.close()
+                }
+            },
+            poll = { future, contHandle -> Native.boltffi_async_method_record_demo_label_measure_poll(future, contHandle) },
+            complete = { future ->
+                Native.boltffi_async_method_record_demo_label_measure_complete(future).toUInt()
+            },
+            free = { future -> Native.boltffi_async_method_record_demo_label_measure_free(future) },
+            cancel = { future -> Native.boltffi_async_method_record_demo_label_measure_cancel(future) },
+        )
+    }
+}
+
+
+data class Point(
+    val x: Double,
+    val y: Double
+) {
+    internal fun toByteArray(): ByteArray {
+        val buffer = java.nio.ByteBuffer
+            .allocate(STRUCT_SIZE)
+            .order(java.nio.ByteOrder.nativeOrder())
+        writeTo(buffer, 0)
+        return buffer.array()
+    }
+
+    internal fun toDirectBuffer(): java.nio.ByteBuffer {
+        val buffer = java.nio.ByteBuffer
+            .allocateDirect(STRUCT_SIZE)
+            .order(java.nio.ByteOrder.nativeOrder())
+        writeTo(buffer, 0)
+        return buffer
+    }
+
+    internal fun writeTo(buffer: java.nio.ByteBuffer, offset: Int) {
+        buffer.putDouble(offset, x)
+        buffer.putDouble(offset + 8, y)
+    }
+
+    companion object {
+        internal const val STRUCT_SIZE: Int = 16
+
+        internal fun fromByteArray(bytes: ByteArray): Point {
+            require(bytes.size == STRUCT_SIZE)
+            val buffer = java.nio.ByteBuffer
+                .wrap(bytes)
+                .order(java.nio.ByteOrder.nativeOrder())
+            return fromBuffer(buffer, 0)
+        }
+
+        internal fun fromBuffer(buffer: java.nio.ByteBuffer, offset: Int): Point {
+            return Point(
+                buffer.getDouble(offset),
+                buffer.getDouble(offset + 8)
+            )
+        }
+    }
+
+    suspend fun length(): Double {
+        return boltffiCallAsync(
+            createFuture = {
+                val __boltffi_receiver = this.toDirectBuffer()
+                Native.boltffi_method_record_demo_point_length(__boltffi_receiver)
+            },
+            poll = { future, contHandle -> Native.boltffi_async_method_record_demo_point_length_poll(future, contHandle) },
+            complete = { future ->
+                Native.boltffi_async_method_record_demo_point_length_complete(future)
+            },
+            free = { future -> Native.boltffi_async_method_record_demo_point_length_free(future) },
+            cancel = { future -> Native.boltffi_async_method_record_demo_point_length_cancel(future) },
+        )
+    }
+}

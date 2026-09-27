@@ -1,43 +1,28 @@
-# Astro Starter Kit: Minimal
+# BoltFFI documentation
+
+The website is built with Astro and MDX. The same pages are published as HTML, Markdown, and the combined `llms-full.txt` document.
+
+## Run locally
+
+From this directory, with Node.js 24:
 
 ```sh
-npm create astro@latest -- --template minimal
+npm ci
+npm run dev
 ```
 
-> 🧑‍🚀 **Seasoned astronaut?** Delete this file. Have fun!
+Open `http://localhost:4321/docs/overview`. To build the site and verify its Markdown output:
 
-## 🚀 Project Structure
-
-Inside of your Astro project, you'll see the following folders and files:
-
-```text
-/
-├── public/
-├── src/
-│   └── pages/
-│       └── index.astro
-└── package.json
+```sh
+npm run build
 ```
 
-Astro looks for `.astro` or `.md` files in the `src/pages/` directory. Each page is exposed as a route based on its file name.
+## Edit a page
 
-There's nothing special about `src/components/`, but that's where we like to put any Astro/React/Vue/Svelte/Preact components.
+Pages live in `src/content/docs`. `CodeComparisonWrapper.astro` displays Rust beside the generated-language examples. It supports Swift, Kotlin, Java, C#, TypeScript, Python, and C. `TypeTableWrapper.astro` displays the corresponding type mappings.
 
-Any static assets, like images, can be placed in the `public/` directory.
+Keep code examples consistent with generated bindings. C examples must show cleanup for returned owners and distinguish input views from owning values. Do not add a C example for an API the target cannot generate; explain the limitation on the relevant topic page. Keep C type mappings and API examples beside the other languages. The C page covers linking and memory management; build commands belong in Packaging and settings belong in Configuration.
 
-## 🧞 Commands
+When adding a page, register it in `src/lib/documentation/index.ts` and the sidebar components. The build checks that every page appears in both Markdown indexes. The Markdown renderer in `src/lib/documentation/markdown.ts` must preserve every supported language when the comparison components change.
 
-All commands are run from the root of the project, from a terminal:
-
-| Command                   | Action                                           |
-| :------------------------ | :----------------------------------------------- |
-| `npm install`             | Installs dependencies                            |
-| `npm run dev`             | Starts local dev server at `localhost:4321`      |
-| `npm run build`           | Build your production site to `./dist/`          |
-| `npm run preview`         | Preview your build locally, before deploying     |
-| `npm run astro ...`       | Run CLI commands like `astro add`, `astro check` |
-| `npm run astro -- --help` | Get help using the Astro CLI                     |
-
-## 👀 Want to learn more?
-
-Feel free to check [our documentation](https://docs.astro.build) or jump into our [Discord server](https://astro.build/chat).
+The [C demo](../examples/platforms/c) builds and runs against the generated header on the supported CI hosts.

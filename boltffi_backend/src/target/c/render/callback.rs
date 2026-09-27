@@ -22,7 +22,7 @@ pub fn handle_type_name(id: CallbackId, context: &RenderContext<Native>) -> Resu
         invariant: "callback handle target has no callback declaration",
     })?;
     let prefix = PackagePrefix::from_context(context);
-    let friendly = prefix.type_name(&Name::new(callback.name()).r#type());
+    let friendly = prefix.type_name(callback.name());
     Ok(format!("{friendly}Handle"))
 }
 
@@ -56,7 +56,7 @@ pub fn render(
 
     let prefix = PackagePrefix::from_context(context);
     let vtable_name = callback.vtable().name();
-    let friendly = prefix.type_name(&Name::new(callback.name()).r#type());
+    let friendly = prefix.type_name(callback.name());
     let handle = handle_type_name(decl.id(), context)?;
     let member = Name::new(callback.name()).member();
     let create = crate::bridge::c::Identifier::parse(prefix.member(&format!("{member}_create")))?;
@@ -67,10 +67,11 @@ pub fn render(
         "typedef {vtable_name} {friendly};\ntypedef struct {{\n    BoltFFICallbackHandle raw;\n}} {handle};\n"
     );
     chunk.push_str(&format!(
-        "/* A {friendly} vtable. The caller fills the function-pointer slots, then\n * passes it to {create} together with a non-zero identity that the exported\n * Rust side uses as the callback's handle. The returned {handle} must be kept\n * alive for the duration of the call that consumes it.\n */\n"
-    ));
-    chunk.push_str(&format!(
         "static inline {handle} {create}(const {friendly} *vtable, uint64_t identity) {{\n    {handle} result;\n    {register_name}((const {vtable_name} *)vtable);\n    result.raw = {create_name}(identity);\n    return result;\n}}\n"
     ));
+    let free = prefix.member(&format!("{member}_free"));
+    let clone = prefix.member(&format!("{member}_clone"));
+    chunk.push_str(&format!("static inline void {free}({handle} *value) {{\nif (value == NULL || value->raw.vtable == NULL || value->raw.handle == 0) return;\nconst {friendly} *vtable = (const {friendly} *)value->raw.vtable;\nvtable->free(value->raw.handle);\nmemset(&value->raw, 0, sizeof(value->raw));\n}}\n\
+    static inline {handle} {clone}(const {handle} *value) {{\n{handle} result = {{0}};\nif (value == NULL || value->raw.vtable == NULL || value->raw.handle == 0) return result;\nconst {friendly} *vtable = (const {friendly} *)value->raw.vtable;\nresult.raw.handle = vtable->clone(value->raw.handle);\nresult.raw.vtable = value->raw.vtable;\nreturn result;\n}}\n"));
     Ok(Emitted::primary(chunk))
 }

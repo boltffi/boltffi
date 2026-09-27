@@ -8,6 +8,8 @@ import TypeTable from "../../components/TypeTableWrapper.astro";
 
 # Async
 
+The C target does not generate async functions, methods, constructors, or async callback traits yet. These examples apply to the other targets. See [C limitations](/docs/experimental#c).
+
 Rust async functions can be exported just like regular functions. Add `async` to the function signature and BoltFFI handles bridging the future to the target language's async model. The generated bindings let callers await the result using native syntax, with no manual callback wiring or polling logic on either side. Cancellation propagates from the caller back to Rust, and errors work the same as synchronous functions.
 
 <CodeComparison

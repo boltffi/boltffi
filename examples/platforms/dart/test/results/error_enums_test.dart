@@ -3,6 +3,23 @@ import 'package:demo/demo.dart';
 
 void main() {
   tearDownAll(shutdownBoltffi);
+  test('error messages preserve text', () {
+    ['', 'service failed 東京\u0000🦀'].forEach((message) {
+      expect(
+        () => failWithMessage(message),
+        throwsA(ServiceError.failed(message: message)),
+        reason: 'case:results.error_enums.message.should_preserve_text',
+      );
+    });
+    [null, '', 'optional failure 東京\u0000🦀'].forEach((message) {
+      expect(
+        () => failWithOptionalMessage(message),
+        throwsA(ServiceError.optional(message: message)),
+        reason: 'case:results.error_enums.message.should_preserve_optional_text',
+      );
+    });
+  });
+
   test('error enum results', () async {
     expect(
       checkedDivide(10, 2),

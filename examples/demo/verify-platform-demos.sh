@@ -11,6 +11,7 @@ csharp_dir="$repo_root/examples/platforms/csharp"
 wasm_dir="$repo_root/examples/platforms/wasm"
 python_dir="$repo_root/examples/platforms/python"
 dart_dir="$repo_root/examples/platforms/dart"
+c_dir="$repo_root/examples/platforms/c"
 workspace_manifest="$repo_root/Cargo.toml"
 
 selected_platforms=()
@@ -86,10 +87,10 @@ pack_host_dart() {
 host_default_platforms() {
     case "$(uname -s)" in
         Darwin)
-            printf '%s\n' apple kotlin java csharp wasm python dart
+            printf '%s\n' apple kotlin java csharp wasm python dart c
             ;;
         Linux|MINGW*|MSYS*|CYGWIN*)
-            printf '%s\n' java csharp wasm python dart
+            printf '%s\n' java csharp wasm python dart c
             ;;
         *)
             printf 'unsupported host for demo verification: %s\n' "$(uname -s)" >&2
@@ -147,7 +148,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         *)
             printf 'Unknown argument: %s\n' "$1" >&2
-            printf 'Usage: %s [--platform <apple|kotlin|java|csharp|wasm|python|dart>] [--python <interpreter>] [--host-defaults]\n' "$0" >&2
+            printf 'Usage: %s [--platform <apple|kotlin|java|csharp|wasm|python|dart|c>] [--python <interpreter>] [--host-defaults]\n' "$0" >&2
             exit 2
             ;;
     esac
@@ -193,6 +194,9 @@ for selected_platform in "${selected_platforms[@]}"; do
         dart)
             run_step "pack dart" pack_host_dart
             run_step "dart demo" "$dart_dir/test-demo.sh"
+            ;;
+        c)
+            run_step "c demo" "$c_dir/test-demo.sh"
             ;;
         *)
             printf 'Unsupported demo platform: %s\n' "$selected_platform" >&2

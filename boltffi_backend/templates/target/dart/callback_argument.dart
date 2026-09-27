@@ -1,0 +1,1 @@
+final {{ ty }} {{ name }} = {{ value }};

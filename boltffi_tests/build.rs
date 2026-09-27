@@ -25,6 +25,7 @@ fn main() {
     ExperimentalExpansion::new(&paths).emit();
     println!("cargo:rerun-if-changed={}", paths.source.display());
     println!("cargo:rerun-if-changed={}", paths.src.display());
+    println!("cargo:rerun-if-changed=tests/callback_class_handles.c");
 
     let source = source_contract(&paths);
     let bindings = lower::<Native>(&source).expect("test contract lowers");
@@ -304,6 +305,7 @@ impl<'paths> CGlue<'paths> {
         let customs = self.customs_harness();
         let closures = self.closures_harness();
         let callbacks = self.callbacks_harness();
+        let callback_classes = include_str!("tests/callback_class_handles.c");
         let classes = self.classes_harness();
         let streams = self.streams_harness();
         let results = self.results_harness();
@@ -315,6 +317,7 @@ impl<'paths> CGlue<'paths> {
 #include <string.h>
 
 {helpers}
+{callback_classes}
 {fill_bytes}
 {bytes}
 {primitives}
@@ -1583,7 +1586,13 @@ static int boltffi_tests_check_callbacks(void) {
         boltffi_release_class_boltffi_tests_classes_test_counter(counter);
         return 736;
     }
-    boltffi_release_class_boltffi_tests_classes_test_counter(counter);
+    if (boltffi_function_boltffi_tests_classes_borrow_keyword_counter(counter) != 50) {
+        boltffi_release_class_boltffi_tests_classes_test_counter(counter);
+        return 1191;
+    }
+    if (boltffi_function_boltffi_tests_classes_consume_counter_with_storage_name(counter, 7) != 57) {
+        return 1192;
+    }
     uint64_t thread_safe = boltffi_init_class_boltffi_tests_classes_thread_safe_counter_new(10);
     if (thread_safe == 0) {
         return 737;

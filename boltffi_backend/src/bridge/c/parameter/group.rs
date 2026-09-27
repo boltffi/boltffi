@@ -55,7 +55,9 @@ impl ParameterGroup {
         }
 
         match &params[index].role {
-            ParameterRole::Value => Ok(Self::Value(ParameterIndex::new(index))),
+            ParameterRole::Value | ParameterRole::OwnedClass(_) => {
+                Ok(Self::Value(ParameterIndex::new(index)))
+            }
             ParameterRole::BytePointer(name) => {
                 EncodedWritebackParameter::from_params(params, index, name)?
                     .map(Self::EncodedWriteback)
@@ -106,8 +108,16 @@ impl ParameterGroup {
                 name,
                 signature,
                 parameters,
-            } => ClosureParameter::from_params(params, index, name, signature, parameters)
-                .map(Self::Closure),
+                return_channel,
+            } => ClosureParameter::from_params(
+                params,
+                index,
+                name,
+                signature,
+                parameters,
+                *return_channel,
+            )
+            .map(Self::Closure),
             ParameterRole::ClosureContext(_) | ParameterRole::ClosureRelease(_) => {
                 Err(Error::BrokenBridgeContract {
                     bridge: C_BRIDGE_CONTRACT,
@@ -119,8 +129,15 @@ impl ParameterGroup {
                 signature,
                 call_type,
                 parameters,
+                return_channel,
             } => ClosureReturnParameter::from_params(
-                params, index, name, signature, call_type, parameters,
+                params,
+                index,
+                name,
+                signature,
+                call_type,
+                parameters,
+                *return_channel,
             )
             .map(Self::ClosureReturn),
         }

@@ -1,6 +1,6 @@
 ---
 title: "Configuration"
-description: "Configure boltffi.toml package names, target outputs, and platform packaging behavior for generated Swift, Kotlin, Java, C#, TypeScript, and Python bindings."
+description: "Configure boltffi.toml package names, target outputs, and platform packaging behavior for generated Swift, Kotlin, Java, C#, TypeScript, Python, and C bindings."
 ---
 
 # Configuration
@@ -543,6 +543,24 @@ min_sdk = 24
 The default output is `dist/java/android`. The `min_sdk` sets the minimum Android API level (default `24`).
 
 Both JVM and Android targets can be enabled simultaneously. They share the same `package`, `module_name`, and `min_version` settings but produce separate output.
+
+<h2 id="c-configuration">C Configuration (experimental)</h2>
+
+Enable the experimental C target and choose its output root:
+
+```toml
+[targets.c]
+enabled = true
+output = "dist/c"
+```
+
+C is disabled by default; its default output directory is `dist/c`. To include it in `generate all` or `pack all`, keep `enabled = true` and either pass `--experimental` or set `experimental = ["c"]` at the top of `boltffi.toml`, before any section. Saving the experimental opt-in does not enable `targets.c` by itself.
+
+The [package name](#package-identity) supplies the C prefix. With `[package] name = "demo"`, a Rust `Point` becomes `DemoPoint`, `add` becomes `demo_add`, and `ANSWER` becomes `DEMO_ANSWER`. Methods include the type name, such as `demo_counter_get`. Names beginning with `boltffi_`, `Ffi`, or `___` belong to the underlying bridge; application code normally uses the package-prefixed API.
+
+The header, CMake package, and pkg-config files use `package.crate_name`, falling back to `package.name`. Native binaries keep the selected Cargo library target's name. Package metadata uses `package.version` when set, otherwise the selected Cargo package's version.
+
+See [C packaging](/docs/packaging#c-experimental) for generation commands, output files, and host restrictions.
 
 <h2 id="c-sharp-configuration">C# Configuration</h2>
 

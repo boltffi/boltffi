@@ -7,6 +7,7 @@ import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -196,6 +197,8 @@ class DemoCallbacksAndAsyncTest {
         withTimeout(10_000) {
             demoCase("case:async_fns.basic.add.should_return_sum")
             assertEquals(10, asyncAdd(3, 7))
+            demoCase("case:async_fns.named_cancellation_token.should_preserve_both_values")
+            assertEquals(18, asyncCancellationTokenCollision(7, 11))
             demoCase("case:async_fns.basic.echo.should_prefix_message")
             assertEquals("Echo: hello async", asyncEcho("hello async"))
             demoCase("case:async_fns.basic.double_all.should_double_i32_vector")
@@ -208,6 +211,14 @@ class DemoCallbacksAndAsyncTest {
             assertEquals("a, b, c", asyncConcat(listOf("a", "b", "c")))
             demoCase("case:async_fns.basic.get_numbers.should_return_counting_sequence")
             assertContentEquals(intArrayOf(0, 1, 2, 3, 4), asyncGetNumbers(5))
+        }
+    }
+
+    @Test
+    fun asyncCallsResumeOffTheWakingThread() = runBlocking {
+        withTimeout(10_000) {
+            demoCase("case:async_fns.native_wake.resumed_thread.should_not_be_the_waking_thread")
+            assertNotEquals("boltffi-demo-waker", asyncResumedThreadName())
         }
     }
 

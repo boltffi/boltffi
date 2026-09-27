@@ -13,6 +13,11 @@ void main() {
       reason: "case:async_fns.basic.add.should_return_sum",
     );
     expect(
+      await asyncCancellationTokenCollision(7, 11),
+      18,
+      reason: "case:async_fns.named_cancellation_token.should_preserve_both_values",
+    );
+    expect(
       await asyncEcho('hello async'),
       'Echo: hello async',
       reason: "case:async_fns.basic.echo.should_prefix_message",
@@ -101,6 +106,14 @@ void main() {
       ),
       record,
       reason: "case:async_fns.mixed_record.make.should_construct_record",
+    );
+  });
+
+  test('async calls resume off the waking thread', () async {
+    expect(
+      await asyncResumedThreadName(),
+      isNot('boltffi-demo-waker'),
+      reason: "case:async_fns.native_wake.resumed_thread.should_not_be_the_waking_thread",
     );
   });
 }

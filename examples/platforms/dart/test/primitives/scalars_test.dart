@@ -67,6 +67,11 @@ void main() {
       reason: "case:primitives.scalars.i32.should_add_two_values",
     );
     expect(
+      () => notifyStatusCollision(7, 11),
+      returnsNormally,
+      reason: "case:primitives.scalars.named_status.should_accept_both_names",
+    );
+    expect(
       add(7, 9),
       16,
       reason: "case:primitives.scalars.i32.should_add_with_benchmark_alias",
