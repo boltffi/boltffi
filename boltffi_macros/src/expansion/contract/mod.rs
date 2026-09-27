@@ -3339,12 +3339,12 @@ mod tests {
             "__boltffi_receiver : < Point as :: boltffi :: __private :: Passable > :: In"
         ));
         assert!(rendered.contains(
-            "__boltffi_receiver_out : * mut < Point as :: boltffi :: __private :: Passable > :: In"
+            "__boltffi___boltffi_receiver_out : * mut < Point as :: boltffi :: __private :: Passable > :: In"
         ));
         assert!(rendered.contains("receiver writeback pointer is null"));
         assert!(rendered.contains("__boltffi_receiver . shift ()"));
         assert!(rendered.contains(
-            ":: core :: ptr :: write_unaligned (__boltffi_receiver_out , < Point as :: boltffi :: __private :: Passable > :: pack (__boltffi_receiver))"
+            ":: core :: ptr :: write_unaligned (__boltffi___boltffi_receiver_out , < Point as :: boltffi :: __private :: Passable > :: pack (__boltffi_receiver))"
         ));
     }
 
@@ -3366,10 +3366,10 @@ mod tests {
         let rendered = tokens.to_string();
         assert!(rendered.contains("fn boltffi_method_record_demo_point_shift"));
         assert!(rendered.contains("__boltffi_receiver : * mut u8"));
-        assert!(rendered.contains("let __boltffi_receiver_out = __boltffi_receiver ;"));
+        assert!(rendered.contains("let __boltffi___boltffi_receiver_out = __boltffi_receiver ;"));
         assert!(rendered.contains("__boltffi_receiver . shift ()"));
         assert!(rendered.contains(
-            ":: core :: ptr :: write_unaligned (__boltffi_receiver_out as * mut < Point as :: boltffi :: __private :: Passable > :: In"
+            ":: core :: ptr :: write_unaligned (__boltffi___boltffi_receiver_out as * mut < Point as :: boltffi :: __private :: Passable > :: In"
         ));
     }
 
@@ -3439,8 +3439,10 @@ mod tests {
         assert!(rendered.contains("fn boltffi_method_record_demo_profile_display_name"));
         assert!(rendered.contains("__boltffi_receiver_ptr : * const u8"));
         assert!(rendered.contains("__boltffi_receiver_len : usize"));
-        assert!(rendered.contains("let __boltffi_receiver_storage : Profile ="));
-        assert!(rendered.contains("let __boltffi_receiver = & __boltffi_receiver_storage ;"));
+        assert!(rendered.contains("let __boltffi___boltffi_receiver_storage : Profile ="));
+        assert!(
+            rendered.contains("let __boltffi_receiver = & __boltffi___boltffi_receiver_storage ;")
+        );
         assert!(rendered.contains("__boltffi_receiver . display_name ()"));
     }
 
@@ -3588,10 +3590,13 @@ mod tests {
         let tokens = expand_enumeration(&expansion, &source.enums[0]).expect("mutable enum");
         let rendered = tokens.to_string();
         assert!(rendered.contains(
-            "__boltffi_receiver_out : * mut < Status as :: boltffi :: __private :: Passable > :: In"
+            "__boltffi___boltffi_receiver_out : * mut < Status as :: boltffi :: __private :: Passable > :: In"
         ));
         assert!(rendered.contains("receiver writeback pointer is null"));
-        assert!(rendered.contains(":: core :: ptr :: write_unaligned (__boltffi_receiver_out"));
+        assert!(
+            rendered
+                .contains(":: core :: ptr :: write_unaligned (__boltffi___boltffi_receiver_out")
+        );
     }
 
     #[test]
@@ -3604,10 +3609,13 @@ mod tests {
         let tokens = expand_enumeration(&expansion, &source.enums[0]).expect("mutable enum");
         let rendered = tokens.to_string();
         assert!(rendered.contains(
-            "__boltffi_receiver_out : * mut < Status as :: boltffi :: __private :: Passable > :: In"
+            "__boltffi___boltffi_receiver_out : * mut < Status as :: boltffi :: __private :: Passable > :: In"
         ));
         assert!(rendered.contains("receiver writeback pointer is null"));
-        assert!(rendered.contains(":: core :: ptr :: write_unaligned (__boltffi_receiver_out"));
+        assert!(
+            rendered
+                .contains(":: core :: ptr :: write_unaligned (__boltffi___boltffi_receiver_out")
+        );
     }
 
     #[test]
@@ -3826,7 +3834,7 @@ mod tests {
         assert!(rendered.contains("__boltffi_receiver_ptr : * const u8"));
         assert!(rendered.contains("__boltffi_receiver_len : usize"));
         assert!(rendered.contains("let __boltffi_receiver : Event ="));
-        assert!(!rendered.contains("__boltffi_receiver_storage"));
+        assert!(!rendered.contains("__boltffi___boltffi_receiver_storage"));
         assert!(rendered.contains("__boltffi_receiver . label ()"));
     }
 
@@ -3839,11 +3847,11 @@ mod tests {
         let expansion = Expansion::new(&lowered);
         let tokens = expand_enumeration(&expansion, &source.enums[0]).expect("mutable enum");
         let rendered = tokens.to_string();
-        assert!(
-            rendered.contains("__boltffi_receiver_out : * mut :: boltffi :: __private :: FfiBuf")
-        );
-        assert!(rendered.contains("__boltffi_receiver_storage"));
-        assert!(rendered.contains(":: core :: ptr :: write (__boltffi_receiver_out"));
+        assert!(rendered.contains(
+            "__boltffi___boltffi_receiver_out : * mut :: boltffi :: __private :: FfiBuf"
+        ));
+        assert!(rendered.contains("__boltffi___boltffi_receiver_storage"));
+        assert!(rendered.contains(":: core :: ptr :: write (__boltffi___boltffi_receiver_out"));
     }
 
     #[test]
@@ -3855,11 +3863,11 @@ mod tests {
         let expansion = Expansion::new(&lowered);
         let tokens = expand_enumeration(&expansion, &source.enums[0]).expect("mutable enum");
         let rendered = tokens.to_string();
-        assert!(
-            rendered.contains("__boltffi_receiver_out : * mut :: boltffi :: __private :: FfiBuf")
-        );
-        assert!(rendered.contains("__boltffi_receiver_storage"));
-        assert!(rendered.contains(":: core :: ptr :: write (__boltffi_receiver_out"));
+        assert!(rendered.contains(
+            "__boltffi___boltffi_receiver_out : * mut :: boltffi :: __private :: FfiBuf"
+        ));
+        assert!(rendered.contains("__boltffi___boltffi_receiver_storage"));
+        assert!(rendered.contains(":: core :: ptr :: write (__boltffi___boltffi_receiver_out"));
     }
 
     #[test]
@@ -6699,13 +6707,11 @@ mod tests {
         assert!(rendered.contains("fn boltffi_async_method_class_demo_engine_compute_poll"));
         assert!(rendered.contains("rust_future_new (async move"));
         assert!(rendered.contains(
-            "let __boltffi_receiver_handle = match unsafe { __BoltffiEngineHandle :: retain"
+            "let __boltffi___boltffi_receiver_handle = match unsafe { __BoltffiEngineHandle :: retain"
         ));
-        assert!(
-            rendered.contains(
-                "let __boltffi_receiver : & Engine = __boltffi_receiver_handle . shared ()"
-            )
-        );
+        assert!(rendered.contains(
+            "let __boltffi_receiver : & Engine = __boltffi___boltffi_receiver_handle . shared ()"
+        ));
         assert!(rendered.contains("__boltffi_receiver . compute ()"));
     }
 
@@ -8185,6 +8191,12 @@ mod tests {
                 #[cfg(target_arch = "wasm32")]
                 #[unsafe(no_mangle)]
                 pub unsafe extern "C" fn boltffi_function_demo_apply(callback: u32) -> u32 {
+                    let __boltffi_callback_owner = (callback != 0).then(|| {
+                        ::boltffi::__private::WasmCallbackOwner::new(
+                            callback,
+                            __boltffi_callback_closure____closure__u32_to_u32_free
+                        )
+                    });
                     unsafe extern "C" {
                         fn __boltffi_callback_closure____closure__u32_to_u32_call(
                             handle: u32,
@@ -8192,15 +8204,10 @@ mod tests {
                         ) -> u32;
                         fn __boltffi_callback_closure____closure__u32_to_u32_free(handle: u32);
                     }
-                    if callback == 0 {
+                    let Some(__boltffi_callback_owner) = __boltffi_callback_owner else {
                         ::boltffi::__private::set_last_error(concat!(stringify!(callback), ": null closure handle"));
                         return <u32 as ::core::default::Default>::default();
-                    }
-                    let __boltffi_callback_owner =
-                        ::boltffi::__private::WasmCallbackOwner::new(
-                            callback,
-                            __boltffi_callback_closure____closure__u32_to_u32_free
-                        );
+                    };
                     let callback = move |__boltffi_arg0: u32| {
                         unsafe {
                             __boltffi_callback_closure____closure__u32_to_u32_call(

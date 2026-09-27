@@ -392,3 +392,16 @@ pub fn shared_counter_snapshot(counter: &ThreadSafeCounter) -> i32 {
 pub async fn async_shared_counter_snapshot(counter: &ThreadSafeCounter) -> i32 {
     counter.get()
 }
+
+#[export]
+pub fn borrow_keyword_counter(r#type: &TestCounter) -> i32 {
+    r#type.get()
+}
+
+#[export]
+pub fn consume_counter_with_storage_name(
+    counter: TestCounter,
+    __boltffi_counter_storage: i32,
+) -> i32 {
+    counter.get() + __boltffi_counter_storage
+}

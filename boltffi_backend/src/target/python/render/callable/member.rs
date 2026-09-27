@@ -86,7 +86,7 @@ impl AssociatedCallable {
             .map(|parameter| ParameterStub::from_declaration(parameter, package))
             .collect::<Result<Vec<_>>>()?;
         let returned = ReturnStub::from_callable(method.callable(), package)?;
-        let receiver_argument = receiver.then(Self::self_handle).transpose()?;
+        let receiver_argument = receiver.then(Self::self_receiver).transpose()?;
         let arguments = Self::arguments(receiver_argument.clone(), &parameters);
         let native_name = symbols.method(method.name())?;
         let native_call = Self::native_call(&native_name, receiver_argument, &parameters)?;
@@ -269,13 +269,6 @@ impl AssociatedCallable {
 
     fn self_receiver() -> Result<Expression> {
         Identifier::parse("self").map(Expression::identifier)
-    }
-
-    fn self_handle() -> Result<Expression> {
-        Ok(Expression::attribute(
-            Self::self_receiver()?,
-            Identifier::parse("_handle")?,
-        ))
     }
 
     fn parameters(

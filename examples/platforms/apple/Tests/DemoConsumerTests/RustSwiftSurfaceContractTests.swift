@@ -555,7 +555,6 @@ private let typeMemberCoverageGaps: Set<String> = [
 private let featureScopedRustFiles: Set<String> = [
     "callbacks/csharp_closures.rs",
     "classes/async_factory.rs",
-    "classes/ownership.rs",
     "records/mutable.rs"
 ]
 
@@ -576,6 +575,7 @@ private let rustToSwiftCoverageFile: [String: String] = [
     "classes/constructor_matrix.rs": "classes/ConstructorCoverageMatrixTests.swift",
     "classes/constructors.rs": "classes/ConstructorsTests.swift",
     "classes/methods.rs": "classes/MethodsTests.swift",
+    "classes/ownership.rs": "classes/OwnershipTests.swift",
     "classes/static_methods.rs": "classes/StaticMethodsTests.swift",
     "classes/streams.rs": "classes/StreamsTests.swift",
     "classes/thread_safe.rs": "classes/ThreadSafeTests.swift",

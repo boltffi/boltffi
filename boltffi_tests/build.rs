@@ -1583,7 +1583,13 @@ static int boltffi_tests_check_callbacks(void) {
         boltffi_release_class_boltffi_tests_classes_test_counter(counter);
         return 736;
     }
-    boltffi_release_class_boltffi_tests_classes_test_counter(counter);
+    if (boltffi_function_boltffi_tests_classes_borrow_keyword_counter(counter) != 50) {
+        boltffi_release_class_boltffi_tests_classes_test_counter(counter);
+        return 1191;
+    }
+    if (boltffi_function_boltffi_tests_classes_consume_counter_with_storage_name(counter, 7) != 57) {
+        return 1192;
+    }
     uint64_t thread_safe = boltffi_init_class_boltffi_tests_classes_thread_safe_counter_new(10);
     if (thread_safe == 0) {
         return 737;

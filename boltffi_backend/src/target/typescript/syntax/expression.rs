@@ -14,6 +14,10 @@ pub struct Statement(String);
 pub struct ArgumentList(Vec<Expression>);
 
 impl Expression {
+    pub fn from_template(template: &impl askama::Template) -> crate::core::Result<Self> {
+        Ok(Self(template.render()?))
+    }
+
     pub fn identifier(identifier: Identifier) -> Self {
         Self(identifier.to_string())
     }

@@ -9,7 +9,7 @@ use crate::{
     target::python::{
         codec::{EncodedCrossing, Expression as CodecExpression},
         name_style::Name,
-        syntax::{Expression, Identifier, Literal, TypeAnnotation},
+        syntax::{Expression, Identifier, TypeAnnotation},
     },
 };
 
@@ -127,26 +127,12 @@ impl<'plan, 'package> ParamPlanRender<'plan, Native, IntoRust> for StubArgument<
 
     fn handle(
         &mut self,
-        target: &HandleTarget,
+        _: &HandleTarget,
         _: native::HandleCarrier,
-        presence: HandlePresence,
+        _: HandlePresence,
         _: Receive,
     ) -> Self::Output {
-        match (target, presence) {
-            (HandleTarget::Class(_), HandlePresence::Required) => Ok(Expression::attribute(
-                Expression::identifier(self.name.clone()),
-                Identifier::parse("_handle")?,
-            )),
-            (HandleTarget::Class(_), HandlePresence::Nullable) => Ok(Expression::conditional(
-                Expression::literal(Literal::integer(0)),
-                Expression::is_none(Expression::identifier(self.name.clone())),
-                Expression::attribute(
-                    Expression::identifier(self.name.clone()),
-                    Identifier::parse("_handle")?,
-                ),
-            )),
-            _ => Ok(Expression::identifier(self.name.clone())),
-        }
+        Ok(Expression::identifier(self.name.clone()))
     }
 
     fn scalar_option(&mut self, _: Primitive) -> Self::Output {

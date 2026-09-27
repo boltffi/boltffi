@@ -14,6 +14,7 @@ const suiteModules = [
   "./tests/classes/constructor_matrix.test.mjs",
   "./tests/classes/constructors.test.mjs",
   "./tests/classes/methods.test.mjs",
+  "./tests/classes/ownership.test.mjs",
   "./tests/classes/static_methods.test.mjs",
   "./tests/classes/streams.test.mjs",
   "./tests/classes/thread_safe.test.mjs",

@@ -15,6 +15,13 @@
     }
   }
 
+  int _f$takeHandle() {
+    final handle = _handle;
+    _handle = 0;
+    _finalizer.detach(this);
+    return handle;
+  }
+
   void dispose$() {
     final handle = _handle;
     if (handle == 0) return;

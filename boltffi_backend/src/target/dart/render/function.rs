@@ -74,10 +74,26 @@ pub struct DartParameter {
 }
 
 struct DartArgument {
+    owned_class: Option<OwnedClassArgument>,
     setup: Vec<String>,
     native_arguments: Vec<String>,
     writeback: Vec<String>,
     cleanup: Vec<String>,
+}
+
+struct OwnedClassArgument {
+    parameter: Identifier,
+    local: Identifier,
+    release: Identifier,
+    presence: HandlePresence,
+}
+
+#[derive(Template)]
+#[template(path = "target/dart/owned_call.dart", escape = "none")]
+struct OwnedCallTemplate<'call> {
+    owned: Vec<&'call OwnedClassArgument>,
+    invocation: String,
+    returns_value: bool,
 }
 
 pub struct DartReturn {
@@ -326,24 +342,47 @@ impl Function {
                 false => None,
             };
 
+        let native_arguments = arguments
+            .iter()
+            .cloned()
+            .chain(
+                completion
+                    .is_none()
+                    .then_some(&returns.arguments)
+                    .into_iter()
+                    .flatten()
+                    .cloned(),
+            )
+            .collect::<Vec<_>>();
+        let invocation = format!(
+            "_f${}({})",
+            start_function.name(),
+            native_arguments.join(", ")
+        );
+        let owned = parameters
+            .iter()
+            .filter_map(|parameter| parameter.argument.owned_class.as_ref())
+            .collect::<Vec<_>>();
+        let invocation = if owned.is_empty() {
+            invocation
+        } else {
+            OwnedCallTemplate {
+                owned,
+                invocation,
+                returns_value: !matches!(start_function.returns(), CBridgeType::Void),
+            }
+            .render()?
+        };
         let call = match completion {
             Some(asynchronous) => render_async_call(
-                start_function,
+                &invocation,
                 asynchronous,
-                &arguments,
                 &receiver_setup,
                 &cleanup,
                 &returns,
                 cancellation_token.as_ref(),
             )?,
-            None => render_sync_call(
-                start_function,
-                &arguments,
-                &receiver_setup,
-                &writeback,
-                &cleanup,
-                &returns,
-            ),
+            None => render_sync_call(&invocation, &receiver_setup, &writeback, &cleanup, &returns),
         };
         Ok(Self {
             documentation: Documentation::new(doc, 0),
@@ -449,6 +488,7 @@ impl DartParameter {
 impl DartArgument {
     fn new(setup: Vec<String>, native_arguments: Vec<String>, writeback: Vec<String>) -> Self {
         Self {
+            owned_class: None,
             setup,
             native_arguments,
             writeback,
@@ -462,6 +502,7 @@ impl DartArgument {
         cleanup: Vec<String>,
     ) -> Self {
         Self {
+            owned_class: None,
             setup,
             native_arguments,
             writeback: Vec::new(),
@@ -476,6 +517,7 @@ impl DartArgument {
         cleanup: Vec<String>,
     ) -> Self {
         Self {
+            owned_class: None,
             setup,
             native_arguments,
             writeback,
@@ -697,11 +739,36 @@ pub fn render_parameter(
             ))
         }
         ParamPlan::Handle {
-            target, presence, ..
+            target,
+            presence,
+            receive,
+            ..
         } => {
             let ParameterGroup::Value(_) = group else {
                 return broken("handle Dart parameter disagrees with C bridge group");
             };
+            if let HandleTarget::Class(class) = target
+                && *receive == Receive::ByValue
+            {
+                let declaration = context.class(*class).ok_or(Error::BrokenBridgeContract {
+                    bridge: "c",
+                    invariant: "missing class declaration for ownership transfer",
+                })?;
+                let local = Identifier::parse(format!("_l${name}OwnedHandle"))?;
+                let mut argument =
+                    DartArgument::new(Vec::new(), vec![local.to_string()], Vec::new());
+                argument.owned_class = Some(OwnedClassArgument {
+                    parameter: name.clone(),
+                    local,
+                    release: Identifier::parse(declaration.release().name().as_str())?,
+                    presence: *presence,
+                });
+                return Ok(DartParameter::new(
+                    name,
+                    type_name::handle(target, *presence, context)?,
+                    argument,
+                ));
+            }
             let argument = match target {
                 HandleTarget::Class(_) => match presence {
                     HandlePresence::Required => format!("{name}._handle"),
@@ -1370,8 +1437,7 @@ fn out_return(
 }
 
 fn render_sync_call(
-    function: &CFunction,
-    arguments: &[String],
+    invocation: &str,
     setup: &[String],
     writeback: &[String],
     cleanup: &[String],
@@ -1379,9 +1445,6 @@ fn render_sync_call(
 ) -> String {
     let mut statements = setup.to_vec();
     statements.extend(returns.before_call.iter().cloned());
-    let mut arguments = arguments.to_vec();
-    arguments.extend(returns.arguments.iter().cloned());
-    let invocation = format!("_f${}({})", function.name(), arguments.join(", "));
 
     // `after_call` can throw (status/error checks); arg cleanup and pooled
     // return-slot release still have to run. Mut writeback stays in `try` so
@@ -1455,9 +1518,8 @@ fn reserved_cancellation_token_name(parameters: &[Parameter]) -> Result<Identifi
 }
 
 fn render_async_call(
-    start: &CFunction,
+    invocation: &str,
     asynchronous: AsyncFunctions<'_>,
-    arguments: &[String],
     setup: &[String],
     cleanup: &[String],
     returns: &DartReturn,
@@ -1465,11 +1527,7 @@ fn render_async_call(
 ) -> Result<String> {
     let create_body = {
         let mut statements = setup.to_vec();
-        statements.push(format!(
-            "final _l$future = _f${}({});",
-            start.name(),
-            arguments.join(", ")
-        ));
+        statements.push(format!("final _l$future = {invocation};"));
         statements.extend(cleanup.iter().cloned());
         statements.push("return _l$future;".to_owned());
         statements.join("\n")

@@ -25,6 +25,11 @@ class Engine internal constructor(internal val handle: Long) : AutoCloseable {
         }
     }
 
+    internal fun __boltffiTakeHandle(): Long {
+        check(__boltffi_closed.compareAndSet(false, true)) { "Engine is closed" }
+        return handle
+    }
+
     internal fun boltffiHandle(): Long {
         check(!__boltffi_closed.get()) { "Engine is closed" }
         return handle
@@ -44,11 +49,57 @@ class Engine internal constructor(internal val handle: Long) : AutoCloseable {
     }
 
     fun swap(other: Engine): Engine {
-        return Engine(Native.boltffi_method_class_demo_engine_swap(this.boltffiHandle(), other.boltffiHandle()))
+        return Engine(({
+    Native.ensureInitialized()
+    var __boltffi_other_owned_handle = 0L
+    var __boltffiEntered = false
+    try {
+        __boltffi_other_owned_handle = other.__boltffiTakeHandle()
+        val __boltffiArgument0 = this.boltffiHandle()
+        val __boltffiArgument1 = __boltffi_other_owned_handle
+        try {
+            val __boltffiResult = Native.boltffi_method_class_demo_engine_swap(__boltffiArgument0, __boltffiArgument1)
+            __boltffiEntered = true
+            __boltffiResult
+        } catch (__boltffiFailure: UnsatisfiedLinkError) {
+            throw __boltffiFailure
+        } catch (__boltffiFailure: Throwable) {
+            __boltffiEntered = true
+            throw __boltffiFailure
+        }
+    } finally {
+        if (!__boltffiEntered) {
+            if (__boltffi_other_owned_handle != 0L) Native.boltffi_release_class_demo_engine(__boltffi_other_owned_handle)
+        }
+    }
+})())
     }
 
     fun maybeSwap(other: Engine?): Engine? {
-        val __boltffi_handle = Native.boltffi_method_class_demo_engine_maybe_swap(this.boltffiHandle(), other?.boltffiHandle() ?: 0L)
+        val __boltffi_handle = ({
+    Native.ensureInitialized()
+    var __boltffi_other_owned_handle = 0L
+    var __boltffiEntered = false
+    try {
+        __boltffi_other_owned_handle = other?.__boltffiTakeHandle() ?: 0L
+        val __boltffiArgument0 = this.boltffiHandle()
+        val __boltffiArgument1 = __boltffi_other_owned_handle
+        try {
+            val __boltffiResult = Native.boltffi_method_class_demo_engine_maybe_swap(__boltffiArgument0, __boltffiArgument1)
+            __boltffiEntered = true
+            __boltffiResult
+        } catch (__boltffiFailure: UnsatisfiedLinkError) {
+            throw __boltffiFailure
+        } catch (__boltffiFailure: Throwable) {
+            __boltffiEntered = true
+            throw __boltffiFailure
+        }
+    } finally {
+        if (!__boltffiEntered) {
+            if (__boltffi_other_owned_handle != 0L) Native.boltffi_release_class_demo_engine(__boltffi_other_owned_handle)
+        }
+    }
+})()
         return if (__boltffi_handle == 0L) null else Engine(__boltffi_handle)
     }
 }

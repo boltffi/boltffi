@@ -44,6 +44,7 @@ struct AsyncCallbackPayloadType {
 struct FallibleAsyncCallbackSuccess;
 
 trait ReceiveAbi {
+    fn takes_ownership(self) -> bool;
     fn needs_encoded_writeback(self) -> bool;
     fn needs_mutable_pointer(self) -> bool;
     fn direct_param_type(self, ty: &DirectValueType, value: Type) -> Type;
@@ -66,6 +67,10 @@ where
 }
 
 impl ReceiveAbi for Receive {
+    fn takes_ownership(self) -> bool {
+        self == Receive::ByValue
+    }
+
     fn needs_encoded_writeback(self) -> bool {
         self == Receive::ByMutRef
     }
@@ -95,6 +100,10 @@ impl ReceiveAbi for Receive {
 }
 
 impl ReceiveAbi for () {
+    fn takes_ownership(self) -> bool {
+        false
+    }
+
     fn needs_encoded_writeback(self) -> bool {
         false
     }
@@ -239,12 +248,18 @@ where
         target: &'plan HandleTarget,
         carrier: native::HandleCarrier,
         _: HandlePresence,
-        _: D::Receive,
+        receive: D::Receive,
     ) -> Self::Output {
-        Ok(vec![Parameter::new(
-            self.name.as_str(),
-            Type::handle_target(target, carrier)?,
-        )?])
+        let ty = Type::handle_target(target, carrier)?;
+        let parameter = match target {
+            HandleTarget::Class(class) if receive.takes_ownership() => Parameter::owned_class(
+                self.name.as_str(),
+                ty,
+                self.signature.names.class_release(*class)?,
+            )?,
+            _ => Parameter::new(self.name.as_str(), ty)?,
+        };
+        Ok(vec![parameter])
     }
 
     fn scalar_option(&mut self, _: Primitive) -> Self::Output {

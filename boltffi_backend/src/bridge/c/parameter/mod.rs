@@ -43,6 +43,7 @@ pub struct ParameterIndex {
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum ParameterRole {
     Value,
+    OwnedClass(Identifier),
     BytePointer(Identifier),
     ByteLength(Identifier),
     DirectVectorPointer {
@@ -78,6 +79,21 @@ impl Parameter {
     /// Creates a value C ABI parameter.
     pub fn new(name: impl Into<String>, ty: Type) -> Result<Self> {
         Self::with_role(name, ty, ParameterRole::Value)
+    }
+
+    pub(crate) fn owned_class(
+        name: impl Into<String>,
+        ty: Type,
+        release: Identifier,
+    ) -> Result<Self> {
+        Self::with_role(name, ty, ParameterRole::OwnedClass(release))
+    }
+
+    pub(crate) fn class_release(&self) -> Option<&Identifier> {
+        match &self.role {
+            ParameterRole::OwnedClass(release) => Some(release),
+            _ => None,
+        }
     }
 
     /// Creates the pointer half of a borrowed byte-slice C ABI parameter group.

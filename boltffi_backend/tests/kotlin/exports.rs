@@ -190,8 +190,8 @@ fn kotlin_target_renders_class_handles_and_associated_callables() {
         rendered.contains("Native.boltffi_method_class_demo_engine_value(this.boltffiHandle())")
     );
     assert!(!rendered.contains("this.handle"));
-    assert!(rendered.contains("other.boltffiHandle()"));
-    assert!(rendered.contains("other?.boltffiHandle() ?: 0L"));
+    assert!(rendered.contains("other.__boltffiTakeHandle()"));
+    assert!(rendered.contains("other?.__boltffiTakeHandle() ?: 0L"));
     assert!(!rendered.contains("other.handle"));
     assert!(!rendered.contains("other?.handle"));
 

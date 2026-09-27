@@ -105,11 +105,29 @@ pub struct BoundParameter {
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 struct NativeArgument {
+    owned_class: Option<OwnedClassArgument>,
     acquire: Vec<Statement>,
     prepare: Vec<Statement>,
     expressions: Vec<Expression>,
     cleanup: Vec<Statement>,
     runtime: RuntimeRequirement,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct OwnedClassArgument {
+    parameter: Identifier,
+    local: Identifier,
+    release: Identifier,
+    presence: HandlePresence,
+}
+
+#[derive(AskamaTemplate)]
+#[template(path = "target/java/owned_call.java", escape = "none")]
+struct OwnedCallTemplate<'call> {
+    native_owner: &'call TypeIdentifier,
+    owned: Vec<&'call OwnedClassArgument>,
+    bindings: &'call [Statement],
+    body: &'call [Statement],
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -423,10 +441,19 @@ impl Call {
         let parameter_arguments = parameters
             .iter()
             .flat_map(|parameter| parameter.native.expressions.iter().cloned());
-        let native_call = native.call(
-            scope.native_owner,
-            receiver_arguments.chain(parameter_arguments),
-        )?;
+        let owned = parameters
+            .iter()
+            .filter_map(|parameter| parameter.native.owned_class.as_ref())
+            .collect::<Vec<_>>();
+        let arguments = receiver_arguments
+            .chain(parameter_arguments)
+            .collect::<Vec<_>>();
+        let (bindings, arguments) = if owned.is_empty() {
+            (Vec::new(), arguments)
+        } else {
+            native.bind_arguments(arguments, scope.version)?
+        };
+        let native_call = native.call(scope.native_owner, arguments)?;
         let error = ErrorConversion::from_channel(callable.error().channel())?;
         let runtime = receiver
             .iter()
@@ -441,7 +468,7 @@ impl Call {
                 native_call,
                 &declared_return,
                 &error,
-                BoundArguments::new(receiver.as_ref(), &parameters),
+                BoundArguments::new(receiver.as_ref(), &parameters, bindings),
                 scope,
             )?;
             return Ok(Self {
@@ -521,6 +548,16 @@ impl Call {
             scope.package,
             scope.return_context,
         )?;
+        let success = if owned.is_empty() {
+            success
+        } else {
+            vec![Statement::from_template(&OwnedCallTemplate {
+                native_owner: scope.native_owner,
+                owned,
+                bindings: &bindings,
+                body: &success,
+            })?]
+        };
         let protected = receiver
             .iter()
             .flat_map(|receiver| receiver.native.prepare.iter().cloned())
@@ -830,6 +867,7 @@ impl BoundParameter {
 impl NativeArgument {
     fn direct(expression: Expression) -> Self {
         Self {
+            owned_class: None,
             acquire: Vec::new(),
             prepare: Vec::new(),
             expressions: vec![expression],
@@ -841,6 +879,7 @@ impl NativeArgument {
     fn encoded(write: crate::target::java::codec::EncodedWrite) -> Self {
         let (acquire, prepare, expressions, cleanup) = write.into_parts();
         Self {
+            owned_class: None,
             acquire,
             prepare,
             expressions,
@@ -919,9 +958,28 @@ impl<'plan> ParamPlanRender<'plan, Native, IntoRust> for NativeArgumentRender<'_
         target: &'plan HandleTarget,
         carrier: native::HandleCarrier,
         presence: HandlePresence,
-        _receive: Receive,
+        receive: Receive,
     ) -> Self::Output {
         match target {
+            HandleTarget::Class(class) if receive == Receive::ByValue => {
+                let declaration = self.context.class(*class).ok_or_else(|| {
+                    JavaHost::broken_bridge_contract(
+                        "missing class declaration for ownership transfer",
+                    )
+                })?;
+                let local = self.source.generated("owned_handle", self.version)?;
+                let mut argument = NativeArgument::direct(Expression::identifier(local.clone()));
+                argument.owned_class = Some(OwnedClassArgument {
+                    parameter: self.name.clone(),
+                    local,
+                    release: Identifier::parse_for(
+                        declaration.release().name().as_str(),
+                        self.version,
+                    )?,
+                    presence,
+                });
+                Ok(argument)
+            }
             HandleTarget::Class(class) => {
                 ClassHandle::new(*class, carrier, presence, self.version, self.context, None)
                     .and_then(|handle| {
@@ -992,6 +1050,7 @@ impl<'plan> ParamPlanRender<'plan, Native, IntoRust> for NativeArgumentRender<'_
     ) -> Self::Output {
         let vector = DirectVector::from_element(element, self.version, self.context)?;
         Ok(NativeArgument {
+            owned_class: None,
             acquire: Vec::new(),
             prepare: Vec::new(),
             expressions: vec![vector.native_argument(Expression::identifier(self.name.clone()))],
@@ -1431,6 +1490,7 @@ impl Receiver {
                 Ok(Self {
                     ty,
                     native: NativeArgument {
+                        owned_class: None,
                         expressions: vec![Expression::identifier(buffer.clone())],
                         acquire: Vec::new(),
                         prepare: vec![Statement::value(

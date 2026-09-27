@@ -16,6 +16,7 @@ pub struct Names {
     c_style_enum_reprs: BTreeMap<EnumId, Type>,
     classes: BTreeMap<ClassId, Identifier>,
     class_handles: BTreeMap<ClassId, native::HandleCarrier>,
+    class_releases: BTreeMap<ClassId, Identifier>,
     callbacks: BTreeMap<CallbackId, Identifier>,
     streams: BTreeMap<StreamId, Identifier>,
 }
@@ -71,6 +72,16 @@ impl Names {
             })
     }
 
+    pub fn class_release(&self, id: ClassId) -> Result<Identifier> {
+        self.class_releases
+            .get(&id)
+            .cloned()
+            .ok_or(Error::BrokenBridgeContract {
+                bridge: C_BRIDGE_CONTRACT,
+                invariant: "missing class release function",
+            })
+    }
+
     pub fn direct_value(&self, ty: &DirectValueType) -> Result<Type> {
         match ty {
             DirectValueType::Primitive(primitive) => Type::primitive(*primitive),
@@ -119,6 +130,10 @@ impl Names {
                     Identifier::parse(name::Spelling::new(class.name()).typedef())?,
                 );
                 self.class_handles.insert(class.id(), class.handle());
+                self.class_releases.insert(
+                    class.id(),
+                    Identifier::parse(class.release().name().as_str())?,
+                );
             }
             DeclarationRef::Callback(callback) => {
                 self.callbacks.insert(

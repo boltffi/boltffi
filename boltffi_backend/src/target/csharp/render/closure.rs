@@ -13,13 +13,13 @@ use super::super::{
     syntax::{Expression, Identifier, Statement, TypeFragment},
     type_name,
 };
-use super::{NativeParameter, Parameter, direct_type, direct_vector_element_type};
+use super::{NativeParameter, OwnedArgument, Parameter, direct_type, direct_vector_element_type};
 
 pub(super) struct ClosureArgument {
     pub(super) parameter: Parameter,
     pub(super) native_parameters: Vec<NativeParameter>,
     pub(super) invocation_arguments: Vec<Expression>,
-    pub(super) setup: Statement,
+    pub ownership: OwnedArgument,
     pub(super) helper: ClosureHelper,
     pub(super) requires_wire_runtime: bool,
     pub(super) requires_copy_buffer: bool,
@@ -308,14 +308,13 @@ impl ClosureArgument {
             ],
             invocation_arguments: vec![
                 Expression::new(format!("NativeMethods.{call_delegate}Instance")),
-                Expression::new(format!(
-                    "global::System.Runtime.InteropServices.GCHandle.ToIntPtr({handle})"
-                )),
+                Expression::new(format!("{handle}.Handle")),
                 Expression::new(format!("NativeMethods.{release_delegate}Instance")),
             ],
-            setup: Statement::new(format!(
-                "global::System.Runtime.InteropServices.GCHandle {handle} = global::System.Runtime.InteropServices.GCHandle.Alloc({name});"
-            )),
+            ownership: OwnedArgument::Closure {
+                parameter: name,
+                local: handle,
+            },
             helper: ClosureHelper {
                 id: HelperId::new(CanonicalName::single(helper_name.as_str())),
                 source: Statement::new(source),

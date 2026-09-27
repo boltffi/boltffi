@@ -55,7 +55,9 @@ impl ParameterGroup {
         }
 
         match &params[index].role {
-            ParameterRole::Value => Ok(Self::Value(ParameterIndex::new(index))),
+            ParameterRole::Value | ParameterRole::OwnedClass(_) => {
+                Ok(Self::Value(ParameterIndex::new(index)))
+            }
             ParameterRole::BytePointer(name) => {
                 EncodedWritebackParameter::from_params(params, index, name)?
                     .map(Self::EncodedWriteback)

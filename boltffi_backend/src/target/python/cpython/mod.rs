@@ -1264,7 +1264,8 @@ mod tests {
         assert!(extension.contains("static PyObject *boltffi_python_callable_wrapper_boltffi_method_class_demo_engine_reset"));
         assert!(extension.contains("static PyObject *boltffi_python_callable_wrapper_boltffi_method_class_demo_engine_marker"));
         assert!(extension.contains("static PyObject *boltffi_python_callable_wrapper_boltffi_method_class_demo_engine_make_marker"));
-        assert!(extension.contains("boltffi_python_parse_u64(args[0], &receiver)"));
+        assert!(extension.contains("PyObject_GetAttrString(__boltffi_class_owner, \"_handle\")"));
+        assert!(extension.contains("boltffi_python_parse_u64(__boltffi_class_handle, &receiver)"));
         assert!(
             extension.contains("boltffi_python_boltffi_method_class_demo_engine_value(receiver)")
         );
@@ -1284,15 +1285,11 @@ mod tests {
         assert!(init.contains("def __del__(self) -> None:"));
         assert!(init.contains("_native._boltffi_engine_release(handle)"));
         assert!(init.contains("def value(self) -> int:"));
-        assert!(init.contains("return _native._boltffi_engine_value(self._handle)"));
+        assert!(init.contains("return _native._boltffi_engine_value(self)"));
         assert!(init.contains("def reset(self) -> None:"));
-        assert!(init.contains("_native._boltffi_engine_reset(self._handle)"));
+        assert!(init.contains("_native._boltffi_engine_reset(self)"));
         assert!(init.contains("def marker(self) -> Marker:"));
-        assert!(
-            init.contains(
-                "return Marker._from_handle(_native._boltffi_engine_marker(self._handle))"
-            )
-        );
+        assert!(init.contains("return Marker._from_handle(_native._boltffi_engine_marker(self))"));
         assert!(init.contains("def make_marker(value: int) -> Marker:"));
         assert!(
             init.contains("return Marker._from_handle(_native._boltffi_engine_make_marker(value))")

@@ -4,7 +4,7 @@ use super::*;
 pub struct AsyncCall {
     create_acquire: Vec<Statement>,
     create_prepare: Vec<Statement>,
-    create: Expression,
+    create: Vec<Statement>,
     create_cleanup: Vec<Statement>,
     poll: Expression,
     complete: Vec<Statement>,
@@ -16,13 +16,19 @@ pub struct AsyncCall {
 pub struct BoundArguments<'call> {
     receiver: Option<&'call Receiver>,
     parameters: &'call [BoundParameter],
+    bindings: Vec<Statement>,
 }
 
 impl<'call> BoundArguments<'call> {
-    pub fn new(receiver: Option<&'call Receiver>, parameters: &'call [BoundParameter]) -> Self {
+    pub fn new(
+        receiver: Option<&'call Receiver>,
+        parameters: &'call [BoundParameter],
+        bindings: Vec<Statement>,
+    ) -> Self {
         Self {
             receiver,
             parameters,
+            bindings,
         }
     }
 }
@@ -100,6 +106,22 @@ impl AsyncCall {
             failure,
             vec![Statement::throw_value(failure_call)],
         )];
+        let owned = arguments
+            .parameters
+            .iter()
+            .filter_map(|parameter| parameter.native.owned_class.as_ref())
+            .collect::<Vec<_>>();
+        let create = vec![Statement::return_value(create)];
+        let create = if owned.is_empty() {
+            create
+        } else {
+            vec![Statement::from_template(&OwnedCallTemplate {
+                native_owner: scope.native_owner,
+                owned,
+                bindings: &arguments.bindings,
+                body: &create,
+            })?]
+        };
         Ok(Self {
             create_acquire: arguments
                 .receiver
@@ -151,7 +173,7 @@ impl AsyncCall {
         &self.create_prepare
     }
 
-    pub fn create(&self) -> &Expression {
+    pub fn create(&self) -> &[Statement] {
         &self.create
     }
 

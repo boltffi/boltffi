@@ -49,6 +49,7 @@ pub struct NativeMethodView {
     pub uses_callback_parameters: bool,
     pub uses_continuations: bool,
     pub has_error_label: bool,
+    pub owned_class_cleanup: Vec<Expression>,
 }
 
 impl NativeMethodView {
@@ -81,6 +82,21 @@ impl NativeMethodView {
             has_error_label: !borrowed_arrays.is_empty()
                 || !direct_buffers.is_empty()
                 || !record_buffers.is_empty(),
+            owned_class_cleanup: method
+                .c_function()
+                .params()
+                .iter()
+                .filter_map(|parameter| {
+                    parameter.class_release().map(|release| {
+                        Ok(Expression::call(
+                            release.clone(),
+                            ArgumentList::from_iter([Expression::identifier(Identifier::parse(
+                                parameter.name(),
+                            )?)]),
+                        ))
+                    })
+                })
+                .collect::<Result<Vec<_>>>()?,
             borrowed_arrays,
             direct_buffers,
             record_buffers,

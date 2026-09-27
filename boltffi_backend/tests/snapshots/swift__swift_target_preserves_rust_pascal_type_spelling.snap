@@ -19,14 +19,24 @@ public struct FfiError: Error {
 }
 
 public final class GPSSimulator {
-    @usableFromInline let handle: UInt64
+    private var __boltffiHandle: UInt64 = 0
+
+    @usableFromInline var handle: UInt64 {
+        get { withUnsafeMutablePointer(to: &__boltffiHandle) { UInt64(boltffi_atomic_u64_load($0)) } }
+        set { __boltffiHandle = UInt64(newValue) }
+    }
 
     @usableFromInline init(handle: UInt64) {
         self.handle = handle
     }
 
+    @usableFromInline func __boltffiTakeHandle() -> UInt64 {
+        withUnsafeMutablePointer(to: &__boltffiHandle) { UInt64(boltffi_atomic_u64_exchange($0, 0)) }
+    }
+
     deinit {
-        boltffi_release_class_demo_gps_simulator(handle)
+        let handle = __boltffiTakeHandle()
+        if handle != 0 { boltffi_release_class_demo_gps_simulator(handle) }
     }
 
     public init(enabled: Bool) {

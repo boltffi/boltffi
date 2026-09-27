@@ -6,7 +6,12 @@
 static PyObject *{{ start_wrapper }}(PyObject *self, PyObject *const *args, Py_ssize_t nargs) {
 {%- for param in params %}
 {%- if param.is_direct() %}
-    {{ param.c_type() }} {{ param.name() }};
+    {{ param.c_type() }} {{ param.name() }}{% if param.class_handle().is_some() %} = {0}{% endif %};
+{%- if let Some(class) = param.class_handle() %}
+{%- if class.release().is_some() %}
+    int __boltffi_{{ param.name() }}_owned = 0;
+{%- endif %}
+{%- endif %}
 {%- endif %}
 {%- if param.is_encoded() %}
     PyObject *{{ param.wire() }} = NULL;
@@ -32,7 +37,7 @@ static PyObject *{{ start_wrapper }}(PyObject *self, PyObject *const *args, Py_s
         goto done;
     }
 {%- for param in params %}
-{%- if param.is_direct() %}
+{%- if param.is_direct() && param.class_handle().is_none() %}
     if (!{{ param.parser() }}(args[{{ param.index() }}], &{{ param.name() }})) {
         goto done;
     }
@@ -49,7 +54,13 @@ static PyObject *{{ start_wrapper }}(PyObject *self, PyObject *const *args, Py_s
     {{ param.closure_release_needed() }} = {{ param.closure_context() }} != NULL && {{ param.closure_release() }} != NULL;
 {%- endif %}
 {%- endfor %}
+{% include "target/python/class_arguments.c" %}
 {%- for param in params %}
+{%- if let Some(class) = param.class_handle() %}
+{%- if class.release().is_some() %}
+    __boltffi_{{ param.name() }}_owned = 0;
+{%- endif %}
+{%- endif %}
 {%- if param.is_closure() %}
     {{ param.closure_release_needed() }} = 0;
 {%- endif %}
@@ -58,6 +69,11 @@ static PyObject *{{ start_wrapper }}(PyObject *self, PyObject *const *args, Py_s
     result = boltffi_python_box_future_handle(handle);
 done:
 {%- for param in params %}
+{%- if let Some(class) = param.class_handle() %}
+{%- if let Some(release) = class.release() %}
+    if (__boltffi_{{ param.name() }}_owned) {{ release }}({{ param.name() }});
+{%- endif %}
+{%- endif %}
 {%- if param.is_encoded() %}
     Py_XDECREF({{ param.wire() }});
 {%- endif %}

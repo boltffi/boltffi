@@ -131,17 +131,35 @@ struct NativeFunctionTemplate<'function> {
 #[derive(Template)]
 #[template(path = "target/csharp/owned_call.cs", escape = "none")]
 struct OwnedCallTemplate<'call> {
-    arguments: &'call [OwnedClassArgument],
+    arguments: &'call [OwnedArgument],
     invocation: &'call Expression,
     asynchronous: bool,
 }
 
-struct OwnedClassArgument {
-    parameter: Identifier,
-    class: TypeFragment,
-    local: Identifier,
-    presence: HandlePresence,
+enum OwnedArgument {
+    Class {
+        parameter: Identifier,
+        class: TypeFragment,
+        local: Identifier,
+        presence: HandlePresence,
+    },
+    Closure {
+        parameter: Identifier,
+        local: Identifier,
+    },
 }
+
+impl OwnedArgument {
+    fn local(&self) -> &Identifier {
+        match self {
+            Self::Class { local, .. } | Self::Closure { local, .. } => local,
+        }
+    }
+}
+
+#[derive(Template)]
+#[template(path = "target/csharp/owned_closure.cs", escape = "none")]
+struct OwnedClosureTemplate;
 
 #[derive(Template)]
 #[template(path = "target/csharp/status.cs", escape = "none")]
@@ -493,7 +511,7 @@ impl Function {
         let mut encoded_writeback = None;
         let mut parameter_writebacks = Vec::new();
         let mut setup = Vec::new();
-        let mut owned_class_arguments = Vec::new();
+        let mut owned_arguments = Vec::new();
         let mut requires_wire_runtime = false;
         let mut requires_callback_runtime = false;
         let mut requires_copy_buffer = false;
@@ -718,13 +736,13 @@ impl Function {
                                 Receive::ByValue => {
                                     let local = Identifier::parse(format!(
                                         "__boltffiOwnedHandle{}",
-                                        owned_class_arguments.len()
+                                        owned_arguments.len()
                                     ))?;
                                     let argument = Expression::member(
                                         local.clone(),
                                         Identifier::parse("Handle")?,
                                     );
-                                    owned_class_arguments.push(OwnedClassArgument {
+                                    owned_arguments.push(OwnedArgument::Class {
                                         parameter: name.clone(),
                                         class: public_type.clone(),
                                         local,
@@ -943,7 +961,7 @@ impl Function {
                     parameters.push(closure.parameter);
                     native_parameters.extend(closure.native_parameters);
                     invocation_arguments.extend(closure.invocation_arguments);
-                    setup.push(closure.setup);
+                    owned_arguments.push(closure.ownership);
                     requires_wire_runtime |= closure.requires_wire_runtime;
                     requires_copy_buffer |= closure.requires_copy_buffer;
                     closure_helpers.push(closure.helper);
@@ -1320,9 +1338,9 @@ impl Function {
             Expression::member(Identifier::parse("NativeMethods")?, native_name.clone()),
             ArgumentList::new(invocation_arguments),
         );
-        if !owned_class_arguments.is_empty() {
+        if !owned_arguments.is_empty() {
             let transfer = OwnedCallTemplate {
-                arguments: &owned_class_arguments,
+                arguments: &owned_arguments,
                 invocation: &invocation,
                 asynchronous: async_symbols.is_some(),
             }
@@ -1464,6 +1482,10 @@ impl Function {
                 id: helper.id.clone(),
                 text: helper.source.to_string().into(),
             });
+        }
+        if !self.closure_helpers.is_empty() {
+            emitted =
+                emitted.with_aux(AuxChunk::ForwardDecl(OwnedClosureTemplate.render()?.into()));
         }
         let emitted = match self.checks_status || self.asynchronous.is_some() {
             true => emitted.with_aux(AuxChunk::ForwardDecl(StatusTemplate.render()?.into())),

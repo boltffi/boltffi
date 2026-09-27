@@ -11,10 +11,10 @@ use crate::{
     },
     core::{Error, Result},
     target::java::{
-        JavaVersion,
+        JavaHost, JavaVersion,
         primitive::Primitive,
         render::signature::{Parameter, ReturnType, ValueType},
-        syntax::{ArgumentList, Expression, Identifier, TypeIdentifier, TypeName},
+        syntax::{ArgumentList, Expression, Identifier, Statement, TypeIdentifier, TypeName},
     },
     target::jvm::method::{Parameter as JvmParameter, Parameters as JvmParameters, SlotWidth},
 };
@@ -23,6 +23,14 @@ use crate::{
 #[template(path = "target/java/native_method.java", escape = "none")]
 struct MethodTemplate<'method> {
     method: &'method Method,
+}
+
+#[derive(AskamaTemplate)]
+#[template(path = "target/java/native_argument.java", escape = "none")]
+struct NativeArgumentTemplate<'argument> {
+    ty: &'argument Carrier,
+    name: &'argument Identifier,
+    value: Expression,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -242,6 +250,34 @@ impl Method {
             self.name.clone(),
             arguments.into_iter().collect::<ArgumentList>(),
         ))
+    }
+
+    pub fn bind_arguments(
+        &self,
+        arguments: Vec<Expression>,
+        version: JavaVersion,
+    ) -> Result<(Vec<Statement>, Vec<Expression>)> {
+        if arguments.len() != self.parameters.len() {
+            return Err(JavaHost::broken_bridge_contract(
+                "Java native argument count does not match the JNI signature",
+            ));
+        }
+        self.parameters
+            .as_slice()
+            .iter()
+            .zip(arguments)
+            .enumerate()
+            .map(|(index, (parameter, value))| {
+                let name = Identifier::parse_for(format!("__boltffiArgument{index}"), version)?;
+                let declaration = Statement::from_template(&NativeArgumentTemplate {
+                    ty: parameter.ty(),
+                    name: &name,
+                    value,
+                })?;
+                Ok((declaration, Expression::identifier(name)))
+            })
+            .collect::<Result<Vec<_>>>()
+            .map(|bindings| bindings.into_iter().unzip())
     }
 
     pub fn render(&self) -> Result<String> {

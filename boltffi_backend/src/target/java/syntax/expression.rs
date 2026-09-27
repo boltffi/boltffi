@@ -138,6 +138,10 @@ impl Expression {
 }
 
 impl Statement {
+    pub fn from_template(template: &impl askama::Template) -> crate::core::Result<Self> {
+        Ok(Self(template.render()?))
+    }
+
     pub fn value(ty: TypeName, name: Identifier, value: Expression) -> Self {
         Self(format!("{ty} {name} = {value};"))
     }

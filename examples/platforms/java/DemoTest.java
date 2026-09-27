@@ -16,6 +16,7 @@ public final class DemoTest {
     public static void main(String[] args) {
         try {
             System.out.println("Testing Java bindings...\n");
+            testClassOwnership();
             testBool();
             testI8();
             testU8();
@@ -69,6 +70,69 @@ public final class DemoTest {
             System.out.println("All tests passed!");
         } catch (Throwable error) {
             throw withDemoCase(error);
+        }
+    }
+
+    private static void testClassOwnership() {
+        try (MessageDrops drops = new MessageDrops()) {
+            OwnedMessage message = new OwnedMessage("hello", drops);
+            assert Demo.consumeMessage(message) == 5;
+            message.close();
+            assert drops.count() == 1;
+            try {
+                message.length();
+                throw new AssertionError("moved wrapper stayed usable");
+            } catch (IllegalStateException expected) {
+            }
+            OwnedMessage rejected = new OwnedMessage("", drops);
+            try {
+                Demo.consumeMessageResult(rejected);
+                throw new AssertionError("missing Rust error");
+            } catch (RuntimeException expected) {
+            }
+            rejected.close();
+            assert drops.count() == 2;
+            OwnedMessage first = new OwnedMessage("first", drops);
+            try {
+                Demo.consumeMessages(first, rejected);
+                throw new AssertionError("accepted a closed argument");
+            } catch (IllegalStateException expected) {
+            }
+            first.close();
+            assert drops.count() == 3;
+            OwnedMessage duplicate = new OwnedMessage("duplicate", drops);
+            try {
+                Demo.consumeMessages(duplicate, duplicate);
+                throw new AssertionError("accepted duplicate ownership");
+            } catch (IllegalStateException expected) {
+            }
+            duplicate.close();
+            assert drops.count() == 4;
+            try (MessageStore store = new MessageStore()) {
+                OwnedMessage stored = new OwnedMessage("stored", drops);
+                store.set(stored, Collections.singletonMap("trace", "context")).join();
+                stored.close();
+                assert store.count() == 7;
+                assert drops.count() == 5;
+            }
+            OwnedMessage retained = new OwnedMessage("retained", drops);
+            CompletableFuture<?> pending = Demo.holdMessage(retained);
+            long deadline = System.nanoTime() + 5_000_000_000L;
+            while (drops.borrowCount() == 0 && System.nanoTime() < deadline) {
+                Thread.yield();
+            }
+            assert drops.borrowCount() == 1;
+            assert Demo.consumeMessage(retained) == 0;
+            retained.close();
+            assert drops.count() == 5;
+            assert pending.cancel(true);
+            while (drops.borrowCount() != 0 && System.nanoTime() < deadline) {
+                Thread.yield();
+            }
+            assert drops.borrowCount() == 0;
+            assert drops.count() == 6;
+            retained.close();
+            assert drops.count() == 6;
         }
     }
 

@@ -807,6 +807,7 @@ internal class BoltFfiStreamContext(
 
 @Suppress("FunctionName")
 private object Native {
+    fun ensureInitialized() {}
     init {
         val androidLibrary = "boltffi"
         val desktopPreferredLibrary = "boltffi_jni"
@@ -1023,6 +1024,11 @@ class Engine internal constructor(internal val handle: Long) : AutoCloseable {
         if (__boltffi_closed.compareAndSet(false, true)) {
             Native.boltffi_release_class_demo_engine(handle)
         }
+    }
+
+    internal fun __boltffiTakeHandle(): Long {
+        check(__boltffi_closed.compareAndSet(false, true)) { "Engine is closed" }
+        return handle
     }
 
     internal fun boltffiHandle(): Long {

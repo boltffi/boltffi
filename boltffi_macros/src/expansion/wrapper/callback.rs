@@ -3777,7 +3777,12 @@ impl CallbackMethodSurface for Native {
                 .render()?;
         Ok(LocalMethodParameterTokens {
             ffi_parameters: tokens.ffi_parameters().to_vec(),
-            setup: tokens.conversions().to_vec(),
+            setup: tokens
+                .owned_values()
+                .iter()
+                .chain(tokens.conversions())
+                .cloned()
+                .collect(),
             arguments: vec![tokens.argument().clone()],
         })
     }
@@ -4178,7 +4183,12 @@ impl CallbackMethodSurface for Wasm32 {
                 .render()?;
         Ok(LocalMethodParameterTokens {
             ffi_parameters: tokens.ffi_parameters().to_vec(),
-            setup: tokens.conversions().to_vec(),
+            setup: tokens
+                .owned_values()
+                .iter()
+                .chain(tokens.conversions())
+                .cloned()
+                .collect(),
             arguments: vec![tokens.argument().clone()],
         })
     }

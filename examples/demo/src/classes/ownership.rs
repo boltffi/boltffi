@@ -7,7 +7,13 @@ use boltffi::export;
 
 #[derive(Default)]
 pub struct MessageDrops {
-    count: Arc<AtomicU32>,
+    lifetime: Arc<MessageLifetime>,
+}
+
+#[derive(Default)]
+struct MessageLifetime {
+    dropped: AtomicU32,
+    borrowed: AtomicU32,
 }
 
 #[export]
@@ -17,13 +23,17 @@ impl MessageDrops {
     }
 
     pub fn count(&self) -> u32 {
-        self.count.load(Ordering::SeqCst)
+        self.lifetime.dropped.load(Ordering::SeqCst)
+    }
+
+    pub fn borrow_count(&self) -> u32 {
+        self.lifetime.borrowed.load(Ordering::SeqCst)
     }
 }
 
 pub struct OwnedMessage {
     text: String,
-    drops: Arc<AtomicU32>,
+    lifetime: Arc<MessageLifetime>,
 }
 
 #[export]
@@ -31,7 +41,7 @@ impl OwnedMessage {
     pub fn new(text: String, drops: &MessageDrops) -> Self {
         Self {
             text,
-            drops: Arc::clone(&drops.count),
+            lifetime: Arc::clone(&drops.lifetime),
         }
     }
 
@@ -46,7 +56,20 @@ impl OwnedMessage {
 
 impl Drop for OwnedMessage {
     fn drop(&mut self) {
-        self.drops.fetch_add(1, Ordering::SeqCst);
+        self.lifetime.dropped.fetch_add(1, Ordering::SeqCst);
+    }
+}
+
+struct MessageBorrow<'message> {
+    message: &'message OwnedMessage,
+}
+
+impl Drop for MessageBorrow<'_> {
+    fn drop(&mut self) {
+        self.message
+            .lifetime
+            .borrowed
+            .fetch_sub(1, Ordering::SeqCst);
     }
 }
 
@@ -133,8 +156,10 @@ pub fn mutate_message(message: &mut OwnedMessage) {
 
 #[export]
 pub async fn hold_message(message: &OwnedMessage) -> u32 {
+    message.lifetime.borrowed.fetch_add(1, Ordering::SeqCst);
+    let borrowed = MessageBorrow { message };
     pending::<()>().await;
-    message.length()
+    borrowed.message.length()
 }
 
 #[export]
@@ -166,4 +191,27 @@ pub fn consume_message_with_offset(
     __boltffi_owned_handle0: u32,
 ) -> u32 {
     message.length() + message_owned_handle + boltffi_call_result + __boltffi_owned_handle0
+}
+
+#[export]
+pub fn consume_message_with_callback(callback: impl Fn(u32) -> u32, message: OwnedMessage) -> u32 {
+    callback(message.length())
+}
+
+#[export]
+pub fn consume_named_message(
+    owner: OwnedMessage,
+    handle: u32,
+    valid: u32,
+    owner_owned: u32,
+) -> u32 {
+    owner.length() + handle + valid + owner_owned
+}
+
+#[export]
+pub fn consume_message_before_callback(
+    message: OwnedMessage,
+    callback: impl Fn(u32) -> u32,
+) -> u32 {
+    callback(message.length())
 }

@@ -7,6 +7,11 @@
         }
     }
 
+    internal fun __boltffiTakeHandle(): Long {
+        check(__boltffi_closed.compareAndSet(false, true)) { "{{ class.name() }} is closed" }
+        return handle
+    }
+
     internal fun boltffiHandle(): Long {
         check(!__boltffi_closed.get()) { "{{ class.name() }} is closed" }
         return handle

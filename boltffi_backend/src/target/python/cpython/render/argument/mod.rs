@@ -62,7 +62,15 @@ impl Conversion {
     }
 
     pub fn class_receiver(carrier: native::HandleCarrier) -> Result<Self> {
-        Self::handle_with_name(0, Identifier::parse("receiver")?, carrier)
+        Self::from_class_handle(
+            0,
+            Identifier::parse("receiver")?,
+            carrier,
+            ClassHandle {
+                presence: HandlePresence::Required,
+                release: None,
+            },
+        )
     }
 
     pub fn direct_record_receiver(
@@ -162,6 +170,16 @@ impl Conversion {
 
     pub fn name(&self) -> &Identifier {
         &self.name
+    }
+
+    pub fn class_handle(&self) -> Option<&ClassHandle> {
+        match &self.kind {
+            Kind::Direct(Direct {
+                passing: DirectPassing::Class(class),
+                ..
+            }) => Some(class),
+            _ => None,
+        }
     }
 
     pub fn is_direct(&self) -> bool {
@@ -410,14 +428,11 @@ impl Conversion {
         })
     }
 
-    fn from_handle(index: usize, name: Identifier, carrier: native::HandleCarrier) -> Result<Self> {
-        Self::handle_with_name(index, name, carrier)
-    }
-
-    fn handle_with_name(
+    fn from_class_handle(
         index: usize,
         name: Identifier,
         carrier: native::HandleCarrier,
+        class: ClassHandle,
     ) -> Result<Self> {
         let carrier = primitive::Runtime::native_handle(carrier)?;
         Ok(Self {
@@ -427,7 +442,7 @@ impl Conversion {
                 c_type: carrier.c_type()?,
                 parser: carrier.parser()?,
                 mutation: None,
-                passing: DirectPassing::Value,
+                passing: DirectPassing::Class(class),
             }),
             primitive: Some(carrier),
         })
@@ -591,8 +606,32 @@ impl<'render> ParameterConversion<'render> {
         receive: Receive,
     ) -> Result<Conversion> {
         match (target, carrier, receive) {
-            (HandleTarget::Class(_), carrier, _) => {
-                Conversion::from_handle(self.index, self.name.clone(), carrier)
+            (HandleTarget::Class(class), carrier, receive) => {
+                let release = if receive == Receive::ByValue {
+                    let declaration =
+                        self.context.class(*class).ok_or(Error::UnsupportedTarget {
+                            target: "python",
+                            shape: "missing class declaration for ownership transfer",
+                        })?;
+                    Some(
+                        self.bridge
+                            .loaded_function(declaration.release())
+                            .ok_or(Error::UnsupportedTarget {
+                                target: "python",
+                                shape: "missing class release function",
+                            })?
+                            .storage_name()
+                            .clone(),
+                    )
+                } else {
+                    None
+                };
+                Conversion::from_class_handle(
+                    self.index,
+                    self.name.clone(),
+                    carrier,
+                    ClassHandle { presence, release },
+                )
             }
             (
                 HandleTarget::Callback(callback),
@@ -707,17 +746,31 @@ struct Direct {
     passing: DirectPassing,
 }
 
-#[derive(Clone, Copy)]
 enum DirectPassing {
     Value,
     Address,
+    Class(ClassHandle),
+}
+
+pub struct ClassHandle {
+    presence: HandlePresence,
+    release: Option<Identifier>,
+}
+
+impl ClassHandle {
+    pub fn nullable(&self) -> bool {
+        self.presence == HandlePresence::Nullable
+    }
+    pub fn release(&self) -> Option<&Identifier> {
+        self.release.as_ref()
+    }
 }
 
 impl Direct {
     fn call_arg(&self, name: Identifier) -> c::Expression {
         let value = c::Expression::identifier(name);
-        match self.passing {
-            DirectPassing::Value => value,
+        match &self.passing {
+            DirectPassing::Value | DirectPassing::Class(_) => value,
             DirectPassing::Address => c::Expression::address_of(value),
         }
     }

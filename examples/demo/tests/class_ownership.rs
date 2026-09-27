@@ -1,6 +1,8 @@
 #![cfg(feature = "csharp-demo")]
 
+use std::ffi::c_void;
 use std::ptr;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 use boltffi::__private::{FfiBuf, RustFutureHandle};
 use demo as _;
@@ -16,6 +18,18 @@ unsafe extern "C" {
     fn boltffi_release_class_demo_classes_ownership_message_drops(handle: u64);
     fn boltffi_release_class_demo_classes_ownership_owned_message(handle: u64);
     fn boltffi_function_demo_classes_ownership_consume_message(message: u64) -> u32;
+    fn boltffi_function_demo_classes_ownership_consume_message_with_callback(
+        callback: unsafe extern "C" fn(*mut c_void, u32) -> u32,
+        context: *mut c_void,
+        release: unsafe extern "C" fn(*mut c_void),
+        message: u64,
+    ) -> u32;
+    fn boltffi_function_demo_classes_ownership_consume_message_before_callback(
+        message: u64,
+        callback: unsafe extern "C" fn(*mut c_void, u32) -> u32,
+        context: *mut c_void,
+        release: unsafe extern "C" fn(*mut c_void),
+    ) -> u32;
     fn boltffi_function_demo_classes_ownership_consume_messages(first: u64, second: u64) -> u32;
     fn boltffi_function_demo_classes_ownership_consume_messages_async(
         first: u64,
@@ -86,6 +100,82 @@ impl Drop for MessageLifetime {
     fn drop(&mut self) {
         unsafe { boltffi_release_class_demo_classes_ownership_message_drops(self.handle) };
     }
+}
+
+#[derive(Default)]
+struct ClosureCapture {
+    calls: AtomicU32,
+    releases: AtomicU32,
+}
+
+impl ClosureCapture {
+    fn context(&mut self) -> *mut c_void {
+        ptr::from_mut(self).cast()
+    }
+
+    unsafe extern "C" fn invoke(context: *mut c_void, value: u32) -> u32 {
+        let capture = unsafe { &*context.cast::<Self>() };
+        capture.calls.fetch_add(1, Ordering::SeqCst);
+        value
+    }
+
+    unsafe extern "C" fn release(context: *mut c_void) {
+        let capture = unsafe { &*context.cast::<Self>() };
+        capture.releases.fetch_add(1, Ordering::SeqCst);
+    }
+}
+
+#[test]
+fn invalid_class_releases_closures_on_either_side_of_the_argument() {
+    let mut capture = ClosureCapture::default();
+    let first_result = unsafe {
+        boltffi_function_demo_classes_ownership_consume_message_with_callback(
+            ClosureCapture::invoke,
+            capture.context(),
+            ClosureCapture::release,
+            0,
+        )
+    };
+    let second_result = unsafe {
+        boltffi_function_demo_classes_ownership_consume_message_before_callback(
+            0,
+            ClosureCapture::invoke,
+            capture.context(),
+            ClosureCapture::release,
+        )
+    };
+
+    assert_eq!((first_result, second_result), (0, 0));
+    assert_eq!(capture.calls.load(Ordering::SeqCst), 0);
+    assert_eq!(capture.releases.load(Ordering::SeqCst), 2);
+}
+
+#[test]
+fn rejected_transfer_releases_its_closure_before_the_borrow_ends() {
+    let lifetime = MessageLifetime::new();
+    let message = lifetime.message();
+    let future = unsafe { boltffi_function_demo_classes_ownership_hold_message(message) };
+    let mut capture = ClosureCapture::default();
+
+    let result = unsafe {
+        boltffi_function_demo_classes_ownership_consume_message_before_callback(
+            message,
+            ClosureCapture::invoke,
+            capture.context(),
+            ClosureCapture::release,
+        )
+    };
+
+    assert_eq!(result, 0);
+    assert_eq!(capture.calls.load(Ordering::SeqCst), 0);
+    assert_eq!(capture.releases.load(Ordering::SeqCst), 1);
+    assert_eq!(lifetime.dropped(), 0);
+    unsafe {
+        boltffi_async_function_demo_classes_ownership_hold_message_cancel(future);
+        boltffi_async_function_demo_classes_ownership_hold_message_free(future);
+    }
+    assert_eq!(lifetime.dropped(), 1);
+    assert_eq!(capture.releases.load(Ordering::SeqCst), 1);
 }
 
 #[test]

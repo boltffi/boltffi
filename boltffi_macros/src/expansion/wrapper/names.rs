@@ -276,8 +276,11 @@ impl Parameter {
 
     fn ident(&self, role: &str) -> Ident {
         let text = self.source.to_string();
-        let stem = text.strip_prefix("__boltffi_").unwrap_or(&text);
-        Ident::new(&format!("__boltffi_{stem}_{role}"), self.source.span())
+        let text = text.strip_prefix("r#").unwrap_or(&text);
+        Ident::new(
+            &format!("__boltffi_{text}_{role}"),
+            Span::mixed_site().located_at(self.source.span()),
+        )
     }
 }
 

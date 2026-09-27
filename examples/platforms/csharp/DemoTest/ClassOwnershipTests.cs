@@ -30,6 +30,7 @@ internal static class ClassOwnershipTests
         PreparationFailureReleasesDetachedMessages();
         EncodingFailurePreservesMessage();
         NativeEntryFailureReleasesMessage();
+        ClosurePreparationReleasesCaptures();
         await AsyncTransfers();
         await CancellationDropsMessage();
         await ActiveBorrowDelaysDrop();
@@ -51,6 +52,7 @@ internal static class ClassOwnershipTests
     private static void SuccessfulTransfers()
     {
         CheckConsumed(message => Require(ConsumeMessage(message) == 5, "primitive return"));
+        CheckConsumed(message => Require(ConsumeNamedMessage(message, 1, 2, 3) == 11, "parameter names preserve arguments"));
         CheckConsumed(DiscardMessage);
         CheckConsumed(message => Require(ConsumeOptionalMessage(message) == 5, "optional input"));
         CheckConsumed(message => Require(ConsumeMessageResult(message) == 5, "fallible success"));
@@ -160,6 +162,47 @@ internal static class ClassOwnershipTests
         Require(drops.Count() == 1, "native entry failure releases detached ownership");
 
         CheckConsumed(value => Require(ConsumeMessageWithOffset(value, 1, 2, 3) == 11, "parameter names do not collide with generated locals"));
+    }
+
+    private static void ClosurePreparationReleasesCaptures()
+    {
+        using var drops = new MessageDrops();
+        WeakReference[] captures = [CallWithCapture(drops, false), CallWithCapture(drops, true), RejectNativeCallWithCapture(drops)];
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+        Require(Array.TrueForAll(captures, capture => !capture.IsAlive), "closures release captures after success, preparation failure, and missing native entry");
+        Require(drops.Count() == 3, "closure calls release every message exactly once");
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static WeakReference CallWithCapture(MessageDrops drops, bool disposed)
+    {
+        var captured = new uint[] { 7 };
+        var message = new OwnedMessage("hello", drops);
+        if (disposed)
+        {
+            message.Dispose();
+            Expect<ObjectDisposedException>(() => ConsumeMessageWithCallback(value => value + captured[0], message));
+        }
+        else
+        {
+            Require(ConsumeMessageWithCallback(value => value + captured[0], message) == 12, "closure receives the owned message's length");
+        }
+        AssertMoved(message);
+        return new WeakReference(captured);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static WeakReference RejectNativeCallWithCapture(MessageDrops drops)
+    {
+        var captured = new uint[] { 7 };
+        var message = new OwnedMessage("hello", drops);
+        Interlocked.Exchange(ref failNextImport, 1);
+        Expect<EntryPointNotFoundException>(() => ConsumeMessageBeforeCallback(message, value => value + captured[0]));
+        Require(failNextImport == 0, "closure native entry failure was exercised");
+        AssertMoved(message);
+        return new WeakReference(captured);
     }
 
     private static async System.Threading.Tasks.Task AsyncTransfers()

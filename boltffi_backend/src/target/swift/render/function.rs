@@ -141,12 +141,28 @@ pub struct Parameter {
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum Argument {
     Direct(Expression),
+    OwnedClass(OwnedClassArgument),
     BorrowedDirect(BorrowedDirectArgument),
     Encoded(EncodedArgument),
     MutableDirect(MutableDirectArgument),
     MutableEncoded(MutableEncodedArgument),
     DirectVector(BorrowedVector),
     Closure(Box<ClosureArgument>),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct OwnedClassArgument {
+    parameter: Identifier,
+    local: Identifier,
+    release: Identifier,
+    presence: HandlePresence,
+}
+
+#[derive(Template)]
+#[template(path = "target/swift/owned_call.swift", escape = "none")]
+struct OwnedCallTemplate<'call> {
+    arguments: Vec<&'call OwnedClassArgument>,
+    invocation: Expression,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1236,7 +1252,7 @@ impl Invocation {
                 &self.arguments,
                 &self.returns,
                 &self.error,
-                self.call(),
+                self.call()?,
                 indent,
                 self.returns.exit(fallible),
             )?,
@@ -1251,7 +1267,7 @@ impl Invocation {
                 &self.arguments,
                 &self.returns,
                 &self.error,
-                self.call(),
+                self.call()?,
                 indent,
                 &handle,
             )?;
@@ -1266,7 +1282,7 @@ impl Invocation {
             &self.arguments,
             &self.returns,
             &self.error,
-            self.call(),
+            self.call()?,
             indent,
         )
     }
@@ -1288,7 +1304,7 @@ impl Invocation {
                 &self.arguments,
                 &self.returns,
                 &self.error,
-                self.call(),
+                self.call()?,
                 indent,
                 lexical,
                 scope,
@@ -1307,7 +1323,7 @@ impl Invocation {
             &self.arguments,
             &self.returns,
             &self.error,
-            self.call(),
+            self.call()?,
             indent,
             lexical,
             scope,
@@ -1336,7 +1352,7 @@ impl Invocation {
             &self.arguments,
             &self.returns,
             &self.error,
-            self.call(),
+            self.call()?,
             indent,
             self.returns.exit(fallible),
         )
@@ -1410,7 +1426,7 @@ impl Invocation {
                 Self::render_scoped_body(rest, returns, error, call, indent, exit)?,
                 indent,
             )),
-            Some((Argument::Direct(_), rest)) => {
+            Some((Argument::Direct(_) | Argument::OwnedClass(_), rest)) => {
                 Self::render_scoped_body(rest, returns, error, call, indent, exit)
             }
             None => returns.body(call, error, indent),
@@ -1475,7 +1491,7 @@ impl Invocation {
                 Self::render_scoped_initializer_body(rest, returns, error, call, indent)?,
                 indent,
             )),
-            Some((Argument::Direct(_), rest)) => {
+            Some((Argument::Direct(_) | Argument::OwnedClass(_), rest)) => {
                 Self::render_scoped_initializer_body(rest, returns, error, call, indent)
             }
             None => returns.initializer_body(call, error, indent),
@@ -1554,9 +1570,11 @@ impl Invocation {
                 )?,
                 indent,
             )),
-            Some((Argument::Direct(_), rest)) => Self::render_scoped_value_initializer_body(
-                rest, returns, error, call, indent, lexical, scope,
-            ),
+            Some((Argument::Direct(_) | Argument::OwnedClass(_), rest)) => {
+                Self::render_scoped_value_initializer_body(
+                    rest, returns, error, call, indent, lexical, scope,
+                )
+            }
             None => returns.value_initializer_body(call, error, indent, lexical, scope),
         }
     }
@@ -1630,9 +1648,11 @@ impl Invocation {
                 )?
                 .wrap(|source| Ok(argument.wrap(source, indent)))
             }
-            Some((Argument::Direct(_), rest)) => Self::render_scoped_value_initializer_value(
-                rest, returns, error, call, indent, lexical, scope,
-            ),
+            Some((Argument::Direct(_) | Argument::OwnedClass(_), rest)) => {
+                Self::render_scoped_value_initializer_value(
+                    rest, returns, error, call, indent, lexical, scope,
+                )
+            }
             None => returns
                 .body(call, error, indent)
                 .map(ScopedInitializerValue::Terminal),
@@ -1695,7 +1715,7 @@ impl Invocation {
                 Self::render_scoped_initializer_handle(rest, returns, error, call, indent, handle)?,
                 indent,
             )),
-            Some((Argument::Direct(_), rest)) => {
+            Some((Argument::Direct(_) | Argument::OwnedClass(_), rest)) => {
                 Self::render_scoped_initializer_handle(rest, returns, error, call, indent, handle)
             }
             None => Err(SwiftHost::unsupported("initializer argument scope")),
@@ -1761,7 +1781,7 @@ impl Invocation {
                 Self::render_scoped_initializer_handle_value(rest, returns, error, call, indent)?,
                 indent,
             )),
-            Some((Argument::Direct(_), rest)) => {
+            Some((Argument::Direct(_) | Argument::OwnedClass(_), rest)) => {
                 Self::render_scoped_initializer_handle_value(rest, returns, error, call, indent)
             }
             None => returns.initializer_value_body(call, error, indent),
@@ -1832,7 +1852,7 @@ impl Invocation {
                 Self::render_scoped_factory_body(rest, returns, error, call, indent, exit)?,
                 indent,
             )),
-            Some((Argument::Direct(_), rest)) => {
+            Some((Argument::Direct(_) | Argument::OwnedClass(_), rest)) => {
                 Self::render_scoped_factory_body(rest, returns, error, call, indent, exit)
             }
             None => returns.factory_body(call, error, indent),
@@ -1842,7 +1862,7 @@ impl Invocation {
     fn render_async_body(&self, asynchronous: &AsyncCall, indent: &str) -> Result<String> {
         let future = GeneratedLocal::FutureHandle.identifier()?;
         let start =
-            Self::render_scoped_async_start(&self.arguments, self.start_call(), indent, &future)?;
+            Self::render_scoped_async_start(&self.arguments, self.start_call()?, indent, &future)?;
         let complete =
             asynchronous.body_from_future(&future, &self.returns, &self.error, indent)?;
         Ok([start, complete]
@@ -1892,7 +1912,7 @@ impl Invocation {
                 Self::render_scoped_async_start(rest, start_call, indent, future)?,
                 indent,
             )),
-            Some((Argument::Direct(_), rest)) => {
+            Some((Argument::Direct(_) | Argument::OwnedClass(_), rest)) => {
                 Self::render_scoped_async_start(rest, start_call, indent, future)
             }
             None => Ok(Statement::let_value(future, start_call).indented(indent)),
@@ -1931,15 +1951,15 @@ impl Invocation {
                 Self::render_scoped_async_start_value(rest, start_call, indent)?,
                 indent,
             )),
-            Some((Argument::Direct(_), rest)) => {
+            Some((Argument::Direct(_) | Argument::OwnedClass(_), rest)) => {
                 Self::render_scoped_async_start_value(rest, start_call, indent)
             }
             None => Ok(Statement::returns(start_call).indented(indent)),
         }
     }
 
-    fn call(&self) -> Expression {
-        Expression::call_with_layout(
+    fn call(&self) -> Result<Expression> {
+        self.transfer_owned_arguments(Expression::call_with_layout(
             &self.symbol,
             self.arguments
                 .iter()
@@ -1948,11 +1968,11 @@ impl Invocation {
                 .collect::<ArgumentList>(),
             "    ",
             "",
-        )
+        ))
     }
 
-    fn start_call(&self) -> Expression {
-        Expression::call_with_layout(
+    fn start_call(&self) -> Result<Expression> {
+        self.transfer_owned_arguments(Expression::call_with_layout(
             &self.symbol,
             self.arguments
                 .iter()
@@ -1960,7 +1980,28 @@ impl Invocation {
                 .collect::<ArgumentList>(),
             "    ",
             "",
-        )
+        ))
+    }
+
+    fn transfer_owned_arguments(&self, invocation: Expression) -> Result<Expression> {
+        let arguments = self
+            .arguments
+            .iter()
+            .filter_map(|argument| match argument {
+                Argument::OwnedClass(argument) => Some(argument),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        if arguments.is_empty() {
+            return Ok(invocation);
+        }
+        Ok(Expression::new(
+            OwnedCallTemplate {
+                arguments,
+                invocation,
+            }
+            .render()?,
+        ))
     }
 
     fn c_function<'bridge>(
@@ -2046,6 +2087,7 @@ impl Argument {
     fn arguments(&self) -> Vec<Expression> {
         match self {
             Self::Direct(argument) => vec![argument.clone()],
+            Self::OwnedClass(argument) => vec![Expression::identifier(argument.local.clone())],
             Self::BorrowedDirect(argument) => argument.arguments(),
             Self::Encoded(argument) => argument.arguments(),
             Self::MutableDirect(argument) => argument.arguments(),
@@ -2409,7 +2451,7 @@ impl<'plan> ParamPlanRender<'plan, Native, IntoRust> for ParameterPlan<'_, '_> {
         target: &'plan HandleTarget,
         _carrier: <Native as Surface>::HandleCarrier,
         presence: HandlePresence,
-        _receive: Receive,
+        receive: Receive,
     ) -> Self::Output {
         match target {
             HandleTarget::Class(class) => {
@@ -2417,9 +2459,23 @@ impl<'plan> ParamPlanRender<'plan, Native, IntoRust> for ParameterPlan<'_, '_> {
                 Ok(Parameter {
                     name: self.name.clone(),
                     ty: handle.api_type(),
-                    argument: Argument::Direct(
-                        handle.parameter_argument(Expression::identifier(self.name.clone())),
-                    ),
+                    argument: if receive == Receive::ByValue {
+                        Argument::OwnedClass(OwnedClassArgument {
+                            parameter: self.name.clone(),
+                            local: Identifier::parse(format!("__boltffiOwnedHandle{}", self.name))?,
+                            release: Identifier::parse(
+                                self.context.class(*class).ok_or(Error::BrokenBridgeContract {
+                                    bridge: SwiftHost::TARGET,
+                                    invariant: "missing class declaration for ownership transfer",
+                                })?.release().name().as_str(),
+                            )?,
+                            presence,
+                        })
+                    } else {
+                        Argument::Direct(
+                            handle.parameter_argument(Expression::identifier(self.name.clone())),
+                        )
+                    },
                 })
             }
             HandleTarget::Callback(callback) => {
