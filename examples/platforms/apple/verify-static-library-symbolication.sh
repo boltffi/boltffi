@@ -9,7 +9,7 @@ archive="$scratch/Symbolication.xcarchive"
 executable="$archive/Products/usr/local/bin/Symbolication"
 dsym="$archive/dSYMs/Symbolication.dSYM"
 dsym_binary="$dsym/Contents/Resources/DWARF/Symbolication"
-symbol="boltffi_function_demo_primitives_scalars_add_i32"
+symbol="boltffi_function_demo_add_i32"
 build_log="$scratch/xcodebuild.log"
 
 trap 'rm -rf "$scratch"' EXIT

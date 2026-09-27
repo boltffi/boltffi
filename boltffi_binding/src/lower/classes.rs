@@ -23,6 +23,7 @@ pub fn lower<S: SurfaceLower>(
     index
         .classes()
         .iter()
+        .filter(|class| index.lowers(class.id.as_str()))
         .map(|class| lower_one(index, ids, allocator, class))
         .collect()
 }

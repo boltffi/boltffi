@@ -36,13 +36,16 @@ pub use boltffi_macros::{
 /// assert_eq!(value, BrowserName::CHROME);
 /// ```
 pub use boltffi_macros::interned_string_pool;
+#[doc(hidden)]
+pub use boltffi_macros::{CfgEval, lane_resume};
 #[cfg(target_arch = "wasm32")]
 pub use callback::WasmCallbackOwner;
 pub use callback::{
     ArcFromCallbackHandle, BoxFromCallbackHandle, CallbackForeignType, CallbackHandle,
-    NativeCallbackOwner,
+    CallbackLocalHandle, CallbackMarker, ClassHandle, NativeCallbackOwner, callback_arc,
+    callback_box,
 };
-pub use custom_ffi::CustomFfiConvertible;
+pub use custom_ffi::{CustomFfiConvertible, CustomType};
 pub use handle::HandleBox;
 pub use interned_string::{InternedString, InternedStringPool, InternedStringRepr};
 pub use passable::{Passable, VecTransport, WirePassable};

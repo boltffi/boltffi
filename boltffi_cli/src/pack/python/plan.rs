@@ -230,8 +230,7 @@ impl PythonPackagingPlan {
                 "/tmp/workspace/Cargo.toml",
                 "/tmp/workspace/member/Cargo.toml",
                 cargo_args,
-            )
-            .fixture_features("ffi"),
+            ),
         }
     }
 

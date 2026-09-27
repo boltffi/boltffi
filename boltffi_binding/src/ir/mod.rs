@@ -88,6 +88,7 @@ mod metadata;
 mod name;
 mod op;
 mod primitive;
+mod reachable;
 mod reference;
 mod source_fragment;
 mod source_record;
@@ -106,14 +107,7 @@ pub use closure::ClosureSignature;
 pub use codec::{
     CodecNode, CodecPlan, CodecRead, CodecSize, CodecWrite, OwnedWireEncoding, ReadPlan, WritePlan,
 };
-pub use contract::{
-    BINDING_EXPANSION_BUILD_ENV, BINDING_EXPANSION_ROOT_ENV, BINDING_EXPANSION_SOURCE_ENV,
-    BINDING_EXPANSION_SURFACE_ENV, BINDING_METADATA_BUILD_ENV, BINDING_METADATA_FEATURES_ENV,
-    BINDING_METADATA_ROOT_ENV, BINDING_METADATA_SOURCE_ENV, BINDING_METADATA_SURFACE_ENV,
-    BindingMetadataEnvelope, BindingMetadataError, BindingMetadataFormat, BindingMetadataHash,
-    BindingMetadataSection, BindingMetadataSectionBytes, BindingMetadataSurface, Bindings,
-    ContractVersion, PackageInfo, SerializedBindings,
-};
+pub use contract::{BindingMetadataSurface, Bindings, ContractVersion, PackageInfo};
 pub use custom::{
     CustomConverterExpression, CustomConverterPath, CustomConverterPathRoot, CustomTypeConverter,
     CustomTypeConverters,
@@ -145,9 +139,11 @@ pub use op::{
     ValueRef, ValueRoot,
 };
 pub use primitive::{IntegerRepr, Primitive};
+pub use reachable::reachable_from;
 pub use reference::DeclarationShape;
 pub use source_fragment::{
-    SELF_ID, SLOT_ID_PREFIX, SourceFragment, SourceFragmentError, TypeNode, aggregate_records,
+    SELF_ID, SLOT_ID_PREFIX, SourceFragment, SourceFragmentError, TypeNode, aggregate_invocation,
+    aggregate_records,
 };
 pub use source_record::{
     RawSourceRecord, SOURCE_RECORD_MAGIC, SOURCE_SECTION_MACH_O_NAME, SOURCE_SECTION_OBJECT_NAME,
