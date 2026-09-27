@@ -1174,6 +1174,18 @@ pub mod api {
     pub fn stop_label(stop: super::geo::inner::Waypoint) -> String { stop.label }
 }
 
+use geo::Point as Coordinate;
+
+#[boltffi::data(impl)]
+impl Coordinate {
+    pub fn norm(&self) -> f64 { self.x.hypot(self.y) }
+}
+
+#[boltffi::data(impl)]
+impl geo::Located {
+    pub fn located_x(&self) -> f64 { self.x }
+}
+
 pub mod geo {
     use boltffi::data;
 
@@ -1184,6 +1196,8 @@ pub mod geo {
     #[data]
     #[derive(Clone, Copy, Debug)]
     pub struct Point { pub x: f64, pub y: f64 }
+
+    pub use self::Point as Located;
 
     pub mod inner {
         #[boltffi::data]
@@ -1252,6 +1266,14 @@ pub fn local_types() -> u32 {
                     "boltffi_function_metadata_fixture_journey_name",
                 ),
                 ("stopLabel", "boltffi_function_metadata_fixture_stop_label"),
+                (
+                    "func norm(",
+                    "boltffi_method_record_metadata_fixture_point_norm",
+                ),
+                (
+                    "func locatedX(",
+                    "boltffi_method_record_metadata_fixture_point_located_x",
+                ),
                 (
                     "offsetX",
                     "boltffi_method_class_metadata_fixture_counter_offset_x",

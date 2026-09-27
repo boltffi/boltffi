@@ -507,7 +507,9 @@ fn render(
     };
     let native = one_module_deeper(native);
     let wasm32 = one_module_deeper(wasm32);
-    let target = item.and_then(|item| methods_target_import(kind, item));
+    let target = item
+        .zip(shallow.iter().next())
+        .and_then(|(item, target)| methods_target_import(kind, item, target));
     Ok(quote! {
         #[doc(hidden)]
         #[allow(non_snake_case, unused_imports)]
@@ -562,17 +564,21 @@ fn invocation_module(kind: Kind, item: &syn::Item) -> Option<syn::Ident> {
     })
 }
 
-/// Brings a method block's target into its wrapper module under the target's own name,
+/// Brings a method block's target into its wrapper module under its declared name,
 /// through the path the block wrote, since the wrappers name the type bare.
-fn methods_target_import(kind: Kind, item: &syn::Item) -> Option<TokenStream> {
+fn methods_target_import(kind: Kind, item: &syn::Item, target: &str) -> Option<TokenStream> {
     let (Kind::DataImpl, syn::Item::Impl(item)) = (kind, item) else {
         return None;
     };
     let syn::Type::Path(path) = &*item.self_ty else {
         return None;
     };
+    let declared = syn::parse_str::<syn::Ident>(target.rsplit("::").next()?).ok()?;
     let mut path = path.path.clone();
-    if path.leading_colon.is_none() && path.segments.len() == 1 {
+    if path.leading_colon.is_none()
+        && path.segments.len() == 1
+        && path.segments[0].ident == declared
+    {
         return None;
     }
     path.segments
@@ -586,7 +592,7 @@ fn methods_target_import(kind: Kind, item: &syn::Item) -> Option<TokenStream> {
         true => one_module_deeper(path.to_token_stream()),
         false => quote! { super::#path },
     };
-    Some(quote! { use #path; })
+    Some(quote! { use #path as #declared; })
 }
 
 /// Rewrites path roots for code moved one module below where it was written.
