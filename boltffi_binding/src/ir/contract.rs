@@ -303,18 +303,19 @@ impl<S: Surface> Bindings<S> {
         Self::assemble(version, package, decls, References::Complete)
     }
 
-    /// Builds the declarations one macro invocation owns. Declarations they reference
-    /// live in other invocations, so only references to present declarations are checked.
-    pub(crate) fn from_invocation_decls(
+    /// Checks the declarations one macro invocation owns and hands them back. They may
+    /// reference declarations of other invocations, so they never form a `Bindings`.
+    pub(crate) fn check_invocation_decls(
         package: PackageInfo,
         decls: Vec<Decl<S>>,
-    ) -> Result<Self, BindingError> {
+    ) -> Result<Vec<Decl<S>>, BindingError> {
         Self::assemble(
             ContractVersion::current(),
             package,
             decls,
             References::Present,
         )
+        .map(|bindings| bindings.decls)
     }
 
     fn assemble(

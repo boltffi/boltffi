@@ -107,6 +107,27 @@ impl<S: crate::Surface> LoweredBindings<S> {
     }
 }
 
+/// Declarations one macro invocation owns, plus the source declaration ids that produced
+/// them. They may reference declarations of other invocations, so this is not a
+/// [`Bindings`].
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LoweredInvocation<S: crate::Surface> {
+    decls: Vec<Decl<S>>,
+    declarations: DeclarationMap,
+}
+
+impl<S: crate::Surface> LoweredInvocation<S> {
+    /// Returns the invocation's declarations.
+    pub fn decls(&self) -> &[Decl<S>] {
+        &self.decls
+    }
+
+    /// Returns the source-to-binding declaration map.
+    pub fn declarations(&self) -> &DeclarationMap {
+        &self.declarations
+    }
+}
+
 /// Lowers a source contract into a binding contract for surface `S`.
 ///
 /// See the module-level docs for the steps each call runs through.
@@ -136,12 +157,14 @@ pub fn lower_invocation<S: SurfaceLower>(
     source: &SourceContract,
     selected: &std::collections::HashSet<String>,
     shallow: &std::collections::HashSet<String>,
-) -> Result<LoweredBindings<S>, LowerError> {
+) -> Result<LoweredInvocation<S>, LowerError> {
     let ids = DeclarationIds::from_source(source)?;
     let index = Index::new(source).lowering(selected, shallow);
     let decls = lower_decls::<S>(&index, &ids)?;
-    let bindings = Bindings::from_invocation_decls(package_info(source), decls)?;
-    Ok(LoweredBindings::new(bindings, ids.declaration_map()))
+    Ok(LoweredInvocation {
+        decls: Bindings::check_invocation_decls(package_info(source), decls)?,
+        declarations: ids.declaration_map(),
+    })
 }
 
 fn lower_with_ids<S: SurfaceLower>(

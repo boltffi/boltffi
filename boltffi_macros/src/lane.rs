@@ -638,7 +638,7 @@ where
     let selection = selected.iter().cloned().collect::<HashSet<_>>();
     let lowered =
         lower_invocation::<S>(contract, &selection, shallow).map_err(|error| error.to_string())?;
-    let expansion = Expansion::new(&lowered).with_lookup_traits(contract);
+    let expansion = Expansion::invocation(&lowered).with_lookup_traits(contract);
     let expander = Expander::invocation(contract, selected.iter().cloned());
     match kind {
         Kind::Data | Kind::Error => selected

@@ -9,7 +9,8 @@ use boltffi_ast::{
 };
 use boltffi_binding::{
     CallbackDecl, CallbackId, ClassDecl, ConstantDecl, CustomTypeDecl, CustomTypeId, Decl,
-    DeclarationId, EnumDecl, FunctionDecl, LoweredBindings, RecordDecl, StreamDecl, Surface,
+    DeclarationId, DeclarationMap, EnumDecl, FunctionDecl, LoweredInvocation, RecordDecl,
+    StreamDecl, Surface,
 };
 
 use self::index::ExpansionIndex;
@@ -19,16 +20,24 @@ use super::error::Error;
 pub use self::pair::DeclarationPair;
 
 pub struct Expansion<'lowered, S: Surface> {
-    lowered: &'lowered LoweredBindings<S>,
+    decls: &'lowered [Decl<S>],
+    declarations: &'lowered DeclarationMap,
     index: ExpansionIndex,
     local_callbacks: HashSet<CallbackId>,
 }
 
 impl<'lowered, S: Surface> Expansion<'lowered, S> {
-    pub fn new(lowered: &'lowered LoweredBindings<S>) -> Self {
-        let local_callbacks = lowered
-            .bindings()
-            .decls()
+    #[cfg(test)]
+    pub fn new(lowered: &'lowered boltffi_binding::LoweredBindings<S>) -> Self {
+        Self::from_decls(lowered.bindings().decls(), lowered.declarations())
+    }
+
+    pub fn invocation(lowered: &'lowered LoweredInvocation<S>) -> Self {
+        Self::from_decls(lowered.decls(), lowered.declarations())
+    }
+
+    fn from_decls(decls: &'lowered [Decl<S>], declarations: &'lowered DeclarationMap) -> Self {
+        let local_callbacks = decls
             .iter()
             .filter_map(|decl| match decl {
                 Decl::Callback(callback) if callback.local_protocol().is_some() => {
@@ -38,25 +47,23 @@ impl<'lowered, S: Surface> Expansion<'lowered, S> {
             })
             .collect();
         Self {
-            lowered,
-            index: ExpansionIndex::new(lowered),
+            decls,
+            declarations,
+            index: ExpansionIndex::new(decls),
             local_callbacks,
         }
     }
 
     /// Also answers local-protocol questions for lookup-only callback traits in `source`.
     pub fn with_lookup_traits(mut self, source: &SourceContract) -> Self {
-        let lowered = self.lowered;
+        let declarations = self.declarations;
         self.local_callbacks.extend(
             source
                 .traits
                 .iter()
                 .filter(|source| boltffi_binding::has_local_protocol(source))
                 .filter_map(|source| {
-                    match lowered
-                        .declarations()
-                        .get(&SourceDeclarationId::Trait(source.id.clone()))
-                    {
+                    match declarations.get(&SourceDeclarationId::Trait(source.id.clone())) {
                         Some(DeclarationId::Callback(id)) => Some(id),
                         _ => None,
                     }
@@ -70,17 +77,18 @@ impl<'lowered, S: Surface> Expansion<'lowered, S> {
     }
 
     pub fn custom_type(&self, id: CustomTypeId) -> Result<&'lowered CustomTypeDecl, Error> {
-        self.index.custom_type(self.lowered, id)
+        self.index.custom_type(self.decls, id)
     }
 
     pub fn callback_trait(
         &self,
         source: &'lowered TraitDef,
     ) -> Result<DeclarationPair<'lowered, TraitDef, CallbackDecl<S>>, Error> {
-        match self
-            .index
-            .paired(self.lowered, SourceDeclaration::Callback(source))?
-        {
+        match self.index.paired(
+            self.decls,
+            self.declarations,
+            SourceDeclaration::Callback(source),
+        )? {
             PairedDeclaration::Callback(pair) => Ok(pair),
             _ => Err(Error::WrongDeclaration),
         }
@@ -90,10 +98,11 @@ impl<'lowered, S: Surface> Expansion<'lowered, S> {
         &self,
         source: &'lowered RecordDef,
     ) -> Result<DeclarationPair<'lowered, RecordDef, RecordDecl<S>>, Error> {
-        match self
-            .index
-            .paired(self.lowered, SourceDeclaration::Record(source))?
-        {
+        match self.index.paired(
+            self.decls,
+            self.declarations,
+            SourceDeclaration::Record(source),
+        )? {
             PairedDeclaration::Record(pair) => Ok(pair),
             _ => Err(Error::WrongDeclaration),
         }
@@ -103,10 +112,11 @@ impl<'lowered, S: Surface> Expansion<'lowered, S> {
         &self,
         source: &'lowered EnumDef,
     ) -> Result<DeclarationPair<'lowered, EnumDef, EnumDecl<S>>, Error> {
-        match self
-            .index
-            .paired(self.lowered, SourceDeclaration::Enum(source))?
-        {
+        match self.index.paired(
+            self.decls,
+            self.declarations,
+            SourceDeclaration::Enum(source),
+        )? {
             PairedDeclaration::Enum(pair) => Ok(pair),
             _ => Err(Error::WrongDeclaration),
         }
@@ -116,10 +126,11 @@ impl<'lowered, S: Surface> Expansion<'lowered, S> {
         &self,
         source: &'lowered ClassDef,
     ) -> Result<DeclarationPair<'lowered, ClassDef, ClassDecl<S>>, Error> {
-        match self
-            .index
-            .paired(self.lowered, SourceDeclaration::Class(source))?
-        {
+        match self.index.paired(
+            self.decls,
+            self.declarations,
+            SourceDeclaration::Class(source),
+        )? {
             PairedDeclaration::Class(pair) => Ok(pair),
             _ => Err(Error::WrongDeclaration),
         }
@@ -129,10 +140,11 @@ impl<'lowered, S: Surface> Expansion<'lowered, S> {
         &self,
         source: &'lowered StreamDef,
     ) -> Result<DeclarationPair<'lowered, StreamDef, StreamDecl<S>>, Error> {
-        match self
-            .index
-            .paired(self.lowered, SourceDeclaration::Stream(source))?
-        {
+        match self.index.paired(
+            self.decls,
+            self.declarations,
+            SourceDeclaration::Stream(source),
+        )? {
             PairedDeclaration::Stream(pair) => Ok(pair),
             _ => Err(Error::WrongDeclaration),
         }
@@ -142,10 +154,11 @@ impl<'lowered, S: Surface> Expansion<'lowered, S> {
         &self,
         source: &'lowered ConstantDef,
     ) -> Result<DeclarationPair<'lowered, ConstantDef, ConstantDecl<S>>, Error> {
-        match self
-            .index
-            .paired(self.lowered, SourceDeclaration::Constant(source))?
-        {
+        match self.index.paired(
+            self.decls,
+            self.declarations,
+            SourceDeclaration::Constant(source),
+        )? {
             PairedDeclaration::Constant(pair) => Ok(pair),
             _ => Err(Error::WrongDeclaration),
         }
@@ -155,10 +168,11 @@ impl<'lowered, S: Surface> Expansion<'lowered, S> {
         &self,
         source: &'lowered FunctionDef,
     ) -> Result<DeclarationPair<'lowered, FunctionDef, FunctionDecl<S>>, Error> {
-        match self
-            .index
-            .paired(self.lowered, SourceDeclaration::Function(source))?
-        {
+        match self.index.paired(
+            self.decls,
+            self.declarations,
+            SourceDeclaration::Function(source),
+        )? {
             PairedDeclaration::Function(pair) => Ok(pair),
             _ => Err(Error::WrongDeclaration),
         }
