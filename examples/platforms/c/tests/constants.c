@@ -4,6 +4,8 @@
 #include "test.h"
 
 bool test_constants(void) {
+    DemoTupleU32 single = demo_single();
+    CHECK(single.field_0 == 17, "case:constants.tuples.should_expose_single_element_value");
     CHECK(DEMO_ENABLED && DEMO_ANSWER == 42 && DEMO_LARGE == INT64_C(9007199254740993) && DEMO_HALF == 0.5 && strcmp(DEMO_LABEL, "boltffi") == 0, "inline scalar constants");
     DemoBytes bytes = demo_bytes();
     CHECK(bytes.len == 3 && memcmp(bytes.ptr, "ffi", 3) == 0, "accessor byte constant");

@@ -1,6 +1,7 @@
 //! C# target rendered through .NET P/Invoke over the C ABI bridge.
 
 mod codec;
+mod lexical;
 mod name_style;
 mod render;
 mod syntax;

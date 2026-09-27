@@ -3,6 +3,10 @@ import 'package:demo/demo.dart';
 
 void main() {
   tearDownAll(shutdownBoltffi);
+  test('single-element tuple constant', () {
+    expect(demoSingle, (17,),
+      reason: "case:constants.tuples.should_expose_single_element_value");
+  });
   test('constants', () {
     expect(demoEnabled, isTrue);
     expect(demoAnswer, 42);

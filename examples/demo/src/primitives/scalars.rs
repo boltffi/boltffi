@@ -209,3 +209,13 @@ pub fn add(a: i32, b: i32) -> i32 {
 pub fn multiply(a: f64, b: f64) -> f64 {
     a * b
 }
+
+#[demo_bench_macros::demo_case(
+    "primitives.scalars.named_status.should_accept_both_names",
+    justification = "Ensure parameters named status and boltffi_status cross the generated binding without a name collision.",
+    directions = "Call `primitives::scalars::notify_status_collision` with distinct values and assert the call succeeds."
+)]
+#[export]
+pub fn notify_status_collision(status: i32, boltffi_status: i32) {
+    let _ = (status, boltffi_status);
+}

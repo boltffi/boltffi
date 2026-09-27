@@ -12,6 +12,8 @@ class AsyncFunctionTests(AsyncDemoTestCase):
     async def test_basic_async_functions(self) -> None:
         self.demo_case("case:async_fns.basic.add.should_return_sum")
         self.assertEqual(await demo.async_add(3, 7), 10)
+        self.demo_case("case:async_fns.named_cancellation_token.should_preserve_both_values")
+        self.assertEqual(await demo.async_cancellation_token_collision(7, 11), 18)
         self.demo_case("case:async_fns.basic.echo.should_prefix_message")
         self.assertEqual(await demo.async_echo("hello async"), "Echo: hello async")
         self.demo_case("case:async_fns.basic.double_all.should_double_i32_vector")

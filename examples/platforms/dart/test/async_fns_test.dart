@@ -13,6 +13,11 @@ void main() {
       reason: "case:async_fns.basic.add.should_return_sum",
     );
     expect(
+      await asyncCancellationTokenCollision(7, 11),
+      18,
+      reason: "case:async_fns.named_cancellation_token.should_preserve_both_values",
+    );
+    expect(
       await asyncEcho('hello async'),
       'Echo: hello async',
       reason: "case:async_fns.basic.echo.should_prefix_message",
