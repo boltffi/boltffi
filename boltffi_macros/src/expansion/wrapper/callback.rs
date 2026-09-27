@@ -27,7 +27,6 @@ use crate::expansion::{
 pub struct Trait<'expansion, 'lowered, S: SurfaceLower> {
     pair: DeclarationPair<'lowered, TraitDef, CallbackDecl<S>>,
     expansion: &'expansion Expansion<'lowered, S>,
-    path: Option<TokenStream>,
     trait_object_impls: bool,
 }
 
@@ -39,13 +38,11 @@ impl<'expansion, 'lowered, S: SurfaceLower> Trait<'expansion, 'lowered, S> {
         Self {
             pair,
             expansion,
-            path: None,
             trait_object_impls: true,
         }
     }
 
-    pub fn with_path(mut self, path: Option<TokenStream>, trait_object_impls: bool) -> Self {
-        self.path = path;
+    pub fn with_trait_object_impls(mut self, trait_object_impls: bool) -> Self {
         self.trait_object_impls = trait_object_impls;
         self
     }
@@ -118,7 +115,7 @@ impl<'expansion, 'lowered> Trait<'expansion, 'lowered, Native> {
             .map(|method| method.function.clone())
             .collect::<Vec<_>>();
         let trait_ident = &names.trait_ident;
-        let trait_path = self.path.unwrap_or_else(|| quote! { #trait_ident });
+        let trait_path = trait_ident;
         let trait_marker = crate::capture::trait_marker(trait_ident);
         let foreign_ident = &names.foreign_ident;
         let async_trait = AsyncTraitAttribute::from_trait(source)?;
@@ -414,7 +411,7 @@ impl<'expansion, 'lowered> Trait<'expansion, 'lowered, Wasm32> {
             })
             .collect::<Result<Vec<_>, _>>()?;
         let trait_ident = &names.trait_ident;
-        let trait_path = self.path.unwrap_or_else(|| quote! { #trait_ident });
+        let trait_path = trait_ident;
         let trait_marker = crate::capture::trait_marker(trait_ident);
         let foreign_ident = &names.foreign_ident;
         let create_ident = RustIdent::new(protocol.create_handle().name().as_str())?;

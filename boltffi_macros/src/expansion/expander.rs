@@ -1,8 +1,7 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use boltffi_ast::{
-    ClassDef, ConstantDef, ConstantOwner, EnumDef, EnumId, Path, PathRoot, RecordDef, RecordId,
-    SourceContract, StreamDef, TraitDef,
+    ClassDef, ConstantDef, ConstantOwner, EnumId, RecordId, SourceContract, StreamDef, TraitDef,
 };
 use boltffi_binding::{Native, SurfaceLower, Wasm32};
 use proc_macro2::TokenStream;
@@ -15,15 +14,11 @@ use crate::expansion::{contract::Expansion, error::Error, rust_api, wrapper};
 
 pub struct Expander<'lowered> {
     source: &'lowered SourceContract,
-    support: &'lowered SourceContract,
-    visible_paths: HashMap<String, Path>,
     selected: Option<HashSet<String>>,
 }
 
 struct SurfaceExpander<'expansion, 'lowered> {
     source: &'lowered SourceContract,
-    support: &'lowered SourceContract,
-    visible_paths: &'expansion HashMap<String, Path>,
     selected: Option<&'expansion HashSet<String>>,
     expansion: ExpansionSurface<'expansion, 'lowered>,
 }
@@ -42,14 +37,10 @@ enum ExpansionSurface<'expansion, 'lowered> {
 impl<'expansion, 'lowered> SurfaceExpander<'expansion, 'lowered> {
     const fn native(
         source: &'lowered SourceContract,
-        support: &'lowered SourceContract,
-        visible_paths: &'expansion HashMap<String, Path>,
         expansion: &'expansion Expansion<'lowered, Native>,
     ) -> Self {
         Self {
             source,
-            support,
-            visible_paths,
             selected: None,
             expansion: ExpansionSurface::Native(expansion),
         }
@@ -57,14 +48,10 @@ impl<'expansion, 'lowered> SurfaceExpander<'expansion, 'lowered> {
 
     const fn wasm32(
         source: &'lowered SourceContract,
-        support: &'lowered SourceContract,
-        visible_paths: &'expansion HashMap<String, Path>,
         expansion: &'expansion Expansion<'lowered, Wasm32>,
     ) -> Self {
         Self {
             source,
-            support,
-            visible_paths,
             selected: None,
             expansion: ExpansionSurface::Wasm32(expansion),
         }
@@ -79,98 +66,9 @@ impl<'expansion, 'lowered> SurfaceExpander<'expansion, 'lowered> {
         self.selected.is_none_or(|selected| selected.contains(id))
     }
 
-    fn record_and_enum_imports(&self) -> Result<Vec<TokenStream>, Error> {
-        if self.selected.is_some() {
-            return Ok(Vec::new());
-        }
-        let package = self.source.package.name.replace('-', "_");
-        self.source
-            .records
-            .iter()
-            .map(|record| record.id.as_str())
-            .chain(
-                self.source
-                    .enums
-                    .iter()
-                    .map(|enumeration| enumeration.id.as_str()),
-            )
-            .filter(|id| id.split("::").next() == Some(package.as_str()))
-            .filter_map(|id| self.visible_paths.get(id))
-            .map(|path| {
-                let path = Self::path_tokens(path)?;
-                Ok(quote! {
-                    #[allow(unused_imports)]
-                    use #path;
-                })
-            })
-            .collect()
-    }
-
-    fn trait_path(&self, source: &TraitDef) -> Result<Option<TokenStream>, Error> {
-        self.visible_paths
-            .get(source.id.as_str())
-            .map(Self::path_tokens)
-            .transpose()
-    }
-
     fn trait_object_impls(&self, source: &TraitDef) -> bool {
         let package = self.source.package.name.replace('-', "_");
         source.id.as_str().split("::").next() == Some(package.as_str())
-    }
-
-    fn path_tokens(path: &Path) -> Result<TokenStream, Error> {
-        let prefix = match path.root {
-            PathRoot::Relative => TokenStream::new(),
-            PathRoot::Crate => quote! { crate:: },
-            PathRoot::Self_ => quote! { self:: },
-            PathRoot::Super(levels) => {
-                let parents =
-                    std::iter::repeat_n(quote! { super }, levels.get()).collect::<Vec<_>>();
-                quote! { #(#parents)::*:: }
-            }
-            PathRoot::Absolute => quote! { :: },
-        };
-        let segments = path
-            .segments
-            .iter()
-            .map(|segment| {
-                if !segment.arguments.is_empty() {
-                    return Err(Error::UnsupportedExpansion("generic visible path"));
-                }
-                syn::parse_str::<syn::Ident>(segment.name.as_str()).map_err(|_| {
-                    Error::SourceSyntaxMismatch("callback trait path is not Rust syntax")
-                })
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(quote! { #prefix #(#segments)::* })
-    }
-
-    fn path_type(path: &Path) -> Result<Type, Error> {
-        syn::parse2(Self::path_tokens(path)?)
-            .map_err(|_| Error::SourceSyntaxMismatch("visible path is not a Rust type"))
-    }
-
-    fn source_record(&self, record: &RecordDef) -> bool {
-        self.source
-            .records
-            .iter()
-            .any(|source| source.id == record.id)
-    }
-
-    fn source_enumeration(&self, enumeration: &EnumDef) -> bool {
-        self.source
-            .enums
-            .iter()
-            .any(|source| source.id == enumeration.id)
-    }
-
-    fn support_type(&self, id: &str) -> Result<Type, Error> {
-        self.visible_paths
-            .get(id)
-            .ok_or(Error::UnsupportedExpansion(
-                "dependency data impl target is not visible",
-            ))
-            .and_then(Self::path_type)
     }
 
     /// The declaration's type as its own invocation site names it.
@@ -209,7 +107,7 @@ impl<'expansion, 'lowered> SurfaceExpander<'expansion, 'lowered> {
             return Ok(None);
         };
         let declaration = self
-            .support
+            .source
             .classes
             .iter()
             .find(|class| &class.id == owner_id)
@@ -232,19 +130,19 @@ impl<'expansion, 'lowered> SurfaceExpander<'expansion, 'lowered> {
         let rust_type = self.owner_path(owner_id)?;
         let owner = match owner {
             ConstantOwner::Record(id) => self
-                .support
+                .source
                 .records
                 .iter()
                 .find(|record| &record.id == id)
                 .map(rust_api::CallableOwner::Record),
             ConstantOwner::Enum(id) => self
-                .support
+                .source
                 .enums
                 .iter()
                 .find(|enumeration| &enumeration.id == id)
                 .map(rust_api::CallableOwner::Enum),
             ConstantOwner::Class(id) => self
-                .support
+                .source
                 .classes
                 .iter()
                 .find(|class| &class.id == id)
@@ -257,10 +155,6 @@ impl<'expansion, 'lowered> SurfaceExpander<'expansion, 'lowered> {
     }
 
     fn owner_path(&self, id: &str) -> Result<RustPath, Error> {
-        if let Some(path) = self.visible_paths.get(id) {
-            return syn::parse2(Self::path_tokens(path)?)
-                .map_err(|_| Error::SourceSyntaxMismatch("visible owner path is not Rust syntax"));
-        }
         let package = self.source.package.name.replace('-', "_");
         if id.split("::").next() != Some(package.as_str()) {
             return Err(Error::UnsupportedExpansion(
@@ -293,8 +187,6 @@ impl<'lowered> Expander<'lowered> {
     pub fn new(source: &'lowered SourceContract) -> Self {
         Self {
             source,
-            support: source,
-            visible_paths: HashMap::new(),
             selected: None,
         }
     }
@@ -307,25 +199,21 @@ impl<'lowered> Expander<'lowered> {
     ) -> Self {
         Self {
             source: contract,
-            support: contract,
-            visible_paths: HashMap::new(),
             selected: Some(selected.into_iter().collect()),
         }
     }
 
     pub fn native(&self, expansion: &Expansion<'lowered, Native>) -> Result<TokenStream, Error> {
-        let wrappers =
-            SurfaceExpander::native(self.source, self.support, &self.visible_paths, expansion)
-                .selecting(self.selected.as_ref())
-                .expand()?;
+        let wrappers = SurfaceExpander::native(self.source, expansion)
+            .selecting(self.selected.as_ref())
+            .expand()?;
         Ok(wrappers)
     }
 
     pub fn wasm32(&self, expansion: &Expansion<'lowered, Wasm32>) -> Result<TokenStream, Error> {
-        let wrappers =
-            SurfaceExpander::wasm32(self.source, self.support, &self.visible_paths, expansion)
-                .selecting(self.selected.as_ref())
-                .expand()?;
+        let wrappers = SurfaceExpander::wasm32(self.source, expansion)
+            .selecting(self.selected.as_ref())
+            .expand()?;
         Ok(wrappers)
     }
 
@@ -400,7 +288,6 @@ impl<'lowered> Expander<'lowered> {
 
 impl<'expansion, 'lowered> SurfaceExpander<'expansion, 'lowered> {
     fn expand(self) -> Result<TokenStream, Error> {
-        let imports = self.record_and_enum_imports()?;
         let callbacks = self.callbacks()?;
         let records = self.records()?;
         let enumerations = self.enumerations()?;
@@ -410,7 +297,6 @@ impl<'expansion, 'lowered> SurfaceExpander<'expansion, 'lowered> {
         let functions = self.functions()?;
 
         Ok(quote! {
-            #(#imports)*
             #(#callbacks)*
             #(#records)*
             #(#enumerations)*
@@ -422,19 +308,19 @@ impl<'expansion, 'lowered> SurfaceExpander<'expansion, 'lowered> {
     }
 
     fn callbacks(&self) -> Result<Vec<TokenStream>, Error> {
-        self.support
+        self.source
             .traits
             .iter()
             .filter(|source| self.selected(source.id.as_str()))
             .map(|source| match self.expansion {
                 ExpansionSurface::Native(expansion) => {
                     wrapper::callback::Trait::new(expansion.callback_trait(source)?, expansion)
-                        .with_path(self.trait_path(source)?, self.trait_object_impls(source))
+                        .with_trait_object_impls(self.trait_object_impls(source))
                         .render()
                 }
                 ExpansionSurface::Wasm32(expansion) => {
                     wrapper::callback::Trait::new(expansion.callback_trait(source)?, expansion)
-                        .with_path(self.trait_path(source)?, self.trait_object_impls(source))
+                        .with_trait_object_impls(self.trait_object_impls(source))
                         .render()
                 }
             })
@@ -442,7 +328,7 @@ impl<'expansion, 'lowered> SurfaceExpander<'expansion, 'lowered> {
     }
 
     fn records(&self) -> Result<Vec<TokenStream>, Error> {
-        let mut records = self
+        let records = self
             .source
             .records
             .iter()
@@ -461,14 +347,11 @@ impl<'expansion, 'lowered> SurfaceExpander<'expansion, 'lowered> {
                 }
             })
             .collect::<Result<Vec<_>, _>>()?;
-        if self.selected.is_none() {
-            records.extend(self.support_records()?);
-        }
         Ok(records)
     }
 
     fn enumerations(&self) -> Result<Vec<TokenStream>, Error> {
-        let mut enumerations = self
+        let enumerations = self
             .source
             .enums
             .iter()
@@ -489,93 +372,27 @@ impl<'expansion, 'lowered> SurfaceExpander<'expansion, 'lowered> {
                 }
             })
             .collect::<Result<Vec<_>, _>>()?;
-        if self.selected.is_none() {
-            enumerations.extend(self.support_enumerations()?);
-        }
         Ok(enumerations)
     }
 
-    fn support_records(&self) -> Result<Vec<TokenStream>, Error> {
-        self.support
-            .records
-            .iter()
-            .filter(|source| !source.methods.is_empty())
-            .filter(|source| !self.source_record(source))
-            .map(|source| {
-                let rust_type = self.support_type(source.id.as_str())?;
-                match self.expansion {
-                    ExpansionSurface::Native(expansion) => {
-                        wrapper::record::Record::new(expansion.record(source)?, expansion)
-                            .render_exports(rust_type)
-                    }
-                    ExpansionSurface::Wasm32(expansion) => {
-                        wrapper::record::Record::new(expansion.record(source)?, expansion)
-                            .render_exports(rust_type)
-                    }
-                }
-            })
-            .collect()
-    }
-
-    fn support_enumerations(&self) -> Result<Vec<TokenStream>, Error> {
-        self.support
-            .enums
-            .iter()
-            .filter(|source| !source.methods.is_empty())
-            .filter(|source| !self.source_enumeration(source))
-            .map(|source| {
-                let rust_type = self.support_type(source.id.as_str())?;
-                match self.expansion {
-                    ExpansionSurface::Native(expansion) => wrapper::enumeration::Enumeration::new(
-                        expansion.enumeration(source)?,
-                        expansion,
-                    )
-                    .render_exports(rust_type),
-                    ExpansionSurface::Wasm32(expansion) => wrapper::enumeration::Enumeration::new(
-                        expansion.enumeration(source)?,
-                        expansion,
-                    )
-                    .render_exports(rust_type),
-                }
-            })
-            .collect()
-    }
-
     fn classes(&self) -> Result<Vec<TokenStream>, Error> {
-        self.support
+        self.source
             .classes
             .iter()
             .filter(|source| self.selected(source.id.as_str()))
-            .map(|source| {
-                let rust_type = self
-                    .visible_paths
-                    .get(source.id.as_str())
-                    .map(Self::path_tokens)
-                    .transpose()?;
-                match (self.expansion, rust_type) {
-                    (ExpansionSurface::Native(expansion), Some(rust_type)) => {
-                        wrapper::class::Class::new(expansion.class(source)?, expansion)
-                            .with_rust_type(rust_type)
-                            .render()
-                    }
-                    (ExpansionSurface::Native(expansion), None) => {
-                        wrapper::class::Class::new(expansion.class(source)?, expansion).render()
-                    }
-                    (ExpansionSurface::Wasm32(expansion), Some(rust_type)) => {
-                        wrapper::class::Class::new(expansion.class(source)?, expansion)
-                            .with_rust_type(rust_type)
-                            .render()
-                    }
-                    (ExpansionSurface::Wasm32(expansion), None) => {
-                        wrapper::class::Class::new(expansion.class(source)?, expansion).render()
-                    }
+            .map(|source| match self.expansion {
+                ExpansionSurface::Native(expansion) => {
+                    wrapper::class::Class::new(expansion.class(source)?, expansion).render()
+                }
+                ExpansionSurface::Wasm32(expansion) => {
+                    wrapper::class::Class::new(expansion.class(source)?, expansion).render()
                 }
             })
             .collect()
     }
 
     fn streams(&self) -> Result<Vec<TokenStream>, Error> {
-        self.support
+        self.source
             .streams
             .iter()
             .filter(|source| self.selected(source.id.as_str()))
@@ -614,7 +431,7 @@ impl<'expansion, 'lowered> SurfaceExpander<'expansion, 'lowered> {
     }
 
     fn constants(&self) -> Result<Vec<TokenStream>, Error> {
-        self.support
+        self.source
             .constants
             .iter()
             .filter(|source| {
@@ -650,31 +467,18 @@ impl<'expansion, 'lowered> SurfaceExpander<'expansion, 'lowered> {
     }
 
     fn functions(&self) -> Result<Vec<TokenStream>, Error> {
-        self.support
+        self.source
             .functions
             .iter()
             .filter(|source| self.selected(source.id.as_str()))
-            .map(|source| {
-                let path = self.visible_paths.get(source.id.as_str());
-                match (self.expansion, path) {
-                    (ExpansionSurface::Native(expansion), Some(path)) => {
-                        wrapper::function::Function::new(expansion.function(source)?, expansion)
-                            .with_path(path)?
-                            .render()
-                    }
-                    (ExpansionSurface::Native(expansion), None) => {
-                        wrapper::function::Function::new(expansion.function(source)?, expansion)
-                            .render()
-                    }
-                    (ExpansionSurface::Wasm32(expansion), Some(path)) => {
-                        wrapper::function::Function::new(expansion.function(source)?, expansion)
-                            .with_path(path)?
-                            .render()
-                    }
-                    (ExpansionSurface::Wasm32(expansion), None) => {
-                        wrapper::function::Function::new(expansion.function(source)?, expansion)
-                            .render()
-                    }
+            .map(|source| match self.expansion {
+                ExpansionSurface::Native(expansion) => {
+                    wrapper::function::Function::new(expansion.function(source)?, expansion)
+                        .render()
+                }
+                ExpansionSurface::Wasm32(expansion) => {
+                    wrapper::function::Function::new(expansion.function(source)?, expansion)
+                        .render()
                 }
             })
             .collect()

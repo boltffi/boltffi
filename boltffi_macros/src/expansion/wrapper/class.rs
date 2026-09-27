@@ -17,7 +17,6 @@ use crate::expansion::{
 pub struct Class<'expansion, 'lowered, S: boltffi_binding::SurfaceLower> {
     pair: DeclarationPair<'lowered, ClassDef, ClassDecl<S>>,
     expansion: &'expansion Expansion<'lowered, S>,
-    rust_type: Option<TokenStream>,
 }
 
 struct ClassOwner<'lowered, C> {
@@ -32,16 +31,7 @@ impl<'expansion, 'lowered, S: boltffi_binding::SurfaceLower> Class<'expansion, '
         pair: DeclarationPair<'lowered, ClassDef, ClassDecl<S>>,
         expansion: &'expansion Expansion<'lowered, S>,
     ) -> Self {
-        Self {
-            pair,
-            expansion,
-            rust_type: None,
-        }
-    }
-
-    pub fn with_rust_type(mut self, rust_type: TokenStream) -> Self {
-        self.rust_type = Some(rust_type);
-        self
+        Self { pair, expansion }
     }
 }
 
@@ -51,7 +41,7 @@ impl<'expansion, 'lowered> Class<'expansion, 'lowered, Native> {
         let binding = self.pair.binding();
         let class = names::SourceSpelling::new(&source.name)
             .ident("source class name is not a Rust identifier")?;
-        let class_type = self.rust_type.clone().unwrap_or_else(|| quote! { #class });
+        let class_type = quote! { #class };
         let class_names = names::Class::new(&class);
         let handle_type = class_names.handle();
         let retained_handle_type = class_names.retained_handle();
@@ -109,7 +99,7 @@ impl<'expansion, 'lowered> Class<'expansion, 'lowered, Wasm32> {
         let binding = self.pair.binding();
         let class = names::SourceSpelling::new(&source.name)
             .ident("source class name is not a Rust identifier")?;
-        let class_type = self.rust_type.clone().unwrap_or_else(|| quote! { #class });
+        let class_type = quote! { #class };
         let class_names = names::Class::new(&class);
         let handle_type = class_names.handle();
         let retained_handle_type = class_names.retained_handle();
