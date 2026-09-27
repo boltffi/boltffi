@@ -9,6 +9,8 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 public final class DemoTest {
     private static String currentDemoCase = null;
@@ -55,6 +57,7 @@ public final class DemoTest {
             testRecordsWithVecs();
             testMultiCrateExports();
             testInventoryConstructors();
+            testGuardedCounterCloseGuard();
             testConstructorCoverageMatrix();
             testClosures();
             testSyncCallbacks();
@@ -1769,6 +1772,70 @@ public final class DemoTest {
             assert false : "Inventory.tryNew(0) should fail";
         } catch (RuntimeException expected) {
             assert expected.getMessage().contains("Factory constructor failed") : "Inventory.tryNew(0) error";
+        }
+
+        System.out.println("  PASS\n");
+    }
+
+    private static void testGuardedCounterCloseGuard() throws InterruptedException {
+        System.out.println("Testing class close guard (GuardedCounter)...");
+
+        demoCase("case:classes.close_guard.guarded_counter.increment.should_reject_calls_after_close");
+        GuardedCounter counter = new GuardedCounter(1);
+        assert counter.increment() == 2 : "GuardedCounter.increment before close";
+        counter.close();
+        try {
+            counter.increment();
+            assert false : "GuardedCounter.increment after close should fail";
+        } catch (IllegalStateException expected) {
+            assert expected.getMessage().contains("GuardedCounter is closed") : "GuardedCounter closed error";
+        }
+
+        demoCase("case:classes.close_guard.guarded_counter.increment_through_gate.should_complete_in_flight_call_when_closed");
+        GuardedCounter gated = new GuardedCounter(10);
+        CountDownLatch entered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        int[] result = new int[1];
+        Thread caller = new Thread(() -> result[0] = gated.incrementThroughGate(observed -> {
+            entered.countDown();
+            try {
+                release.await();
+            } catch (InterruptedException error) {
+                throw new IllegalStateException(error);
+            }
+            return observed + 5;
+        }));
+        caller.start();
+        assert entered.await(5, TimeUnit.SECONDS) : "gate was not entered";
+        gated.close();
+        release.countDown();
+        caller.join();
+        assert result[0] == 25 : "GuardedCounter.incrementThroughGate result";
+        try {
+            gated.increment();
+            assert false : "GuardedCounter.increment after in-flight close should fail";
+        } catch (IllegalStateException expected) {
+            assert expected.getMessage().contains("GuardedCounter is closed") : "GuardedCounter closed error";
+        }
+
+        demoCase("case:classes.close_guard.consume_guarded_counter.should_reject_transfer_during_in_flight_call");
+        GuardedCounter transferred = new GuardedCounter(10);
+        String[] transferFailure = new String[1];
+        int transferResult = transferred.incrementThroughGate(observed -> {
+            try {
+                Demo.consumeGuardedCounter(transferred);
+            } catch (IllegalStateException expected) {
+                transferFailure[0] = expected.getMessage();
+            }
+            return observed + 5;
+        });
+        assert transferFailure[0] != null && transferFailure[0].contains("GuardedCounter was passed by value while a call on it was still in flight") : "GuardedCounter in-flight transfer error";
+        assert transferResult == 25 : "GuardedCounter.incrementThroughGate result after rejected transfer";
+        try {
+            transferred.increment();
+            assert false : "GuardedCounter.increment after rejected transfer should fail";
+        } catch (IllegalStateException expected) {
+            assert expected.getMessage().contains("GuardedCounter is closed") : "GuardedCounter closed error";
         }
 
         System.out.println("  PASS\n");

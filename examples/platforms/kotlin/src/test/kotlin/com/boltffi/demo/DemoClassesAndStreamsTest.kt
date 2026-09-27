@@ -212,4 +212,65 @@ class DemoClassesAndStreamsTest {
             }
         }
     }
+
+    @Test
+    fun guardedCounterRejectsCallsAfterClose() {
+        demoCase("case:classes.close_guard.guarded_counter.increment.should_reject_calls_after_close")
+        val counter = GuardedCounter(1)
+        assertEquals(2, counter.increment())
+        counter.close()
+        assertMessageContains(
+            assertFailsWith<IllegalStateException> { counter.increment() },
+            "GuardedCounter is closed",
+        )
+    }
+
+    @Test
+    fun guardedCounterCompletesInFlightCallWhenClosed() {
+        demoCase("case:classes.close_guard.guarded_counter.increment_through_gate.should_complete_in_flight_call_when_closed")
+        val counter = GuardedCounter(10)
+        val entered = java.util.concurrent.CountDownLatch(1)
+        val release = java.util.concurrent.CountDownLatch(1)
+        var result = 0
+        val caller = kotlin.concurrent.thread {
+            result = counter.incrementThroughGate(
+                ClosureI32ToI32 { observed ->
+                    entered.countDown()
+                    release.await()
+                    observed + 5
+                },
+            )
+        }
+        assert(entered.await(5, java.util.concurrent.TimeUnit.SECONDS)) { "gate was not entered" }
+        counter.close()
+        release.countDown()
+        caller.join()
+        assertEquals(25, result)
+        assertMessageContains(
+            assertFailsWith<IllegalStateException> { counter.increment() },
+            "GuardedCounter is closed",
+        )
+    }
+
+    @Test
+    fun guardedCounterRejectsTransferDuringInFlightCall() {
+        demoCase("case:classes.close_guard.consume_guarded_counter.should_reject_transfer_during_in_flight_call")
+        val counter = GuardedCounter(10)
+        var failure: IllegalStateException? = null
+        val result = counter.incrementThroughGate(
+            ClosureI32ToI32 { observed ->
+                failure = assertFailsWith<IllegalStateException> { consumeGuardedCounter(counter) }
+                observed + 5
+            },
+        )
+        assertMessageContains(
+            failure ?: error("in-flight transfer did not fail"),
+            "GuardedCounter was passed by value while a call on it was still in flight",
+        )
+        assertEquals(25, result)
+        assertMessageContains(
+            assertFailsWith<IllegalStateException> { counter.increment() },
+            "GuardedCounter is closed",
+        )
+    }
 }

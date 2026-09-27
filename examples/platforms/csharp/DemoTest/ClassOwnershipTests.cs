@@ -133,7 +133,7 @@ internal static class ClassOwnershipTests
         Require(drops.Count() == 5, "passing the same wrapper twice drops it once");
 
         var receiver = new OwnedMessage("receiver", drops);
-        Require(receiver.Combine(receiver) == 0, "a receiver moved into its own argument is rejected");
+        Expect<ObjectDisposedException>(() => receiver.Combine(receiver));
         AssertMoved(receiver);
         Require(drops.Count() == 6, "rejected receiver alias drops its message once");
     }
