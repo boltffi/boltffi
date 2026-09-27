@@ -260,6 +260,7 @@ jobs:
   wasm-bindgen:
     name: Wasm dependencies (${{ matrix.bindgen }}, Rust ${{ matrix.rust }})
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
