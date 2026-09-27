@@ -11,7 +11,7 @@ export async function run() {
   const before = BigInt(Date.now());
   const timestamp = demo.wasmCurrentTime();
   assert.ok(timestamp >= before && timestamp <= BigInt(Date.now()));
-  assert.equal(demo.wasmLocalOffset(), -new Date().getTimezoneOffset() * 60);
+  assert.ok(demo.wasmLocalOffset() === -new Date().getTimezoneOffset() * 60);
   assert.equal(demo.wasmStartCount(), 1);
   assert.equal(globalThis.boltffiStartupCount, 1);
   assert.equal(demo.wasmLocalSnippet(41), 42);
