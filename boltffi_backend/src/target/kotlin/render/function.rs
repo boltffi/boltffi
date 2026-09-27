@@ -18,7 +18,7 @@ use crate::{
         render::{
             Documentation,
             callback::CallbackHandle,
-            class::{ClassHandle, OwnedCallTemplate, OwnedClassArgument},
+            class::{ClassHandle, OwnedCallTemplate, OwnedClassArgument, RetainedHandle},
             closure::Closure,
             direct_vector::DirectVector,
             enumeration::Enumeration,
@@ -81,6 +81,7 @@ pub struct ExportedParameter {
     native_arguments: Vec<Expression>,
     mutation: Option<ParameterMutation>,
     setup: Vec<Statement>,
+    prepare: Vec<Statement>,
     cleanup: Vec<Statement>,
 }
 
@@ -89,6 +90,8 @@ struct NativeArgument {
     expressions: Vec<Expression>,
     mutation: Option<ParameterMutation>,
     setup: Vec<Statement>,
+    /// Runs inside the call's `try`, so the cleanup covers a throw here.
+    prepare: Vec<Statement>,
     cleanup: Vec<Statement>,
 }
 
@@ -180,6 +183,7 @@ enum ErrorConversion {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AsyncCall {
     create_setup: Vec<Statement>,
+    create_prepare: Vec<Statement>,
     create: Expression,
     create_cleanup: Vec<Statement>,
     poll: Identifier,
@@ -192,6 +196,7 @@ pub struct AsyncCall {
 struct AsyncStart {
     call: Expression,
     setup: Vec<Statement>,
+    prepare: Vec<Statement>,
     cleanup: Vec<Statement>,
 }
 
@@ -421,6 +426,10 @@ impl<'render> ExportedCallRenderer<'render> {
                     .flat_map(|parameter| parameter.setup().iter().cloned()),
             )
             .collect::<Vec<_>>();
+        let prepare = parameters
+            .iter()
+            .flat_map(|parameter| parameter.prepare().iter().cloned())
+            .collect::<Vec<_>>();
         let cleanup = parameters
             .iter()
             .flat_map(|parameter| parameter.cleanup().iter().cloned())
@@ -434,11 +443,14 @@ impl<'render> ExportedCallRenderer<'render> {
                 parameters,
                 returns,
                 setup,
-                call: function_return.return_statements(
-                    error_conversion.wrap(native_call.clone(), self.host, self.context)?,
-                    self.host,
-                    self.context,
-                )?,
+                call: prepare
+                    .into_iter()
+                    .chain(function_return.return_statements(
+                        error_conversion.wrap(native_call.clone(), self.host, self.context)?,
+                        self.host,
+                        self.context,
+                    )?)
+                    .collect(),
                 cleanup,
                 async_call: None,
             }),
@@ -457,7 +469,7 @@ impl<'render> ExportedCallRenderer<'render> {
                 call: Vec::new(),
                 cleanup: Vec::new(),
                 async_call: Some(AsyncCall::new(
-                    AsyncStart::new(native_call, setup, cleanup),
+                    AsyncStart::new(native_call, setup, prepare, cleanup),
                     AsyncProtocolFunctions::new(poll, complete, cancel, free)?,
                     function_return,
                     error_conversion,
@@ -596,6 +608,7 @@ impl ExportedParameter {
             mutation: native_argument.mutation,
             signature: signature::Parameter::new(name, ty),
             setup: native_argument.setup,
+            prepare: native_argument.prepare,
             cleanup: native_argument.cleanup,
         })
     }
@@ -614,6 +627,10 @@ impl ExportedParameter {
 
     fn setup(&self) -> &[Statement] {
         &self.setup
+    }
+
+    fn prepare(&self) -> &[Statement] {
+        &self.prepare
     }
 
     fn cleanup(&self) -> &[Statement] {
@@ -664,6 +681,7 @@ impl NativeArgument {
             expressions: vec![expression],
             mutation: None,
             setup: Vec::new(),
+            prepare: Vec::new(),
             cleanup: Vec::new(),
         }
     }
@@ -675,7 +693,19 @@ impl NativeArgument {
             expressions,
             mutation,
             setup,
+            prepare: Vec::new(),
             cleanup,
+        }
+    }
+
+    fn retained(handle: RetainedHandle) -> Self {
+        Self {
+            owned_class: None,
+            expressions: vec![handle.expression],
+            mutation: None,
+            setup: vec![handle.setup],
+            prepare: vec![handle.prepare],
+            cleanup: vec![handle.cleanup],
         }
     }
 }
@@ -749,10 +779,16 @@ impl ParameterMutation {
 }
 
 impl AsyncStart {
-    fn new(call: Expression, setup: Vec<Statement>, cleanup: Vec<Statement>) -> Self {
+    fn new(
+        call: Expression,
+        setup: Vec<Statement>,
+        prepare: Vec<Statement>,
+        cleanup: Vec<Statement>,
+    ) -> Self {
         Self {
             call,
             setup,
+            prepare,
             cleanup,
         }
     }
@@ -775,6 +811,7 @@ impl AsyncCall {
         )?;
         Ok(Self {
             create_setup: start.setup,
+            create_prepare: start.prepare,
             create: start.call,
             create_cleanup: start.cleanup,
             poll: functions.poll,
@@ -787,6 +824,10 @@ impl AsyncCall {
 
     pub fn create_setup(&self) -> &[Statement] {
         &self.create_setup
+    }
+
+    pub fn create_prepare(&self) -> &[Statement] {
+        &self.create_prepare
     }
 
     pub fn create(&self) -> &Expression {
@@ -999,11 +1040,8 @@ impl<'plan> ParamPlanRender<'plan, Native, IntoRust> for NativeArgumentRender<'_
                 Ok(argument)
             }
             HandleTarget::Class(class) => ClassHandle::new(*class, presence, self.context)
-                .and_then(|handle| {
-                    handle
-                        .parameter_argument(Expression::identifier(self.name.clone()))
-                        .map(NativeArgument::direct)
-                }),
+                .and_then(|handle| handle.retained_argument(&self.source_name, self.name.clone()))
+                .map(NativeArgument::retained),
             HandleTarget::Callback(callback) => {
                 CallbackHandle::new(*callback, presence, self.context).and_then(|handle| {
                     handle

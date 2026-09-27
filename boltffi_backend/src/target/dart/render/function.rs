@@ -83,6 +83,12 @@ struct DartArgument {
     native_arguments: Vec<String>,
     writeback: Vec<String>,
     cleanup: Vec<String>,
+    guard: Option<HandleGuard>,
+}
+
+struct HandleGuard {
+    begin: String,
+    end: String,
 }
 
 pub struct DartReturn {
@@ -167,6 +173,7 @@ impl Function {
                 cancel,
                 free,
                 completion: dart_native::bridge_function(complete, bridge.functions())?,
+                class_receiver: matches!(&placement, Placement::Instance(Receiver::Class)),
             }),
             ExecutionDecl::Asynchronous(_) => {
                 return super::super::unsupported("async protocol other than poll handle");
@@ -309,6 +316,7 @@ impl Function {
             true => returns.public_type.clone().future(),
             false => returns.public_type.clone(),
         };
+        let class_receiver = matches!(&placement, Placement::Instance(Receiver::Class));
         let placement = match placement {
             Placement::TopLevel => FunctionPlacement::TopLevel,
             Placement::Static => FunctionPlacement::Static,
@@ -372,6 +380,25 @@ impl Function {
                 cancellation_token.as_ref(),
             )?,
             None => render_sync_call(&invocation, &receiver_setup, &writeback, &cleanup, &returns),
+        };
+        let call = parameters
+            .iter()
+            .filter_map(|parameter| parameter.argument.guard.as_ref())
+            .fold(call, |call, guard| {
+                format!(
+                    "{}\ntry {{\n{}\n}} finally {{\n  {}\n}}",
+                    guard.begin,
+                    indent(&call, 2),
+                    guard.end
+                )
+            });
+        let call = if class_receiver && !asynchronous {
+            format!(
+                "_f$beginCall();\ntry {{\n{}\n}} finally {{\n  _f$endCall();\n}}",
+                indent(&call, 2)
+            )
+        } else {
+            call
         };
         Ok(Self {
             documentation: Documentation::new(doc, 0),
@@ -482,6 +509,20 @@ impl DartArgument {
             native_arguments,
             writeback,
             cleanup: Vec::new(),
+            guard: None,
+        }
+    }
+
+    /// Class handle argument held in-flight around the whole call, so a
+    /// re-entrant `dispose$()` cannot free it while Rust borrows it.
+    fn guarded(native_argument: String, begin: String, end: String) -> Self {
+        Self {
+            owned_class: None,
+            setup: Vec::new(),
+            native_arguments: vec![native_argument],
+            writeback: Vec::new(),
+            cleanup: Vec::new(),
+            guard: Some(HandleGuard { begin, end }),
         }
     }
 
@@ -496,6 +537,7 @@ impl DartArgument {
             native_arguments,
             writeback: Vec::new(),
             cleanup,
+            guard: None,
         }
     }
 
@@ -511,6 +553,7 @@ impl DartArgument {
             native_arguments,
             writeback,
             cleanup,
+            guard: None,
         }
     }
 }
@@ -598,6 +641,7 @@ struct AsyncFunctions<'bridge> {
     cancel: &'bridge NativeSymbol,
     free: &'bridge NativeSymbol,
     completion: &'bridge CFunction,
+    class_receiver: bool,
 }
 
 pub fn render_parameter(
@@ -759,11 +803,23 @@ pub fn render_parameter(
                 ));
             }
             let argument = match target {
-                HandleTarget::Class(_) => match presence {
-                    HandlePresence::Required => format!("{name}._handle"),
-                    HandlePresence::Nullable => format!("{name}?._handle ?? 0"),
-                    _ => return super::super::unsupported("unknown handle presence"),
-                },
+                HandleTarget::Class(_) => {
+                    let public_type = type_name::handle(target, *presence, context)?;
+                    let argument = match presence {
+                        HandlePresence::Required => DartArgument::guarded(
+                            format!("{name}._handle"),
+                            format!("{name}._f$beginCall();"),
+                            format!("{name}._f$endCall();"),
+                        ),
+                        HandlePresence::Nullable => DartArgument::guarded(
+                            format!("{name}?._handle ?? 0"),
+                            format!("{name}?._f$beginCall();"),
+                            format!("{name}?._f$endCall();"),
+                        ),
+                        _ => return super::super::unsupported("unknown handle presence"),
+                    };
+                    return Ok(DartParameter::new(name, public_type, argument));
+                }
                 HandleTarget::Callback(_) => {
                     let callback = type_name::handle(target, HandlePresence::Required, context)?;
                     format!("{callback}Bridge.create({name})")
@@ -1519,7 +1575,15 @@ fn render_async_call(
         statements.push(format!("final _l$future = {invocation};"));
         statements.extend(cleanup.iter().cloned());
         statements.push("return _l$future;".to_owned());
-        statements.join("\n")
+        let body = statements.join("\n");
+        if asynchronous.class_receiver {
+            format!(
+                "_f$beginCall();\ntry {{\n{}\n}} catch (_) {{\n  _f$endCall();\n  rethrow;\n}}",
+                indent(&body, 2)
+            )
+        } else {
+            body
+        }
     };
     let completion_body = {
         let mut completion_arguments = vec!["_p$handle".to_owned()];
@@ -1574,12 +1638,20 @@ fn render_async_call(
         Some(name) => format!("\n  cancellationToken: {name},"),
         None => String::new(),
     };
+    let free = if asynchronous.class_receiver {
+        format!(
+            "(_p$handle) {{\n    try {{\n      _f${}(_p$handle);\n    }} finally {{\n      _f$endCall();\n    }}\n  }}",
+            asynchronous.free.name().as_str()
+        )
+    } else {
+        format!("_f${}", asynchronous.free.name().as_str())
+    };
     Ok(format!(
-        "return _$$BoltFFIAsync.create(\n  createFuture: () {{\n{}\n  }},\n  pollFuture: _f${},\n  completeFuture: (_p$handle) {{\n{}\n  }},\n  freeFuture: _f${},\n  cancelFuture: _f${},{}\n);",
+        "return _$$BoltFFIAsync.create(\n  createFuture: () {{\n{}\n  }},\n  pollFuture: _f${},\n  completeFuture: (_p$handle) {{\n{}\n  }},\n  freeFuture: {},\n  cancelFuture: _f${},{}\n);",
         indent(&create_body, 4),
         asynchronous.poll.name().as_str(),
         indent(&completion_body, 4),
-        asynchronous.free.name().as_str(),
+        free,
         asynchronous.cancel.name().as_str(),
         cancellation_token_argument,
     ))

@@ -28,7 +28,7 @@ pub struct Stream {
     name: Identifier,
     item: StreamItem,
     delivery: Delivery,
-    subscribe: Expression,
+    subscribe_statements: Vec<Statement>,
     pop_batch: Expression,
     wait: Expression,
     poll: Expression,
@@ -109,8 +109,29 @@ impl Stream {
         poll.validate_return(&ReturnType::Void)?;
         unsubscribe.validate_return(&ReturnType::Void)?;
         free.validate_return(&ReturnType::Void)?;
-        let receiver =
-            Expression::this().call(Identifier::known("rawHandle"), ArgumentList::default());
+        let receiver = Identifier::known("__boltffi_receiver");
+        let subscribe_statements = vec![
+            Statement::declare(
+                TypeName::primitive(Primitive::Long),
+                Identifier::known("subscription"),
+            ),
+            Statement::value(
+                TypeName::primitive(Primitive::Long),
+                receiver.clone(),
+                Expression::this()
+                    .call(Identifier::known("boltffiRetain"), ArgumentList::default()),
+            ),
+            Statement::try_finally(
+                vec![Statement::assign(
+                    Identifier::known("subscription"),
+                    subscribe.call(native_owner, [Expression::identifier(receiver)])?,
+                )],
+                vec![Statement::expression(Expression::this().call(
+                    Identifier::known("boltffiRelease"),
+                    ArgumentList::default(),
+                ))],
+            ),
+        ];
         let subscription = Expression::identifier(Identifier::known("streamHandle"));
         let max_count = Expression::identifier(Identifier::known("maxCount"));
         let continuation = Expression::identifier(Identifier::known("continuation"));
@@ -118,7 +139,7 @@ impl Stream {
             name: Name::new(declaration.name()).function(version)?,
             item: StreamItem::from_plan(declaration.item(), version, context)?,
             delivery: Delivery::from_mode(declaration.mode())?,
-            subscribe: subscribe.call(native_owner, [receiver])?,
+            subscribe_statements,
             pop_batch: pop_batch.call(native_owner, [subscription.clone(), max_count])?,
             wait: wait.call(
                 native_owner,
@@ -188,8 +209,8 @@ impl Stream {
         self.delivery == Delivery::Callback
     }
 
-    pub fn subscribe(&self) -> &Expression {
-        &self.subscribe
+    pub fn subscribe_statements(&self) -> &[Statement] {
+        &self.subscribe_statements
     }
 
     pub fn pop_batch(&self) -> &Expression {

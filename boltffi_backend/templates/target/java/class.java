@@ -1,10 +1,12 @@
 package {{ package }};
 
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 
 {% if let Some(doc) = class.doc() %}{{ doc }}
 {% endif %}public final class {{ class.name() }} implements AutoCloseable {
     private final {{ class.handle() }} handle;
+    private final AtomicLong calls = new AtomicLong(1L);
     private final AtomicBoolean closed = new AtomicBoolean(false);
 
     {{ class.name() }}({{ class.handle() }} handle) {
@@ -24,6 +26,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
 {% endfor %}
     {{ class.handle() }} __boltffiTakeHandle() {
         if (!closed.compareAndSet(false, true)) throw new IllegalStateException("{{ class.name() }} is closed");
+        if (!calls.compareAndSet(1L, 0L)) {
+            boltffiRelease();
+            throw new IllegalStateException("{{ class.name() }} was passed by value while a call on it was still in flight; it has been closed");
+        }
         return handle;
     }
 
@@ -32,10 +38,25 @@ import java.util.concurrent.atomic.AtomicBoolean;
         return handle;
     }
 
+    {{ class.handle() }} boltffiRetain() {
+        while (true) {
+            if (closed.get()) throw new IllegalStateException("{{ class.name() }} is closed");
+            long calls = this.calls.get();
+            if (calls == 0L) throw new IllegalStateException("{{ class.name() }} is closed");
+            if (this.calls.compareAndSet(calls, calls + 1L)) return handle;
+        }
+    }
+
+    void boltffiRelease() {
+        if (calls.decrementAndGet() == 0L) {
+            {{ class.release() }}
+        }
+    }
+
     @Override
     public void close() {
         if (!closed.compareAndSet(false, true)) return;
-        {{ class.release() }}
+        boltffiRelease();
     }
 {% for call in class.factories() %}
 {% include "target/java/call/initializer.java" %}

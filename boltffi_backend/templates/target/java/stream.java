@@ -1,7 +1,7 @@
 {% if let Some(doc) = stream.doc() %}{{ doc }}
 {% endif %}{% if stream.callback_delivery() %}    public StreamSubscription<{{ stream.item_type() }}> {{ stream.name() }}(java.util.function.Consumer<{{ stream.item_type() }}> callback) {
-        long subscription = {{ stream.subscribe() }};
-        return BoltFfiStream.callback(
+{% for statement in stream.subscribe_statements() %}        {{ statement }}
+{% endfor %}        return BoltFfiStream.callback(
             subscription,
             16L,
             (streamHandle, maxCount) -> {
@@ -18,8 +18,9 @@
         );
     }
 {% else %}    public StreamSubscription<{{ stream.item_type() }}> {{ stream.name() }}() {
-        return StreamSubscription.batch(
-            {{ stream.subscribe() }},
+{% for statement in stream.subscribe_statements() %}        {{ statement }}
+{% endfor %}        return StreamSubscription.batch(
+            subscription,
             (streamHandle, maxCount) -> {
                 byte[] bytes = {{ stream.pop_batch() }};
                 if (bytes == null) throw new IllegalStateException("BoltFFI stream pop_batch returned null");

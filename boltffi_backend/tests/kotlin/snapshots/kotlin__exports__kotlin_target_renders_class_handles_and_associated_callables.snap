@@ -17,22 +17,42 @@ private object Native {
 }
 
 class Engine internal constructor(internal val handle: Long) : AutoCloseable {
+    private val __boltffi_calls = java.util.concurrent.atomic.AtomicLong(1L)
     private val __boltffi_closed = java.util.concurrent.atomic.AtomicBoolean(false)
 
     override fun close() {
         if (__boltffi_closed.compareAndSet(false, true)) {
-            Native.boltffi_release_class_demo_engine(handle)
+            boltffiRelease()
         }
     }
 
     internal fun __boltffiTakeHandle(): Long {
         check(__boltffi_closed.compareAndSet(false, true)) { "Engine is closed" }
+        if (!__boltffi_calls.compareAndSet(1L, 0L)) {
+            boltffiRelease()
+            throw IllegalStateException("Engine was passed by value while a call on it was still in flight; it has been closed")
+        }
         return handle
     }
 
     internal fun boltffiHandle(): Long {
         check(!__boltffi_closed.get()) { "Engine is closed" }
         return handle
+    }
+
+    internal fun boltffiRetain(): Long {
+        while (true) {
+            check(!__boltffi_closed.get()) { "Engine is closed" }
+            val calls = __boltffi_calls.get()
+            check(calls != 0L) { "Engine is closed" }
+            if (__boltffi_calls.compareAndSet(calls, calls + 1L)) return handle
+        }
+    }
+
+    internal fun boltffiRelease() {
+        if (__boltffi_calls.decrementAndGet() == 0L) {
+            Native.boltffi_release_class_demo_engine(handle)
+        }
     }
 
     constructor(value: Int) : this(new(value).handle)
@@ -47,17 +67,24 @@ class Engine internal constructor(internal val handle: Long) : AutoCloseable {
     }
 
     fun value(): Int {
-        return Native.boltffi_method_class_demo_engine_value(this.boltffiHandle())
+        val __boltffi_receiver = boltffiRetain()
+        try {
+            return Native.boltffi_method_class_demo_engine_value(__boltffi_receiver)
+        } finally {
+            boltffiRelease()
+        }
     }
 
     fun swap(other: Engine): Engine {
-        return Engine(({
+        val __boltffi_receiver = boltffiRetain()
+        try {
+            return Engine(({
     Native.ensureInitialized()
     var __boltffi_other_owned_handle = 0L
     var __boltffiEntered = false
     try {
         __boltffi_other_owned_handle = other.__boltffiTakeHandle()
-        val __boltffiArgument0 = this.boltffiHandle()
+        val __boltffiArgument0 = __boltffi_receiver
         val __boltffiArgument1 = __boltffi_other_owned_handle
         __boltffiEntered = true
         Native.boltffi_method_class_demo_engine_swap(__boltffiArgument0, __boltffiArgument1)
@@ -70,16 +97,21 @@ class Engine internal constructor(internal val handle: Long) : AutoCloseable {
         }
     }
 })())
+        } finally {
+            boltffiRelease()
+        }
     }
 
     fun maybeSwap(other: Engine?): Engine? {
-        val __boltffi_handle = ({
+        val __boltffi_receiver = boltffiRetain()
+        try {
+            val __boltffi_handle = ({
     Native.ensureInitialized()
     var __boltffi_other_owned_handle = 0L
     var __boltffiEntered = false
     try {
         __boltffi_other_owned_handle = other?.__boltffiTakeHandle() ?: 0L
-        val __boltffiArgument0 = this.boltffiHandle()
+        val __boltffiArgument0 = __boltffi_receiver
         val __boltffiArgument1 = __boltffi_other_owned_handle
         __boltffiEntered = true
         Native.boltffi_method_class_demo_engine_maybe_swap(__boltffiArgument0, __boltffiArgument1)
@@ -92,6 +124,9 @@ class Engine internal constructor(internal val handle: Long) : AutoCloseable {
         }
     }
 })()
-        return if (__boltffi_handle == 0L) null else Engine(__boltffi_handle)
+            return if (__boltffi_handle == 0L) null else Engine(__boltffi_handle)
+        } finally {
+            boltffiRelease()
+        }
     }
 }
