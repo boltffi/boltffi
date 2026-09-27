@@ -2,7 +2,7 @@ use boltffi_ast::SourceName;
 use boltffi_binding::NativeSymbol;
 use proc_macro2::Span;
 use quote::format_ident;
-use syn::{Ident, PathArguments, Type, parse_str};
+use syn::{Ident, Type, parse_str};
 
 use crate::expansion::error::Error;
 
@@ -103,28 +103,13 @@ impl Class {
         }
     }
 
-    pub fn from_type_path(class: &Type) -> Result<Self, Error> {
-        let Type::Path(path) = class else {
-            return Err(Error::SourceSyntaxMismatch("class type is not a path"));
-        };
-        if path.qself.is_some() {
-            return Err(Error::SourceSyntaxMismatch(
-                "class type path is not a plain Rust path",
-            ));
-        }
-        let Some(segment) = path.path.segments.last() else {
-            return Err(Error::SourceSyntaxMismatch("class type path is empty"));
-        };
-        if !matches!(segment.arguments, PathArguments::None) {
-            return Err(Error::SourceSyntaxMismatch(
-                "class type path has generic arguments",
-            ));
-        }
-        Ok(Self::new(&segment.ident))
-    }
-
     pub fn handle(&self) -> Ident {
         format_ident!("__Boltffi{}Handle", self.source, span = self.source.span())
+    }
+
+    /// The handle type as any invocation reaches it, through the class's own path.
+    pub fn handle_of(class: &Type) -> proc_macro2::TokenStream {
+        quote::quote! { <#class as ::boltffi::__private::ClassHandle>::Handle }
     }
 
     pub fn retained_handle(&self) -> Ident {

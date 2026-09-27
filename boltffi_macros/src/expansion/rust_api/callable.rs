@@ -317,7 +317,7 @@ impl CallbackCarrier {
     fn value_type(self, source: &TypeExpr) -> Result<Type, Error> {
         match self {
             Self::BoxedDyn | Self::ArcDyn => TypeTokens::new(source).map(TypeTokens::into_type),
-            Self::ImplTrait => self.proxy_type(source),
+            Self::ImplTrait => Ok(syn::parse_quote!(_)),
         }
     }
 
@@ -351,9 +351,35 @@ impl CallbackCarrier {
                 "generic impl-trait callback handle",
             ));
         }
-        parse_str(&format!("Foreign{}", segment.name.as_str())).map_err(|_| {
-            Error::SourceSyntaxMismatch("callback foreign proxy type is not Rust syntax")
-        })
+        syn::parse2(TypeTokens::path_tokens(path)?)
+            .map_err(|_| Error::SourceSyntaxMismatch("callback trait path is not Rust syntax"))
+    }
+
+    fn trait_object(self, source: &TypeExpr) -> Result<Type, Error> {
+        let bounds = match source {
+            TypeExpr::ImplTrait(bounds) => bounds,
+            TypeExpr::Boxed(inner) | TypeExpr::Arc(inner) => match inner.as_ref() {
+                TypeExpr::Dyn(bounds) => bounds,
+                _ => {
+                    return Err(Error::SourceSyntaxMismatch(
+                        "source callback handle is not a trait object container",
+                    ));
+                }
+            },
+            _ => {
+                return Err(Error::SourceSyntaxMismatch(
+                    "source type is not a callback handle",
+                ));
+            }
+        };
+        let BaseTrait::Named { path, .. } = &bounds.base else {
+            return Err(Error::SourceSyntaxMismatch(
+                "source callback handle is not a named callback trait",
+            ));
+        };
+        let path = TypeTokens::path_tokens(path)?;
+        syn::parse2(quote::quote! { dyn #path })
+            .map_err(|_| Error::SourceSyntaxMismatch("callback trait path is not Rust syntax"))
     }
 }
 
@@ -403,6 +429,7 @@ pub struct CallbackReturn {
     form: CallbackCarrier,
     presence: HandlePresence,
     proxy: Type,
+    trait_object: Type,
 }
 
 impl CallbackReturn {
@@ -412,7 +439,16 @@ impl CallbackReturn {
             form,
             presence,
             proxy: form.proxy_type(type_expr)?,
+            trait_object: form.trait_object(type_expr)?,
         })
+    }
+
+    /// The trait-site function that registers a Rust implementation for the foreign side.
+    pub fn local_handle(&self) -> proc_macro2::TokenStream {
+        let trait_object = &self.trait_object;
+        quote::quote! {
+            <#trait_object as ::boltffi::__private::CallbackLocalHandle>::local_callback_handle
+        }
     }
 
     pub const fn form(&self) -> CallbackCarrier {

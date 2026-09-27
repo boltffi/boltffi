@@ -1,8 +1,7 @@
 use std::collections::HashMap;
 
 use boltffi_binding::{
-    CallbackDecl, CallbackId, CustomTypeDecl, CustomTypeId, Decl, DeclarationId, LoweredBindings,
-    Surface,
+    CustomTypeDecl, CustomTypeId, Decl, DeclarationId, LoweredBindings, Surface,
 };
 
 use super::pair::{PairedDeclaration, SourceDeclaration};
@@ -60,23 +59,6 @@ impl ExpansionIndex {
             .ok_or(Error::MissingDeclaration(declaration_id))?;
         match lowered.bindings().decls().get(index) {
             Some(Decl::CustomType(custom)) => Ok(custom),
-            _ => Err(Error::WrongDeclaration),
-        }
-    }
-
-    pub fn callback<'lowered, S: Surface>(
-        &self,
-        lowered: &'lowered LoweredBindings<S>,
-        id: CallbackId,
-    ) -> Result<&'lowered CallbackDecl<S>, Error> {
-        let declaration_id = DeclarationId::Callback(id);
-        let index = self
-            .binding_by_id
-            .get(&declaration_id)
-            .copied()
-            .ok_or(Error::MissingDeclaration(declaration_id))?;
-        match lowered.bindings().decls().get(index) {
-            Some(Decl::Callback(callback)) => Ok(callback),
             _ => Err(Error::WrongDeclaration),
         }
     }

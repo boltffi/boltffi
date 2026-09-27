@@ -26,6 +26,18 @@ pub trait TypeDesc<Tag> {
     const DESC: DescBuf;
 }
 
+/// Descriptor of a callback trait, carried by the marker value its export site defines
+/// under the trait's own name.
+pub trait TraitDesc {
+    /// One JSON type node naming the trait.
+    const DESC: DescBuf;
+}
+
+/// Reads the descriptor of the trait whose marker value `marker` is.
+pub const fn trait_desc<M: TraitDesc>(_marker: &M) -> DescBuf {
+    M::DESC
+}
+
 /// Capacity of a [`DescBuf`]; deep nesting past this is a compile error.
 pub const DESC_CAPACITY: usize = 1024;
 
