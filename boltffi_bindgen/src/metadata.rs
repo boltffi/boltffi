@@ -1293,6 +1293,8 @@ pub struct Settings {
     pub extra_field: OnlyExtra,
     #[cfg(not(feature = "extra"))]
     pub fallback_field: u8,
+    #[cfg_attr(all(), cfg_attr(feature = "extra", cfg(any())))]
+    pub nested_field: u8,
 }
 
 #[boltffi::data]
@@ -1312,6 +1314,8 @@ impl Engine {
     pub fn boost(&self, extra: OnlyExtra) -> u32 { extra.level }
     #[cfg_attr(not(feature = "extra"), boltffi::skip)]
     pub fn describe(&self) -> String { String::new() }
+    #[cfg_attr(all(), cfg_attr(not(feature = "extra"), cfg(any())))]
+    pub fn nested_boost(&self) -> u32 { 1 }
 }
 
 #[boltffi::export]
@@ -1357,12 +1361,19 @@ pub fn mode_name(mode: Mode) -> String { String::from(match mode { Mode::Plain =
                 "boltffi_function_metadata_fixture_settings_name",
             ),
             ("boosted", "boltffi_function_metadata_fixture_mode_name"),
+            (
+                "nestedBoost",
+                "boltffi_method_class_metadata_fixture_engine_nested_boost",
+            ),
         ];
         assert_declared_and_exported(
             &fixture,
             &["--features", "extra"],
             &extra,
-            &[("fallbackField", "boltffi_no_such_symbol")],
+            &[
+                ("fallbackField", "boltffi_no_such_symbol"),
+                ("nestedField", "boltffi_no_such_symbol"),
+            ],
         );
         assert_declared_and_exported(
             &fixture,
@@ -1375,6 +1386,10 @@ pub fn mode_name(mode: Mode) -> String { String::from(match mode { Mode::Plain =
                 (
                     "onEvent",
                     "boltffi_register_callback_metadata_fixture_listener",
+                ),
+                (
+                    "nestedField",
+                    "boltffi_function_metadata_fixture_settings_name",
                 ),
             ],
             &[
@@ -1390,6 +1405,10 @@ pub fn mode_name(mode: Mode) -> String { String::from(match mode { Mode::Plain =
                 ("onExtra", "boltffi_no_such_symbol"),
                 ("extraField", "boltffi_no_such_symbol"),
                 ("boosted", "boltffi_no_such_symbol"),
+                (
+                    "nestedBoost",
+                    "boltffi_method_class_metadata_fixture_engine_nested_boost",
+                ),
             ],
         );
     }

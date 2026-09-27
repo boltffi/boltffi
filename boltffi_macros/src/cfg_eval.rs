@@ -17,6 +17,103 @@ use crate::lane::Kind;
 
 const HELPER: &str = "boltffi_cfg_eval";
 
+/// Rewrites every nested `cfg_attr` as flat ones with the predicates joined, so
+/// `cfg_attr(a, cfg_attr(b, cfg(c)))` probes as `cfg_attr(all(a, b), cfg(c))`.
+#[derive(Default)]
+struct Flatten(bool);
+
+impl Flatten {
+    fn attrs(&mut self, attrs: &mut Vec<Attribute>) {
+        if !attrs.iter().any(is_nested_cfg_attr) {
+            return;
+        }
+        self.0 = true;
+        *attrs = std::mem::take(attrs)
+            .into_iter()
+            .flat_map(flattened)
+            .collect();
+    }
+}
+
+impl syn::visit_mut::VisitMut for Flatten {
+    fn visit_item_mut(&mut self, item: &mut Item) {
+        let attrs = match item {
+            Item::Struct(item) => &mut item.attrs,
+            Item::Enum(item) => &mut item.attrs,
+            Item::Trait(item) => &mut item.attrs,
+            Item::Fn(item) => &mut item.attrs,
+            Item::Const(item) => &mut item.attrs,
+            Item::Impl(item) => &mut item.attrs,
+            _ => return,
+        };
+        self.attrs(attrs);
+        syn::visit_mut::visit_item_mut(self, item);
+    }
+
+    fn visit_field_mut(&mut self, field: &mut syn::Field) {
+        self.attrs(&mut field.attrs);
+        syn::visit_mut::visit_field_mut(self, field);
+    }
+
+    fn visit_variant_mut(&mut self, variant: &mut syn::Variant) {
+        self.attrs(&mut variant.attrs);
+        syn::visit_mut::visit_variant_mut(self, variant);
+    }
+
+    fn visit_impl_item_mut(&mut self, member: &mut syn::ImplItem) {
+        if let Some(attrs) = impl_item_attrs_mut(member) {
+            self.attrs(attrs);
+        }
+        syn::visit_mut::visit_impl_item_mut(self, member);
+    }
+
+    fn visit_trait_item_mut(&mut self, member: &mut syn::TraitItem) {
+        if let Some(attrs) = trait_item_attrs_mut(member) {
+            self.attrs(attrs);
+        }
+        syn::visit_mut::visit_trait_item_mut(self, member);
+    }
+
+    fn visit_fn_arg_mut(&mut self, argument: &mut syn::FnArg) {
+        match argument {
+            syn::FnArg::Receiver(receiver) => self.attrs(&mut receiver.attrs),
+            syn::FnArg::Typed(typed) => self.attrs(&mut typed.attrs),
+        }
+    }
+
+    fn visit_block_mut(&mut self, _: &mut syn::Block) {}
+}
+
+fn is_nested_cfg_attr(attribute: &Attribute) -> bool {
+    split_cfg_attr(attribute)
+        .is_some_and(|(_, metas)| metas.iter().any(|meta| meta.path().is_ident("cfg_attr")))
+}
+
+fn flattened(attribute: Attribute) -> Vec<Attribute> {
+    let Some((predicate, metas)) = split_cfg_attr(&attribute) else {
+        return vec![attribute];
+    };
+    metas
+        .into_iter()
+        .flat_map(|meta| {
+            let nested = match &meta {
+                Meta::List(list) if list.path.is_ident("cfg_attr") => list
+                    .parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated)
+                    .ok(),
+                _ => None,
+            };
+            match nested.map(|nested| nested.into_iter().collect::<Vec<_>>()) {
+                Some(nested) if !nested.is_empty() => {
+                    let inner = &nested[0];
+                    let metas = &nested[1..];
+                    flattened(syn::parse_quote!(#[cfg_attr(all(#predicate, #inner), #(#metas),*)]))
+                }
+                _ => vec![syn::parse_quote!(#[cfg_attr(#predicate, #meta)])],
+            }
+        })
+        .collect()
+}
+
 /// Whether `item` or any of its members depends on configuration.
 pub(crate) fn is_conditional(item: &Item) -> bool {
     use syn::visit::Visit;
@@ -39,6 +136,11 @@ pub(crate) fn defer(
     raw: TokenStream,
     item: &Item,
 ) -> TokenStream {
+    let mut flat = Flatten::default();
+    let mut item = item.clone();
+    syn::visit_mut::VisitMut::visit_item_mut(&mut flat, &mut item);
+    let raw = if flat.0 { item.to_token_stream() } else { raw };
+    let item = &item;
     if let Some(attribute) = conditional_parameter(item) {
         return syn::Error::new_spanned(
             attribute,
@@ -454,8 +556,29 @@ fn trait_item_attrs_mut(member: &mut syn::TraitItem) -> Option<&mut Vec<Attribut
 
 #[cfg(test)]
 mod tests {
-    use super::{conditional_parameter, defer};
+    use quote::ToTokens;
+
+    use super::{conditional_parameter, defer, flattened};
     use crate::lane::Kind;
+
+    #[test]
+    fn nested_cfg_attr_flattens_into_joined_predicates() {
+        let attribute: syn::Attribute =
+            syn::parse_quote!(#[cfg_attr(a, allow(dead_code), cfg_attr(b, cfg(c)))]);
+
+        let flat = flattened(attribute)
+            .iter()
+            .map(|attribute| attribute.to_token_stream().to_string())
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            flat,
+            [
+                quote::quote!(#[cfg_attr(a, allow(dead_code))]).to_string(),
+                quote::quote!(#[cfg_attr(all(a, b), cfg(c))]).to_string(),
+            ]
+        );
+    }
 
     #[test]
     fn method_blocks_on_one_type_get_distinct_probes() {
