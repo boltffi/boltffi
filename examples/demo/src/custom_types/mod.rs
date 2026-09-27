@@ -56,7 +56,7 @@ custom_type!(
 #[data]
 pub struct Event {
     pub name: String,
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: UtcDateTime,
 }
 
 #[demo_bench_macros::demo_case(
@@ -85,7 +85,7 @@ pub fn email_domain(email: Email) -> String {
     directions = "Call `custom_types::echo_datetime` through the generated binding and assert a DateTime custom type crosses the wire through millisecond representation and returns unchanged."
 )]
 #[export]
-pub fn echo_datetime(dt: DateTime<Utc>) -> DateTime<Utc> {
+pub fn echo_datetime(dt: UtcDateTime) -> UtcDateTime {
     dt
 }
 
@@ -95,7 +95,7 @@ pub fn echo_datetime(dt: DateTime<Utc>) -> DateTime<Utc> {
     directions = "Call `custom_types::datetime_to_millis` through the generated binding and assert a DateTime custom type crosses the wire and returns its millisecond representation."
 )]
 #[export]
-pub fn datetime_to_millis(dt: DateTime<Utc>) -> i64 {
+pub fn datetime_to_millis(dt: UtcDateTime) -> i64 {
     dt.timestamp_millis()
 }
 
@@ -105,7 +105,7 @@ pub fn datetime_to_millis(dt: DateTime<Utc>) -> i64 {
     directions = "Call `custom_types::format_timestamp` through the generated binding and assert a DateTime custom type crosses the wire and returns an RFC3339 timestamp string."
 )]
 #[export]
-pub fn format_timestamp(timestamp: DateTime<Utc>) -> String {
+pub fn format_timestamp(timestamp: UtcDateTime) -> String {
     timestamp.to_rfc3339()
 }
 
@@ -145,6 +145,6 @@ pub fn echo_emails(emails: Vec<Email>) -> Vec<Email> {
     directions = "Call `custom_types::echo_datetimes` through the generated binding and assert a vector of DateTime custom types preserves millisecond values when round-tripped."
 )]
 #[export]
-pub fn echo_datetimes(dts: Vec<DateTime<Utc>>) -> Vec<DateTime<Utc>> {
+pub fn echo_datetimes(dts: Vec<UtcDateTime>) -> Vec<UtcDateTime> {
     dts
 }
