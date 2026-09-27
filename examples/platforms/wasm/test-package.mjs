@@ -54,7 +54,23 @@ try {
     assert.equal(demo.wasmLocalSnippet(41), 42);
     assert.equal(await demo.wasmAwaitPromise('installed'), 'installed');
   `;
-  [synchronous, asynchronous].forEach((source) => {
+  const failedStartup = `
+    import assert from 'node:assert/strict';
+    import { readFileSync } from 'node:fs';
+    import * as demo from './node_modules/@boltffi/demo/demo.js';
+    const bytes = readFileSync('./node_modules/@boltffi/demo/demo_bg.wasm');
+    const readStartCount = demo.wasmStartCount;
+    globalThis.boltffiStartupHook = () => {
+      assert.equal(demo.wasmJsClosure(7), 21);
+      throw new Error('dependency failed');
+    };
+    await assert.rejects(demo.default(bytes), /dependency failed/);
+    assert.throws(readStartCount);
+    assert.throws(() => demo.echoString('after failed startup'));
+    assert.throws(() => demo.Counter.new(1));
+    await assert.rejects(demo.default(bytes), /state failed/);
+  `;
+  [synchronous, asynchronous, failedStartup].forEach((source) => {
     execFileSync(process.execPath, ["--input-type=module", "--eval", source], { cwd: consumer, stdio: "inherit" });
   });
 } finally {

@@ -62,34 +62,51 @@ test("dependency startup can reenter BoltFFI and cannot attach a second instance
     const observations = [];
     globalThis.boltffiStartupHook = () => observations.push(demo.wasmJsClosure(7));
     const bytes = await (await fetch(`${path}/demo_bg.wasm`)).arrayBuffer();
-    await demo.default(bytes);
+    const initialization = demo.default(bytes);
+    let concurrentRejection;
+    try { await demo.default(bytes); } catch (error) { concurrentRejection = error.message; }
+    await initialization;
     let rejected;
     try { await demo.default(bytes); } catch (error) { rejected = error.message; }
     return {
-      observations, rejected, uuid: demo.wasmUuidV4(), starts: demo.wasmStartCount(),
+      observations, rejected, concurrentRejection, uuid: demo.wasmUuidV4(), starts: demo.wasmStartCount(),
       constants: [demo.wasmTrue, demo.wasmFalse, demo.demoComputed, Array.from(demo.demoBytes)],
     };
   }, packagePath);
   expect(result.observations).toEqual([21]);
   expect(result.constants).toEqual([true, false, 42, [102, 102, 105]]);
   expect(result.rejected).toContain("state ready");
+  expect(result.concurrentRejection).toContain("state loading");
   expect(result.uuid).toHaveLength(36);
   expect(result.starts).toBe(1);
 });
 
-test("failed dependency startup prevents reusing the glue", async ({ page }) => {
+test("failed dependency startup prevents calling bindings or reusing the glue", async ({ page }) => {
   await page.goto(rawPage);
-  const errors = await page.evaluate(async (path) => {
+  const result = await page.evaluate(async (path) => {
     const demo = await import(`${path}/demo.js`);
-    globalThis.boltffiStartupHook = () => { throw new Error("dependency failed"); };
+    const observations = [];
+    globalThis.boltffiStartupHook = () => {
+      observations.push(demo.wasmJsClosure(7));
+      throw new Error("dependency failed");
+    };
     const bytes = await (await fetch(`${path}/demo_bg.wasm`)).arrayBuffer();
     const errors = [];
     try { await demo.default(bytes); } catch (error) { errors.push(error.message); }
+    const callsSucceeded = Object.fromEntries(Object.entries({
+      primitive: () => demo.wasmStartCount(),
+      buffer: () => demo.echoString("after failed startup"),
+      class: () => demo.Counter.new(1),
+    }).map(([name, call]) => {
+      try { call(); return [name, true]; } catch { return [name, false]; }
+    }));
     try { await demo.default(bytes); } catch (error) { errors.push(error.message); }
-    return errors;
+    return { observations, errors, callsSucceeded };
   }, packagePath);
-  expect(errors[0]).toBe("dependency failed");
-  expect(errors[1]).toContain("state failed");
+  expect(result.observations).toEqual([21]);
+  expect(result.errors[0]).toBe("dependency failed");
+  expect(result.errors[1]).toContain("state failed");
+  expect(result.callsSucceeded).toEqual({ primitive: false, buffer: false, class: false });
 });
 
 test("an async Rust trap rejects other pending calls", async ({ page }) => {

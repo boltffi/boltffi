@@ -74,6 +74,8 @@ await Promise.all([synchronous, asynchronous].map(async (module) => {
     assert.equal(await module.answer(), 42);
     assert.equal(module.invoke(value => value + 1, 41), 42);
 }));
+await assert.rejects(asynchronous.default(new Uint8Array()));
+assert.equal(await asynchronous.answer(), 42);
 "#,
         ])
         .current_dir(&output)

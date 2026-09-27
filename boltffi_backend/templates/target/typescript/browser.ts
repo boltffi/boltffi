@@ -12,15 +12,28 @@ const _callbackImports: Record<string, WebAssembly.ImportValue> = {};
 {{ closure_adapters }}
 
 export default async function init(source: BufferSource | Response | WebAssembly.Module): Promise<void> {
-  await instantiateBoltFFI(source, WASM_ABI_VERSION, {
-    env: _callbackImports,
-    wasmBindgen: _wasmBindgen,
-    bind(module) {
-      _module = module;
-      _exports = module.exports;
-    },
-  });
-{{ constant_initializers|indent(2, true) }}
+  let rollback: (() => void) | undefined;
+  try {
+    await instantiateBoltFFI(source, WASM_ABI_VERSION, {
+      env: _callbackImports,
+      wasmBindgen: _wasmBindgen,
+      bind(module) {
+        const previousModule = _module;
+        const previousExports = _exports;
+        _module = module;
+        _exports = module.exports;
+        rollback = () => {
+          if (_module !== module) return;
+          _module = previousModule;
+          _exports = previousExports;
+        };
+      },
+    });
+{{ constant_initializers|indent(4, true) }}
+  } catch (error) {
+    rollback?.();
+    throw error;
+  }
 }
 
 // Lower-level counterpart to `options.signal` / `options.cancelId`.
