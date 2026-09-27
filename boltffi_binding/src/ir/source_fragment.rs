@@ -101,6 +101,21 @@ pub enum TypeNode {
     },
 }
 
+impl TypeNode {
+    fn crate_scoped(self) -> Self {
+        match self {
+            Self::Id { id } => Self::Id {
+                id: crate_scoped(&id),
+            },
+            Self::Prim { prim } => Self::Prim { prim },
+            Self::Shape { shape, args } => Self::Shape {
+                shape,
+                args: args.into_iter().map(Self::crate_scoped).collect(),
+            },
+        }
+    }
+}
+
 /// Aggregates decoded source records into one source contract.
 ///
 /// The contract's declarations are sorted by id within each family, so the result does
@@ -109,8 +124,31 @@ pub fn aggregate_records(
     records: &[RawSourceRecord],
     package: PackageInfo,
 ) -> Result<SourceContract, SourceFragmentError> {
+    aggregate(records, &[], package)
+}
+
+/// Aggregates one invocation's resolved records with lookup-only records for the
+/// declarations it names. Lookup records keep their slots unresolved and only answer
+/// id, kind, and shape questions; an own declaration wins over its lookup copy.
+pub fn aggregate_invocation(
+    resolved: &[RawSourceRecord],
+    lookup: &[RawSourceRecord],
+    package: PackageInfo,
+) -> Result<SourceContract, SourceFragmentError> {
+    aggregate(resolved, lookup, package)
+}
+
+fn aggregate(
+    resolved: &[RawSourceRecord],
+    lookup: &[RawSourceRecord],
+    package: PackageInfo,
+) -> Result<SourceContract, SourceFragmentError> {
+    let tagged = resolved
+        .iter()
+        .map(|record| (record, false))
+        .chain(lookup.iter().map(|record| (record, true)));
     let mut fragments = Vec::new();
-    for record in records {
+    for (record, is_lookup) in tagged {
         let mut fragment: SourceFragment =
             serde_json::from_slice(&record.json).map_err(|error| SourceFragmentError::Decode {
                 module: record.module.clone(),
@@ -127,27 +165,28 @@ pub fn aggregate_records(
             .slots
             .iter()
             .map(|slot| {
-                serde_json::from_str::<TypeNode>(slot).map_err(|error| {
-                    SourceFragmentError::SlotDescriptor {
+                serde_json::from_str::<TypeNode>(slot)
+                    .map(TypeNode::crate_scoped)
+                    .map_err(|error| SourceFragmentError::SlotDescriptor {
                         module: record.module.clone(),
                         message: error.to_string(),
-                    }
-                })
+                    })
             })
             .collect::<Result<Vec<_>, _>>()?;
         mint_self_ids(&mut fragment, &record.module);
-        fragments.push((fragment, slots, record.module.clone()));
+        fragments.push((fragment, slots, record.module.clone(), is_lookup));
     }
 
     let mut declared = Declared::default();
-    let mut unique: HashMap<String, (&SourceFragment, &[TypeNode])> = HashMap::new();
-    for (fragment, slots, module) in &fragments {
+    let mut unique: HashMap<String, (&SourceFragment, &[TypeNode], bool)> = HashMap::new();
+    for (fragment, slots, module, is_lookup) in &fragments {
         let id = fragment_id(fragment, module);
         match unique.entry(id.clone()) {
             Entry::Vacant(entry) => {
-                entry.insert((fragment, slots));
+                entry.insert((fragment, slots, *is_lookup));
             }
-            Entry::Occupied(entry) if *entry.get() == (fragment, slots.as_slice()) => {}
+            Entry::Occupied(entry)
+                if same_declaration(*entry.get(), (fragment, slots, *is_lookup)) => {}
             Entry::Occupied(_) => {
                 return Err(SourceFragmentError::DuplicateDeclaration { id });
             }
@@ -166,12 +205,14 @@ pub fn aggregate_records(
     let mut contract = SourceContract::new(package);
     let mut seen = HashMap::new();
     let mut method_blocks = Vec::new();
-    for (mut fragment, slots, module) in fragments {
+    for (mut fragment, slots, module, is_lookup) in fragments {
         let id = fragment_id(&fragment, &module);
         if seen.insert(id, ()).is_some() {
             continue;
         }
-        resolve_fragment(&mut fragment, &slots, &declared)?;
+        if !is_lookup {
+            resolve_fragment(&mut fragment, &slots, &declared)?;
+        }
         match fragment {
             SourceFragment::Record(def) => contract.records.push(def),
             SourceFragment::Enum(def) => contract.enums.push(def),
@@ -204,6 +245,17 @@ pub fn aggregate_records(
     contract.constants.sort_by(|a, b| a.id.cmp(&b.id));
     contract.customs.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(contract)
+}
+
+/// A lookup copy carries no slots, so it matches a declaration by its unresolved fragment.
+fn same_declaration(
+    seen: (&SourceFragment, &[TypeNode], bool),
+    next: (&SourceFragment, &[TypeNode], bool),
+) -> bool {
+    match seen.2 || next.2 {
+        true => seen.0 == next.0,
+        false => (seen.0, seen.1) == (next.0, next.1),
+    }
 }
 
 fn merge_methods(
@@ -341,7 +393,20 @@ fn fragment_id(fragment: &SourceFragment, module: &str) -> String {
 fn minted(id: &str, module: &str) -> Option<String> {
     id.strip_prefix(SELF_ID)
         .filter(|rest| rest.is_empty() || rest.starts_with("::"))
-        .map(|rest| format!("{module}{rest}"))
+        .map(|rest| format!("{}{rest}", crate_segment(module)))
+}
+
+/// Declarations are identified by crate and name alone, matching the flat foreign
+/// namespace and leaving nothing a macro invocation cannot know itself.
+fn crate_segment(module: &str) -> &str {
+    module.split("::").next().unwrap_or(module)
+}
+
+fn crate_scoped(id: &str) -> String {
+    match (id.split("::").next(), id.rsplit("::").next()) {
+        (Some(krate), Some(name)) if krate != name => format!("{krate}::{name}"),
+        _ => id.to_owned(),
+    }
 }
 
 fn mint_self_ids(fragment: &mut SourceFragment, module: &str) {
@@ -444,6 +509,7 @@ fn resolve_fragment(
     let mut resolve = |expr: &mut TypeExpr| resolve_expr(expr, slots, declared);
     match fragment {
         SourceFragment::Record(def) => {
+            refuse_primitive_field_slots(&def.fields, slots)?;
             resolve_fields(&mut def.fields, &mut resolve)?;
             resolve_methods(&mut def.methods, &mut resolve)
         }
@@ -485,6 +551,31 @@ fn resolve_fragment(
         }
         SourceFragment::Unsupported { .. } => Ok(()),
     }
+}
+
+/// A record field slot never resolves to a primitive, so a lookup-only record whose slots
+/// stay unresolved still answers whether it crosses by direct memory.
+fn refuse_primitive_field_slots(
+    fields: &[FieldDef],
+    slots: &[TypeNode],
+) -> Result<(), SourceFragmentError> {
+    fields.iter().try_for_each(|field| {
+        let TypeExpr::Record { id, .. } = &field.type_expr else {
+            return Ok(());
+        };
+        let Some(index) = id.as_str().strip_prefix(SLOT_ID_PREFIX) else {
+            return Ok(());
+        };
+        match slot_node(index, slots)? {
+            TypeNode::Prim { prim } if matches!(leaf_expr(prim), Ok(TypeExpr::Primitive(_))) => {
+                Err(SourceFragmentError::PrimitiveFieldSlot {
+                    field: field.name.spelling().to_owned(),
+                    primitive: prim.clone(),
+                })
+            }
+            _ => Ok(()),
+        }
+    })
 }
 
 fn resolve_fields(
@@ -830,6 +921,13 @@ pub enum SourceFragmentError {
         /// The contested builtin name.
         name: String,
     },
+    /// A record field names a type that resolves to a primitive, such as an alias.
+    PrimitiveFieldSlot {
+        /// The field's spelling.
+        field: String,
+        /// The primitive the named type resolved to.
+        primitive: String,
+    },
     /// A record marks an invocation the capture cannot describe yet.
     UnsupportedCapture {
         /// Module path of the emitting invocation.
@@ -889,7 +987,13 @@ impl std::fmt::Display for SourceFragmentError {
             ),
             Self::ShadowedBuiltin { name } => write!(
                 formatter,
-                "builtin `{name}` is shadowed by a declaration of the same name"
+                "builtin `{name}` is shadowed by a declaration of the same name; \
+                 name the custom type by its declared name in signatures"
+            ),
+            Self::PrimitiveFieldSlot { field, primitive } => write!(
+                formatter,
+                "field `{field}` names a type that resolves to `{primitive}`; \
+                 write the primitive directly"
             ),
             Self::UnsupportedCapture {
                 module,
@@ -959,6 +1063,105 @@ mod tests {
                 TypeExpr::builtin(BuiltinType::Duration),
             )]),
         )
+    }
+
+    #[test]
+    fn a_record_field_slot_resolving_to_a_primitive_is_refused() {
+        let aliased = raw(
+            "demo",
+            &[r#"{"prim":"f64"}"#],
+            record_fragment(vec![FieldDef::new(name("meters"), slot_leaf(0, "Meters"))]),
+        );
+
+        assert!(matches!(
+            aggregate_records(&[aliased], PackageInfo::new("demo", None)),
+            Err(SourceFragmentError::PrimitiveFieldSlot { field, primitive })
+                if field == "meters" && primitive == "f64"
+        ));
+    }
+
+    #[test]
+    fn an_invocation_resolves_its_own_records_and_keeps_lookups_unresolved() {
+        let own = raw(
+            "demo",
+            &[r#"{"id":"demo::Route"}"#],
+            record_fragment(vec![FieldDef::new(name("next"), slot_leaf(0, "Route"))]),
+        );
+        let lookup = raw(
+            "demo",
+            &[],
+            record_fragment(vec![FieldDef::new(name("next"), slot_leaf(0, "Route"))]),
+        );
+
+        let contract = aggregate_invocation(&[own], &[lookup], PackageInfo::new("demo", None))
+            .expect("invocation aggregates");
+
+        assert_eq!(contract.records.len(), 1);
+        assert_eq!(
+            contract.records[0].fields[0].type_expr,
+            TypeExpr::record(RecordId::new("demo::Route"), Path::single("Route"))
+        );
+    }
+
+    #[test]
+    fn lookups_of_different_same_named_records_are_refused() {
+        let direct = raw(
+            "demo",
+            &[],
+            record_fragment(vec![FieldDef::new(
+                name("x"),
+                TypeExpr::Primitive(Primitive::F64),
+            )]),
+        );
+        let encoded = raw(
+            "demo",
+            &[],
+            record_fragment(vec![FieldDef::new(name("label"), TypeExpr::String)]),
+        );
+
+        assert!(matches!(
+            aggregate_invocation(&[], &[direct, encoded], PackageInfo::new("demo", None)),
+            Err(SourceFragmentError::DuplicateDeclaration { id }) if id == "demo::Route"
+        ));
+    }
+
+    #[test]
+    fn an_own_record_and_a_different_lookup_of_its_name_are_refused() {
+        let own = raw(
+            "demo",
+            &[],
+            record_fragment(vec![FieldDef::new(
+                name("x"),
+                TypeExpr::Primitive(Primitive::F64),
+            )]),
+        );
+        let lookup = raw(
+            "demo",
+            &[],
+            record_fragment(vec![FieldDef::new(name("label"), TypeExpr::String)]),
+        );
+
+        assert!(matches!(
+            aggregate_invocation(&[own], &[lookup], PackageInfo::new("demo", None)),
+            Err(SourceFragmentError::DuplicateDeclaration { id }) if id == "demo::Route"
+        ));
+    }
+
+    #[test]
+    fn a_lookup_record_keeps_its_slot_placeholders() {
+        let lookup = raw(
+            "demo",
+            &[],
+            record_fragment(vec![FieldDef::new(name("next"), slot_leaf(0, "Route"))]),
+        );
+
+        let contract = aggregate_invocation(&[], &[lookup], PackageInfo::new("demo", None))
+            .expect("lookup aggregates");
+
+        assert_eq!(
+            contract.records[0].fields[0].type_expr,
+            slot_leaf(0, "Route")
+        );
     }
 
     #[test]
@@ -1041,7 +1244,7 @@ mod tests {
     fn mints_self_ids_and_resolves_slot_references() {
         let route = raw(
             "demo",
-            &[r#"{"id":"demo::geometry::Point"}"#],
+            &[r#"{"id":"demo::Point"}"#],
             record_fragment(vec![FieldDef::new(name("start"), slot_leaf(0, "Point"))]),
         );
 
@@ -1053,15 +1256,15 @@ mod tests {
             2,
             "both records land in the contract"
         );
-        assert_eq!(
-            contract.records[0].id,
-            RecordId::new("demo::Route"),
-            "self id is minted from the record's module path"
-        );
-        let field = &contract.records[0].fields[0];
+        let route = contract
+            .records
+            .iter()
+            .find(|record| record.id == RecordId::new("demo::Route"))
+            .expect("self id is minted from the record's crate");
+        let field = &route.fields[0];
         match &field.type_expr {
             TypeExpr::Record { id, path } => {
-                assert_eq!(id, &RecordId::new("demo::geometry::Point"));
+                assert_eq!(id, &RecordId::new("demo::Point"));
                 assert_eq!(
                     path.last().expect("written path kept").name.as_str(),
                     "Point",
@@ -1076,17 +1279,22 @@ mod tests {
     fn resolves_a_container_alias_slot_to_its_structure() {
         let route = raw(
             "demo",
-            &[r#"{"shape":"Vec","args":[{"id":"demo::geometry::Point"}]}"#],
+            &[r#"{"shape":"Vec","args":[{"id":"demo::Point"}]}"#],
             record_fragment(vec![FieldDef::new(name("points"), slot_leaf(0, "Points"))]),
         );
 
         let contract = aggregate_records(&[route, point_record()], PackageInfo::new("demo", None))
             .expect("records aggregate");
 
-        match &contract.records[0].fields[0].type_expr {
+        let route = contract
+            .records
+            .iter()
+            .find(|record| record.id == RecordId::new("demo::Route"))
+            .expect("route aggregates");
+        match &route.fields[0].type_expr {
             TypeExpr::Vec(inner) => match inner.as_ref() {
                 TypeExpr::Record { id, .. } => {
-                    assert_eq!(id, &RecordId::new("demo::geometry::Point"));
+                    assert_eq!(id, &RecordId::new("demo::Point"));
                 }
                 other => panic!("vec element did not resolve: {other:?}"),
             },
@@ -1131,7 +1339,7 @@ mod tests {
         stream.owner = Some(ClassId::new(format!("{SELF_ID}::Engine")));
         let stream = raw(
             "demo::runtime",
-            &[r#"{"id":"demo::geometry::Point"}"#],
+            &[r#"{"id":"demo::Point"}"#],
             serde_json::to_vec(&SourceFragment::Stream(stream)).expect("fragment serializes"),
         );
 
@@ -1141,18 +1349,18 @@ mod tests {
         assert_eq!(contract.streams.len(), 1);
         assert_eq!(
             contract.streams[0].id,
-            StreamId::new("demo::runtime::Engine::points"),
+            StreamId::new("demo::Engine::points"),
             "stream ids mint from the invocation's module path"
         );
         assert_eq!(
             contract.streams[0].owner,
-            Some(ClassId::new("demo::runtime::Engine")),
+            Some(ClassId::new("demo::Engine")),
             "the owner placeholder mints against the same module"
         );
         assert!(
             matches!(
                 &contract.streams[0].item_type,
-                TypeExpr::Record { id, .. } if id == &RecordId::new("demo::geometry::Point")
+                TypeExpr::Record { id, .. } if id == &RecordId::new("demo::Point")
             ),
             "the item type resolves through its slot"
         );
@@ -1171,7 +1379,7 @@ mod tests {
         ))));
         let methods = raw(
             "demo",
-            &[r#"{"id":"demo::geometry::Point"}"#],
+            &[r#"{"id":"demo::Point"}"#],
             serde_json::to_vec(&SourceFragment::Methods {
                 target: slot_leaf(0, "Point"),
                 spelling: "Point".to_owned(),
@@ -1188,27 +1396,25 @@ mod tests {
         assert_eq!(contract.constants.len(), 1);
         assert_eq!(
             contract.constants[0].id,
-            ConstantId::new("demo::geometry::Point::ORIGIN"),
+            ConstantId::new("demo::Point::ORIGIN"),
             "the constant id rebases onto the resolved target"
         );
         assert_eq!(
             contract.constants[0].owner,
-            Some(ConstantOwner::Record(RecordId::new(
-                "demo::geometry::Point"
-            ))),
+            Some(ConstantOwner::Record(RecordId::new("demo::Point"))),
             "the provisional owner takes the resolved target's kind and id"
         );
         assert!(
             matches!(
                 &contract.constants[0].type_expr,
-                TypeExpr::Record { id, .. } if id == &RecordId::new("demo::geometry::Point")
+                TypeExpr::Record { id, .. } if id == &RecordId::new("demo::Point")
             ),
             "the declared type resolves through its slot"
         );
     }
 
     #[test]
-    fn mints_class_constant_owners_from_the_module_path() {
+    fn mints_class_constant_owners_from_the_crate() {
         let mut constant = ConstantDef::new(
             ConstantId::new(format!("{SELF_ID}::Counter::MAX")),
             name("MAX"),
@@ -1229,11 +1435,11 @@ mod tests {
 
         assert_eq!(
             contract.constants[0].id,
-            ConstantId::new("demo::api::Counter::MAX")
+            ConstantId::new("demo::Counter::MAX")
         );
         assert_eq!(
             contract.constants[0].owner,
-            Some(ConstantOwner::Class(ClassId::new("demo::api::Counter"))),
+            Some(ConstantOwner::Class(ClassId::new("demo::Counter"))),
             "the class owner mints against the record's module path"
         );
     }
@@ -1251,7 +1457,7 @@ mod tests {
         );
         let holder = raw(
             "demo",
-            &[r#"{"id":"demo::pools::Browser"}"#],
+            &[r#"{"id":"demo::Browser"}"#],
             record_fragment(vec![FieldDef::new(
                 name("browser"),
                 TypeExpr::interned_string(
@@ -1273,7 +1479,7 @@ mod tests {
                 ..
             } => {
                 assert_eq!(
-                    pool_id, "demo::pools::Browser",
+                    pool_id, "demo::Browser",
                     "the pool reference resolves through its slot"
                 );
                 assert_eq!(
@@ -1319,7 +1525,7 @@ mod tests {
         let error = aggregate_records(&[first, second], PackageInfo::new("demo", None))
             .expect_err("conflicting duplicates fail");
         assert!(
-            matches!(error, SourceFragmentError::DuplicateDeclaration { id } if id == "demo::geometry::Point")
+            matches!(error, SourceFragmentError::DuplicateDeclaration { id } if id == "demo::Point")
         );
     }
 
