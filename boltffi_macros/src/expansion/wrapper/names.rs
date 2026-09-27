@@ -277,8 +277,10 @@ impl Parameter {
     fn ident(&self, role: &str) -> Ident {
         let text = self.source.to_string();
         let text = text.strip_prefix("r#").unwrap_or(&text);
+        let stem = text.trim_start_matches('_');
+        let leading_underscores = &text[..text.len() - stem.len()];
         Ident::new(
-            &format!("__boltffi_{text}_{role}"),
+            &format!("{leading_underscores}__boltffi_{stem}_{role}"),
             Span::mixed_site().located_at(self.source.span()),
         )
     }

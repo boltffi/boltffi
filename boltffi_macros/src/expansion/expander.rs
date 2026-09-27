@@ -1432,7 +1432,11 @@ mod tests {
                 return;
             }
             fs::write(self.root.join("Cargo.toml"), self.manifest()).expect("write Cargo.toml");
-            fs::write(self.root.join("src/lib.rs"), code.to_string()).expect("write lib.rs");
+            let source = quote! {
+                #![deny(warnings)]
+                #code
+            };
+            fs::write(self.root.join("src/lib.rs"), source.to_string()).expect("write lib.rs");
         }
 
         fn check(&self) {

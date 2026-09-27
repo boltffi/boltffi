@@ -15,7 +15,9 @@ pub struct ArgumentList(Vec<Expression>);
 
 impl Expression {
     pub fn from_template(template: &impl askama::Template) -> crate::core::Result<Self> {
-        Ok(Self(template.render()?))
+        let mut expression = template.render()?;
+        expression.truncate(expression.trim_end().len());
+        Ok(Self(expression))
     }
 
     pub fn identifier(identifier: Identifier) -> Self {
