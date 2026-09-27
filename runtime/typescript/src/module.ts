@@ -1723,22 +1723,6 @@ export interface BoltFFIImports {
   bind?: (module: BoltFFIModule) => void;
 }
 
-function createUnimplementedImport(importName: string): (...args: unknown[]) => never {
-  return () => {
-    throw new Error(`Unimplemented wasm import: ${importName}`);
-  };
-}
-
-function createImportModuleProxy(moduleName: string): Record<string, WebAssembly.ImportValue> {
-  return new Proxy(
-    {},
-    {
-      get: (_target, propertyName) =>
-        createUnimplementedImport(`${moduleName}.${String(propertyName)}`),
-    }
-  );
-}
-
 export async function instantiateBoltFFI(
   source: BufferSource | Response | WebAssembly.Module,
   expectedVersion: number,
@@ -1755,8 +1739,6 @@ export async function instantiateBoltFFI(
       __boltffi_stream_wake: (handle: number, result: number) => streamManager.wake(handle, result),
       ...(imports?.env ?? {}),
     },
-    __wbindgen_placeholder__: createImportModuleProxy("__wbindgen_placeholder__"),
-    __wbindgen_externref_xform__: createImportModuleProxy("__wbindgen_externref_xform__"),
   };
 
   try {
@@ -1779,7 +1761,7 @@ export async function instantiateBoltFFI(
     imports?.wasmBindgen?.initialize(instance.exports);
     return module;
   } catch (error) {
-    imports?.wasmBindgen?.fail();
+    imports?.wasmBindgen?.release();
     throw error;
   }
 }
@@ -1800,8 +1782,6 @@ export function instantiateBoltFFISync(
       __boltffi_stream_wake: (handle: number, result: number) => streamManager.wake(handle, result),
       ...(imports?.env ?? {}),
     },
-    __wbindgen_placeholder__: createImportModuleProxy("__wbindgen_placeholder__"),
-    __wbindgen_externref_xform__: createImportModuleProxy("__wbindgen_externref_xform__"),
   };
 
   try {
@@ -1819,7 +1799,7 @@ export function instantiateBoltFFISync(
     imports?.wasmBindgen?.initialize(instance.exports);
     return module;
   } catch (error) {
-    imports?.wasmBindgen?.fail();
+    imports?.wasmBindgen?.release();
     throw error;
   }
 }

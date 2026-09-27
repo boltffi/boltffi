@@ -1,4 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::env::{
+    self,
+    consts::{ARCH, EXE_SUFFIX, OS},
+};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -6,8 +10,11 @@ use std::process::Command;
 use askama::Template;
 use semver::Version;
 
+use crate::cargo::Cargo;
 use crate::cli::{CliError, Result};
 use crate::config::Config;
+use crate::reporter::Reporter;
+use crate::toolchain::native_host::rustc_host_triple;
 
 use super::{Error, javascript::JavaScriptModules, module::Module};
 
@@ -24,53 +31,43 @@ struct ImportsModule<'module> {
 }
 
 impl Bindgen {
-    pub fn resolve(config: &Config, version: &Version) -> Result<Self> {
-        let executable = config
+    pub fn resolve(
+        config: &Config,
+        version: &Version,
+        cargo_args: &[String],
+        reporter: &Reporter,
+    ) -> Result<Self> {
+        if let Some(executable) = config
             .targets
             .wasm
             .wasm_bindgen_cli
             .clone()
-            .or_else(|| std::env::var_os("BOLTFFI_WASM_BINDGEN").map(PathBuf::from))
-            .or_else(|| which::which("wasm-bindgen").ok())
-            .ok_or_else(|| Error::MissingTool {
-                version: version.clone(),
-            })?;
-        let output = Command::new(&executable)
-            .arg("--version")
-            .output()
-            .map_err(|_| Error::MissingTool {
-                version: version.clone(),
-            })?;
-        let actual = String::from_utf8_lossy(&output.stdout).trim().to_owned();
-        let mut words = actual.split_whitespace();
-        let tool_name = words.next();
-        let reported_version = words
-            .next()
-            .and_then(|version| Version::parse(version).ok());
-        if !output.status.success()
-            || tool_name != Some("wasm-bindgen")
-            || reported_version.as_ref() != Some(version)
+            .or_else(|| env::var_os("BOLTFFI_WASM_BINDGEN").map(PathBuf::from))
         {
-            return Err(Error::ToolVersion {
-                path: executable,
-                expected: version.clone(),
-                actual,
-            }
-            .into());
+            return Self::open(executable, version);
         }
-        Ok(Self { executable })
+        if let Ok(executable) = which::which("wasm-bindgen")
+            && let Ok(bindgen) = Self::open(executable, version)
+        {
+            return Ok(bindgen);
+        }
+        let cache = env::var_os("BOLTFFI_CACHE_DIR")
+            .map(PathBuf::from)
+            .or_else(|| dirs::cache_dir().map(|path| path.join("boltffi")))
+            .ok_or(Error::ToolCacheDirectory)?
+            .join("wasm-bindgen")
+            .join(format!("{version}-{OS}-{ARCH}"));
+        if let Ok(bindgen) = Self::open(cache.join(format!("wasm-bindgen{EXE_SUFFIX}")), version) {
+            return Ok(bindgen);
+        }
+        let cargo = Cargo::current(cargo_args)?;
+        Self::install(&cache, version, &cargo, reporter)
     }
 
     pub fn process(&self, input: &Path, output: &Path, module_name: &str) -> Result<()> {
         let result = Command::new(&self.executable)
             .arg(input)
-            .args([
-                "--target",
-                "bundler",
-                "--no-typescript",
-                "--keep-lld-exports",
-                "--out-name",
-            ])
+            .args(["--target", "bundler", "--no-typescript", "--out-name"])
             .arg(module_name)
             .arg("--out-dir")
             .arg(output)
@@ -135,15 +132,136 @@ impl Bindgen {
     }
 }
 
+impl Bindgen {
+    fn open(executable: PathBuf, version: &Version) -> Result<Self> {
+        let output = Command::new(&executable)
+            .arg("--version")
+            .output()
+            .map_err(|source| Error::ToolUnavailable {
+                path: executable.clone(),
+                source,
+            })?;
+        let actual = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+        let mut words = actual.split_whitespace();
+        let tool_name = words.next();
+        let reported_version = words
+            .next()
+            .and_then(|version| Version::parse(version).ok());
+        if !output.status.success()
+            || tool_name != Some("wasm-bindgen")
+            || reported_version.as_ref() != Some(version)
+        {
+            return Err(Error::ToolVersion {
+                path: executable,
+                expected: version.clone(),
+                actual,
+            }
+            .into());
+        }
+        Ok(Self { executable })
+    }
+
+    fn install(
+        cache: &Path,
+        version: &Version,
+        cargo: &Cargo,
+        reporter: &Reporter,
+    ) -> Result<Self> {
+        fs::create_dir_all(cache).map_err(|source| CliError::CreateDirectoryFailed {
+            path: cache.to_owned(),
+            source,
+        })?;
+        let cache = cache
+            .canonicalize()
+            .map_err(|source| CliError::ReadFailed {
+                path: cache.to_owned(),
+                source,
+            })?;
+        let lock_path = cache.join(".install.lock");
+        let lock = fs::File::options()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(&lock_path)
+            .map_err(|source| CliError::WriteFailed {
+                path: lock_path.clone(),
+                source,
+            })?;
+        lock.lock().map_err(|source| CliError::WriteFailed {
+            path: lock_path,
+            source,
+        })?;
+        let executable = cache.join(format!("wasm-bindgen{EXE_SUFFIX}"));
+        if let Ok(bindgen) = Self::open(executable.clone(), version) {
+            return Ok(bindgen);
+        }
+        let staging =
+            tempfile::tempdir_in(&cache).map_err(|source| CliError::CreateDirectoryFailed {
+                path: cache.to_owned(),
+                source,
+            })?;
+        let step = reporter.step(&format!(
+            "Building wasm-bindgen {version} with Cargo, cached for later packs"
+        ));
+        let host = rustc_host_triple(cargo.toolchain_selector())?;
+        let output = Command::new("cargo")
+            .args(cargo.toolchain_selector())
+            .args(["install", "wasm-bindgen-cli", "--version"])
+            .arg(format!("={version}"))
+            .args([
+                "--locked",
+                "--bin",
+                "wasm-bindgen",
+                "--target",
+                &host,
+                "--config",
+                if cargo.offline() {
+                    "net.offline=true"
+                } else {
+                    "net.offline=false"
+                },
+                "--root",
+            ])
+            .arg(staging.path())
+            .env("CARGO_TARGET_DIR", staging.path().join("target"))
+            .output()
+            .map_err(|source| Error::ToolBuild {
+                version: version.clone(),
+                reason: source.to_string(),
+            })?;
+        if !output.status.success() {
+            return Err(Error::ToolBuild {
+                version: version.clone(),
+                reason: String::from_utf8_lossy(&output.stderr).into_owned(),
+            }
+            .into());
+        }
+        let bindgen = Self::open(
+            staging
+                .path()
+                .join("bin")
+                .join(format!("wasm-bindgen{EXE_SUFFIX}")),
+            version,
+        )?;
+        fs::rename(&bindgen.executable, &executable).map_err(|source| CliError::WriteFailed {
+            path: executable.clone(),
+            source,
+        })?;
+        step.finish_success_with(&format!("wasm-bindgen {version} cached"));
+        Ok(Self { executable })
+    }
+}
+
 #[cfg(all(test, unix))]
 mod tests {
+    use semver::Version;
     use std::fs;
     use std::os::unix::fs::PermissionsExt;
 
-    use semver::Version;
-
     use super::Bindgen;
     use crate::config::Config;
+    use crate::reporter::{Reporter, Verbosity};
 
     #[test]
     fn matching_cli_versions_allow_git_build_annotations() {
@@ -169,7 +287,12 @@ mod tests {
             )
             .unwrap();
             fs::set_permissions(&executable, fs::Permissions::from_mode(0o755)).unwrap();
-            let result = Bindgen::resolve(&config, &Version::new(0, 2, 129));
+            let result = Bindgen::resolve(
+                &config,
+                &Version::new(0, 2, 129),
+                &[],
+                &Reporter::new(Verbosity::Quiet),
+            );
             assert_eq!(result.is_ok(), accepted, "{version} with exit {exit_code}");
         });
     }

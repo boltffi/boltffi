@@ -29,7 +29,7 @@ export class WasmBindgenModule {
     this.state = "ready";
   }
 
-  fail(): void {
-    this.state = "failed";
+  release(): void {
+    if (this.state === "loading") this.state = "idle";
   }
 }

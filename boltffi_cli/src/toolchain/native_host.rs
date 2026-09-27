@@ -604,7 +604,7 @@ fn current_host_windows_build_target(
     validate_windows_rust_target_triple(&target_triple, target).ok()
 }
 
-fn rustc_host_triple(toolchain_selector: Option<&str>) -> Result<String> {
+pub fn rustc_host_triple(toolchain_selector: Option<&str>) -> Result<String> {
     let mut command = Command::new("rustc");
     if let Some(toolchain_selector) = toolchain_selector {
         command.arg(toolchain_selector);

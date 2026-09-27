@@ -115,8 +115,8 @@ pub(crate) fn pack_wasm(
     let packaged_wasm_path = staging.join(format!("{module_name}_bg.wasm"));
     if let Some(version) = &original.bindgen_version {
         original.validate_bindgen()?;
+        let bindgen = Bindgen::resolve(config, version, &build_cargo_args, reporter)?;
         let step = reporter.step("Processing wasm-bindgen imports");
-        let bindgen = Bindgen::resolve(config, version)?;
         bindgen.process(&wasm_artifact_path, &staging, &module_name)?;
         step.finish_success();
     } else {
@@ -200,7 +200,7 @@ pub(crate) fn pack_wasm(
 
     if config.wasm_npm_generate_package_json() {
         let step = reporter.step("Generating package.json");
-        generate_wasm_package_json(config, &module_name, &enabled_targets, &staging)?;
+        generate_wasm_package_json(config, &module_name, &enabled_targets, &package)?;
         step.finish_success_with(&format!("{}", npm_output.join("package.json").display()));
     } else if npm_output.join("package.json").is_file() {
         package.copy(&npm_output.join("package.json"), "package.json")?;
@@ -482,6 +482,8 @@ fn optimize_wasm_binary(
 }
 
 fn transpile_typescript_bundle(config: &Config, output_dir: &Path) -> Result<()> {
+    #[cfg(windows)]
+    let output_dir = dunce::simplified(output_dir);
     let module_name = config.wasm_typescript_module_name();
     let browser_source = output_dir.join(format!("{module_name}.ts"));
     let node_source = output_dir.join(format!("{module_name}_node.ts"));
@@ -491,6 +493,29 @@ fn transpile_typescript_bundle(config: &Config, output_dir: &Path) -> Result<()>
     if config.wasm_npm_targets().contains(&WasmNpmTarget::Nodejs) && !node_source.is_file() {
         return Err(CliError::FileNotFound(node_source));
     }
+    let project = tempfile::Builder::new()
+        .prefix(".tsconfig-")
+        .suffix(".json")
+        .tempfile_in(output_dir)
+        .map_err(|source| CliError::WriteFailed {
+            path: output_dir.to_owned(),
+            source,
+        })?;
+    let sources = std::iter::once(format!("{module_name}.ts"))
+        .chain(
+            node_source
+                .is_file()
+                .then(|| format!("{module_name}_node.ts")),
+        )
+        .collect::<Vec<_>>();
+    fs::write(
+        project.path(),
+        serde_json::json!({ "files": sources }).to_string(),
+    )
+    .map_err(|source| CliError::WriteFailed {
+        path: project.path().to_owned(),
+        source,
+    })?;
     let compiled = tempfile::Builder::new()
         .prefix(".typescript-")
         .tempdir_in(output_dir)
@@ -506,8 +531,9 @@ fn transpile_typescript_bundle(config: &Config, output_dir: &Path) -> Result<()>
         Command::new("tsc")
     };
     command
-        .arg(browser_source)
-        .args(node_source.is_file().then_some(&node_source))
+        .current_dir(output_dir)
+        .arg("--project")
+        .arg(project.path())
         .arg("--target")
         .arg("ES2020")
         .arg("--lib")
@@ -527,6 +553,9 @@ fn transpile_typescript_bundle(config: &Config, output_dir: &Path) -> Result<()>
         .arg("true")
         .arg("--outDir")
         .arg(compiled.path());
+    if node_source.is_file() {
+        command.args(["--types", "node"]);
+    }
     if config.wasm_source_map_enabled() {
         command.args(["--sourceMap", "--inlineSources", "--sourceRoot", "./"]);
     }

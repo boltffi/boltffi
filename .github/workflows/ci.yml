@@ -206,6 +206,8 @@ jobs:
       matrix:
         os: [macos-latest, ubuntu-latest, windows-latest]
         python-version: ['3.11', '3.12', '3.13']
+    env:
+      BOLTFFI_CACHE_DIR: ${{ github.workspace }}/.cache/boltffi
     steps:
       - uses: actions/checkout@v7
       - uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -228,12 +230,12 @@ jobs:
       - if: matrix.python-version == '3.13'
         run: npm install -g typescript
       - if: matrix.python-version == '3.13'
-        shell: python
-        run: |
-          import json, subprocess
-          metadata = json.loads(subprocess.check_output(["cargo", "metadata", "--format-version=1", "--manifest-path", "examples/demo/Cargo.toml", "--features", "wasm-interop"]))
-          version = next(package["version"] for package in metadata["packages"] if package["name"] == "wasm-bindgen")
-          subprocess.run(["cargo", "install", "wasm-bindgen-cli", "--version", "=" + version, "--locked"], check=True)
+        run: cargo generate-lockfile --manifest-path examples/demo/Cargo.toml
+      - if: matrix.python-version == '3.13'
+        uses: actions/cache@v6
+        with:
+          path: .cache/boltffi
+          key: wasm-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('examples/demo/Cargo.lock') }}
       - if: matrix.python-version == '3.13'
         uses: Aandreba/setup-binaryen@v1.0.0
         with:
@@ -270,6 +272,7 @@ jobs:
             futures: '0.4.79'
     env:
       RUSTUP_TOOLCHAIN: ${{ matrix.rust }}
+      BOLTFFI_CACHE_DIR: ${{ github.workspace }}/.cache/boltffi
     steps:
       - uses: actions/checkout@v7
       - uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -280,6 +283,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: wasm-bindgen-${{ matrix.bindgen }}-${{ matrix.rust }}
+      - uses: actions/cache@v6
+        with:
+          path: .cache/boltffi
+          key: wasm-tools-${{ runner.os }}-${{ runner.arch }}-${{ matrix.bindgen }}
       - uses: actions/setup-node@v7
         with:
           node-version: '24'
@@ -288,13 +295,13 @@ jobs:
           token: ${{ github.token }}
       - run: npm install -g typescript
       - run: cargo update --manifest-path examples/demo/Cargo.toml -p wasm-bindgen-futures --precise ${{ matrix.futures }}
-      - run: cargo install wasm-bindgen-cli --version '=${{ matrix.bindgen }}' --locked
       - run: ./examples/demo/verify-platform-demos.sh --platform wasm
       - run: npm test
         working-directory: runtime/typescript
       - run: npm run build:ts && npm test
         working-directory: examples/platforms/wasm
       - run: cargo test -p boltffi_cli --test wasm_pack -- --ignored
+      - run: cargo test -p boltffi_cli --test wasm_bindgen_cli
       - run: npx playwright install --with-deps chromium firefox webkit
         working-directory: examples/platforms/wasm
       - run: npm run test:browser

@@ -5,6 +5,7 @@ import { BoltFFIModule, WASM_ABI_VERSION, instantiateBoltFFI, instantiateBoltFFI
 import { WasmBindgenModule } from "../src/wasm-bindgen.js";
 
 let binary: Uint8Array<ArrayBuffer>;
+let unprocessed: Uint8Array<ArrayBuffer>;
 
 beforeAll(async () => {
   const compiler = await wabt();
@@ -22,6 +23,11 @@ beforeAll(async () => {
       call $read call $callback))`);
   binary = new Uint8Array(module.toBinary({}).buffer);
   module.destroy();
+  const raw = compiler.parseWat("unprocessed.wat", `(module
+    (import "__wbindgen_placeholder__" "__wbg_getRandomValues_fixture" (func))
+    (import "__wbindgen_externref_xform__" "__wbindgen_externref_table_grow" (func)))`);
+  unprocessed = new Uint8Array(raw.toBinary({}).buffer);
+  raw.destroy();
 });
 
 describe.each(["sync", "async"] as const)("%s wasm-bindgen initialization", (mode) => {
@@ -52,16 +58,38 @@ describe.each(["sync", "async"] as const)("%s wasm-bindgen initialization", (mod
     expect(observations).toEqual([73]);
   });
 
-  it("checks the ABI before attaching glue or running startup", async () => {
+  it("allows a corrected artifact after rejecting its ABI before attachment", async () => {
     const events: string[] = [];
     const wasmBindgen = new WasmBindgenModule({ "./fixture_bg.js": { read: () => 0 } }, () => { events.push("attach"); });
     const imports = { wasmBindgen, env: { callback: () => events.push("startup") } };
-    const initialize = async () => mode === "sync"
-      ? instantiateBoltFFISync(binary, WASM_ABI_VERSION + 1, imports)
-      : instantiateBoltFFI(binary, WASM_ABI_VERSION + 1, imports);
-    await expect(initialize()).rejects.toThrow("ABI version mismatch");
+    const initialize = async (version: number) => mode === "sync"
+      ? instantiateBoltFFISync(binary, version, imports)
+      : instantiateBoltFFI(binary, version, imports);
+    await expect(initialize(WASM_ABI_VERSION + 1)).rejects.toThrow("ABI version mismatch");
     expect(events).toEqual([]);
-    await expect(initialize()).rejects.toThrow("state failed");
+    const module = await initialize(WASM_ABI_VERSION);
+    expect(events).toEqual(["attach", "startup"]);
+    expect((module.exports.starts as CallableFunction)()).toBe(1);
+  });
+
+  it("rejects unprocessed imports during instantiation", async () => {
+    const initialize = async () => mode === "sync"
+      ? instantiateBoltFFISync(unprocessed, WASM_ABI_VERSION)
+      : instantiateBoltFFI(unprocessed, WASM_ABI_VERSION);
+    await expect(initialize()).rejects.toThrow("__wbindgen_placeholder__");
+  });
+
+  it("allows missing imports to be supplied after a failed instantiation", async () => {
+    let attachments = 0;
+    const wasmBindgen = new WasmBindgenModule({ "./fixture_bg.js": { read: () => 0 } }, () => { attachments++; });
+    const initialize = async (env: Record<string, WebAssembly.ImportValue>) => mode === "sync"
+      ? instantiateBoltFFISync(binary, WASM_ABI_VERSION, { wasmBindgen, env })
+      : instantiateBoltFFI(binary, WASM_ABI_VERSION, { wasmBindgen, env });
+    await expect(initialize({})).rejects.toThrow("callback");
+    expect(attachments).toBe(0);
+    const module = await initialize({ callback: () => {} });
+    expect(attachments).toBe(1);
+    expect((module.exports.starts as CallableFunction)()).toBe(1);
   });
 
   it("does not reuse glue after a dependency fails during startup", async () => {
@@ -73,6 +101,19 @@ describe.each(["sync", "async"] as const)("%s wasm-bindgen initialization", (mod
     await expect(initialize()).rejects.toThrow("startup failed");
     await expect(initialize()).rejects.toThrow("state failed");
   });
+});
+
+it("allows another response after reading the first response fails", async () => {
+  let attachments = 0;
+  const wasmBindgen = new WasmBindgenModule({ "./fixture_bg.js": { read: () => 0 } }, () => { attachments++; });
+  const imports = { wasmBindgen, env: { callback: () => {} } };
+  const consumed = new Response(binary);
+  await consumed.arrayBuffer();
+  await expect(instantiateBoltFFI(consumed, WASM_ABI_VERSION, imports)).rejects.toThrow();
+  expect(attachments).toBe(0);
+  const module = await instantiateBoltFFI(new Response(binary), WASM_ABI_VERSION, imports);
+  expect(attachments).toBe(1);
+  expect((module.exports.starts as CallableFunction)()).toBe(1);
 });
 
 it("reserves glue before asynchronous instantiation can race with another loader", async () => {

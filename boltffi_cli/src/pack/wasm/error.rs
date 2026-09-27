@@ -13,9 +13,21 @@ pub enum Error {
     )]
     MissingMetadata { module: String, name: String },
     #[error(
-        "wasm-bindgen {version} is required; set targets.wasm.wasm_bindgen_cli or BOLTFFI_WASM_BINDGEN to its executable, or install it with `cargo install wasm-bindgen-cli --version ={version} --locked`"
+        "could not build wasm-bindgen {version}: {reason}\nInstall it with `cargo install wasm-bindgen-cli --version ={version} --locked`, or set targets.wasm.wasm_bindgen_cli or BOLTFFI_WASM_BINDGEN to a matching executable"
     )]
-    MissingTool { version: semver::Version },
+    ToolBuild {
+        version: semver::Version,
+        reason: String,
+    },
+    #[error(
+        "could not locate the wasm-bindgen cache directory. Set BOLTFFI_CACHE_DIR or BOLTFFI_WASM_BINDGEN"
+    )]
+    ToolCacheDirectory,
+    #[error("could not run wasm-bindgen at {path}: {source}")]
+    ToolUnavailable {
+        path: PathBuf,
+        source: std::io::Error,
+    },
     #[error(
         "wasm-bindgen at {path} reports {actual}; the Wasm artifact requires {expected}; install the matching CLI or set BOLTFFI_WASM_BINDGEN"
     )]

@@ -7,7 +7,7 @@ use serde::Serialize;
 use crate::cli::{CliError, Result};
 use crate::config::{Config, WasmNpmTarget};
 
-use super::Error;
+use super::{Error, package::Package};
 
 #[derive(Template)]
 #[template(path = "wasm/loader.js", escape = "none")]
@@ -45,7 +45,7 @@ pub(crate) fn generate_wasm_package_json(
     config: &Config,
     module_name: &str,
     enabled_targets: &[WasmNpmTarget],
-    output_dir: &Path,
+    package: &Package,
 ) -> Result<PathBuf> {
     let package_name = config
         .wasm_npm_package_name()
@@ -86,23 +86,12 @@ pub(crate) fn generate_wasm_package_json(
             },
         },
         types: format!("./{}.d.ts", module_name),
-        files: vec![
-            format!("{}.js", module_name),
-            format!("{}.d.ts", module_name),
-            format!("{}.js.map", module_name),
-            format!("{}_bg.wasm", module_name),
-            format!("{}_bg.js", module_name),
-            format!("{}_imports.js", module_name),
-            format!("{}_imports.d.ts", module_name),
-            format!("{}_imports.js.map", module_name),
-            format!("{}_node.js", module_name),
-            format!("{}_node.d.ts", module_name),
-            format!("{}_node.js.map", module_name),
-            "snippets/".to_string(),
-            "bundler.js".to_string(),
-            "web.js".to_string(),
-            "node.js".to_string(),
-        ],
+        files: package
+            .files()?
+            .iter()
+            .map(|path| path.to_string_lossy().replace('\\', "/"))
+            .filter(|path| !path.ends_with(".ts") || path.ends_with(".d.ts"))
+            .collect(),
         dependencies,
         license: config.wasm_npm_license(),
         repository: config.wasm_npm_repository(),
@@ -113,7 +102,7 @@ pub(crate) fn generate_wasm_package_json(
             command: format!("failed to serialize package.json: {}", source),
             status: None,
         })?;
-    let package_json_path = output_dir.join("package.json");
+    let package_json_path = package.path().join("package.json");
     std::fs::write(&package_json_path, rendered).map_err(|source| CliError::WriteFailed {
         path: package_json_path.clone(),
         source,
