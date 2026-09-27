@@ -487,10 +487,11 @@ fn render(
     };
     let mut contract = aggregate_invocation(&records(false), &records(true), package.clone())
         .map_err(|error| error.to_string())?;
+    let customs = reach_through_reprs(&contract.customs, customs);
     contract
         .customs
         .iter_mut()
-        .for_each(|custom| convert_through_site_path(custom, customs));
+        .for_each(|custom| convert_through_site_path(custom, &customs));
     let native = render_surface::<Native>(kind, &contract, selected, shallow)?;
     let wasm32 = render_surface::<Wasm32>(kind, &contract, selected, shallow)?;
     let Some(module) = item.and_then(|item| invocation_module(kind, item)) else {
@@ -695,6 +696,33 @@ impl<'lowered> SurfaceRender<'lowered, Wasm32> for Expander<'lowered> {
     }
 }
 
+/// Names a custom this site reaches only as another custom's representation through
+/// that custom's associated representation type.
+fn reach_through_reprs(
+    defs: &[boltffi_ast::CustomTypeDef],
+    customs: &std::collections::HashMap<String, String>,
+) -> std::collections::HashMap<String, String> {
+    let mut reached = customs.clone();
+    while let Some((id, path)) = defs.iter().find_map(|custom| {
+        let outer = reached.get(custom.id.as_str())?;
+        let boltffi_ast::TypeExpr::Custom { id, .. } = &custom.repr else {
+            return None;
+        };
+        let projection = match custom.converters.into_ffi {
+            boltffi_ast::CustomTypeConverter::TraitMethod(_) => {
+                format!("<{outer} as ::boltffi::CustomFfiConvertible>::FfiRepr")
+            }
+            _ => {
+                format!("<{outer} as ::boltffi::__private::CustomType<crate::__BoltffiTag>>::Repr")
+            }
+        };
+        (!reached.contains_key(id.as_str())).then(|| (id.as_str().to_owned(), projection))
+    }) {
+        reached.insert(id, path);
+    }
+    reached
+}
+
 /// Custom conversions called through the path this site wrote for the custom type, so
 /// they resolve here no matter which module declared them.
 fn convert_through_site_path(
@@ -769,14 +797,12 @@ fn lane_definition(
         entries,
     };
     let literal = raw_literal(&serde_json::to_string(&lane).map_err(|error| error.to_string())?)?;
+    let bare = name.to_string().trim_start_matches("r#").to_owned();
     let macro_name = format_ident!(
-        "__boltffi_lane_{krate}_{name}_{}",
+        "__boltffi_lane_{krate}_{bare}_{}",
         LANES.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     );
-    let declared = format_ident!(
-        "__boltffi_declared_{}",
-        name.to_string().trim_start_matches("r#")
-    );
+    let declared = format_ident!("__boltffi_declared_{bare}");
     Ok(quote! {
         #[doc(hidden)]
         #[allow(non_local_definitions)]

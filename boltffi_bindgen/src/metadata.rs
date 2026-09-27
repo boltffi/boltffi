@@ -1232,7 +1232,27 @@ pub mod clock {
         into_ffi = |value: &std::num::NonZeroU32| value.get(),
         try_from_ffi = |value: u32| std::num::NonZeroU32::new(value).ok_or(boltffi::CustomTypeConversionError),
     );
+
+    pub struct Span(pub i64);
+
+    boltffi::custom_type!(
+        pub Span,
+        remote = Span,
+        repr = Stamp,
+        into_ffi = |span: &Span| Stamp(span.0),
+        try_from_ffi = |stamp: Stamp| Ok::<_, boltffi::CustomTypeConversionError>(Span(stamp.0)),
+    );
+
+    #[boltffi::export]
+    pub fn span_value(span: Span) -> i64 { span.0 }
 }
+
+#[boltffi::data]
+#[derive(Clone, Copy)]
+pub struct r#type { pub id: u32 }
+
+#[boltffi::export]
+pub fn type_id(value: r#type) -> u32 { value.id }
 
 #[boltffi::export]
 pub fn stamp_value(stamp: clock::Stamp) -> i64 { stamp.0 }
@@ -1287,6 +1307,8 @@ pub fn local_types() -> u32 {
                     "positiveValue",
                     "boltffi_function_metadata_fixture_positive_value",
                 ),
+                ("spanValue", "boltffi_function_metadata_fixture_span_value"),
+                ("typeId", "boltffi_function_metadata_fixture_type_id"),
             ],
             &[],
         );
@@ -1338,6 +1360,8 @@ impl Engine {
     pub fn describe(&self) -> String { String::new() }
     #[cfg_attr(all(), cfg_attr(not(feature = "extra"), cfg(any())))]
     pub fn nested_boost(&self) -> u32 { 1 }
+    #[cfg(any())]
+    pub fn gated(&self, #[cfg(feature = "extra")] level: u32) -> u32 { level }
 }
 
 #[boltffi::export]

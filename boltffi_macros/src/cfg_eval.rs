@@ -141,13 +141,6 @@ pub(crate) fn defer(
     syn::visit_mut::VisitMut::visit_item_mut(&mut flat, &mut item);
     let raw = if flat.0 { item.to_token_stream() } else { raw };
     let item = &item;
-    if let Some(attribute) = conditional_parameter(item) {
-        return syn::Error::new_spanned(
-            attribute,
-            "BoltFFI does not support `#[cfg]` on parameters; gate the whole function instead",
-        )
-        .to_compile_error();
-    }
     let facade = crate::capture::facade();
     let keyword = format_ident!("{}", kind.keyword());
     let name = format_ident!(
@@ -223,6 +216,12 @@ pub(crate) fn evaluate(input: syn::DeriveInput) -> syn::Result<Evaluated> {
     let mut item = syn::parse2::<Item>(raw)?;
     strip_item_level(&mut item);
     retain_members(&mut item, &active);
+    if let Some(attribute) = conditional_parameter(&item) {
+        return Err(syn::Error::new_spanned(
+            attribute,
+            "BoltFFI does not support `#[cfg]` on parameters; gate the whole function instead",
+        ));
+    }
     Ok(Evaluated {
         kind,
         attribute,
