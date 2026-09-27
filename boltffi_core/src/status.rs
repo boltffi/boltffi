@@ -75,7 +75,7 @@ pub fn set_last_error_len(parameter: &str, problem: &str, buf_len: usize) {
     set_last_error(format!("{parameter}: {problem} (buf_len={buf_len})"));
 }
 
-/// Records a parameter-decoding failure whose cause implements [`Display`].
+/// Records a parameter-decoding failure whose cause implements [`core::fmt::Display`].
 #[cold]
 #[inline(never)]
 pub fn set_last_error_display(
