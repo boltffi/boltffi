@@ -26,7 +26,7 @@ final class {{ callback.proxy_name() }} implements {{ callback.name() }} {
     vtable.free.asFunction<void Function(int)>()(handle.handle);
   });
 
-  _$$BoltCallbackHandle _handle;
+  final _$$BoltCallbackHandle _handle;
   final {{ callback.native_vtable().name() }} _vtable;
 
   {{ callback.proxy_name() }}(this._handle)

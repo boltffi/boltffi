@@ -727,10 +727,7 @@ mod tests {
         assert!(source.contains("int? maybe(int? value)"));
         assert!(source.contains("List<Point> points(List<Point> values)"));
         assert!(source.contains("$$typed_data.Int64List offsets($$typed_data.Int64List values)"));
-        assert!(
-            source
-                .contains("ptr.cast<$$ffi.IntPtr>() + _l$index).value = values[_l$index]")
-        );
+        assert!(source.contains("ptr.cast<$$ffi.IntPtr>() + _l$index).value = values[_l$index]"));
         assert!(source.contains("List<int>.generate"));
         assert!(!source.contains("cast<$$ffi.IntPtr>().asTypedList"));
         assert!(source.contains("_m$writeStruct"));

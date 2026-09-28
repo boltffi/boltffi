@@ -151,7 +151,9 @@ impl CodecSize for Sizer<'_, '_> {
         // Constant inner sizes never read the binder, so skip the unwrap
         // local entirely; null-checked values are promoted without `!`.
         let source = if inner.contains(&binder) {
-            format!("1 + ({value} == null ? 0 : (() {{ final {binder} = {value}; return {inner}; }})())")
+            format!(
+                "1 + ({value} == null ? 0 : (() {{ final {binder} = {value}; return {inner}; }})())"
+            )
         } else {
             format!("1 + ({value} == null ? 0 : {inner})")
         };

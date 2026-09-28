@@ -336,6 +336,9 @@ impl Field {
         self.default.as_ref().map_or_else(
             || format!("required this.{}", self.name),
             |default| match default {
+                DefaultExpression::Constant(default) if default.to_string() == "null" => {
+                    format!("this.{}", self.name)
+                }
                 DefaultExpression::Constant(default) => {
                     format!("this.{} = {default}", self.name)
                 }
