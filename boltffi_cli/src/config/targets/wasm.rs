@@ -16,6 +16,7 @@ pub struct WasmConfig {
     #[serde(default = "default_wasm_output")]
     pub output: PathBuf,
     pub artifact_path: Option<PathBuf>,
+    pub wasm_bindgen_cli: Option<PathBuf>,
     #[serde(default)]
     pub optimize: WasmOptimizeConfig,
     #[serde(default)]
@@ -32,6 +33,7 @@ impl Default for WasmConfig {
             profile: WasmProfile::Release,
             output: default_wasm_output(),
             artifact_path: None,
+            wasm_bindgen_cli: None,
             optimize: WasmOptimizeConfig::default(),
             typescript: WasmTypeScriptConfig::default(),
             npm: WasmNpmConfig::default(),

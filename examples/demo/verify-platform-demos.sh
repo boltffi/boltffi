@@ -179,7 +179,8 @@ for selected_platform in "${selected_platforms[@]}"; do
             run_step "csharp demo" "$csharp_dir/test-demo.sh"
             ;;
         wasm)
-            run_step "pack wasm" run_boltffi pack wasm
+            run_step "prepare wasm demo" "$wasm_dir/test-demo.sh" --prepare
+            run_step "pack wasm" run_boltffi --cargo-arg=--features --cargo-arg=wasm-interop pack wasm
             run_step "wasm demo" "$wasm_dir/test-demo.sh"
             ;;
         python)

@@ -59,4 +59,8 @@ fi
 install_node_dependencies "$runtime_directory"
 run_package_script "$runtime_directory" build
 install_node_dependencies "$script_dir"
+if [[ "${1:-}" == "--prepare" ]]; then
+    exit 0
+fi
 run_package_script "$script_dir" test
+run_package_script "$script_dir" test:package

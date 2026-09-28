@@ -499,11 +499,11 @@ pub(crate) fn compile_jni_library_with_layout(
         ));
         print_verbose_detail(&format!(
             "JNI native link search paths: {:?}",
-            &build_artifacts.native_link_search_paths
+            build_artifacts.native_link_search_paths
         ));
         print_verbose_detail(&format!(
             "JNI native static libs: {:?}",
-            &build_artifacts.native_static_libraries
+            build_artifacts.native_static_libraries
         ));
         print_verbose_detail(&format!(
             "JNI linker command: {}",

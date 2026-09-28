@@ -9,6 +9,7 @@ c-demo = []
 csharp-demo = []
 uniffi = ["dep:uniffi"]
 wasm-bench = ["dep:serde", "dep:serde-wasm-bindgen", "dep:wasm-bindgen", "dep:wasm-bindgen-futures"]
+wasm-interop = ["dep:wasm-bindgen", "dep:wasm-bindgen-futures", "dep:js-sys", "dep:futures-channel", "uuid/v4", "uuid/v7", "uuid/js", "chrono/clock", "chrono/wasmbind"]
 
 [lib]
 crate-type = ["staticlib", "cdylib", "rlib"]
@@ -33,6 +34,8 @@ uuid = "1"
 url = "2"
 wasm-bindgen = { version = "0.2.108", optional = true }
 wasm-bindgen-futures = { version = "0.4.48", optional = true }
+js-sys = { version = "0.3", optional = true }
+futures-channel = { version = "0.3", optional = true }
 
 [profile.release]
 debug = 1

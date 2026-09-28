@@ -195,6 +195,10 @@ impl CargoArguments {
         config::configured_build_target(&self.raw_arguments, Some(working_directory))
     }
 
+    pub fn offline(&self, working_directory: &Path) -> bool {
+        config::offline(&self.raw_arguments, working_directory)
+    }
+
     pub(super) fn has_explicit_manifest_path(&self) -> bool {
         self.command_arguments.iter().any(|argument| {
             argument == "--manifest-path" || argument.starts_with("--manifest-path=")

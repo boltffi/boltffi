@@ -46,6 +46,7 @@ const suiteModules = [
   "./tests/results/error_enums.test.mjs",
   "./tests/results/error_structs.test.mjs",
   "./tests/results/nested_results.test.mjs",
+  "./tests/wasm_interop.test.mjs",
 ];
 
 const entrypointPath = fileURLToPath(import.meta.url);
@@ -62,18 +63,24 @@ if (requestedSuiteModule) {
     }
     throw error;
   }
-  process.exit(0);
-}
+} else {
+  const allPassed = suiteModules.every((suiteModule) => {
+    console.log(`Running ${suiteModule}`);
+    const suiteStatus = spawnSync(process.execPath, [entrypointPath, suiteModule], {
+      cwd: process.cwd(),
+      stdio: "inherit",
+      timeout: 60_000,
+      killSignal: "SIGKILL",
+    });
 
-for (const suiteModule of suiteModules) {
-  const suiteStatus = spawnSync(process.execPath, [entrypointPath, suiteModule], {
-    cwd: process.cwd(),
-    stdio: "inherit",
+    if (suiteStatus.status === 0) return true;
+
+    console.error(`Failed ${suiteModule}`, suiteStatus.error ?? suiteStatus.signal ?? suiteStatus.status);
+    process.exitCode = suiteStatus.status ?? 1;
+    return false;
   });
 
-  if (suiteStatus.status !== 0) {
-    process.exit(suiteStatus.status ?? 1);
+  if (allPassed) {
+    console.log("\nAll wasm tests passed!");
   }
 }
-
-console.log("\nAll wasm tests passed!");

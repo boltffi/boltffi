@@ -1,5 +1,36 @@
 use std::path::{Component, Path, PathBuf};
 
+pub fn offline(cargo_args: &[String], working_directory: &Path) -> bool {
+    cargo_args
+        .iter()
+        .any(|argument| matches!(argument.as_str(), "--offline" | "--frozen"))
+        || extract_cargo_config_args(cargo_args)
+            .into_iter()
+            .rev()
+            .find_map(|argument| {
+                parse_inline_config_value(&argument, &["net", "offline"])
+                    .or_else(|| {
+                        let path = resolve_cargo_config_path(&argument, Some(working_directory));
+                        let contents = std::fs::read_to_string(path).ok()?;
+                        let configuration: toml::Value = toml::from_str(&contents).ok()?;
+                        configuration.get("net")?.get("offline").cloned()
+                    })
+                    .and_then(|value| value.as_bool())
+            })
+            .or_else(|| std::env::var("CARGO_NET_OFFLINE").ok()?.parse().ok())
+            .or_else(|| {
+                cargo_config_file_candidates(&[], Some(working_directory))
+                    .into_iter()
+                    .filter(|path| path.extension().is_none() || !path.with_extension("").is_file())
+                    .find_map(|path| {
+                        let contents = std::fs::read_to_string(path).ok()?;
+                        let configuration: toml::Value = toml::from_str(&contents).ok()?;
+                        configuration.get("net")?.get("offline")?.as_bool()
+                    })
+            })
+            .unwrap_or(false)
+}
+
 pub(crate) fn configured_build_target(
     cargo_args: &[String],
     working_directory: Option<&Path>,
@@ -364,10 +395,33 @@ mod tests {
 
     use super::{
         cargo_config_file_candidates_with_inputs, cargo_config_search_roots,
-        configured_build_target, extract_cargo_config_args, parse_build_target_from_config_file,
-        parse_build_target_from_inline_config, parse_profile_debug_from_config_file,
-        parse_profile_debug_from_inline_config,
+        configured_build_target, extract_cargo_config_args, offline,
+        parse_build_target_from_config_file, parse_build_target_from_inline_config,
+        parse_profile_debug_from_config_file, parse_profile_debug_from_inline_config,
     };
+
+    #[test]
+    fn offline_configuration_starts_in_the_working_directory() {
+        let directory = tempfile::tempdir().unwrap();
+        let selected_crate = directory.path().join("member");
+        fs::create_dir_all(selected_crate.join(".cargo")).unwrap();
+        fs::create_dir(directory.path().join(".cargo")).unwrap();
+        fs::write(
+            directory.path().join(".cargo/config.toml"),
+            "[net]\noffline = true\n",
+        )
+        .unwrap();
+        fs::write(
+            selected_crate.join(".cargo/config.toml"),
+            "[net]\noffline = false\n",
+        )
+        .unwrap();
+        let arguments = vec![
+            "--manifest-path".to_owned(),
+            selected_crate.join("Cargo.toml").display().to_string(),
+        ];
+        assert!(offline(&arguments, directory.path()));
+    }
 
     #[test]
     fn extracts_cargo_config_args_from_split_and_inline_flags() {

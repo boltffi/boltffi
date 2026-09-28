@@ -8246,6 +8246,7 @@ mod tests {
                             __boltffi_callback_closure____closure__u32_to_u32_free
                         )
                     });
+                    #[link(wasm_import_module = "env")]
                     unsafe extern "C" {
                         fn __boltffi_callback_closure____closure__u32_to_u32_call(
                             handle: u32,

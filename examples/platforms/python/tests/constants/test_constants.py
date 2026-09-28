@@ -4,6 +4,10 @@ import demo
 
 
 class ConstantsTests(DemoTestCase):
+    def test_single_element_tuple(self) -> None:
+        self.demo_case("case:constants.tuples.should_expose_single_element_value")
+        self.assertEqual(demo.demo_single, (17,))
+
     def test_associated_constants_stay_on_their_owner_types(self) -> None:
         self.demo_case(
             "case:constants.associated.should_expose_values_on_exported_types"

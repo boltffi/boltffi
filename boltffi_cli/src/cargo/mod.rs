@@ -69,6 +69,10 @@ impl Cargo {
             .configured_build_target(&self.working_directory)
     }
 
+    pub fn offline(&self) -> bool {
+        self.arguments.offline(&self.working_directory)
+    }
+
     pub(crate) fn effective_package_selector(
         &self,
         config: &Config,

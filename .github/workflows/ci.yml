@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: actions-rust-lang/setup-rust-toolchain@v2
         with:
           # caching handled by Swatinem/rust-cache in other jobs
           cache: false
@@ -26,7 +26,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: actions-rust-lang/setup-rust-toolchain@v2
         with:
           # caching handled by Swatinem/rust-cache below
           cache: false
@@ -46,7 +46,7 @@ jobs:
         os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v7
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: actions-rust-lang/setup-rust-toolchain@v2
         with:
           # caching handled by Swatinem/rust-cache below
           cache: false
@@ -63,7 +63,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: actions-rust-lang/setup-rust-toolchain@v2
         with:
           # caching handled by Swatinem/rust-cache below
           cache: false
@@ -98,7 +98,7 @@ jobs:
             target: aarch64-apple-darwin
     steps:
       - uses: actions/checkout@v7
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: actions-rust-lang/setup-rust-toolchain@v2
         with:
           # caching handled by Swatinem/rust-cache below
           cache: false
@@ -117,7 +117,7 @@ jobs:
     needs: [build]
     steps:
       - uses: actions/checkout@v7
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: actions-rust-lang/setup-rust-toolchain@v2
         with:
           # caching handled by Swatinem/rust-cache below
           cache: false
@@ -134,7 +134,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: actions-rust-lang/setup-rust-toolchain@v2
         with:
           # caching handled by Swatinem/rust-cache below
           cache: false
@@ -170,7 +170,7 @@ jobs:
         os: [macos-latest, ubuntu-latest, windows-latest]
     steps:
       - uses: actions/checkout@v7
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: actions-rust-lang/setup-rust-toolchain@v2
         with:
           # caching handled by Swatinem/rust-cache below
           cache: false
@@ -189,7 +189,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: actions-rust-lang/setup-rust-toolchain@v2
         with:
           # caching handled by Swatinem/rust-cache below
           cache: false
@@ -206,9 +206,11 @@ jobs:
       matrix:
         os: [macos-latest, ubuntu-latest, windows-latest]
         python-version: ['3.11', '3.12', '3.13']
+    env:
+      BOLTFFI_CACHE_DIR: ${{ github.workspace }}/.cache/boltffi
     steps:
       - uses: actions/checkout@v7
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: actions-rust-lang/setup-rust-toolchain@v2
         with:
           # caching handled by Swatinem/rust-cache below
           cache: false
@@ -227,6 +229,13 @@ jobs:
           node-version: '24'
       - if: matrix.python-version == '3.13'
         run: npm install -g typescript
+      - if: matrix.python-version == '3.13'
+        run: cargo generate-lockfile --manifest-path examples/demo/Cargo.toml
+      - if: matrix.python-version == '3.13'
+        uses: actions/cache@v6
+        with:
+          path: .cache/boltffi
+          key: wasm-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('examples/demo/Cargo.lock') }}
       - if: matrix.python-version == '3.13'
         uses: Aandreba/setup-binaryen@v1.0.0
         with:
@@ -248,12 +257,63 @@ jobs:
         run: ./examples/demo/verify-platform-demos.sh --platform python --python python
         shell: bash
 
+  wasm-bindgen:
+    name: Wasm dependencies (${{ matrix.bindgen }}, Rust ${{ matrix.rust }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        bindgen: ['0.2.122', '0.2.129']
+        rust: ['1.95.0', 'stable']
+        include:
+          - bindgen: '0.2.122'
+            futures: '0.4.72'
+          - bindgen: '0.2.129'
+            futures: '0.4.79'
+    env:
+      RUSTUP_TOOLCHAIN: ${{ matrix.rust }}
+      BOLTFFI_CACHE_DIR: ${{ github.workspace }}/.cache/boltffi
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: ${{ matrix.rust }}
+          target: wasm32-unknown-unknown
+          cache: false
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: wasm-bindgen-${{ matrix.bindgen }}-${{ matrix.rust }}
+      - uses: actions/cache@v6
+        with:
+          path: .cache/boltffi
+          key: wasm-tools-${{ runner.os }}-${{ runner.arch }}-${{ matrix.bindgen }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - uses: Aandreba/setup-binaryen@v1.0.0
+        with:
+          token: ${{ github.token }}
+      - run: npm install -g typescript
+      - run: cargo update --manifest-path examples/demo/Cargo.toml -p wasm-bindgen-futures --precise ${{ matrix.futures }}
+      - run: ./examples/demo/verify-platform-demos.sh --platform wasm
+      - run: npm test
+        working-directory: runtime/typescript
+      - run: npm run build:ts && npm test
+        working-directory: examples/platforms/wasm
+      - run: cargo test -p boltffi_cli --test wasm_pack -- --ignored
+      - run: cargo test -p boltffi_cli --test wasm_bindgen_cli
+      - run: npx playwright install --with-deps chromium firefox webkit
+        working-directory: examples/platforms/wasm
+      - run: npm run test:browser
+        working-directory: examples/platforms/wasm
+
   csharp-windows-arm64:
     name: C# Windows x64 + ARM64 package
     runs-on: windows-2025
     steps:
       - uses: actions/checkout@v7
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: actions-rust-lang/setup-rust-toolchain@v2
         with:
           cache: false
           target: aarch64-pc-windows-msvc

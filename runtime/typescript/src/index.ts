@@ -23,6 +23,7 @@ export type {
 } from "./wire.js";
 export { BoltFFIHandle } from "./handle.js";
 export { CallbackRegistry } from "./callback.js";
+export { WasmBindgenModule } from "./wasm-bindgen.js";
 export { StreamCancellable, StreamPollManager, StreamPollResult, StreamSession } from "./stream.js";
 export type { StreamBatch, StreamLifecycle, StreamPoll } from "./stream.js";
 export {

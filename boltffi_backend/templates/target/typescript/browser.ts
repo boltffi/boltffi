@@ -1,5 +1,6 @@
 import { BoltFFICancelledError, BoltFFIHandle, BoltFFIModule, CallbackRegistry, StreamCancellable, StreamSession, WASM_ABI_VERSION, instantiateBoltFFI, matchWireResult, utf8ByteCount, wireArraySize, wireMapSize, wireOptionalSize, wireResultSize, wireStringSize, writeUnexpectedCallbackError } from {{ runtime_package }};
 import type { BoltFFIExports, Duration, WireCodec, WireResult } from {{ runtime_package }};
+import { wasmBindgen as _wasmBindgen } from {{ imports_module }};
 
 let _module: BoltFFIModule;
 let _exports: BoltFFIExports;
@@ -11,9 +12,28 @@ const _callbackImports: Record<string, WebAssembly.ImportValue> = {};
 {{ closure_adapters }}
 
 export default async function init(source: BufferSource | Response | WebAssembly.Module): Promise<void> {
-  _module = await instantiateBoltFFI(source, WASM_ABI_VERSION, { env: _callbackImports });
-  _exports = _module.exports;
-{{ constant_initializers }}
+  let rollback: (() => void) | undefined;
+  try {
+    await instantiateBoltFFI(source, WASM_ABI_VERSION, {
+      env: _callbackImports,
+      wasmBindgen: _wasmBindgen,
+      bind(module) {
+        const previousModule = _module;
+        const previousExports = _exports;
+        _module = module;
+        _exports = module.exports;
+        rollback = () => {
+          if (_module !== module) return;
+          _module = previousModule;
+          _exports = previousExports;
+        };
+      },
+    });
+{{ constant_initializers|indent(4, true) }}
+  } catch (error) {
+    rollback?.();
+    throw error;
+  }
 }
 
 // Lower-level counterpart to `options.signal` / `options.cancelId`.

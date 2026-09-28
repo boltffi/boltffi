@@ -156,16 +156,13 @@ impl TypeRefRender for Renderer<'_, '_> {
     }
 
     fn tuple(&mut self, elements: Vec<Self::Output>) -> Self::Output {
-        Ok(TypeFragment::new(format!(
-            "({})",
-            elements
-                .into_iter()
-                .collect::<Result<Vec<_>>>()?
-                .into_iter()
-                .map(|element| element.to_string())
-                .collect::<Vec<_>>()
-                .join(", ")
-        )))
+        let elements = elements
+            .into_iter()
+            .collect::<Result<Vec<_>>>()?
+            .into_iter()
+            .map(|element| element.to_string())
+            .collect::<Vec<_>>();
+        Ok(tuple_type(&elements))
     }
 
     fn result(&mut self, ok: Self::Output, err: Self::Output) -> Self::Output {
@@ -187,4 +184,13 @@ fn qualify(ty: TypeFragment, namespace: Option<&Namespace>) -> Result<TypeFragme
     Ok(namespace.map_or(ty.clone(), |namespace| {
         TypeFragment::new(format!("global::{namespace}.{ty}"))
     }))
+}
+
+// C# tuple syntax requires at least two elements; a single element uses the
+// underlying ValueTuple<T>, whose Item1 field also matches our codec writer.
+pub(super) fn tuple_type(elements: &[String]) -> TypeFragment {
+    TypeFragment::new(match elements {
+        [element] => format!("global::System.ValueTuple<{element}>"),
+        _ => format!("({})", elements.join(", ")),
+    })
 }

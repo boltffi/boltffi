@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import * as demo from "@boltffi/demo";
+import * as demo from "../../dist/node.js";
 
 await demo.initialized;
 

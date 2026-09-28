@@ -8,6 +8,14 @@
 use boltffi::export;
 
 #[export]
+pub const U64_BYTES: usize = std::mem::size_of::<u64>();
+
+#[export]
 pub async fn answer() -> u32 {
     42
+}
+
+#[export]
+pub fn invoke(callback: Box<dyn Fn(i32) -> i32 + Send + Sync>, value: i32) -> i32 {
+    callback(value)
 }
