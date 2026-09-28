@@ -836,7 +836,7 @@ pub fn render_parameter(
                                 "final {storage} = _$$BoltStoragePool.acquireStorage($$ffi.sizeOf<{native}>() * {name}.length);"
                             ),
                             format!(
-                                "for (var _l$index = 0; _l$index < {name}.length; _l$index++) {{ {name}[_l$index]._m$writeStruct({storage}.ptr.cast<{native}>().elementAt(_l$index)); }}"
+                                "for (var _l$index = 0; _l$index < {name}.length; _l$index++) {{ {name}[_l$index]._m$writeStruct(({storage}.ptr.cast<{native}>() + _l$index)); }}"
                             ),
                         ],
                         vec![
@@ -1405,7 +1405,7 @@ fn direct_vector_return(
                     "final _l$count = _l$result.len ~/ $$ffi.sizeOf<{native}>();"
                 )],
                 format!(
-                    "List<{public}>.generate(_l$count, (_l$index) => {public}._m$fromStruct(_l$result.ptr.cast<{native}>().elementAt(_l$index).ref))"
+                    "List<{public}>.generate(_l$count, (_l$index) => {public}._m$fromStruct((_l$result.ptr.cast<{native}>() + _l$index).ref))"
                 ),
             )
         }

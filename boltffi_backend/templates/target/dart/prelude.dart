@@ -238,13 +238,13 @@ sealed class $$BoltResult<Ok, Err extends Exception> {
   Ok? okValue() {
     return switch (this) {
       $$BoltResult$Ok<Ok, Err>(:final value) => value,
-      $$BoltResult$Err<Ok, Err>(:final value) => null,
+      $$BoltResult$Err<Ok, Err>() => null,
     };
   }
 
   Err? errValue() {
     return switch (this) {
-      $$BoltResult$Ok<Ok, Err>(:final value) => null,
+      $$BoltResult$Ok<Ok, Err>() => null,
       $$BoltResult$Err<Ok, Err>(:final value) => value,
     };
   }
@@ -375,13 +375,13 @@ abstract final class _$$BoltUtil {
       return 1;
     }
     ptr[0] = 1;
-    return 1 + writeString(ptr.elementAt(1), cap - 1, v);
+    return 1 + writeString(ptr + 1, cap - 1, v);
   }
 
   @pragma('vm:prefer-inline')
   static String? readOptionString($$ffi.Pointer<$$ffi.Uint8> ptr, int len) {
     if (len < 1 || ptr[0] == 0) return null;
-    return readString(ptr.elementAt(1), len - 1);
+    return readString(ptr + 1, len - 1);
   }
 
   @pragma('vm:prefer-inline')
@@ -414,7 +414,7 @@ abstract final class _$$BoltUtil {
     writeU32le(ptr, v.length);
     var offset = 4;
     for (final item in v) {
-      offset += writeString(ptr.elementAt(offset), cap - offset, item);
+      offset += writeString(ptr + offset, cap - offset, item);
     }
     return offset;
   }
@@ -433,7 +433,7 @@ abstract final class _$$BoltUtil {
           (ptr[offset + 1] << 8) |
           (ptr[offset + 2] << 16) |
           (ptr[offset + 3] << 24);
-      out[i] = readString(ptr.elementAt(offset), len - offset);
+      out[i] = readString(ptr + offset, len - offset);
       offset += 4 + slen;
     }
     return out;
@@ -1241,12 +1241,6 @@ final class _$$BoltFFIAsync {
   static final _pending = <int, _$$BoltAsyncWait>{};
   static $$ffi.NativeCallable<$$ffi.Void Function($$ffi.Uint64, $$ffi.Int8)>?
   _pollCallable;
-  static final $$ffi.Pointer<
-    $$ffi.NativeFunction<$$ffi.Void Function($$ffi.Uint64, $$ffi.Int8)>
-  >
-  _noopNative = $$ffi.Native.addressOf<
-    $$ffi.NativeFunction<$$ffi.Void Function($$ffi.Uint64, $$ffi.Int8)>
-  >(_f$poll_continuation_noop);
 
   static $$ffi.Pointer<
     $$ffi.NativeFunction<$$ffi.Void Function($$ffi.Uint64, $$ffi.Int8)>

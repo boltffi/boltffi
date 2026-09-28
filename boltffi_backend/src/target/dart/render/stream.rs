@@ -352,7 +352,7 @@ impl<'plan> StreamItemPlanRender<'plan, Native> for ItemRenderer<'_, '_, '_> {
             _ => pop_native_type.clone(),
         };
         let native_value =
-            format!("_l$storage.ptr.cast<{decode_native_type}>().elementAt(_l$index).value");
+            format!("_l$storage.ptr.(cast<{decode_native_type}>() + _l$index).value");
         let decode = match ty {
             DirectValueType::Primitive(_) => native_value,
             DirectValueType::Enum(_) => format!(
@@ -360,7 +360,7 @@ impl<'plan> StreamItemPlanRender<'plan, Native> for ItemRenderer<'_, '_, '_> {
                 type_name::direct_value(ty, self.context)?,
             ),
             DirectValueType::Record(_) => format!(
-                "{}._m$fromStruct(_l$storage.ptr.cast<{decode_native_type}>().elementAt(_l$index).ref)",
+                "{}._m$fromStruct(_l$storage.ptr.(cast<{decode_native_type}>() + _l$index).ref)",
                 type_name::direct_value(ty, self.context)?,
             ),
             _ => return super::super::unsupported("unknown direct stream item"),

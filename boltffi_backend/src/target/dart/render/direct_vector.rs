@@ -28,7 +28,7 @@ impl PrimitiveVector {
                 "{{ final _l$bytes = {storage}.ptr.asTypedList({source}.length); for (var _l$index = 0; _l$index < {source}.length; _l$index++) {{ _l$bytes[_l$index] = {source}[_l$index] ? 1 : 0; }} }}"
             ),
             Primitive::ISize | Primitive::USize => format!(
-                "for (var _l$index = 0; _l$index < {source}.length; _l$index++) {{ {storage}.ptr.cast<{}>().elementAt(_l$index).value = {source}[_l$index]; }}",
+                "for (var _l$index = 0; _l$index < {source}.length; _l$index++) {{ ({storage}.ptr.cast<{}>() + _l$index).value = {source}[_l$index]; }}",
                 self.native.native()
             ),
             Primitive::I8
@@ -61,7 +61,7 @@ impl PrimitiveVector {
                 "{{ final _l$bytes = {storage}.ptr.asTypedList({source}.length); {source}.setAll(0, List<bool>.generate({source}.length, (_l$index) => _l$bytes[_l$index] != 0)); }}"
             ),
             Primitive::ISize | Primitive::USize => format!(
-                "{source}.setAll(0, List<int>.generate({source}.length, (_l$index) => {storage}.ptr.cast<{}>().elementAt(_l$index).value));",
+                "{source}.setAll(0, List<int>.generate({source}.length, (_l$index) => ({storage}.ptr.cast<{}>() + _l$index).value));",
                 self.native.native()
             ),
             Primitive::I8
@@ -113,10 +113,10 @@ impl PrimitiveVector {
                 "($$typed_data.Uint64List({length})..setRange(0, {length}, {pointer}.cast<$$ffi.Uint64>().asTypedList({length})))"
             ),
             Primitive::ISize => format!(
-                "$$typed_data.Int64List.fromList(List<int>.generate({length}, (_l$index) => {pointer}.cast<$$ffi.IntPtr>().elementAt(_l$index).value))"
+                "$$typed_data.Int64List.fromList(List<int>.generate({length}, (_l$index) => ({pointer}.cast<$$ffi.IntPtr>() + _l$index).value))"
             ),
             Primitive::USize => format!(
-                "$$typed_data.Uint64List.fromList(List<int>.generate({length}, (_l$index) => {pointer}.cast<$$ffi.UintPtr>().elementAt(_l$index).value))"
+                "$$typed_data.Uint64List.fromList(List<int>.generate({length}, (_l$index) => ({pointer}.cast<$$ffi.UintPtr>() + _l$index).value))"
             ),
             Primitive::F32 => format!(
                 "($$typed_data.Float32List({length})..setRange(0, {length}, {pointer}.cast<$$ffi.Float>().asTypedList({length})))"

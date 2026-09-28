@@ -1401,7 +1401,7 @@ fn encode_direct_vector(
             let native = native::direct_record_struct(bridge, *record)?;
             statements.extend([
                 format!("final {prefix}Storage = _$$BoltCallocPtr<{native}>.alloc($$ffi.sizeOf<{native}>() * _l$value.length);"),
-                format!("for (var _l$index = 0; _l$index < _l$value.length; _l$index++) {{ _l$value[_l$index]._m$writeStruct({prefix}Storage.ptr.elementAt(_l$index)); }}"),
+                format!("for (var _l$index = 0; _l$index < _l$value.length; _l$index++) {{ _l$value[_l$index]._m$writeStruct(({prefix}Storage.ptr + _l$index)); }}"),
                 format!("final {prefix}Buffer = _f$buffer_symbol({prefix}Storage.ptr.cast<$$ffi.Uint8>(), _l$value.length * $$ffi.sizeOf<{native}>());")
                     .replace("buffer_symbol", bridge.support().buffer_from_bytes()?.name()),
             ]);
@@ -1499,7 +1499,7 @@ fn direct_vector_decode_statements(
             vec![
                 format!("final _l$count = {buffer}.len ~/ $$ffi.sizeOf<{native}>();"),
                 format!(
-                    "final {value} = List<{public}>.generate(_l$count, (_l$index) => {public}._m$fromStruct({buffer}.ptr.cast<{native}>().elementAt(_l$index).ref));"
+                    "final {value} = List<{public}>.generate(_l$count, (_l$index) => {public}._m$fromStruct(({buffer}.ptr.cast<{native}>() + _l$index).ref));"
                 ),
             ]
         }

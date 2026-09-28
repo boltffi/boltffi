@@ -264,7 +264,7 @@ impl CallbackParameter {
                     native
                 )];
                 let entry_argument = format!(
-                    "List<{public_record}>.generate(_l${name}Count, (_l$index) => {public_record}._m$fromStruct({pointer}.cast<{}>().elementAt(_l$index).ref))",
+                    "List<{public_record}>.generate(_l${name}Count, (_l$index) => {public_record}._m$fromStruct(({pointer}.cast<{}>() + _l$index).ref))",
                     native
                 );
                 let proxy_setup = vec![
@@ -273,7 +273,7 @@ impl CallbackParameter {
                         native, native
                     ),
                     format!(
-                        "for (var _l$index = 0; _l$index < {name}.length; _l$index++) {{ {name}[_l$index]._m$writeStruct({storage}.ptr.elementAt(_l$index)); }}"
+                        "for (var _l$index = 0; _l$index < {name}.length; _l$index++) {{ {name}[_l$index]._m$writeStruct(({storage}.ptr + _l$index)); }}"
                     ),
                 ];
                 let proxy_arguments = vec![
