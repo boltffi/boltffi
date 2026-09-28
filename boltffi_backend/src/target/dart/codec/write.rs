@@ -189,7 +189,7 @@ impl CodecWrite for Writer<'_, '_> {
                 )))
             } else {
                 Ok(WriteStatement::new(format!(
-                    "if ({value} == null) {{\n  {}.writeU8(0);\n}} else {{\n  {}.writeU8(1);\n{inner}\n}}",
+                    "if (({value}) == null) {{\n  {}.writeU8(0);\n}} else {{\n  {}.writeU8(1);\n{inner}\n}}",
                     self.name, self.name,
                 )))
             }

@@ -151,12 +151,14 @@ impl CodecSize for Sizer<'_, '_> {
         // Constant inner sizes never read the binder, so skip the unwrap
         // local entirely. When it does, bind once into a fresh local —
         // locals are always promotable, unlike non-final fields.
+        // Wrap the value expression: `a ?? b == null` would parse as
+        // `a ?? (b == null)`, so composite operands need parens.
         let source = if inner.contains(&binder) {
             format!(
                 "1 + (() {{ final {binder} = {value}; return {binder} == null ? 0 : {inner}; }})()"
             )
         } else {
-            format!("1 + ({value} == null ? 0 : {inner})")
+            format!("1 + (({value}) == null ? 0 : {inner})")
         };
         Ok(SizeExpression::new(source))
     }
@@ -171,10 +173,12 @@ impl CodecSize for Sizer<'_, '_> {
         let value = self.value(value)?;
         let binder = binder_name(binder);
         let element = element?.source;
+        // Wrap both operands: `v.length * 4 + 4` would mis-apply an
+        // additive element size, and `a ?? b.length` mis-parses too.
         let source = if element.contains(&binder) {
-            format!("4 + {value}.fold<int>(0, (_l$size, {binder}) => _l$size + {element})")
+            format!("4 + ({value}).fold<int>(0, (_l$size, {binder}) => _l$size + {element})")
         } else {
-            format!("4 + {value}.length * {element}")
+            format!("4 + ({value}).length * ({element})")
         };
         Ok(SizeExpression::new(source))
     }
@@ -226,7 +230,7 @@ impl CodecSize for Sizer<'_, '_> {
         let key_used = key.contains(&key_binder);
         let value_used = map_value.contains(&value_binder);
         let source = match (key_used, value_used) {
-            (false, false) => format!("4 + {value}.length * ({key} + {map_value})"),
+            (false, false) => format!("4 + ({value}).length * ({key} + {map_value})"),
             _ => {
                 let mut locals = String::new();
                 if key_used {
@@ -236,7 +240,7 @@ impl CodecSize for Sizer<'_, '_> {
                     locals.push_str(&format!("final {value_binder} = _l$entry.value; "));
                 }
                 format!(
-                    "4 + {value}.entries.fold<int>(0, (_l$size, _l$entry) {{ {locals}return _l$size + {key} + {map_value}; }})"
+                    "4 + ({value}).entries.fold<int>(0, (_l$size, _l$entry) {{ {locals}return _l$size + {key} + {map_value}; }})"
                 )
             }
         };

@@ -993,7 +993,12 @@ mod tests {
             }
 
             #[export]
-            pub fn paint(shade: Option<Shade>, tags: Option<Vec<i32>>, config: Config) {}
+            pub fn paint(
+                shade: Option<Shade>,
+                tags: Option<Vec<i32>>,
+                pairs: Vec<(i32, i32)>,
+                config: Config,
+            ) {}
             "#,
         );
         let output = target(DartHost::new().package("demo"))
@@ -1002,7 +1007,7 @@ mod tests {
 
         let source = file(&output, "demo/lib/demo.dart");
         assert!(
-            source.contains("(shade == null ? 0 : 4)"),
+            source.contains("((shade) == null ? 0 : 4)"),
             "constant-size optionals need no unwrap local, {source}"
         );
         assert!(
@@ -1010,10 +1015,14 @@ mod tests {
             "null-checked values promote without `!`, {source}"
         );
         assert!(
-            source.contains("_l$boltffiValue0.length * 4"),
+            source.contains("(_l$boltffiValue0).length * (4)"),
             "constant element sizes collapse the fold, {source}"
         );
         assert!(!source.contains("= tags!;"), "{source}");
+        assert!(
+            source.contains("(pairs).length * (4 + 4)"),
+            "additive element sizes stay parenthesized, {source}"
+        );
         assert!(
             source.contains("if (endpoint case final _l$boltffiValue0?)"),
             "nullable fields bind via a scoped null-check pattern, {source}"
