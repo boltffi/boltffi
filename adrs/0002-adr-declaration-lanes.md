@@ -227,11 +227,10 @@ only then.
 
 ## 5. Implementation Status
 
-The design is implemented in full on
-[`spike/per-invocation-lanes`](https://github.com/boltffi/boltffi/tree/spike/per-invocation-lanes),
-on top of the integration branch, to check that it holds before asking for this decision.
-[Per-invocation expansion](https://github.com/boltffi/boltffi/blob/spike/per-invocation-lanes/docs/contributors/per-invocation-expansion.md)
-walks one crate through every expansion there.
+The design is implemented in full, landed through
+[#944](https://github.com/boltffi/boltffi/pull/944) on the integration branch.
+[Per-invocation expansion](../docs/contributors/per-invocation-expansion.md)
+walks one crate through every expansion.
 
 - Every annotation expands per invocation. The macros read no source files, and bindgen
   reads records only.
