@@ -982,4 +982,36 @@ mod tests {
         );
         assert!(output.diagnostics().is_empty());
     }
+
+    #[test]
+    fn dart_target_skips_dead_binders_in_optional_codecs() {
+        let bindings = bindings(
+            r#"
+            #[data]
+            pub enum Shade { Light, Dark }
+
+            #[export]
+            pub fn paint(shade: Option<Shade>, tags: Option<Vec<i32>>) {}
+            "#,
+        );
+        let output = target(DartHost::new().package("demo"))
+            .render(&bindings)
+            .expect("optional parameters should render");
+
+        let source = file(&output, "demo/lib/demo.dart");
+        assert!(
+            source.contains("(shade == null ? 0 : 4)"),
+            "constant-size optionals need no unwrap local, {source}"
+        );
+        assert!(
+            !source.contains("shade!"),
+            "null-checked values promote without `!`, {source}"
+        );
+        assert!(
+            source.contains("_l$boltffiValue0.length * 4"),
+            "constant element sizes collapse the fold, {source}"
+        );
+        assert!(!source.contains("= tags!;"), "{source}");
+        assert!(output.diagnostics().is_empty());
+    }
 }

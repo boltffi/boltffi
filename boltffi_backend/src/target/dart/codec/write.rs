@@ -167,21 +167,27 @@ impl CodecWrite for Writer<'_, '_> {
         inner: Vec<Self::Stmt>,
     ) -> Vec<Self::Stmt> {
         vec![self.scope.value(value).and_then(|value| {
+            let binder = binder_name(binder);
+            let inner = indent(
+                inner
+                    .into_iter()
+                    .collect::<Result<Vec<_>>>()?
+                    .into_iter()
+                    .map(WriteStatement::into_source)
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+                2,
+            );
+            // Skip the unwrap local when the payload never reads it, and
+            // rely on promotion instead of `!` on the null-checked value.
+            let unwrap = if inner.contains(&binder) {
+                format!("  final {binder} = {value};\n")
+            } else {
+                String::new()
+            };
             Ok(WriteStatement::new(format!(
-                "if ({value} == null) {{\n  {}.writeU8(0);\n}} else {{\n  {}.writeU8(1);\n  final {} = {value}!;\n{}\n}}",
-                self.name,
-                self.name,
-                binder_name(binder),
-                indent(
-                    inner
-                        .into_iter()
-                        .collect::<Result<Vec<_>>>()?
-                        .into_iter()
-                        .map(WriteStatement::into_source)
-                        .collect::<Vec<_>>()
-                        .join("\n"),
-                    2
-                ),
+                "if ({value} == null) {{\n  {}.writeU8(0);\n}} else {{\n  {}.writeU8(1);\n{unwrap}{inner}\n}}",
+                self.name, self.name,
             )))
         })]
     }
