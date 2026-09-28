@@ -1015,8 +1015,8 @@ mod tests {
         );
         assert!(!source.contains("= tags!;"), "{source}");
         assert!(
-            source.contains("final _l$boltffiValue0 = endpoint;\nif (_l$boltffiValue0 == null)"),
-            "nullable fields bind once into a promotable local, {source}"
+            source.contains("if (endpoint case final _l$boltffiValue0?)"),
+            "nullable fields bind via a scoped null-check pattern, {source}"
         );
         assert!(
             source.contains(

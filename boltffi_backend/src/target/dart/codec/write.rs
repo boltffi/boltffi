@@ -178,12 +178,13 @@ impl CodecWrite for Writer<'_, '_> {
                     .join("\n"),
                 2,
             );
-            // Bind once into a fresh local — locals are always
-            // promotable, unlike non-final fields — then null-check
-            // the local. Skip the local when the payload never reads it.
+            // A null-check pattern binds the payload into a fresh local
+            // scoped to the `if` — non-final fields don't promote, sibling
+            // optionals share the binder name safely, and no `!` is needed.
+            // Skip the pattern when the payload never reads the binder.
             if inner.contains(&binder) {
                 Ok(WriteStatement::new(format!(
-                    "final {binder} = {value};\nif ({binder} == null) {{\n  {}.writeU8(0);\n}} else {{\n  {}.writeU8(1);\n{inner}\n}}",
+                    "if ({value} case final {binder}?) {{\n  {}.writeU8(1);\n{inner}\n}} else {{\n  {}.writeU8(0);\n}}",
                     self.name, self.name,
                 )))
             } else {
