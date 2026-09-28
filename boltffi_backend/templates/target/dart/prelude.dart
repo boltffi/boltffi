@@ -690,7 +690,7 @@ final class $$BoltUUIDValue {
 final class _$$BoltBufWriter {
   final $$typed_data.Uint8List bytes;
   final $$typed_data.ByteData data;
-  int _offset = 0;
+  int len = 0;
 
   _$$BoltBufWriter._(this.bytes) : data = $$typed_data.ByteData.sublistView(bytes);
 
@@ -700,17 +700,13 @@ final class _$$BoltBufWriter {
     return _$$BoltBufWriter._(ptr.asTypedList(len));
   }
 
-  int get len => _offset;
-
-  set len(int value) => _offset = value;
-
   @pragma('vm:prefer-inline')
-  void reset() => _offset = 0;
+  void reset() => len = 0;
 
   @pragma('vm:prefer-inline')
   int advance(int size) {
-    final start = _offset;
-    _offset += size;
+    final start = len;
+    len += size;
     return start;
   }
 
