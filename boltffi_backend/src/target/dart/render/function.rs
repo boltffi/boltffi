@@ -775,7 +775,7 @@ pub fn render_parameter(
                 },
                 HandleTarget::Callback(_) => {
                     let callback = type_name::handle(target, HandlePresence::Required, context)?;
-                    format!("{callback}Bridge.create({name})")
+                    format!("_{callback}Bridge.create({name})")
                 }
                 HandleTarget::Stream(_) => {
                     return super::super::unsupported("stream handle parameter");
@@ -1312,10 +1312,10 @@ fn handle_return(
             format!("_l$result == 0 ? null : {required}._(_l$result)")
         }
         (HandleTarget::Callback(_), HandlePresence::Required) => {
-            format!("{required}Bridge.wrap(_l$result)")
+            format!("_{required}Bridge.wrap(_l$result)")
         }
         (HandleTarget::Callback(_), HandlePresence::Nullable) => {
-            format!("_l$result.handle == 0 ? null : {required}Bridge.wrap(_l$result)")
+            format!("_l$result.handle == 0 ? null : _{required}Bridge.wrap(_l$result)")
         }
         (HandleTarget::Stream(_), _) => {
             return super::super::unsupported("stream handle return");

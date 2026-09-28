@@ -341,14 +341,14 @@ impl CallbackParameter {
             HandleTarget::Callback(_) => {
                 let entry_argument = match presence {
                     HandlePresence::Required => {
-                        format!("{required_type}Bridge.wrap({native_name})")
+                        format!("_{required_type}Bridge.wrap({native_name})")
                     }
                     HandlePresence::Nullable => format!(
-                        "{native_name}.handle == 0 ? null : {required_type}Bridge.wrap({native_name})"
+                        "{native_name}.handle == 0 ? null : _{required_type}Bridge.wrap({native_name})"
                     ),
                     _ => return super::unsupported("unknown callback callback-handle presence"),
                 };
-                let proxy_argument = format!("{required_type}Bridge.create({name})");
+                let proxy_argument = format!("_{required_type}Bridge.create({name})");
                 Ok(Self::new(
                     name,
                     public_type,

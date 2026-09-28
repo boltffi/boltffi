@@ -209,7 +209,7 @@ impl CallbackMethod {
             let fast_source = (
                 None,
                 format!(
-                    "$$ffi.Pointer.fromFunction<{native_signature}>({callback_name}Bridge.{entry_name}{exceptional})"
+                    "$$ffi.Pointer.fromFunction<{native_signature}>(_{callback_name}Bridge.{entry_name}{exceptional})"
                 ),
             );
             let fast_declaration = format!(
@@ -1552,7 +1552,7 @@ fn handle_into_native(
             _ => return super::unsupported("Dart callback class return presence"),
         }),
         HandleTarget::Callback(id) => Ok(format!(
-            "{}Bridge.create({expression})",
+            "_{}Bridge.create({expression})",
             callback_type(*id, context)?
         )),
         HandleTarget::Stream(_) => super::unsupported("Dart callback stream return"),
@@ -1576,9 +1576,9 @@ fn handle_from_native(
             _ => return super::unsupported("Dart callback class proxy return presence"),
         }),
         HandleTarget::Callback(_) => Ok(match presence {
-            HandlePresence::Required => format!("{required}Bridge.wrap({expression})"),
+            HandlePresence::Required => format!("_{required}Bridge.wrap({expression})"),
             HandlePresence::Nullable => {
-                format!("{expression}.handle == 0 ? null : {required}Bridge.wrap({expression})")
+                format!("{expression}.handle == 0 ? null : _{required}Bridge.wrap({expression})")
             }
             _ => return super::unsupported("Dart callback proxy return presence"),
         }),

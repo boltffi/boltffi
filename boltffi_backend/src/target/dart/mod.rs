@@ -502,7 +502,7 @@ mod tests {
         assert!(source.contains("abstract interface class Transformer"));
         assert!(source.contains("Future<int?> load(String key)"));
         assert!(source.contains("TransformerVTable extends $$ffi.Struct"));
-        assert!(source.contains("TransformerBridge.create(transformer)"));
+        assert!(source.contains("_TransformerBridge.create(transformer)"));
         assert!(
             source.contains("_$$boltTrackListener($$ffi.NativeCallable.listener(_m$load))"),
             "async callback slots must use listener, not isolateLocal"
