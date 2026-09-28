@@ -101,7 +101,7 @@ impl CodecWrite for Writer<'_, '_> {
         vec![
             self.scope
                 .value(value)
-                .map(|value| WriteStatement::new(format!("{value}._m$wireEncode({});", self.name))),
+                .map(|value| WriteStatement::new(format!("({value})._m$wireEncode({});", self.name))),
         ]
     }
 
@@ -113,7 +113,7 @@ impl CodecWrite for Writer<'_, '_> {
         vec![self.scope.value(value).and_then(|value| {
             let representation = CStyleEnumRepresentation::resolve(id, self.context)?;
             Ok(WriteStatement::new(format!(
-                "{}.{}({value}.value);",
+                "{}.{}(({value}).value);",
                 self.name,
                 representation.write_method()
             )))
@@ -124,7 +124,7 @@ impl CodecWrite for Writer<'_, '_> {
         vec![
             self.scope
                 .value(value)
-                .map(|value| WriteStatement::new(format!("{value}._m$wireEncode({});", self.name))),
+                .map(|value| WriteStatement::new(format!("({value})._m$wireEncode({});", self.name))),
         ]
     }
 
@@ -205,7 +205,7 @@ impl CodecWrite for Writer<'_, '_> {
     ) -> Vec<Self::Stmt> {
         vec![self.scope.value(value).and_then(|value| {
             Ok(WriteStatement::new(format!(
-                "{}.writeU32({value}.length);\nfor (final {} in {value}) {{\n{}\n}}",
+                "{}.writeU32(({value}).length);\nfor (final {} in {value}) {{\n{}\n}}",
                 self.name,
                 binder_name(binder),
                 indent(
@@ -270,7 +270,7 @@ impl CodecWrite for Writer<'_, '_> {
     ) -> Vec<Self::Stmt> {
         vec![self.scope.value(value).and_then(|value| {
             Ok(WriteStatement::new(format!(
-                "{}.writeU32({value}.length);\nfor (final _l$entry in {value}.entries) {{\n  final {} = _l$entry.key;\n  final {} = _l$entry.value;\n{}\n{}\n}}",
+                "{}.writeU32(({value}).length);\nfor (final _l$entry in ({value}).entries) {{\n  final {} = _l$entry.key;\n  final {} = _l$entry.value;\n{}\n{}\n}}",
                 self.name,
                 binder_name(key_binder),
                 binder_name(value_binder),

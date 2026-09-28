@@ -801,9 +801,9 @@ mod tests {
         let source = file(&output, "demo/lib/demo.dart");
         assert!(source.contains("$$BoltResult<int, $$BoltException> result;"));
         assert!(source.contains("Mode._m$fromDiscriminant(_p$reader.readU8())"));
-        assert!(source.contains("_p$writer.writeU8(mode.value);"));
+        assert!(source.contains("_p$writer.writeU8((mode).value);"));
         assert!(source.contains("WideMode._m$fromDiscriminant(_p$reader.readU64())"));
-        assert!(source.contains("_p$writer.writeU64(wideMode.value);"));
+        assert!(source.contains("_p$writer.writeU64((wideMode).value);"));
         assert!(source.contains("((endpoint).toString().length * 3)"));
         assert!(source.contains("$$BoltResult.err($$BoltException(_p$reader.readString()))"));
         assert!(source.contains(".writeString(_l$boltffiValue0.message);"));
