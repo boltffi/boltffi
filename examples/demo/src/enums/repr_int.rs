@@ -17,7 +17,12 @@ pub enum Priority {
 #[demo_bench_macros::demo_case(
     "enums.repr_int.priority.should_roundtrip_value",
     justification = "Ensure a repr(i32) Priority enum value crosses the FFI boundary and returns unchanged.",
-    directions = "Call `enums::repr_int::echo_priority` through the generated binding and assert a repr(i32) Priority enum value crosses the FFI boundary and returns unchanged."
+    directions = "Call `enums::repr_int::echo_priority` through the generated binding and assert a repr(i32) Priority enum value crosses the FFI boundary and returns unchanged.",
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not support enums yet"
+    )
 )]
 #[export]
 pub fn echo_priority(p: Priority) -> Priority {
@@ -27,7 +32,12 @@ pub fn echo_priority(p: Priority) -> Priority {
 #[demo_bench_macros::demo_case(
     "enums.repr_int.priority.should_render_label",
     justification = "Ensure priority_label maps Priority enum values to their string labels.",
-    directions = "Call `enums::repr_int::priority_label` through the generated binding and assert priority_label maps Priority enum values to their string labels."
+    directions = "Call `enums::repr_int::priority_label` through the generated binding and assert priority_label maps Priority enum values to their string labels.",
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not support enums yet"
+    )
 )]
 #[export]
 pub fn priority_label(p: Priority) -> String {
@@ -42,7 +52,12 @@ pub fn priority_label(p: Priority) -> String {
 #[demo_bench_macros::demo_case(
     "enums.repr_int.priority.should_identify_high_priority",
     justification = "Ensure is_high_priority returns true for High and Critical priorities.",
-    directions = "Call `enums::repr_int::is_high_priority` through the generated binding and assert is_high_priority returns true for High and Critical priorities."
+    directions = "Call `enums::repr_int::is_high_priority` through the generated binding and assert is_high_priority returns true for High and Critical priorities.",
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not support enums yet"
+    )
 )]
 #[export]
 pub fn is_high_priority(p: Priority) -> bool {
@@ -63,7 +78,12 @@ pub enum LogLevel {
 #[demo_bench_macros::demo_case(
     "enums.repr_int.log_level.should_roundtrip_value",
     justification = "Ensure a repr(u8) LogLevel enum value crosses the FFI boundary and returns unchanged.",
-    directions = "Call `enums::repr_int::echo_log_level` through the generated binding and assert a repr(u8) LogLevel enum value crosses the FFI boundary and returns unchanged."
+    directions = "Call `enums::repr_int::echo_log_level` through the generated binding and assert a repr(u8) LogLevel enum value crosses the FFI boundary and returns unchanged.",
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not support enums yet"
+    )
 )]
 #[export]
 pub fn echo_log_level(level: LogLevel) -> LogLevel {
@@ -73,7 +93,12 @@ pub fn echo_log_level(level: LogLevel) -> LogLevel {
 #[demo_bench_macros::demo_case(
     "enums.repr_int.log_level.should_compare_against_minimum",
     justification = "Ensure should_log compares u8-backed LogLevel values against a minimum level.",
-    directions = "Call `enums::repr_int::should_log` through the generated binding and assert should_log compares u8-backed LogLevel values against a minimum level."
+    directions = "Call `enums::repr_int::should_log` through the generated binding and assert should_log compares u8-backed LogLevel values against a minimum level.",
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not support enums yet"
+    )
 )]
 #[export]
 pub fn should_log(level: LogLevel, min_level: LogLevel) -> bool {
@@ -83,7 +108,12 @@ pub fn should_log(level: LogLevel, min_level: LogLevel) -> bool {
 #[demo_bench_macros::demo_case(
     "enums.repr_int.log_level.should_roundtrip_vectors",
     justification = "Ensure a vector of repr(u8) LogLevel values preserves variant order and values.",
-    directions = "Call `enums::repr_int::echo_vec_log_level` through the generated binding and assert a vector of repr(u8) LogLevel values preserves variant order and values."
+    directions = "Call `enums::repr_int::echo_vec_log_level` through the generated binding and assert a vector of repr(u8) LogLevel values preserves variant order and values.",
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not support enums yet"
+    )
 )]
 #[export]
 pub fn echo_vec_log_level(levels: Vec<LogLevel>) -> Vec<LogLevel> {
@@ -106,7 +136,12 @@ pub fn echo_vec_log_level(levels: Vec<LogLevel>) -> Vec<LogLevel> {
 #[demo_bench_macros::demo_case(
     "enums.repr_int.http_code.should_expose_discriminant_values",
     justification = "Ensure HttpCode exposes the exact repr(u16) discriminants generated from Rust.",
-    directions = "Inspect or construct `enums::repr_int::HttpCode` through the generated binding and assert HttpCode exposes the exact repr(u16) discriminants generated from Rust."
+    directions = "Inspect or construct `enums::repr_int::HttpCode` through the generated binding and assert HttpCode exposes the exact repr(u16) discriminants generated from Rust.",
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not support enums yet"
+    )
 )]
 #[data]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -120,7 +155,12 @@ pub enum HttpCode {
 #[demo_bench_macros::demo_case(
     "enums.repr_int.http_code.should_roundtrip_values",
     justification = "Ensure a host-provided repr(u16) HttpCode value crosses the FFI boundary and returns unchanged.",
-    directions = "Call `enums::repr_int::echo_http_code` through the generated binding and assert a host-provided repr(u16) HttpCode value crosses the FFI boundary and returns unchanged."
+    directions = "Call `enums::repr_int::echo_http_code` through the generated binding and assert a host-provided repr(u16) HttpCode value crosses the FFI boundary and returns unchanged.",
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not support enums yet"
+    )
 )]
 #[export]
 pub fn echo_http_code(code: HttpCode) -> HttpCode {
@@ -130,7 +170,12 @@ pub fn echo_http_code(code: HttpCode) -> HttpCode {
 #[demo_bench_macros::demo_case(
     "enums.repr_int.http_code.should_return_not_found",
     justification = "Ensure Rust can return the gapped HttpCode::NotFound discriminant to generated bindings.",
-    directions = "Call `enums::repr_int::http_code_not_found` through the generated binding and assert Rust can return the gapped HttpCode::NotFound discriminant to generated bindings."
+    directions = "Call `enums::repr_int::http_code_not_found` through the generated binding and assert Rust can return the gapped HttpCode::NotFound discriminant to generated bindings.",
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not support enums yet"
+    )
 )]
 #[export]
 pub fn http_code_not_found() -> HttpCode {
@@ -152,7 +197,12 @@ pub fn http_code_not_found() -> HttpCode {
 #[demo_bench_macros::demo_case(
     "enums.repr_int.sign.should_expose_signed_discriminant_values",
     justification = "Ensure Sign exposes the exact signed repr(i8) discriminants generated from Rust.",
-    directions = "Inspect or construct `enums::repr_int::Sign` through the generated binding and assert Sign exposes the exact signed repr(i8) discriminants generated from Rust."
+    directions = "Inspect or construct `enums::repr_int::Sign` through the generated binding and assert Sign exposes the exact signed repr(i8) discriminants generated from Rust.",
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not support enums yet"
+    )
 )]
 #[data]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -166,7 +216,12 @@ pub enum Sign {
 #[demo_bench_macros::demo_case(
     "enums.repr_int.sign.should_roundtrip_signed_values",
     justification = "Ensure a host-provided repr(i8) Sign value crosses the FFI boundary with its signed value intact.",
-    directions = "Call `enums::repr_int::echo_sign` through the generated binding and assert a host-provided repr(i8) Sign value crosses the FFI boundary with its signed value intact."
+    directions = "Call `enums::repr_int::echo_sign` through the generated binding and assert a host-provided repr(i8) Sign value crosses the FFI boundary with its signed value intact.",
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not support enums yet"
+    )
 )]
 #[export]
 pub fn echo_sign(s: Sign) -> Sign {
@@ -176,7 +231,12 @@ pub fn echo_sign(s: Sign) -> Sign {
 #[demo_bench_macros::demo_case(
     "enums.repr_int.sign.should_return_negative",
     justification = "Ensure Rust can return the negative Sign discriminant to generated bindings.",
-    directions = "Call `enums::repr_int::sign_negative` through the generated binding and assert Rust can return the negative Sign discriminant to generated bindings."
+    directions = "Call `enums::repr_int::sign_negative` through the generated binding and assert Rust can return the negative Sign discriminant to generated bindings.",
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not support enums yet"
+    )
 )]
 #[export]
 pub fn sign_negative() -> Sign {

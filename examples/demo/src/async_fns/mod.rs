@@ -56,6 +56,11 @@ impl Future for WakeFromNativeThread {
         c,
         reason = ExclusionReason::ImplementationGap,
         details = "C target is sync-only; async functions are not yet supported"
+    ),
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not support async functions yet"
     )
 )]
 #[export]
@@ -73,6 +78,11 @@ pub async fn async_add(a: i32, b: i32) -> i32 {
         c,
         reason = ExclusionReason::ImplementationGap,
         details = "C target is sync-only; async functions are not yet supported"
+    ),
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not support async functions yet"
     )
 )]
 #[export]
@@ -89,6 +99,11 @@ pub async fn async_echo(message: String) -> String {
         c,
         reason = ExclusionReason::ImplementationGap,
         details = "C target is sync-only; async functions are not yet supported"
+    ),
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not support async functions yet"
     )
 )]
 #[export]
@@ -105,6 +120,11 @@ pub async fn async_double_all(values: Vec<i32>) -> Vec<i32> {
         c,
         reason = ExclusionReason::ImplementationGap,
         details = "C target is sync-only; async functions are not yet supported"
+    ),
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not support async functions yet"
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -116,6 +136,11 @@ pub async fn async_double_all(values: Vec<i32>) -> Vec<i32> {
         c,
         reason = ExclusionReason::ImplementationGap,
         details = "C target is sync-only; async functions are not yet supported"
+    ),
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not support async functions yet"
     )
 )]
 #[export]
@@ -132,6 +157,11 @@ pub async fn async_find_positive(values: Vec<i32>) -> Option<i32> {
         c,
         reason = ExclusionReason::ImplementationGap,
         details = "C target is sync-only; async functions are not yet supported"
+    ),
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not support async functions yet"
     )
 )]
 #[export]
@@ -148,6 +178,11 @@ pub async fn async_concat(strings: Vec<String>) -> String {
         c,
         reason = ExclusionReason::ImplementationGap,
         details = "C target is sync-only; async functions are not yet supported"
+    ),
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not support async functions yet"
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -159,6 +194,11 @@ pub async fn async_concat(strings: Vec<String>) -> String {
         c,
         reason = ExclusionReason::ImplementationGap,
         details = "C target is sync-only; async functions are not yet supported"
+    ),
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not support async functions yet"
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -170,6 +210,11 @@ pub async fn async_concat(strings: Vec<String>) -> String {
         c,
         reason = ExclusionReason::ImplementationGap,
         details = "C target is sync-only; async functions are not yet supported"
+    ),
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not support async functions yet"
     )
 )]
 #[export]
@@ -186,6 +231,11 @@ pub async fn try_compute_async(value: i32) -> Result<i32, ComputeError> {
         c,
         reason = ExclusionReason::ImplementationGap,
         details = "C target is sync-only; async functions are not yet supported"
+    ),
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not support async functions yet"
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -197,6 +247,11 @@ pub async fn try_compute_async(value: i32) -> Result<i32, ComputeError> {
         c,
         reason = ExclusionReason::ImplementationGap,
         details = "C target is sync-only; async functions are not yet supported"
+    ),
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not support async functions yet"
     )
 )]
 #[export]
@@ -217,6 +272,11 @@ pub async fn fetch_data(id: i32) -> Result<i32, String> {
         c,
         reason = ExclusionReason::ImplementationGap,
         details = "C target is sync-only; async functions are not yet supported"
+    ),
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not support async functions yet"
     )
 )]
 #[export]
@@ -234,6 +294,11 @@ pub async fn async_get_numbers(count: i32) -> Vec<i32> {
         c,
         reason = ExclusionReason::ImplementationGap,
         details = "C target is sync-only; async functions are not yet supported"
+    ),
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not support async functions yet"
     )
 )]
 #[export]
@@ -250,6 +315,11 @@ pub async fn async_echo_mixed_record(record: MixedRecord) -> MixedRecord {
         c,
         reason = ExclusionReason::ImplementationGap,
         details = "C target is sync-only; async functions are not yet supported"
+    ),
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not support async functions yet"
     )
 )]
 #[export]
@@ -276,6 +346,11 @@ pub async fn async_make_mixed_record(
         typescript,
         reason = ExclusionReason::ImplementationGap,
         details = "wasm32 has no native threads, so nothing can wake the future from another thread."
+    ),
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not support async functions yet"
     )
 )]
 #[export]
@@ -296,6 +371,11 @@ pub async fn async_resumed_thread_name() -> String {
         c,
         reason = ExclusionReason::ImplementationGap,
         details = "C target is sync-only; async functions are not yet supported"
+    ),
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not support async functions yet"
     )
 )]
 #[export]

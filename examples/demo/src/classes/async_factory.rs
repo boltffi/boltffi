@@ -45,7 +45,12 @@ impl AsyncFactory {
         c,
         reason = ExclusionReason::ImplementationGap,
         details = "C target is sync-only; async initializers are not yet supported"
-    )
+    ),
+        exclude(
+            ruby,
+            reason = ExclusionReason::ImplementationGap,
+            details = "the Ruby target does not support classes yet"
+        )
 )]
     pub async fn new(value: i32) -> Self {
         Self { value }

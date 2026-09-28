@@ -4,7 +4,12 @@ use demo_bench_macros::benchmark_candidate;
 #[demo_bench_macros::demo_case(
     "bytes.bytes.should_roundtrip_values",
     justification = "Ensure a byte buffer crosses the wire and returns unchanged.",
-    directions = "Call `bytes::echo_bytes` through the generated binding and assert a byte buffer crosses the wire and returns unchanged."
+    directions = "Call `bytes::echo_bytes` through the generated binding and assert a byte buffer crosses the wire and returns unchanged.",
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not move strings or bytes yet"
+    )
 )]
 #[export]
 #[benchmark_candidate(function, uniffi, wasm_bindgen)]
@@ -15,7 +20,12 @@ pub fn echo_bytes(data: Vec<u8>) -> Vec<u8> {
 #[demo_bench_macros::demo_case(
     "bytes.bytes.should_report_length",
     justification = "Ensure a byte buffer crosses the wire and returns its element count.",
-    directions = "Call `bytes::bytes_length` through the generated binding and assert a byte buffer crosses the wire and returns its element count."
+    directions = "Call `bytes::bytes_length` through the generated binding and assert a byte buffer crosses the wire and returns its element count.",
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not move strings or bytes yet"
+    )
 )]
 #[export]
 pub fn bytes_length(data: Vec<u8>) -> u32 {
@@ -25,7 +35,12 @@ pub fn bytes_length(data: Vec<u8>) -> u32 {
 #[demo_bench_macros::demo_case(
     "bytes.bytes.should_sum_values",
     justification = "Ensure a byte buffer crosses the wire and returns the sum of its values.",
-    directions = "Call `bytes::bytes_sum` through the generated binding and assert a byte buffer crosses the wire and returns the sum of its values."
+    directions = "Call `bytes::bytes_sum` through the generated binding and assert a byte buffer crosses the wire and returns the sum of its values.",
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not move strings or bytes yet"
+    )
 )]
 #[export]
 pub fn bytes_sum(data: Vec<u8>) -> u32 {
@@ -35,7 +50,12 @@ pub fn bytes_sum(data: Vec<u8>) -> u32 {
 #[demo_bench_macros::demo_case(
     "bytes.bytes.should_make_sequential_values",
     justification = "Ensure a requested byte-buffer length crosses the wire and returns sequential values.",
-    directions = "Call `bytes::make_bytes` through the generated binding and assert a requested byte-buffer length crosses the wire and returns sequential values."
+    directions = "Call `bytes::make_bytes` through the generated binding and assert a requested byte-buffer length crosses the wire and returns sequential values.",
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not move strings or bytes yet"
+    )
 )]
 #[export]
 pub fn make_bytes(len: u32) -> Vec<u8> {
@@ -45,7 +65,12 @@ pub fn make_bytes(len: u32) -> Vec<u8> {
 #[demo_bench_macros::demo_case(
     "bytes.bytes.should_reverse_values",
     justification = "Ensure a byte buffer crosses the wire and returns in reverse order.",
-    directions = "Call `bytes::reverse_bytes` through the generated binding and assert a byte buffer crosses the wire and returns in reverse order."
+    directions = "Call `bytes::reverse_bytes` through the generated binding and assert a byte buffer crosses the wire and returns in reverse order.",
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not move strings or bytes yet"
+    )
 )]
 #[export]
 pub fn reverse_bytes(data: Vec<u8>) -> Vec<u8> {

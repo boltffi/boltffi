@@ -43,7 +43,12 @@ impl MapView {
     #[demo_bench_macros::demo_case(
         "classes.unsafe_single_threaded.map_view.add_marker.should_return_single_threaded_marker_handle",
         justification = "Ensure a single-threaded class method returns another single-threaded class as an owned object handle.",
-        directions = "Call `classes::unsafe_single_threaded::MapView::add_marker` through the generated binding and assert the returned Marker handle exposes the MarkerOptions fields."
+        directions = "Call `classes::unsafe_single_threaded::MapView::add_marker` through the generated binding and assert the returned Marker handle exposes the MarkerOptions fields.",
+        exclude(
+            ruby,
+            reason = ExclusionReason::ImplementationGap,
+            details = "the Ruby target does not support classes yet"
+        )
     )]
     pub fn add_marker(&self, options: MarkerOptions) -> Marker {
         self.markers_created.set(self.markers_created.get() + 1);
