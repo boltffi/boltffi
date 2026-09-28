@@ -951,4 +951,35 @@ mod tests {
         assert!(source.contains("release();"));
         assert!(output.diagnostics().is_empty());
     }
+
+    #[test]
+    fn dart_target_drops_dead_catch_after_object_error_binding() {
+        let bindings = bindings(
+            r#"
+            #[export]
+            pub trait MessageSink {
+                fn render(&self, key: i32) -> Result<String, String>;
+            }
+
+            #[export]
+            pub fn render_with(sink: impl MessageSink, key: i32) -> Result<String, String> {
+                sink.render(key)
+            }
+            "#,
+        );
+        let output = target(DartHost::new().package("demo"))
+            .render(&bindings)
+            .expect("string-error callback should render");
+
+        let source = file(&output, "demo/lib/demo.dart");
+        assert!(
+            source.contains("on Object catch"),
+            "string payloads bind `Object`, {source}"
+        );
+        assert!(
+            !source.contains("} catch (_l$unexpectedError)"),
+            "a `catch` after `on Object catch` is unreachable, {source}"
+        );
+        assert!(output.diagnostics().is_empty());
+    }
 }

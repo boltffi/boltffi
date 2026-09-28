@@ -617,12 +617,24 @@ pub fn render_fallible_entry_return(
         context,
     )?;
     failure.push("return _l$errorBuffer;".to_owned());
-    Ok(vec![format!(
-        "try {{\n{}\n}} on {} catch ({}) {{\n{}\n}} catch (_l$unexpectedError) {{\n  return _f$encodeUnexpectedCallbackError(_l$unexpectedError);\n}}",
-        indent(&success.join("\n"), 2),
+    let on_catch = format!(
+        "on {} catch ({}) {{\n{}\n}}",
         error_binding.ty,
         error_binding.name,
         indent(&failure.join("\n"), 2),
+    );
+    // `on Object` already catches every throwable, so the unexpected-error
+    // fallback is unreachable for untyped (string) payloads.
+    let catches = if error_binding.ty.as_str() == "Object" {
+        on_catch
+    } else {
+        format!(
+            "{on_catch} catch (_l$unexpectedError) {{\n  return _f$encodeUnexpectedCallbackError(_l$unexpectedError);\n}}"
+        )
+    };
+    Ok(vec![format!(
+        "try {{\n{}\n}} {catches}",
+        indent(&success.join("\n"), 2),
     )])
 }
 
