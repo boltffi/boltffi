@@ -1,6 +1,35 @@
 use boltffi::*;
 use chrono::{DateTime, Utc};
 
+pub mod length;
+
+pub use length::Length;
+
+#[data]
+pub struct Fabric {
+    pub length: Length,
+}
+
+#[demo_bench_macros::demo_case(
+    "custom_types.length.should_roundtrip_wrapper",
+    justification = "A local Length record must not use the converter registered for uom's Length",
+    directions = "Round-trip a Length, check its meters and centimeters, and mutate the result without changing the original"
+)]
+#[export]
+pub fn echo_length(length: Length) -> Length {
+    length
+}
+
+#[demo_bench_macros::demo_case(
+    "custom_types.length.should_roundtrip_nested_wrapper",
+    justification = "An imported Length field must resolve to the local record rather than the same-named remote type",
+    directions = "Round-trip a Fabric containing a Length and call centimeters on the returned field"
+)]
+#[export]
+pub fn echo_fabric(fabric: Fabric) -> Fabric {
+    fabric
+}
+
 /// An email address that is validated on construction.
 /// You can't slap #[data] on this because the invariant
 /// (must contain '@') needs to be enforced on every crossing.

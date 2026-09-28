@@ -64,6 +64,25 @@ bool test_maps(void) {
 }
 
 bool test_custom_types(void) {
+    const DemoLength length = demo_length_new(2.5);
+    CHECK(length.value == 2.5, "case:custom_types.length.should_construct_in_meters");
+    CHECK(demo_length_centimeters(&length) == 250.0, "case:custom_types.length.should_convert_to_centimeters");
+
+    DemoLength returned_length = demo_echo_length(length);
+    CHECK(returned_length.value == 2.5, "case:custom_types.length.should_roundtrip_wrapper");
+    CHECK(demo_length_centimeters(&returned_length) == 250.0, "round-tripped length centimeters");
+    const DemoLength negative_length = demo_echo_length((DemoLength){-1.25});
+    CHECK(demo_length_centimeters(&negative_length) == -125.0, "negative length centimeters");
+
+    demo_length_set_centimeters(&returned_length, 75.0);
+    CHECK(returned_length.value == 0.75, "case:custom_types.length.should_write_back_in_meters");
+    CHECK(demo_length_centimeters(&returned_length) == 75.0, "updated length centimeters");
+    CHECK(length.value == 2.5 && demo_length_centimeters(&length) == 250.0, "original length remains unchanged");
+
+    const DemoFabric fabric = demo_echo_fabric((DemoFabric){{1.25}});
+    CHECK(fabric.length.value == 1.25, "case:custom_types.length.should_roundtrip_nested_wrapper");
+    CHECK(demo_length_centimeters(&fabric.length) == 125.0, "nested length centimeters");
+
     const DemoEmailView email = {"ali@example.com", 15};
     DemoEmail returned_email = demo_echo_email(email);
     CHECK(returned_email.len == email.len && memcmp(returned_email.ptr, email.ptr, email.len) == 0, "case:custom_types.email.should_roundtrip_value");

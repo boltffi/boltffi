@@ -3,6 +3,32 @@ import Foundation
 import XCTest
 
 final class CustomTypesTests: DemoTestCase {
+    func testWrappedLength() {
+        demoCase("case:custom_types.length.should_construct_in_meters")
+        let length = Length.new(meters: 2.5)
+        XCTAssertEqual(length.value, 2.5)
+        demoCase("case:custom_types.length.should_convert_to_centimeters")
+        XCTAssertEqual(length.centimeters(), 250)
+
+        demoCase("case:custom_types.length.should_roundtrip_wrapper")
+        var returned = echoLength(length: length)
+        XCTAssertEqual(returned.value, 2.5)
+        XCTAssertEqual(returned.centimeters(), 250)
+        XCTAssertEqual(echoLength(length: Length(value: -1.25)).centimeters(), -125)
+
+        demoCase("case:custom_types.length.should_write_back_in_meters")
+        returned.setCentimeters(centimeters: 75)
+        XCTAssertEqual(returned.value, 0.75)
+        XCTAssertEqual(returned.centimeters(), 75)
+        XCTAssertEqual(length.value, 2.5)
+        XCTAssertEqual(length.centimeters(), 250)
+
+        demoCase("case:custom_types.length.should_roundtrip_nested_wrapper")
+        let fabric = echoFabric(fabric: Fabric(length: Length(value: 1.25)))
+        XCTAssertEqual(fabric.length.value, 1.25)
+        XCTAssertEqual(fabric.length.centimeters(), 125)
+    }
+
     func testCustomTypesRoundTrip() {
         let email = URL(string: "mailto:cafe@example.com")!
         XCTAssertEqual(echoEmail(email: email), email, "case:custom_types.email.should_roundtrip_value")

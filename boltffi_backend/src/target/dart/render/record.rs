@@ -220,7 +220,7 @@ impl Record {
                 declaration.initializers(),
                 declaration.methods(),
                 Placement::Static,
-                Receiver::EncodedValue,
+                Receiver::EncodedRecord(declaration.id()),
                 bridge,
                 context,
             )?,

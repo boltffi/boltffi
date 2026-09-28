@@ -23,6 +23,7 @@ const suiteModules = [
   "./tests/collections/mod.test.mjs",
   "./tests/constants/mod.test.mjs",
   "./tests/custom_types/mod.test.mjs",
+  "./tests/custom_types/length.test.mjs",
   "./tests/enums/c_style.test.mjs",
   "./tests/enums/complex_variants.test.mjs",
   "./tests/enums/data_enum.test.mjs",

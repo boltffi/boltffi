@@ -1,6 +1,24 @@
 import { assert, demo } from "../support/index.mjs";
 
 export async function run() {
+  const length = { value: 2.5 };
+  globalThis.demoCase("case:custom_types.length.should_roundtrip_wrapper");
+  const returned = demo.echoLength(length);
+  assert.equal(returned.value, 2.5);
+  assert.equal(demo.Length.centimeters(returned), 250);
+  assert.equal(demo.Length.centimeters(demo.echoLength({ value: -1.25 })), -125);
+
+  const updated = demo.Length.setCentimeters(returned, 75);
+  assert.equal(updated.value, 0.75);
+  assert.equal(demo.Length.centimeters(updated), 75);
+  assert.equal(length.value, 2.5);
+  assert.equal(demo.Length.centimeters(length), 250);
+
+  globalThis.demoCase("case:custom_types.length.should_roundtrip_nested_wrapper");
+  const fabric = demo.echoFabric({ length: { value: 1.25 } });
+  assert.equal(fabric.length.value, 1.25);
+  assert.equal(demo.Length.centimeters(fabric.length), 125);
+
   const email = "café@example.com";
   globalThis.demoCase("case:custom_types.email.should_roundtrip_value");
   assert.equal(demo.echoEmail(email), email);

@@ -1,0 +1,106 @@
+---
+source: boltffi_backend/src/target/dart/mod.rs
+expression: "&source[record_start..]"
+---
+final class Profile {
+  String name;
+  List<String> history;
+
+  Profile({
+    required this.name,
+    required this.history,
+  });
+
+  factory Profile._m$wireDecode(_$$BoltWireDecoder _p$reader) =>
+      Profile(
+        name: _p$reader.readString(),
+        history: _p$reader.readList((_l$reader) => _l$reader.readString()),
+      );
+
+  void _m$wireEncode(_$$BoltWireEncoder _p$writer) {
+    _p$writer.writeString(name);
+    _p$writer.writeU32(history.length);
+for (final _l$boltffiValue0 in history) {
+  _p$writer.writeString(_l$boltffiValue0);
+}
+  }
+
+  int _m$wireEncodedSize() => 4 + ((name).length * 3) + 4 + history.fold<int>(0, (_l$size, _l$boltffiValue0) => _l$size + 4 + ((_l$boltffiValue0).length * 3));
+
+  @override
+  int get hashCode {
+    var _l$result = 1;
+    _l$result = 31 * _l$result + name.hashCode;
+    _l$result = 31 * _l$result + _$$BoltUtil.listHash(history, (_l$value) => _l$value.hashCode);
+    return _l$result;
+  }
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    return other is Profile &&
+        name == other.name &&
+        _$$BoltUtil.listCompare(history, other.history, (_l$left, _l$right) => _l$left == _l$right);
+  }
+
+  int rename(String name) {
+    final _l$selfStorage = _$$BoltStoragePool.acquireStorage(_m$wireEncodedSize());
+    final _l$selfWriter = _$$BoltWireEncoder(_$$BoltBufWriter.fromSpan(_l$selfStorage.ptr, _l$selfStorage.len));
+    _m$wireEncode(_l$selfWriter);
+    final _l$selfOut = _$$BoltCallocPtr<_$$BoltFFIBuf>.alloc($$ffi.sizeOf<_$$BoltFFIBuf>());
+    final _l$nameStorage = _$$BoltStoragePool.acquireStorage(4 + ((name).length * 3));
+    final _l$nameLen = _$$BoltUtil.writeString(_l$nameStorage.ptr, _l$nameStorage.len, name);
+    late final int _l$callResult;
+    try {
+      final _l$result = _f$boltffi_method_record_demo_api_profile_rename(_l$selfStorage.ptr, _l$selfWriter.len, _l$selfOut.ptr, _l$nameStorage.ptr, _l$nameLen);
+      final _l$selfBuffer = _l$selfOut.ptr.ref;
+      final _l$selfReader = _$$BoltWireDecoder(_$$BoltBufReader.fromSpan(_l$selfBuffer.ptr, _l$selfBuffer.len));
+      final _l$selfUpdated = Profile._m$wireDecode(_l$selfReader);
+      this.name = _l$selfUpdated.name;
+      this.history = _l$selfUpdated.history;
+      _l$callResult = _l$result;
+    } finally {
+      _$$BoltStoragePool.releaseStorage(_l$selfStorage);
+      _f$boltffi_free_buf(_l$selfOut.ptr.ref);
+      _l$selfOut.dispose();
+      _$$BoltStoragePool.releaseStorage(_l$nameStorage);
+    }
+    return _l$callResult;
+  }
+
+  int tryRename(String name) {
+    final _l$selfStorage = _$$BoltStoragePool.acquireStorage(_m$wireEncodedSize());
+    final _l$selfWriter = _$$BoltWireEncoder(_$$BoltBufWriter.fromSpan(_l$selfStorage.ptr, _l$selfStorage.len));
+    _m$wireEncode(_l$selfWriter);
+    final _l$selfOut = _$$BoltCallocPtr<_$$BoltFFIBuf>.alloc($$ffi.sizeOf<_$$BoltFFIBuf>());
+    final _l$nameStorage = _$$BoltStoragePool.acquireStorage(4 + ((name).length * 3));
+    final _l$nameLen = _$$BoltUtil.writeString(_l$nameStorage.ptr, _l$nameStorage.len, name);
+    final _l$resultOut = _$$BoltStoragePool.acquireStorage($$ffi.sizeOf<$$ffi.Uint32>());
+    late final int _l$callResult;
+    try {
+      final _l$error = _f$boltffi_method_record_demo_api_profile_try_rename(_l$selfStorage.ptr, _l$selfWriter.len, _l$selfOut.ptr, _l$nameStorage.ptr, _l$nameLen, _l$resultOut.ptr.cast<$$ffi.Uint32>());
+      if (_l$error.ptr != $$ffi.nullptr) {
+        try {
+          final _l$errorReader = _$$BoltWireDecoder(_$$BoltBufReader.fromSpan(_l$error.ptr, _l$error.len));
+          throw $$BoltException(_l$errorReader.readString());
+        } finally {
+          _f$boltffi_free_buf(_l$error);
+        }
+      }
+      final _l$result = _l$resultOut.ptr.cast<$$ffi.Uint32>().value;
+      final _l$selfBuffer = _l$selfOut.ptr.ref;
+      final _l$selfReader = _$$BoltWireDecoder(_$$BoltBufReader.fromSpan(_l$selfBuffer.ptr, _l$selfBuffer.len));
+      final _l$selfUpdated = Profile._m$wireDecode(_l$selfReader);
+      this.name = _l$selfUpdated.name;
+      this.history = _l$selfUpdated.history;
+      _l$callResult = _l$result;
+    } finally {
+      _$$BoltStoragePool.releaseStorage(_l$resultOut);
+      _$$BoltStoragePool.releaseStorage(_l$selfStorage);
+      _f$boltffi_free_buf(_l$selfOut.ptr.ref);
+      _l$selfOut.dispose();
+      _$$BoltStoragePool.releaseStorage(_l$nameStorage);
+    }
+    return _l$callResult;
+  }
+}

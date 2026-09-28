@@ -323,6 +323,73 @@ mod tests {
     }
 
     #[test]
+    fn dart_target_writes_back_encoded_records_and_releases_the_buffer_on_error() {
+        let bindings = bindings(
+            r#"
+            #[data]
+            pub struct Profile {
+                pub name: String,
+                pub history: Vec<String>,
+            }
+
+            #[data(impl)]
+            impl Profile {
+                pub fn rename(&mut self, name: String) -> u32 {
+                    self.history.push(self.name.clone());
+                    self.name = name;
+                    self.history.len() as u32
+                }
+
+                pub fn try_rename(&mut self, name: String) -> Result<u32, String> {
+                    if name.is_empty() {
+                        Err("name is empty".to_owned())
+                    } else {
+                        Ok(self.rename(name))
+                    }
+                }
+            }
+            "#,
+        );
+        let output = target(DartHost::new().package("demo"))
+            .render(&bindings)
+            .expect("mutable encoded records should render");
+        let source = file(&output, "demo/lib/demo.dart");
+        let record_start = source
+            .find("final class Profile {")
+            .expect("Profile record");
+
+        insta::assert_snapshot!(&source[record_start..]);
+    }
+
+    #[test]
+    fn dart_target_rejects_async_encoded_record_writeback() {
+        let bindings = bindings(
+            r#"
+            #[data]
+            pub struct Profile {
+                pub name: String,
+            }
+
+            #[data(impl)]
+            impl Profile {
+                pub async fn rename(&mut self, name: String) {
+                    self.name = name;
+                }
+            }
+            "#,
+        );
+        let result = target(DartHost::new().package("demo")).render(&bindings);
+
+        assert!(matches!(
+            result,
+            Err(crate::Error::UnsupportedTarget {
+                target: "dart",
+                shape: "asynchronous mutable encoded record receiver",
+            })
+        ));
+    }
+
+    #[test]
     fn dart_target_preserves_async_api_shape() {
         let bindings = bindings(
             r#"

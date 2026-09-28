@@ -232,6 +232,30 @@ public static class DemoTest
     {
         Console.WriteLine("Testing custom types (Email, UtcDateTime, Event)...");
 
+        DemoCase("case:custom_types.length.should_construct_in_meters");
+        Length length = Length.New(2.5);
+        Require(length.Value == 2.5, "Length meters");
+        DemoCase("case:custom_types.length.should_convert_to_centimeters");
+        Require(length.Centimeters() == 250.0, "Length centimeters");
+
+        DemoCase("case:custom_types.length.should_roundtrip_wrapper");
+        Length returnedLength = EchoLength(length);
+        Require(returnedLength.Value == 2.5, "EchoLength meters");
+        Require(returnedLength.Centimeters() == 250.0, "EchoLength centimeters");
+        Require(EchoLength(new Length(-1.25)).Centimeters() == -125.0, "negative length");
+
+        DemoCase("case:custom_types.length.should_write_back_in_meters");
+        Length updatedLength = returnedLength.SetCentimeters(75.0);
+        Require(updatedLength.Value == 0.75, "updated length meters");
+        Require(updatedLength.Centimeters() == 75.0, "updated length centimeters");
+        Require(length.Value == 2.5, "original length meters");
+        Require(length.Centimeters() == 250.0, "original length centimeters");
+
+        DemoCase("case:custom_types.length.should_roundtrip_nested_wrapper");
+        Fabric fabric = EchoFabric(new Fabric(new Length(1.25)));
+        Require(fabric.Length.Value == 1.25, "nested length meters");
+        Require(fabric.Length.Centimeters() == 125.0, "nested length centimeters");
+
         string email = "café@example.com";
         DemoCase("case:custom_types.email.should_roundtrip_value");
         Require(EchoEmail(email) == email, "EchoEmail roundtrip");

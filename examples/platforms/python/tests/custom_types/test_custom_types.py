@@ -4,6 +4,31 @@ import demo
 
 
 class CustomTypeTests(DemoTestCase):
+    def test_wrapped_length(self) -> None:
+        self.demo_case("case:custom_types.length.should_construct_in_meters")
+        length = demo.Length.new(2.5)
+        self.assertEqual(length.value, 2.5)
+        self.demo_case("case:custom_types.length.should_convert_to_centimeters")
+        self.assertEqual(length.centimeters(), 250)
+
+        self.demo_case("case:custom_types.length.should_roundtrip_wrapper")
+        returned = demo.echo_length(length)
+        self.assertEqual(returned.value, 2.5)
+        self.assertEqual(returned.centimeters(), 250)
+        self.assertEqual(demo.echo_length(demo.Length(-1.25)).centimeters(), -125)
+
+        self.demo_case("case:custom_types.length.should_write_back_in_meters")
+        updated = returned.set_centimeters(75)
+        self.assertEqual(updated.value, 0.75)
+        self.assertEqual(updated.centimeters(), 75)
+        self.assertEqual(length.value, 2.5)
+        self.assertEqual(length.centimeters(), 250)
+
+        self.demo_case("case:custom_types.length.should_roundtrip_nested_wrapper")
+        fabric = demo.echo_fabric(demo.Fabric(demo.Length(1.25)))
+        self.assertEqual(fabric.length.value, 1.25)
+        self.assertEqual(fabric.length.centimeters(), 125)
+
     def test_email(self) -> None:
         email = "café@example.com"
 
