@@ -99,9 +99,9 @@ impl CodecWrite for Writer<'_, '_> {
 
     fn direct_record(&mut self, _: RecordId, value: &ValueRef) -> Vec<Self::Stmt> {
         vec![
-            self.scope
-                .value(value)
-                .map(|value| WriteStatement::new(format!("({value})._m$wireEncode({});", self.name))),
+            self.scope.value(value).map(|value| {
+                WriteStatement::new(format!("({value})._m$wireEncode({});", self.name))
+            }),
         ]
     }
 
@@ -122,9 +122,9 @@ impl CodecWrite for Writer<'_, '_> {
 
     fn data_enum(&mut self, _: EnumId, value: &ValueRef) -> Vec<Self::Stmt> {
         vec![
-            self.scope
-                .value(value)
-                .map(|value| WriteStatement::new(format!("({value})._m$wireEncode({});", self.name))),
+            self.scope.value(value).map(|value| {
+                WriteStatement::new(format!("({value})._m$wireEncode({});", self.name))
+            }),
         ]
     }
 
