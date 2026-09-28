@@ -19,13 +19,13 @@ final class Profile {
 
   void _m$wireEncode(_$$BoltWireEncoder _p$writer) {
     _p$writer.writeString(name);
-    _p$writer.writeU32(history.length);
+    _p$writer.writeU32((history).length);
 for (final _l$boltffiValue0 in history) {
   _p$writer.writeString(_l$boltffiValue0);
 }
   }
 
-  int _m$wireEncodedSize() => 4 + ((name).length * 3) + 4 + history.fold<int>(0, (_l$size, _l$boltffiValue0) => _l$size + 4 + ((_l$boltffiValue0).length * 3));
+  int _m$wireEncodedSize() => 4 + ((name).length * 3) + 4 + (history).fold<int>(0, (_l$size, _l$boltffiValue0) => _l$size + 4 + ((_l$boltffiValue0).length * 3));
 
   @override
   int get hashCode {
