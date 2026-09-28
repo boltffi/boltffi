@@ -178,17 +178,20 @@ impl CodecWrite for Writer<'_, '_> {
                     .join("\n"),
                 2,
             );
-            // Skip the unwrap local when the payload never reads it, and
-            // rely on promotion instead of `!` on the null-checked value.
-            let unwrap = if inner.contains(&binder) {
-                format!("  final {binder} = {value};\n")
+            // Bind once into a fresh local — locals are always
+            // promotable, unlike non-final fields — then null-check
+            // the local. Skip the local when the payload never reads it.
+            if inner.contains(&binder) {
+                Ok(WriteStatement::new(format!(
+                    "final {binder} = {value};\nif ({binder} == null) {{\n  {}.writeU8(0);\n}} else {{\n  {}.writeU8(1);\n{inner}\n}}",
+                    self.name, self.name,
+                )))
             } else {
-                String::new()
-            };
-            Ok(WriteStatement::new(format!(
-                "if ({value} == null) {{\n  {}.writeU8(0);\n}} else {{\n  {}.writeU8(1);\n{unwrap}{inner}\n}}",
-                self.name, self.name,
-            )))
+                Ok(WriteStatement::new(format!(
+                    "if ({value} == null) {{\n  {}.writeU8(0);\n}} else {{\n  {}.writeU8(1);\n{inner}\n}}",
+                    self.name, self.name,
+                )))
+            }
         })]
     }
 

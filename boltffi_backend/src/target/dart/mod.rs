@@ -987,8 +987,13 @@ mod tests {
             #[data]
             pub enum Shade { Light, Dark }
 
+            #[data]
+            pub struct Config {
+                pub endpoint: Option<String>,
+            }
+
             #[export]
-            pub fn paint(shade: Option<Shade>, tags: Option<Vec<i32>>) {}
+            pub fn paint(shade: Option<Shade>, tags: Option<Vec<i32>>, config: Config) {}
             "#,
         );
         let output = target(DartHost::new().package("demo"))
@@ -1009,6 +1014,16 @@ mod tests {
             "constant element sizes collapse the fold, {source}"
         );
         assert!(!source.contains("= tags!;"), "{source}");
+        assert!(
+            source.contains("final _l$boltffiValue0 = endpoint;\nif (_l$boltffiValue0 == null)"),
+            "nullable fields bind once into a promotable local, {source}"
+        );
+        assert!(
+            source.contains(
+                "final _l$boltffiValue0 = endpoint; return _l$boltffiValue0 == null ? 0 :"
+            ),
+            "size expressions null-check the bound local, {source}"
+        );
         assert!(output.diagnostics().is_empty());
     }
 }

@@ -149,10 +149,11 @@ impl CodecSize for Sizer<'_, '_> {
         let binder = binder_name(binder);
         let inner = inner?.source;
         // Constant inner sizes never read the binder, so skip the unwrap
-        // local entirely; null-checked values are promoted without `!`.
+        // local entirely. When it does, bind once into a fresh local —
+        // locals are always promotable, unlike non-final fields.
         let source = if inner.contains(&binder) {
             format!(
-                "1 + ({value} == null ? 0 : (() {{ final {binder} = {value}; return {inner}; }})())"
+                "1 + (() {{ final {binder} = {value}; return {binder} == null ? 0 : {inner}; }})()"
             )
         } else {
             format!("1 + ({value} == null ? 0 : {inner})")
