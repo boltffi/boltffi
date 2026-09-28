@@ -39,6 +39,11 @@ use boltffi::*;
         c,
         reason = ExclusionReason::ImplementationGap,
         details = "C target does not yet wrap closure parameters ergonomically"
+    ),
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not support callbacks or closures yet"
     )
 )]
 #[export]

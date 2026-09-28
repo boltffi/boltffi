@@ -441,7 +441,7 @@ impl Generation {
                 let bindings = self.bindings::<Native>()?;
                 self.render_native_bindings(target, &bindings)
             }
-            Target::Header => Err(GenerationError::UnsupportedTarget { target }),
+            Target::Header | Target::Ruby => Err(GenerationError::UnsupportedTarget { target }),
         }
     }
 
@@ -477,7 +477,7 @@ impl Generation {
             Target::CSharp => self.render_csharp_bindings(bindings),
             Target::Dart => self.render_dart_bindings(bindings),
             Target::C => self.render_c_bindings(bindings),
-            Target::Swift | Target::TypeScript | Target::Header => {
+            Target::Swift | Target::TypeScript | Target::Header | Target::Ruby => {
                 Err(GenerationError::UnsupportedTarget { target })
             }
         }

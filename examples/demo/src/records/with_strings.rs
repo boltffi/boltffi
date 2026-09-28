@@ -15,7 +15,12 @@ pub struct Person {
 #[demo_bench_macros::demo_case(
     "records.with_strings.person.should_roundtrip_value",
     justification = "Ensure a Person record with string and integer fields crosses the wire and returns unchanged.",
-    directions = "Call `records::with_strings::echo_person` through the generated binding and assert a Person record with string and integer fields crosses the wire and returns unchanged."
+    directions = "Call `records::with_strings::echo_person` through the generated binding and assert a Person record with string and integer fields crosses the wire and returns unchanged.",
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not render records yet"
+    )
 )]
 pub fn echo_person(p: Person) -> Person {
     p
@@ -26,7 +31,12 @@ pub fn echo_person(p: Person) -> Person {
 #[demo_bench_macros::demo_case(
     "records.with_strings.person.should_make_from_fields",
     justification = "Ensure make_person returns a Person containing the provided name and age fields.",
-    directions = "Call `records::with_strings::make_person` through the generated binding and assert make_person returns a Person containing the provided name and age fields."
+    directions = "Call `records::with_strings::make_person` through the generated binding and assert make_person returns a Person containing the provided name and age fields.",
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not render records yet"
+    )
 )]
 pub fn make_person(name: String, age: u32) -> Person {
     Person { name, age }
@@ -37,7 +47,12 @@ pub fn make_person(name: String, age: u32) -> Person {
 #[demo_bench_macros::demo_case(
     "records.with_strings.person.should_format_greeting",
     justification = "Ensure greet_person formats a greeting from a Person record received over FFI.",
-    directions = "Call `records::with_strings::greet_person` through the generated binding and assert greet_person formats a greeting from a Person record received over FFI."
+    directions = "Call `records::with_strings::greet_person` through the generated binding and assert greet_person formats a greeting from a Person record received over FFI.",
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not render records yet"
+    )
 )]
 pub fn greet_person(p: Person) -> String {
     format!("Hello, {}! You are {} years old.", p.name, p.age)
@@ -57,7 +72,12 @@ pub struct Address {
 #[demo_bench_macros::demo_case(
     "records.with_strings.address.should_roundtrip_value",
     justification = "Ensure an Address record with multiple string fields crosses the wire and returns unchanged.",
-    directions = "Call `records::with_strings::echo_address` through the generated binding and assert an Address record with multiple string fields crosses the wire and returns unchanged."
+    directions = "Call `records::with_strings::echo_address` through the generated binding and assert an Address record with multiple string fields crosses the wire and returns unchanged.",
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not render records yet"
+    )
 )]
 pub fn echo_address(a: Address) -> Address {
     a
@@ -68,7 +88,12 @@ pub fn echo_address(a: Address) -> Address {
 #[demo_bench_macros::demo_case(
     "records.with_strings.address.should_format_value",
     justification = "Ensure format_address receives an Address record and returns a formatted string.",
-    directions = "Call `records::with_strings::format_address` through the generated binding and assert format_address receives an Address record and returns a formatted string."
+    directions = "Call `records::with_strings::format_address` through the generated binding and assert format_address receives an Address record and returns a formatted string.",
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not render records yet"
+    )
 )]
 pub fn format_address(a: Address) -> String {
     format!("{}, {}, {}", a.street, a.city, a.zip)

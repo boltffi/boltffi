@@ -106,7 +106,12 @@ impl ConstructorCoverageMatrix {
     #[demo_bench_macros::demo_case(
         "classes.constructor_matrix.with_borrowed_points.should_accept_borrowed_blittable_slice",
         justification = "Ensure a class constructor accepts a borrowed slice of blittable records without dropping the constructor from generated bindings.",
-        directions = "Call `classes::constructor_matrix::ConstructorCoverageMatrix::with_borrowed_points` through the generated binding with a label and two Point values, then assert the returned matrix reports the borrowed point count and first point."
+        directions = "Call `classes::constructor_matrix::ConstructorCoverageMatrix::with_borrowed_points` through the generated binding with a label and two Point values, then assert the returned matrix reports the borrowed point count and first point.",
+        exclude(
+            ruby,
+            reason = ExclusionReason::ImplementationGap,
+            details = "the Ruby target does not support classes yet"
+        )
     )]
     pub fn with_borrowed_points(label: String, points: &[Point]) -> Self {
         let point_count = points.len() as u32;
@@ -125,7 +130,12 @@ impl ConstructorCoverageMatrix {
     #[demo_bench_macros::demo_case(
         "classes.constructor_matrix.with_borrowed_people.should_accept_borrowed_encoded_record_slice",
         justification = "Ensure a class constructor accepts a borrowed slice of encoded records without dropping the constructor from generated bindings.",
-        directions = "Call `classes::constructor_matrix::ConstructorCoverageMatrix::with_borrowed_people` through the generated binding with two Person values, then assert the returned matrix reports the record count, names, and age total."
+        directions = "Call `classes::constructor_matrix::ConstructorCoverageMatrix::with_borrowed_people` through the generated binding with two Person values, then assert the returned matrix reports the record count, names, and age total.",
+        exclude(
+            ruby,
+            reason = ExclusionReason::ImplementationGap,
+            details = "the Ruby target does not support classes yet"
+        )
     )]
     pub fn with_borrowed_people(people: &[Person]) -> Self {
         let names = people

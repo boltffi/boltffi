@@ -12,6 +12,7 @@ pub enum Target {
     Python,
     CSharp,
     C,
+    Ruby,
 }
 
 impl Target {
@@ -27,6 +28,7 @@ impl Target {
             Target::Python => "python",
             Target::CSharp => "csharp",
             Target::C => "c",
+            Target::Ruby => "ruby",
         }
     }
 }
