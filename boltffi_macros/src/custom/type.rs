@@ -17,7 +17,7 @@ struct CustomTypeExpansion {
 }
 
 impl CustomTypeSpec {
-    /// Whether the declared name is the remote type's own name, which needs no alias.
+    /// Whether the remote is the declared name itself, unqualified, which needs no alias.
     pub(crate) fn names_remote(&self) -> bool {
         names_remote(&self.name, &self.remote)
     }
@@ -27,7 +27,9 @@ fn names_remote(name: &syn::Ident, remote: &syn::Type) -> bool {
     matches!(
         remote,
         syn::Type::Path(path) if path.qself.is_none()
-            && path.path.segments.last().is_some_and(|segment| {
+            && path.path.leading_colon.is_none()
+            && path.path.segments.len() == 1
+            && path.path.segments.first().is_some_and(|segment| {
                 segment.ident == *name && segment.arguments.is_empty()
             })
     )
