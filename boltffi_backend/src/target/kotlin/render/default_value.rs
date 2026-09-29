@@ -26,6 +26,10 @@ impl DefaultExpression {
         if let TypeRef::Custom(custom_type) = ty {
             return Self::custom(*custom_type, value, context);
         }
+        // a present value of an `Option<T>` is spelled as the `T` it holds
+        if let (TypeRef::Optional(inner), false) = (ty, matches!(value, DefaultValue::Null)) {
+            return Self::render(inner, value, context);
+        }
 
         match value {
             DefaultValue::Bool(value) => Ok(Expression::bool(*value)),

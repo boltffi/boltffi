@@ -31,6 +31,7 @@ const suiteModules = [
   "./tests/multicrate/mod.test.mjs",
   "./tests/options/complex.test.mjs",
   "./tests/options/primitives.test.mjs",
+  "./tests/primitives/default_arguments.test.mjs",
   "./tests/primitives/scalars.test.mjs",
   "./tests/primitives/strings.test.mjs",
   "./tests/primitives/vecs.test.mjs",

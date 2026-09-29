@@ -274,6 +274,74 @@ impl TypeName {
     pub fn nullable(self) -> Self {
         Self::new(format!("{self}?"))
     }
+
+    /// The type as a JVM signature sees it. Parameter lists that erase alike
+    /// share a JVM signature and clash however their Kotlin types differ: an
+    /// unsigned value class erases to the signed primitive it wraps, a
+    /// nullable reference to the reference, a generic to its raw type and a
+    /// function type to the `FunctionN` of its arity. A nullable primitive
+    /// stays apart, being boxed.
+    pub fn jvm_erasure(&self) -> Self {
+        let name = self.0.as_str();
+        if let Some(arity) = Self::function_arity(name) {
+            return Self::new(format!("kotlin.jvm.functions.Function{arity}"));
+        }
+        if let Some(inner) = name.strip_suffix('?') {
+            return match Self::unsigned_carrier(inner).is_some() || Self::is_primitive(inner) {
+                true => self.clone(),
+                false => Self::new(inner).jvm_erasure(),
+            };
+        }
+        let raw = name.split_once('<').map_or(name, |(raw, _)| raw);
+        Self::new(Self::unsigned_carrier(raw).unwrap_or(raw))
+    }
+
+    fn is_primitive(name: &str) -> bool {
+        matches!(
+            name,
+            "Boolean" | "Byte" | "Short" | "Int" | "Long" | "Float" | "Double" | "Char"
+        )
+    }
+
+    /// The signed type an unsigned value class carries on the JVM.
+    fn unsigned_carrier(name: &str) -> Option<&'static str> {
+        match name {
+            "UByte" => Some("Byte"),
+            "UShort" => Some("Short"),
+            "UInt" => Some("Int"),
+            "ULong" => Some("Long"),
+            "UByteArray" => Some("ByteArray"),
+            "UShortArray" => Some("ShortArray"),
+            "UIntArray" => Some("IntArray"),
+            "ULongArray" => Some("LongArray"),
+            _ => None,
+        }
+    }
+
+    /// The parameter count of a function type such as `((Int, String) -> Unit)`
+    /// or its nullable form.
+    fn function_arity(name: &str) -> Option<usize> {
+        let function = name.strip_suffix('?').unwrap_or(name);
+        // the `>` of an arrow closes nothing
+        let parameters = function.strip_prefix("((")?.replace("->", "  ");
+        let mut depth = 0usize;
+        let mut commas = 0;
+        for (index, character) in parameters.char_indices() {
+            match character {
+                '(' | '<' => depth += 1,
+                ')' | '>' if depth > 0 => depth -= 1,
+                ',' if depth == 0 => commas += 1,
+                ')' => {
+                    return Some(match parameters[..index].trim().is_empty() {
+                        true => 0,
+                        false => commas + 1,
+                    });
+                }
+                _ => {}
+            }
+        }
+        None
+    }
 }
 
 impl sealed::SyntaxFragment for Expression {}
@@ -290,11 +358,21 @@ impl Expression {
     }
 
     pub fn integer(value: impl Into<i128>) -> Self {
-        Self(value.into().to_string())
+        Self::signed(value.into(), "")
     }
 
     pub fn long(value: impl Into<i128>) -> Self {
-        Self(format!("{}L", value.into()))
+        Self::signed(value.into(), "L")
+    }
+
+    /// `value` as a literal with `suffix`. `Long.MIN_VALUE` has no literal:
+    /// Kotlin reads `-9223372036854775808` as the negation of a literal one
+    /// past `Long.MAX_VALUE`, and rejects that literal as out of range.
+    fn signed(value: i128, suffix: &str) -> Self {
+        match value == i128::from(i64::MIN) {
+            true => Self("Long.MIN_VALUE".to_owned()),
+            false => Self(format!("{value}{suffix}")),
+        }
     }
 
     pub fn unsigned_long(value: impl Into<u128>) -> Self {
@@ -606,7 +684,58 @@ impl FromIterator<Expression> for ArgumentList {
 
 #[cfg(test)]
 mod tests {
-    use super::Literal;
+    use super::{Expression, Literal, TypeName};
+
+    #[test]
+    fn long_min_is_spelled_as_its_constant() {
+        assert_eq!(Expression::integer(i64::MIN).to_string(), "Long.MIN_VALUE");
+        assert_eq!(Expression::long(i64::MIN).to_string(), "Long.MIN_VALUE");
+        assert_eq!(
+            Expression::long(i64::MIN + 1).to_string(),
+            "-9223372036854775807L"
+        );
+    }
+
+    #[test]
+    fn types_that_share_a_jvm_signature_erase_alike() {
+        let erasure = |name: &str| TypeName::new(name).jvm_erasure().to_string();
+
+        [
+            ("ULong", "Long"),
+            ("UInt", "Int"),
+            ("UIntArray", "IntArray"),
+            ("String?", "String"),
+            ("List<Int>", "List<String>"),
+            ("Map<String, Int>?", "Map<Long, Long>"),
+            ("((Int) -> Unit)", "((String) -> Long)?"),
+            (
+                "((Pair<Int, Int>, ((Int) -> Unit)) -> Unit)",
+                "((Int, Int) -> Unit)",
+            ),
+        ]
+        .into_iter()
+        .for_each(|(left, right)| {
+            assert_eq!(erasure(left), erasure(right), "{left} and {right}");
+        });
+    }
+
+    #[test]
+    fn types_with_distinct_jvm_signatures_stay_apart() {
+        let erasure = |name: &str| TypeName::new(name).jvm_erasure().to_string();
+
+        [
+            ("Long?", "Long"),
+            ("ULong?", "Long?"),
+            ("Int", "Long"),
+            ("IntArray", "List<Int>"),
+            ("(() -> Unit)", "((Int) -> Unit)"),
+            ("((Int) -> Unit)", "((Int, Int) -> Unit)"),
+        ]
+        .into_iter()
+        .for_each(|(left, right)| {
+            assert_ne!(erasure(left), erasure(right), "{left} and {right}");
+        });
+    }
 
     #[test]
     fn string_escapes_interpolation_markers() {

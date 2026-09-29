@@ -165,7 +165,11 @@ impl KotlinPrimitive {
             Primitive::I16 => converted.convert(Identifier::parse("toShort")?),
             Primitive::U16 => converted.convert(Identifier::parse("toUShort")?),
             Primitive::U32 => converted.convert(Identifier::parse("toUInt")?),
-            Primitive::U64 | Primitive::USize => converted.convert(Identifier::parse("toULong")?),
+            Primitive::U64 | Primitive::USize if i64::try_from(signed).is_ok() => {
+                converted.convert(Identifier::parse("toULong")?)
+            }
+            // past `Long.MAX_VALUE` there is no signed literal to convert
+            Primitive::U64 | Primitive::USize => Expression::unsigned_long(signed as u128),
             Primitive::I32 | Primitive::I64 | Primitive::ISize => value,
             _ => {
                 return Err(KotlinHost::unsupported("unknown primitive literal"));

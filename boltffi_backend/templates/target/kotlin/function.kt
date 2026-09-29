@@ -1,4 +1,4 @@
-{{ function.documentation() }}{% if function.async_call().is_some() %}suspend {% endif %}fun {{ function.name() }}({% for parameter in function.parameters() %}{{ parameter.name() }}: {{ parameter.ty() }}{% if !loop.last %}, {% endif %}{% endfor %}){% if let Some(return_type) = function.returns() %}: {{ return_type }}{% endif %} {
+{{ function.documentation() }}{% if function.async_call().is_some() %}suspend {% endif %}fun {{ function.name() }}({% for parameter in function.parameters() %}{{ parameter.declaration() }}{% if !loop.last %}, {% endif %}{% endfor %}){% if let Some(return_type) = function.returns() %}: {{ return_type }}{% endif %} {
 {%- if let Some(async_call) = function.async_call() %}
 {%- if async_call.returns_value() %}
     return boltffiCallAsync(

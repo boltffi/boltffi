@@ -57,9 +57,62 @@ impl DeprecationInfo {
 /// so generated bindings can render the value without parsing Rust syntax.
 /// Stored as `i128` so any signed or unsigned integer up to 64 bits
 /// round-trips without loss.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
-#[serde(transparent)]
+///
+/// Serialized as the `i64` or `u64` it fits, never as `i128`: serde buffers
+/// the content of a flattened or tagged container (a class's callables are
+/// flattened into it), and that buffer has no `i128`, so a constructor or
+/// method default would not decode.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct IntegerValue(i128);
+
+impl Serialize for IntegerValue {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        if let Ok(value) = i64::try_from(self.0) {
+            serializer.serialize_i64(value)
+        } else if let Ok(value) = u64::try_from(self.0) {
+            serializer.serialize_u64(value)
+        } else {
+            Err(serde::ser::Error::custom(format!(
+                "integer default {} does not fit in 64 bits",
+                self.0
+            )))
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for IntegerValue {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct Visitor;
+
+        impl serde::de::Visitor<'_> for Visitor {
+            type Value = IntegerValue;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("an integer of at most 64 bits")
+            }
+
+            fn visit_i64<E: serde::de::Error>(self, value: i64) -> Result<Self::Value, E> {
+                Ok(IntegerValue(value.into()))
+            }
+
+            fn visit_u64<E: serde::de::Error>(self, value: u64) -> Result<Self::Value, E> {
+                Ok(IntegerValue(value.into()))
+            }
+
+            fn visit_i128<E: serde::de::Error>(self, value: i128) -> Result<Self::Value, E> {
+                Ok(IntegerValue(value))
+            }
+
+            fn visit_u128<E: serde::de::Error>(self, value: u128) -> Result<Self::Value, E> {
+                i128::try_from(value)
+                    .map(IntegerValue)
+                    .map_err(|_| E::custom("integer default does not fit in 128 bits"))
+            }
+        }
+
+        deserializer.deserialize_any(Visitor)
+    }
+}
 
 impl IntegerValue {
     /// Stores a resolved integer value.
@@ -207,5 +260,45 @@ impl ElementMeta {
     /// Returns the default value.
     pub fn default(&self) -> Option<&DefaultValue> {
         self.default.as_ref()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde::{Deserialize, Serialize};
+
+    use super::{DefaultValue, IntegerValue};
+
+    #[derive(Debug, PartialEq, Serialize, Deserialize)]
+    struct Inner {
+        default: DefaultValue,
+    }
+
+    /// A class flattens its callables, which makes serde buffer them.
+    #[derive(Debug, PartialEq, Serialize, Deserialize)]
+    struct Flattened {
+        #[serde(flatten)]
+        inner: Inner,
+    }
+
+    #[test]
+    fn integer_defaults_round_trip_through_a_flattened_container() {
+        for value in [0, -1, i128::from(i64::MIN), i128::from(u64::MAX)] {
+            let flattened = Flattened {
+                inner: Inner {
+                    default: DefaultValue::Integer(IntegerValue::new(value)),
+                },
+            };
+            let json = serde_json::to_string(&flattened).expect("serialize");
+            assert_eq!(json, format!(r#"{{"default":{{"Integer":{value}}}}}"#));
+            let decoded: Flattened = serde_json::from_str(&json).expect("deserialize");
+            assert_eq!(decoded, flattened);
+        }
+    }
+
+    #[test]
+    fn an_integer_default_beyond_64_bits_does_not_serialize() {
+        let value = DefaultValue::Integer(IntegerValue::new(i128::from(u64::MAX) + 1));
+        assert!(serde_json::to_string(&value).is_err());
     }
 }

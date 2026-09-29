@@ -102,7 +102,7 @@ fn lower_path(path: &SourcePath) -> Result<CustomConverterPath, LowerError> {
 mod tests {
     use boltffi_ast::{
         CanonicalName as SourceName, CustomRemoteType, CustomTypeConverter, CustomTypeConverters,
-        CustomTypeDef, CustomTypeId as SourceCustomTypeId,
+        CustomTypeDef, CustomTypeId as SourceCustomTypeId, DefaultValue as SourceDefaultValue,
         DeprecationInfo as SourceDeprecationInfo, DocComment as SourceDocComment, FieldDef,
         PackageInfo as SourcePackage, ParameterDef, Path as SourcePath, Primitive, RecordDef,
         ReturnDef, SourceContract, TypeExpr,
@@ -110,9 +110,9 @@ mod tests {
 
     use crate::lower::{LowerError, LowerErrorKind, UnsupportedType, lower};
     use crate::{
-        Bindings, CanonicalName, CodecNode, CustomTypeDecl, CustomTypeId, Decl, Native, ParamPlan,
-        Primitive as BindingPrimitive, Receive, RecordId, ReturnPlan, SurfaceLower, TypeRef,
-        Wasm32,
+        Bindings, CanonicalName, CodecNode, CustomTypeDecl, CustomTypeId, Decl, DefaultValue,
+        Native, ParamPlan, Primitive as BindingPrimitive, Receive, RecordDecl, RecordId,
+        ReturnPlan, SurfaceLower, TypeRef, Wasm32,
     };
 
     fn package() -> SourceContract {
@@ -380,6 +380,59 @@ mod tests {
             }
             other => panic!("expected encoded custom return, got {other:?}"),
         }
+    }
+
+    /// A record whose only field is the custom type `demo::Limit` with a
+    /// `None` default, next to that custom type's declaration.
+    fn none_default_on_custom_field(repr: TypeExpr) -> SourceContract {
+        let mut contract = package();
+        contract
+            .customs
+            .push(custom_type("demo::Limit", "Limit", repr));
+        let mut limit = FieldDef::new(name("limit"), custom_ref("demo::Limit", "Limit"));
+        limit.default = Some(SourceDefaultValue::None);
+        let mut config = RecordDef::new("demo::Config".into(), name("Config"));
+        config.fields = vec![limit];
+        contract.records.push(config);
+        contract
+    }
+
+    #[test]
+    fn none_default_lowers_on_a_custom_type_represented_as_an_option() {
+        let contract = none_default_on_custom_field(TypeExpr::Option(Box::new(
+            TypeExpr::Primitive(Primitive::U32),
+        )));
+
+        let bindings = lower::<Native>(&contract).expect("contract should lower");
+        let record = bindings
+            .decls()
+            .iter()
+            .find_map(|decl| match decl {
+                Decl::Record(record) => match record.as_ref() {
+                    RecordDecl::Encoded(record) => Some(record),
+                    RecordDecl::Direct(_) => None,
+                },
+                _ => None,
+            })
+            .expect("expected encoded record declaration");
+
+        assert_eq!(
+            record.fields()[0].meta().default(),
+            Some(&DefaultValue::Null)
+        );
+    }
+
+    #[test]
+    fn none_default_rejects_on_a_custom_type_not_represented_as_an_option() {
+        let contract = none_default_on_custom_field(TypeExpr::Primitive(Primitive::U32));
+
+        let error = lower::<Native>(&contract)
+            .expect_err("a custom type represented as u32 cannot default to None");
+
+        assert!(matches!(
+            error.kind(),
+            LowerErrorKind::UnsupportedType(UnsupportedType::DefaultValue)
+        ));
     }
 
     #[test]

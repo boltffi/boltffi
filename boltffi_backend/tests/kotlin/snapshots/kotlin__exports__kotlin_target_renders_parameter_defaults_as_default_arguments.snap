@@ -1,0 +1,156 @@
+---
+source: boltffi_backend/tests/kotlin/exports.rs
+expression: rendered
+---
+===== com/boltffi/demo/Demo.kt =====
+@file:OptIn(kotlin.ExperimentalUnsignedTypes::class)
+
+package com.boltffi.demo
+
+import kotlinx.coroutines.launch
+@Suppress("FunctionName")
+private object Native {
+    @JvmStatic external fun boltffi_release_class_demo_server(handle: Long): Unit
+    @JvmStatic external fun boltffi_init_class_demo_server_new(port: Short): Long
+    @JvmStatic external fun boltffi_init_class_demo_server_start(port: Short, first: Long, second: Long): Long
+    @JvmStatic external fun boltffi_async_init_class_demo_server_start_poll(handle: Long, callback_data: Long): Byte
+    @JvmStatic external fun boltffi_async_init_class_demo_server_start_complete(handle: Long): Long
+    @JvmStatic external fun boltffi_async_init_class_demo_server_start_cancel(handle: Long): Unit
+    @JvmStatic external fun boltffi_async_init_class_demo_server_start_free(handle: Long): Unit
+    @JvmStatic external fun boltffi_async_init_class_demo_server_start_panic_message(handle: Long): ByteArray?
+    @JvmStatic external fun boltffi_method_class_demo_server_port(`receiver`: Long, mapped: Boolean): Short
+    @JvmStatic external fun boltffi_function_demo_greet(name: java.nio.ByteBuffer, __boltffi_name_len: Int, greeting: java.nio.ByteBuffer, __boltffi_greeting_len: Int, times: Int, offset: Long, shout: Boolean, ratio: Float, mode: Byte, suffix: java.nio.ByteBuffer, __boltffi_suffix_len: Int, limit: java.nio.ByteBuffer, __boltffi_limit_len: Int): ByteArray?
+
+    @JvmStatic fun boltffiFutureContinuationCallback(handle: Long, pollResult: Byte) {
+        BoltFfiAsync.resume(handle, pollResult)
+    }
+}
+
+
+enum class Mode(val value: Byte) {
+    FAST(1.toByte()),
+    SLOW(2.toByte());
+
+    companion object {
+        fun fromValue(value: Byte): Mode =
+            entries.first { it.value == value }
+    }
+}
+
+fun interface Handler {
+    fun process(value: UInt): UInt
+}
+
+private object HandlerMap {
+    private val map = java.util.concurrent.ConcurrentHashMap<Long, Handler>()
+    private val counter = java.util.concurrent.atomic.AtomicLong(1L)
+
+    fun insert(value: Handler): Long {
+        val handle = counter.getAndAdd(2L)
+        map[handle] = value
+        return handle
+    }
+
+    fun get(handle: Long): Handler? = map[handle]
+
+    fun remove(handle: Long): Handler? = map.remove(handle)
+
+    fun clone(handle: Long): Long {
+        val value = map[handle] ?: return 0L
+        return insert(value)
+    }
+}
+
+object HandlerCallbacks {
+    @JvmStatic
+    fun free(handle: Long) {
+        HandlerMap.remove(handle)
+    }
+
+    @JvmStatic
+    fun clone(handle: Long): Long {
+        return HandlerMap.clone(handle)
+    }
+
+    @JvmStatic
+    fun process(handle: Long, value: Int): Int {
+        val impl = HandlerMap.get(handle) ?: error("HandlerMap: invalid handle $handle")
+        return impl.process(value.toUInt()).toInt()
+    }
+}
+
+object HandlerBridge {
+    fun create(value: Handler): Long {
+        return HandlerMap.insert(value)
+    }
+}
+
+class Server internal constructor(internal val handle: Long) : AutoCloseable {
+    private val __boltffi_closed = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    override fun close() {
+        if (__boltffi_closed.compareAndSet(false, true)) {
+            Native.boltffi_release_class_demo_server(handle)
+        }
+    }
+
+    internal fun __boltffiTakeHandle(): Long {
+        check(__boltffi_closed.compareAndSet(false, true)) { "Server is closed" }
+        return handle
+    }
+
+    internal fun boltffiHandle(): Long {
+        check(!__boltffi_closed.get()) { "Server is closed" }
+        return handle
+    }
+
+    constructor(port: UShort = 8080.toUShort()) : this(new(port).handle)
+
+    companion object {
+        fun new(port: UShort = 8080.toUShort()): Server {
+            return Server(Native.boltffi_init_class_demo_server_new(port.toShort()))
+        }
+        suspend fun start(port: UShort, first: Handler? = null, second: Handler? = null): Server {
+            return boltffiCallAsync(
+                createFuture = {
+                    Native.boltffi_init_class_demo_server_start(port.toShort(), first?.let { __boltffi_callback -> HandlerBridge.create(__boltffi_callback) } ?: 0L, second?.let { __boltffi_callback -> HandlerBridge.create(__boltffi_callback) } ?: 0L)
+                },
+                poll = { future, contHandle -> Native.boltffi_async_init_class_demo_server_start_poll(future, contHandle) },
+                complete = { future ->
+                    Server(Native.boltffi_async_init_class_demo_server_start_complete(future))
+                },
+                free = { future -> Native.boltffi_async_init_class_demo_server_start_free(future) },
+                cancel = { future -> Native.boltffi_async_init_class_demo_server_start_cancel(future) },
+            )
+        }
+    }
+
+    fun port(mapped: Boolean = false): UShort {
+        return Native.boltffi_method_class_demo_server_port(this.boltffiHandle(), mapped).toUShort()
+    }
+}
+
+fun greet(name: String, greeting: String = "world", times: UInt = 3.toUInt(), offset: Long = -1, shout: Boolean = true, ratio: Float = 0.5f, mode: Mode = Mode.SLOW, suffix: String? = null, limit: UShort? = 7.toUShort()): String {
+    val __boltffi_name_wire = WireWriterPool.acquire(4 + Utf8Codec.maxBytes(name))
+    val __boltffi_name_writer = __boltffi_name_wire.writer
+    __boltffi_name_writer.writeString(name)
+    val __boltffi_greeting_wire = WireWriterPool.acquire(4 + Utf8Codec.maxBytes(greeting))
+    val __boltffi_greeting_writer = __boltffi_greeting_wire.writer
+    __boltffi_greeting_writer.writeString(greeting)
+    val __boltffi_suffix_wire = WireWriterPool.acquire(1 + (suffix?.let { __boltffi_value_0 -> 4 + Utf8Codec.maxBytes(__boltffi_value_0) } ?: 0))
+    val __boltffi_suffix_writer = __boltffi_suffix_wire.writer
+    __boltffi_suffix_writer.writeOptionalValue(suffix, { __boltffi_suffix_writer, __boltffi_value_0 -> __boltffi_suffix_writer.writeString(__boltffi_value_0) })
+    val __boltffi_limit_wire = WireWriterPool.acquire(if (limit == null) 1 else 3)
+    val __boltffi_limit_writer = __boltffi_limit_wire.writer
+    __boltffi_limit_writer.writeOptionalU16(limit)
+    try {
+        val __boltffi_result = Native.boltffi_function_demo_greet(__boltffi_name_wire.directBuffer(), __boltffi_name_wire.size(), __boltffi_greeting_wire.directBuffer(), __boltffi_greeting_wire.size(), times.toInt(), offset, shout, ratio, mode.value.toByte(), __boltffi_suffix_wire.directBuffer(), __boltffi_suffix_wire.size(), __boltffi_limit_wire.directBuffer(), __boltffi_limit_wire.size()) ?: throw IllegalStateException("null buffer returned")
+        val __boltffi_reader = WireReader(__boltffi_result)
+        return __boltffi_reader.readString()
+    } finally {
+        __boltffi_name_wire.close()
+        __boltffi_greeting_wire.close()
+        __boltffi_suffix_wire.close()
+        __boltffi_limit_wire.close()
+    }
+}

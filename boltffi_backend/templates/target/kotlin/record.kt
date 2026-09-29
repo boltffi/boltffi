@@ -1,6 +1,6 @@
 {%- macro exported_call(call, indent) %}
 
-{{ call.documentation().indented(indent) }}{{ indent }}{% if call.async_call().is_some() %}suspend {% endif %}fun {{ call.name() }}({% for parameter in call.parameters() %}{{ parameter.name() }}: {{ parameter.ty() }}{% if !loop.last %}, {% endif %}{% endfor %}){% if let Some(return_type) = call.returns() %}: {{ return_type }}{% endif %} {
+{{ call.documentation().indented(indent) }}{{ indent }}{% if call.async_call().is_some() %}suspend {% endif %}fun {{ call.name() }}({% for parameter in call.parameters() %}{{ parameter.declaration() }}{% if !loop.last %}, {% endif %}{% endfor %}){% if let Some(return_type) = call.returns() %}: {{ return_type }}{% endif %} {
 {%- if let Some(async_call) = call.async_call() %}
 {%- if async_call.returns_value() %}
 {{ indent }}    return boltffiCallAsync(

@@ -157,11 +157,6 @@ class Counter internal constructor(internal val handle: Long) : AutoCloseable {
     }
 
     /**
-     * Creates a counter starting at `start`.
-     */
-    constructor(start: Long) : this(new(start).handle)
-
-    /**
      * Returns a counter starting at zero.
      */
     constructor() : this(zeroed().handle)
