@@ -21,7 +21,7 @@ public struct FfiError: Error {
 public struct DefaultAmount: Hashable, Equatable, Sendable {
     public var value: Int32
 
-    public init(value: Int32) {
+    public init(value: Int32 = 3) {
         self.value = value
     }
 
@@ -41,11 +41,7 @@ public struct DefaultAmount: Hashable, Equatable, Sendable {
         writer.writeI32(self.value)
     }
 
-    public static func new(value: Int32 = 3) -> DefaultAmount {
-        return DefaultAmount(fromC: boltffi_init_record_demo_default_amount_new(value))
-    }
-
-    public init(withValue value: Int32 = 5) {
+    public init(withValue value: Int32) {
         self = DefaultAmount(fromC: boltffi_init_record_demo_default_amount_with_value(value))
     }
 

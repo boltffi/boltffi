@@ -71,16 +71,13 @@ impl DefaultCounter {
 
 #[data]
 pub struct DefaultAmount {
+    #[boltffi::default(3)]
     pub value: i32,
 }
 
 #[data(impl)]
 impl DefaultAmount {
-    pub fn new(#[boltffi::default(3)] value: i32) -> Self {
-        Self { value }
-    }
-
-    pub fn with_value(#[boltffi::default(5)] value: i32) -> Self {
+    pub fn with_value(value: i32) -> Self {
         Self { value }
     }
 

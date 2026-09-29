@@ -9,8 +9,9 @@ func checkDefaultArguments() async throws {
     _ = DefaultCounter.sum(right: 5)
     _ = try await counter.asyncOffset()
 
-    let amount = DefaultAmount.new()
-    _ = DefaultAmount()
+    let amount = DefaultAmount()
+    _ = DefaultAmount(value: 9)
+    _ = DefaultAmount(withValue: 5)
     _ = amount.offset()
     _ = DefaultMode.quiet.matches()
 
