@@ -1,8 +1,8 @@
 use askama::Template;
 
 use boltffi_binding::{
-    CanonicalName, ClosureReturn, DirectValueType, DirectVectorElementType, Direction, EnumId,
-    ErrorChannel, ErrorPlacement, ExecutionDecl, ExportedCallable, ExportedMethodDecl,
+    CanonicalName, ClosureReturn, DirectValueType, DirectVectorElementType, Direction, DocComment,
+    EnumId, ErrorChannel, ErrorPlacement, ExecutionDecl, ExportedCallable, ExportedMethodDecl,
     FunctionDecl, HandlePresence, HandleTarget, IncomingParam, InitializerDecl, IntoRust, Native,
     NativeSymbol, OutOfRust, ParamDecl, ParamPlanRender, Primitive, ReadPlan, Receive, RecordId,
     ReturnPlanRender, ReturnValueSlot, Surface, TypeRef, WritePlan, native,
@@ -105,6 +105,7 @@ enum InitializerEffect {
     Plain,
     Throwing,
     Failable,
+    Asynchronous,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -786,6 +787,9 @@ impl Initializer {
         value_type: ValueType,
         invocation: Invocation,
     ) -> Result<Self> {
+        if invocation.asynchronous() {
+            return Self::from_async(method.name(), method.meta().doc(), invocation);
+        }
         let constructed_type = value_type.constructed_type();
         let effect = InitializerEffect::new(constructed_type, &invocation);
         let requires_wire_runtime = invocation.requires_wire_runtime();
@@ -825,6 +829,9 @@ impl Initializer {
             bridge,
             context,
         )?;
+        if invocation.asynchronous() {
+            return Self::from_async(initializer.name(), initializer.meta().doc(), invocation);
+        }
         let effect = InitializerEffect::new(constructed_type, &invocation);
         let requires_wire_runtime = invocation.requires_wire_runtime();
         let factory_return = invocation.returns.factory_type(constructed_type)?;
@@ -854,6 +861,28 @@ impl Initializer {
         })
     }
 
+    fn from_async(
+        name: &CanonicalName,
+        documentation: Option<&DocComment>,
+        invocation: Invocation,
+    ) -> Result<Self> {
+        let requires_wire_runtime = invocation.requires_wire_runtime();
+        let (parameters, body, returns) = invocation.into_rendered("        ")?;
+        Ok(Self {
+            documentation: Documentation::new(documentation, "    "),
+            signature: InitializerSignature::NamedFactory {
+                name: Name::new(name).function()?,
+            },
+            parameters,
+            body,
+            factory_return: returns
+                .ty
+                .ok_or(SwiftHost::unsupported("void async initializer"))?,
+            effect: InitializerEffect::Asynchronous,
+            requires_wire_runtime,
+        })
+    }
+
     pub fn documentation(&self) -> &Documentation {
         &self.documentation
     }
@@ -879,8 +908,8 @@ impl Initializer {
         self.effect.failable_marker()
     }
 
-    pub fn throwing_keyword(&self) -> &str {
-        self.effect.throwing_keyword()
+    pub fn effect_keywords(&self) -> &str {
+        self.effect.keywords()
     }
 
     pub fn body(&self) -> &str {
@@ -889,6 +918,10 @@ impl Initializer {
 
     pub fn requires_wire_runtime(&self) -> bool {
         self.requires_wire_runtime
+    }
+
+    pub fn requires_async_runtime(&self) -> bool {
+        self.effect == InitializerEffect::Asynchronous
     }
 }
 
@@ -994,13 +1027,14 @@ impl InitializerEffect {
     fn failable_marker(self) -> &'static str {
         match self {
             Self::Failable => "?",
-            Self::Plain | Self::Throwing => "",
+            Self::Plain | Self::Throwing | Self::Asynchronous => "",
         }
     }
 
-    fn throwing_keyword(self) -> &'static str {
+    fn keywords(self) -> &'static str {
         match self {
             Self::Throwing => " throws",
+            Self::Asynchronous => " async throws",
             Self::Plain | Self::Failable => "",
         }
     }

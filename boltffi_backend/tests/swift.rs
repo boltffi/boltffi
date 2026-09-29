@@ -1,5 +1,5 @@
 #[cfg(target_os = "macos")]
-use std::{fs, process::Command};
+use std::{env, fs, process::Command, time::UNIX_EPOCH};
 
 use boltffi_ast::PackageInfo;
 use boltffi_backend::{
@@ -560,7 +560,7 @@ fn swift_target_renders_custom_type_defaults_through_representations() {
 
 #[test]
 fn swift_target_renders_parameter_defaults() {
-    insta::assert_snapshot!(rendered_fixture("exports/defaulted_callables"));
+    insta::assert_snapshot!(rendered_fixture("exports/parameter_defaults"));
 }
 
 #[test]
@@ -592,13 +592,13 @@ fn swift_target_rejects_defaults_on_inout_parameters() {
 #[cfg(target_os = "macos")]
 #[test]
 fn swift_parameter_defaults_compile_at_call_sites() {
-    let workspace = tempfile::tempdir().expect("create Swift compilation directory");
-    let directory = workspace.path();
-    let output = rendered_output(SourceFixture::many([
-        "exports/defaulted_callables",
-        "exports/integer_limit_defaults",
-        "exports/optional_custom_defaults",
-    ]));
+    let directory = env::temp_dir().join(format!(
+        "boltffi-swift-defaults-{}-{}",
+        std::process::id(),
+        UNIX_EPOCH.elapsed().expect("system clock").as_nanos()
+    ));
+    fs::create_dir_all(&directory).expect("create Swift compilation directory");
+    let output = rendered_output(SourceFixture::one("exports/parameter_defaults"));
     output.files().iter().for_each(|file| {
         let path = directory.join(file.path().as_path());
         fs::create_dir_all(path.parent().expect("generated file directory"))
@@ -612,7 +612,7 @@ fn swift_parameter_defaults_compile_at_call_sites() {
     .expect("write C module map");
     let compilation = Command::new("swiftc")
         .args(["-typecheck", "-I"])
-        .arg(directory)
+        .arg(&directory)
         .arg(directory.join(swift_file(&output).path().as_path()))
         .arg(concat!(
             env!("CARGO_MANIFEST_DIR"),
@@ -626,6 +626,7 @@ fn swift_parameter_defaults_compile_at_call_sites() {
         String::from_utf8_lossy(&compilation.stdout),
         String::from_utf8_lossy(&compilation.stderr)
     );
+    fs::remove_dir_all(directory).expect("remove Swift compilation directory");
 }
 
 #[test]

@@ -38,7 +38,7 @@ class Engine internal constructor(internal val handle: Long) : AutoCloseable {
     constructor(value: Int) : this(new(value).handle)
 
     companion object {
-        fun new(value: Int): Engine {
+        private fun new(value: Int): Engine {
             return Engine(Native.boltffi_init_class_demo_engine_new(value))
         }
         fun version(): UInt {

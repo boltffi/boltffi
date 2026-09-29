@@ -186,10 +186,14 @@ impl Enumeration {
     }
 
     fn requires_async_runtime(&self) -> bool {
-        self.static_methods
+        self.initializers
             .iter()
-            .chain(self.instance_methods.iter())
-            .any(AssociatedFunction::requires_async_runtime)
+            .any(Initializer::requires_async_runtime)
+            || self
+                .static_methods
+                .iter()
+                .chain(self.instance_methods.iter())
+                .any(AssociatedFunction::requires_async_runtime)
     }
 
     fn from_c_style(

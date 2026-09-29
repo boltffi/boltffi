@@ -1,3 +1,4 @@
+{%- import "target/kotlin/function.kt" as functions %}
 {%- if enumeration.c_style() %}
 {%- if let Some(value_type) = enumeration.value_type() %}
 {%- if enumeration.error() %}
@@ -31,26 +32,7 @@
 {%- endfor %}
 {%- for initializer in enumeration.initializers() %}
 
-{{ initializer.documentation().indented("        ") }}        fun {{ initializer.name() }}({% for parameter in initializer.parameters() %}{{ parameter.declaration() }}{% if !loop.last %}, {% endif %}{% endfor %}){% if let Some(return_type) = initializer.returns() %}: {{ return_type }}{% endif %} {
-{%- for statement in initializer.setup() %}
-            {{ statement }}
-{%- endfor %}
-{%- if initializer.has_cleanup() %}
-            try {
-{%- for statement in initializer.call() %}
-                {{ statement }}
-{%- endfor %}
-            } finally {
-{%- for statement in initializer.cleanup() %}
-                {{ statement }}
-{%- endfor %}
-            }
-{%- else %}
-{%- for statement in initializer.call() %}
-            {{ statement }}
-{%- endfor %}
-{%- endif %}
-        }
+{% call functions::exported_call(initializer, "        ") %}{% endcall %}
 {%- endfor %}
 {%- for method in enumeration.static_methods() %}
 
@@ -236,26 +218,7 @@
 {%- endfor %}
 {%- for initializer in enumeration.initializers() %}
 
-{{ initializer.documentation().indented("        ") }}        fun {{ initializer.name() }}({% for parameter in initializer.parameters() %}{{ parameter.declaration() }}{% if !loop.last %}, {% endif %}{% endfor %}){% if let Some(return_type) = initializer.returns() %}: {{ return_type }}{% endif %} {
-{%- for statement in initializer.setup() %}
-            {{ statement }}
-{%- endfor %}
-{%- if initializer.has_cleanup() %}
-            try {
-{%- for statement in initializer.call() %}
-                {{ statement }}
-{%- endfor %}
-            } finally {
-{%- for statement in initializer.cleanup() %}
-                {{ statement }}
-{%- endfor %}
-            }
-{%- else %}
-{%- for statement in initializer.call() %}
-            {{ statement }}
-{%- endfor %}
-{%- endif %}
-        }
+{% call functions::exported_call(initializer, "        ") %}{% endcall %}
 {%- endfor %}
 {%- for method in enumeration.static_methods() %}
 

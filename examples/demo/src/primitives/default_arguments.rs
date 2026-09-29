@@ -1,3 +1,5 @@
+use std::{convert::Infallible, sync::Arc};
+
 use boltffi::*;
 
 use crate::callbacks::sync_traits::ValueCallback;
@@ -98,10 +100,158 @@ impl DefaultedCounter {
         }
     }
 
+    pub async fn async_offset(&self, #[boltffi::default(3)] step: i32) -> i32 {
+        self.start + step
+    }
+
+    pub async fn start(
+        #[boltffi::default(30)] start: i32,
+        #[boltffi::default(None)] first: Option<Arc<dyn ValueCallback + Send + Sync>>,
+        #[boltffi::default(None)] second: Option<Arc<dyn ValueCallback + Send + Sync>>,
+    ) -> Self {
+        let start = first.map_or(start, |callback| callback.on_value(start));
+        let start = second.map_or(start, |callback| callback.on_value(start));
+        Self { start }
+    }
+
     pub fn integer_limits(
         #[boltffi::default(-9223372036854775808)] lower: i64,
         #[boltffi::default(18446744073709551615)] upper: u64,
     ) -> (i64, u64) {
         (lower, upper)
     }
+}
+
+#[repr(u8)]
+#[derive(Clone, Copy)]
+#[data]
+pub enum DefaultMode {
+    Quiet = 1,
+    Loud = 2,
+}
+
+#[data(impl)]
+impl DefaultMode {
+    pub async fn load(#[boltffi::default(DefaultMode::Quiet)] mode: Self) -> Self {
+        mode
+    }
+
+    pub fn matches(&self, #[boltffi::default(DefaultMode::Quiet)] mode: Self) -> bool {
+        *self as u8 == mode as u8
+    }
+}
+
+#[demo_bench_macros::demo_case(
+    "primitives.default_arguments.should_apply_float_and_enum_defaults",
+    justification = "Defaults retain floating point precision, optional values and enum identity across the native call",
+    directions = "Call scale_default with omitted and explicit arguments, including a null weight, then check the default argument on DefaultMode::matches",
+    exclude(java, reason = ExclusionReason::ImplementationGap, details = "The Java backend renders parameters without their Rust defaults, so every argument is required."),
+    exclude(csharp, reason = ExclusionReason::ImplementationGap, details = "The C# backend renders parameters without their Rust defaults, so every argument is required."),
+    exclude(typescript, reason = ExclusionReason::ImplementationGap, details = "The TypeScript backend renders parameters without their Rust defaults, so every argument is required."),
+    exclude(python, reason = ExclusionReason::ImplementationGap, details = "The Python extension parses positional arguments only and requires all of them."),
+    exclude(dart, reason = ExclusionReason::ImplementationGap, details = "The Dart backend renders parameters without their Rust defaults, so every argument is required."),
+    exclude(c, reason = ExclusionReason::ImplementationGap, details = "C has no default arguments.")
+)]
+#[export]
+pub fn scale_default(
+    #[boltffi::default(0.5)] ratio: f32,
+    #[boltffi::default(1.5)] weight: Option<f64>,
+    #[boltffi::default(DefaultMode::Quiet)] mode: DefaultMode,
+) -> f64 {
+    f64::from(ratio) * weight.unwrap_or(1.0) * f64::from(mode as u8)
+}
+
+#[demo_bench_macros::demo_case(
+    "primitives.default_arguments.should_apply_async_defaults",
+    justification = "Async functions, methods and factories preserve parameter defaults",
+    directions = "Call async_default and DefaultedCounter::async_offset with omitted and explicit values, then create a counter through start with omitted callbacks and with only the second callback supplied",
+    exclude(java, reason = ExclusionReason::ImplementationGap, details = "The Java backend renders parameters without their Rust defaults, so every argument is required."),
+    exclude(csharp, reason = ExclusionReason::ImplementationGap, details = "The C# backend renders parameters without their Rust defaults, so every argument is required."),
+    exclude(typescript, reason = ExclusionReason::ImplementationGap, details = "The TypeScript backend renders parameters without their Rust defaults, so every argument is required."),
+    exclude(python, reason = ExclusionReason::ImplementationGap, details = "The Python extension parses positional arguments only and requires all of them."),
+    exclude(dart, reason = ExclusionReason::ImplementationGap, details = "The Dart backend renders parameters without their Rust defaults, so every argument is required."),
+    exclude(c, reason = ExclusionReason::ImplementationGap, details = "C has no default arguments.")
+)]
+#[export]
+pub async fn async_default(#[boltffi::default(9)] value: u32) -> u32 {
+    value
+}
+
+#[data]
+#[derive(Clone, Copy)]
+pub struct DefaultAmount {
+    #[boltffi::default(3)]
+    pub value: i32,
+}
+
+#[data(impl)]
+impl DefaultAmount {
+    #[demo_bench_macros::demo_case(
+        "primitives.default_arguments.should_apply_record_defaults",
+        justification = "Record fields and exported record callables each preserve their own defaults",
+        directions = "Construct DefaultAmount through its memberwise initializer and call offset with omitted and explicit values, then call NamedAmount::with_value with and without its value",
+        exclude(java, reason = ExclusionReason::ImplementationGap, details = "The Java backend renders parameters without their Rust defaults, so every argument is required."),
+        exclude(csharp, reason = ExclusionReason::ImplementationGap, details = "The C# backend renders parameters without their Rust defaults, so every argument is required."),
+        exclude(typescript, reason = ExclusionReason::ImplementationGap, details = "The TypeScript backend renders parameters without their Rust defaults, so every argument is required."),
+        exclude(python, reason = ExclusionReason::ImplementationGap, details = "The Python extension parses positional arguments only and requires all of them."),
+        exclude(dart, reason = ExclusionReason::ImplementationGap, details = "The Dart backend renders parameters without their Rust defaults, so every argument is required."),
+        exclude(c, reason = ExclusionReason::ImplementationGap, details = "C has no default arguments.")
+    )]
+    pub fn offset(&self, #[boltffi::default(2)] step: i32) -> i32 {
+        self.value + step
+    }
+}
+
+#[data]
+#[derive(Clone, Copy)]
+pub struct NamedAmount {
+    pub value: i32,
+}
+
+#[data(impl)]
+impl NamedAmount {
+    pub async fn load(#[boltffi::default(6)] value: i32) -> Self {
+        Self { value }
+    }
+
+    pub fn with_value(#[boltffi::default(5)] value: i32) -> Self {
+        Self { value }
+    }
+}
+
+pub struct DefaultLimit(Option<u32>);
+
+#[custom_ffi]
+impl CustomFfiConvertible for DefaultLimit {
+    type FfiRepr = Option<u32>;
+    type Error = Infallible;
+
+    fn into_ffi(&self) -> Self::FfiRepr {
+        self.0
+    }
+
+    fn try_from_ffi(limit: Self::FfiRepr) -> Result<Self, Self::Error> {
+        Ok(Self(limit))
+    }
+}
+
+#[export]
+pub fn default_limit(#[boltffi::default(None)] limit: DefaultLimit) -> Option<u32> {
+    limit.0
+}
+
+#[demo_bench_macros::demo_case(
+    "primitives.default_arguments.should_apply_custom_type_defaults",
+    justification = "Parameter defaults follow custom types through record and optional representations",
+    directions = "Call default_timeout_seconds without a timeout and with an explicit TimeoutFFI, then call default_limit without a limit and with a supplied value",
+    exclude(java, reason = ExclusionReason::ImplementationGap, details = "The Java backend renders parameters without their Rust defaults, so every argument is required."),
+    exclude(csharp, reason = ExclusionReason::ImplementationGap, details = "The C# backend renders parameters without their Rust defaults, so every argument is required."),
+    exclude(typescript, reason = ExclusionReason::ImplementationGap, details = "The TypeScript backend renders parameters without their Rust defaults, so every argument is required."),
+    exclude(python, reason = ExclusionReason::ImplementationGap, details = "The Python extension parses positional arguments only and requires all of them."),
+    exclude(dart, reason = ExclusionReason::ImplementationGap, details = "The Dart backend renders parameters without their Rust defaults, so every argument is required."),
+    exclude(c, reason = ExclusionReason::ImplementationGap, details = "C has no default arguments.")
+)]
+#[export]
+pub fn default_timeout_seconds(#[boltffi::default(1.5)] timeout: chrono::TimeDelta) -> f64 {
+    timeout.num_milliseconds() as f64 / 1_000.0
 }

@@ -49,7 +49,7 @@ fun main() {
 
     runBlocking {
         withTimeout(5_000) {
-            EventBus.new().use { bus ->
+            EventBus().use { bus ->
                 val points = async {
                     bus.subscribePoints().take(2).toList()
                 }

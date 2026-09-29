@@ -30,7 +30,7 @@
 {{ constant }}
 {%- endfor %}
 {%- for initializer in class.initializers() %}
-{{ initializer.call().documentation().indented("        ") }}        {% if initializer.call().async_call().is_some() %}suspend {% endif %}fun {{ initializer.call().name() }}({% for parameter in initializer.call().parameters() %}{{ parameter.declaration() }}{% if !loop.last %}, {% endif %}{% endfor %}){% if let Some(return_type) = initializer.call().returns() %}: {{ return_type }}{% endif %} {
+{{ initializer.call().documentation().indented("        ") }}        {% if initializer.constructor() %}private {% endif %}{% if initializer.call().async_call().is_some() %}suspend {% endif %}fun {{ initializer.call().name() }}({% for parameter in initializer.call().parameters() %}{% if initializer.constructor() %}{{ parameter.name() }}: {{ parameter.ty() }}{% else %}{{ parameter.declaration() }}{% endif %}{% if !loop.last %}, {% endif %}{% endfor %}){% if let Some(return_type) = initializer.call().returns() %}: {{ return_type }}{% endif %} {
 {%- if let Some(async_call) = initializer.call().async_call() %}
 {%- if async_call.returns_value() %}
             return boltffiCallAsync(

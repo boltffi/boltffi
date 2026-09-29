@@ -1,4 +1,9 @@
-use std::{env, fs, process::Command, time::UNIX_EPOCH};
+use std::{
+    env, fs,
+    path::{Path, PathBuf},
+    process::Command,
+    time::UNIX_EPOCH,
+};
 
 use boltffi_backend::{
     Error,
@@ -139,28 +144,47 @@ fn kotlin_target_overrides_exception_messages() {
     insta::assert_snapshot!(rendered_fixture("enums/error_message"));
 }
 
-fn kotlin_compiler() -> Option<&'static str> {
+fn kotlin_compiler() -> Option<PathBuf> {
     let compiler = if cfg!(windows) {
         "kotlinc.bat"
     } else {
         "kotlinc"
     };
-    Command::new(compiler)
-        .arg("-version")
-        .output()
-        .is_ok()
-        .then_some(compiler)
+    env::split_paths(&env::var_os("PATH")?)
+        .find_map(|directory| directory.join(compiler).canonicalize().ok())
+        .filter(|compiler| {
+            Command::new(compiler)
+                .arg("-version")
+                .output()
+                .is_ok_and(|output| output.status.success())
+        })
 }
 
-/// Compiles the Kotlin rendered for `source` together with `caller`, written
-/// as `caller_file`, and runs the caller's `main`.
 fn run_with_generated_kotlin(
-    compiler: &str,
+    compiler: &Path,
     label: &str,
     source: &str,
     caller_file: &str,
     caller: &str,
 ) {
+    let kotlin_home = env::var_os("KOTLIN_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            compiler
+                .parent()
+                .and_then(Path::parent)
+                .expect("Kotlin compiler installation directory")
+                .to_path_buf()
+        });
+    let coroutines = ["lib", "libexec/lib"]
+        .into_iter()
+        .map(|directory| {
+            kotlin_home
+                .join(directory)
+                .join("kotlinx-coroutines-core-jvm.jar")
+        })
+        .find(|path| path.is_file())
+        .expect("Kotlin installation must include kotlinx-coroutines-core-jvm.jar");
     let directory = env::temp_dir().join(format!(
         "boltffi-kotlin-{label}-{}-{}",
         std::process::id(),
@@ -182,6 +206,8 @@ fn run_with_generated_kotlin(
     fs::write(&caller_path, caller).expect("write Kotlin caller");
     let jar = directory.join(format!("{label}.jar"));
     let compilation = Command::new(compiler)
+        .arg("-classpath")
+        .arg(&coroutines)
         .args(&source_paths)
         .arg(caller_path)
         .args(["-include-runtime", "-d"])
@@ -195,9 +221,17 @@ fn run_with_generated_kotlin(
         String::from_utf8_lossy(&compilation.stdout),
         String::from_utf8_lossy(&compilation.stderr)
     );
+    let main_class = format!(
+        "com.boltffi.demo.{}Kt",
+        Path::new(caller_file)
+            .file_stem()
+            .and_then(|name| name.to_str())
+            .expect("Kotlin caller file name")
+    );
     let execution = Command::new("java")
-        .arg("-jar")
-        .arg(jar)
+        .arg("-classpath")
+        .arg(env::join_paths([&jar, &coroutines]).expect("Kotlin runtime classpath"))
+        .arg(main_class)
         .output()
         .expect("run Kotlin caller");
     assert!(
@@ -217,7 +251,7 @@ fn kotlin_exception_messages_compile_and_preserve_payloads() {
     };
 
     run_with_generated_kotlin(
-        compiler,
+        &compiler,
         "error-messages",
         &fixture("enums/error_message"),
         "ErrorMessages.kt",
@@ -559,17 +593,31 @@ fn kotlin_target_renders_parameter_defaults_as_default_arguments() {
     let rendered = rendered_fixture("exports/parameter_defaults");
 
     assert!(rendered.contains("fun greet(name: String, greeting: String = \"world\", times: UInt = 3.toUInt(), offset: Long = -1, shout: Boolean = true, ratio: Float = 0.5f, mode: Mode = Mode.SLOW, suffix: String? = null, limit: UShort? = 7.toUShort()): String"));
-    // constructors, companion factories and methods take them the same way
     assert!(rendered.contains("constructor(port: UShort = 8080.toUShort())"));
-    assert!(rendered.contains("fun new(port: UShort = 8080.toUShort()): Server"));
+    assert!(rendered.contains("private fun new(port: UShort): Server"));
+    assert!(!rendered.contains("fun new(port: UShort ="));
     assert!(rendered.contains(
         "suspend fun start(port: UShort, first: Handler? = null, second: Handler? = null)"
     ));
     assert!(rendered.contains("fun port(mapped: Boolean = false)"));
-    // what crosses the native boundary is unchanged: defaults are Kotlin-only
+    assert!(rendered.contains("val value: Int = 3"));
+    assert!(!rendered.contains("fun new(value: Int"));
+    assert!(rendered.contains("fun withValue(value: Int = 5): NamedAmount"));
     assert!(!rendered.contains("external fun boltffi_greet(name: String, greeting: String ="));
 
     insta::assert_snapshot!(rendered);
+}
+
+#[test]
+fn kotlin_companion_factory_style_preserves_parameter_defaults() {
+    let host = KotlinHost::new("com.boltffi.demo", "Demo")
+        .expect("Kotlin host")
+        .factory_style(KotlinFactoryStyle::CompanionMethods);
+    let rendered = rendered_fixture_with_host("exports/parameter_defaults", host);
+
+    assert!(rendered.contains("fun new(port: UShort = 8080.toUShort()): Server"));
+    assert!(!rendered.contains("constructor(port: UShort"));
+    assert!(!rendered.contains("private fun new"));
 }
 
 #[test]
@@ -588,7 +636,7 @@ fn kotlin_target_keeps_a_long_initializer_off_the_handle_constructor_signature()
 
 #[test]
 fn kotlin_target_writes_integer_limit_defaults_as_literals_kotlin_accepts() {
-    let rendered = rendered_fixture("exports/integer_limit_defaults");
+    let rendered = rendered_fixture("exports/parameter_defaults");
 
     assert!(rendered.contains("val floor: Long = Long.MIN_VALUE"));
     assert!(rendered.contains("val ceiling: ULong = 18446744073709551615uL"));
@@ -601,7 +649,7 @@ fn kotlin_target_writes_integer_limit_defaults_as_literals_kotlin_accepts() {
 
 #[test]
 fn kotlin_target_defaults_a_custom_type_represented_as_an_option_to_null() {
-    let rendered = rendered_fixture("exports/optional_custom_defaults");
+    let rendered = rendered_fixture("exports/parameter_defaults");
 
     assert!(rendered.contains("val limit: UInt? = null"));
     assert!(rendered.contains("fun throttle(limit: UInt? = null): UInt?"));
@@ -615,14 +663,9 @@ fn kotlin_generated_defaults_and_long_initializers_compile() {
     };
 
     run_with_generated_kotlin(
-        compiler,
+        &compiler,
         "defaults",
-        &SourceFixture::many([
-            "exports/integer_limit_defaults",
-            "exports/optional_custom_defaults",
-            "exports/long_initializer",
-        ])
-        .read(),
+        &SourceFixture::many(["exports/parameter_defaults", "exports/long_initializer"]).read(),
         "DefaultsAndInitializers.kt",
         include_str!("../fixtures/kotlin/defaults_and_initializers.kt"),
     );

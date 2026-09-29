@@ -35,7 +35,7 @@ class GPSSimulator internal constructor(internal val handle: Long) : AutoCloseab
     constructor(enabled: Boolean) : this(new(enabled).handle)
 
     companion object {
-        fun new(enabled: Boolean): GPSSimulator {
+        private fun new(enabled: Boolean): GPSSimulator {
             return GPSSimulator(Native.boltffi_init_class_demo_gps_simulator_new(enabled))
         }
     }
