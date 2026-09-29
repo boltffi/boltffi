@@ -6,6 +6,9 @@ version = "0.0.0"
 edition = "2024"
 publish = false
 
+[lib]
+name = "source_resolution"
+
 [features]
 experimental = []
 

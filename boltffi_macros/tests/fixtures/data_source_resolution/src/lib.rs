@@ -11,6 +11,7 @@ pub mod mode;
 #[path = "mode_experimental.rs"]
 pub mod mode;
 pub mod route;
+pub mod scales;
 pub mod shadowing;
 pub mod stamps;
 pub mod tags;

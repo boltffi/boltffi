@@ -541,7 +541,7 @@ fn render(
     customs: &std::collections::HashMap<String, String>,
 ) -> Result<TokenStream, String> {
     let package = PackageInfo::new(
-        std::env::var("CARGO_PKG_NAME").map_err(|_| "`CARGO_PKG_NAME` is not set")?,
+        crate_name()?,
         std::env::var("CARGO_PKG_VERSION")
             .ok()
             .filter(|version| !version.is_empty()),
