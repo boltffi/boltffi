@@ -266,8 +266,7 @@ walks one crate through every expansion.
   lever. Measured with [`0002-bench.py`](0002-bench.py), median of 5 runs, on `main` at
   `196a06b9` and the branch at `d1426da7`, on an Apple M4 Pro with rustc 1.95.0.
 - **Dependencies.** A path dependency the library never uses is not linked, so `generate`
-  fails until the root names it (D11). `custom_type!` in a dependency does not compile
-  yet: its conversions are keyed to the declaring crate's tag. It fails on `main` too.
+  fails until the root names it (D11).
 - **Binary size.** Records grow the demo's release dylib from 1.82 to 2.43 MB. Nothing reads
   them at runtime; stripping them in `boltffi pack` is follow-up work.
 - **Diagnostics.** Misuse surfaces as `cannot find macro`, and a missing

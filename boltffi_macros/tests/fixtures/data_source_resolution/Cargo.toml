@@ -11,3 +11,4 @@ experimental = []
 
 [dependencies]
 boltffi = { path = "../../../../boltffi" }
+registry = { package = "stamp_registry", path = "registry" }

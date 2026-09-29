@@ -330,9 +330,12 @@ fn record_tokens(fragment: &SourceFragment, slots: &[boltffi_scan::SlotSource]) 
         .map(|(index, source)| {
             let ident = format_ident!("SLOT_{index}");
             let desc = match source {
-                boltffi_scan::SlotSource::Type(ty) => quote! {
-                    <#ty as #facade::__private::capture::TypeDesc<crate::__BoltffiTag>>::DESC
-                },
+                boltffi_scan::SlotSource::Type(ty) => {
+                    let lane = crate::lane::lane_path(source);
+                    quote! {
+                        <#ty as #facade::__private::capture::TypeDesc<#lane!(@tag)>>::DESC
+                    }
+                }
                 boltffi_scan::SlotSource::TraitValue(path) => quote! {
                     #facade::__private::capture::trait_desc(&#path)
                 },

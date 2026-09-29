@@ -45,7 +45,7 @@ pub use callback::{
     CallbackLocalHandle, CallbackMarker, ClassHandle, NativeCallbackOwner, callback_arc,
     callback_box,
 };
-pub use custom_ffi::{CustomFfiConvertible, CustomType};
+pub use custom_ffi::{CustomFfiConvertible, CustomReprTag, CustomType};
 pub use handle::HandleBox;
 pub use interned_string::{InternedString, InternedStringPool, InternedStringRepr};
 pub use passable::{Passable, VecTransport, WirePassable};

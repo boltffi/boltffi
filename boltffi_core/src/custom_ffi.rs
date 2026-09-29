@@ -26,3 +26,10 @@ pub trait CustomType<Tag> {
     where
         Self: Sized;
 }
+
+/// Names the tag a custom's representation converts under when that representation is
+/// another declared type, so a site can follow a chain of customs across crates.
+pub trait CustomReprTag<Tag> {
+    /// The representation's declaring crate's anchor.
+    type Tag;
+}

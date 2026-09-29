@@ -13,8 +13,8 @@ use std::collections::HashSet;
 
 use boltffi_ast::PackageInfo;
 use boltffi_binding::{
-    Native, RawSourceRecord, SELF_ID, SourceFragment, SurfaceLower, Wasm32, aggregate_invocation,
-    lower_invocation,
+    Native, RawSourceRecord, SELF_ID, SLOT_ID_PREFIX, SourceFragment, SurfaceLower, Wasm32,
+    aggregate_invocation, lower_invocation,
 };
 use boltffi_scan::SlotSource;
 use proc_macro2::{Delimiter, Literal, Span, TokenStream, TokenTree};
@@ -316,7 +316,7 @@ fn is_builtin_name(name: &syn::Ident) -> bool {
         .any(|builtin| name == builtin)
 }
 
-fn lane_path(slot: &SlotSource) -> TokenStream {
+pub(crate) fn lane_path(slot: &SlotSource) -> TokenStream {
     let mut path = match slot {
         SlotSource::Type(ty) => match &**ty {
             syn::Type::Path(path) => path.path.clone(),
@@ -425,10 +425,49 @@ fn finish(
         }
         _ => TokenStream::new(),
     };
+    let repr_tag = repr_tag(kind, item, &fragments);
     Ok(quote! {
         #expanded
         #lane
+        #repr_tag
     })
+}
+
+/// Names the tag a custom's representation converts under, when that representation is
+/// another declared type, through that type's lane.
+fn repr_tag(kind: Kind, item: &TokenStream, fragments: &Fragments) -> TokenStream {
+    let Some((SourceFragment::Custom(custom), slots)) = fragments.first() else {
+        return TokenStream::new();
+    };
+    let boltffi_ast::TypeExpr::Record { id, .. } = &custom.repr else {
+        return TokenStream::new();
+    };
+    let Some(slot) = id
+        .as_str()
+        .strip_prefix(SLOT_ID_PREFIX)
+        .and_then(|index| index.parse::<usize>().ok())
+        .and_then(|index| slots.get(index))
+    else {
+        return TokenStream::new();
+    };
+    let target = match kind {
+        Kind::CustomType => crate::custom::r#type::parse_spec(item.clone().into())
+            .ok()
+            .map(|spec| spec.remote),
+        Kind::CustomFfi => syn::parse2::<syn::ItemImpl>(item.clone())
+            .ok()
+            .map(|item| *item.self_ty),
+        _ => None,
+    };
+    let Some(target) = target else {
+        return TokenStream::new();
+    };
+    let lane = lane_path(slot);
+    quote! {
+        impl ::boltffi::__private::CustomReprTag<crate::__BoltffiTag> for #target {
+            type Tag = #lane!(@tag);
+        }
+    }
 }
 
 /// The id a fragment's declaration takes once aggregated, which is what gets expanded.
@@ -487,7 +526,7 @@ fn render(
     };
     let mut contract = aggregate_invocation(&records(false), &records(true), package.clone())
         .map_err(|error| error.to_string())?;
-    let customs = reach_through_reprs(&contract.customs, customs);
+    let customs = reach_through_reprs(&contract.customs, reach_through_lanes(customs));
     contract
         .customs
         .iter_mut()
@@ -696,40 +735,74 @@ impl<'lowered> SurfaceRender<'lowered, Wasm32> for Expander<'lowered> {
     }
 }
 
+/// How this site reaches a custom: the type path, and the tag its declaring crate keys
+/// the conversion to.
+struct CustomReach {
+    path: String,
+    tag: String,
+}
+
+/// Each custom this site names, reached through its own lane, so the conversion is keyed
+/// to the crate that declared it.
+fn reach_through_lanes(
+    customs: &std::collections::HashMap<String, String>,
+) -> std::collections::HashMap<String, CustomReach> {
+    customs
+        .iter()
+        .map(|(id, path)| {
+            let reach = CustomReach {
+                path: path.clone(),
+                tag: format!("{path}!(@tag)"),
+            };
+            (id.clone(), reach)
+        })
+        .collect()
+}
+
 /// Names a custom this site reaches only as another custom's representation through
-/// that custom's associated representation type.
+/// that custom's associated representation type, keyed to the crate that declared it.
 fn reach_through_reprs(
     defs: &[boltffi_ast::CustomTypeDef],
-    customs: &std::collections::HashMap<String, String>,
-) -> std::collections::HashMap<String, String> {
-    let mut reached = customs.clone();
-    while let Some((id, path)) = defs.iter().find_map(|custom| {
+    mut reached: std::collections::HashMap<String, CustomReach>,
+) -> std::collections::HashMap<String, CustomReach> {
+    while let Some((id, reach)) = defs.iter().find_map(|custom| {
         let outer = reached.get(custom.id.as_str())?;
         let boltffi_ast::TypeExpr::Custom { id, .. } = &custom.repr else {
             return None;
         };
-        let projection = match custom.converters.into_ffi {
+        let path = match custom.converters.into_ffi {
             boltffi_ast::CustomTypeConverter::TraitMethod(_) => {
-                format!("<{outer} as ::boltffi::CustomFfiConvertible>::FfiRepr")
+                format!(
+                    "<{} as ::boltffi::CustomFfiConvertible>::FfiRepr",
+                    outer.path
+                )
             }
-            _ => {
-                format!("<{outer} as ::boltffi::__private::CustomType<crate::__BoltffiTag>>::Repr")
-            }
+            _ => format!(
+                "<{} as ::boltffi::__private::CustomType<{}>>::Repr",
+                outer.path, outer.tag
+            ),
         };
-        (!reached.contains_key(id.as_str())).then(|| (id.as_str().to_owned(), projection))
+        let reach = CustomReach {
+            path,
+            tag: format!(
+                "<{} as ::boltffi::__private::CustomReprTag<{}>>::Tag",
+                outer.path, outer.tag
+            ),
+        };
+        (!reached.contains_key(id.as_str())).then(|| (id.as_str().to_owned(), reach))
     }) {
-        reached.insert(id, path);
+        reached.insert(id, reach);
     }
     reached
 }
 
 /// Custom conversions called through the path this site wrote for the custom type, so
-/// they resolve here no matter which module declared them.
+/// they resolve here no matter which module or crate declared them.
 fn convert_through_site_path(
     custom: &mut boltffi_ast::CustomTypeDef,
-    customs: &std::collections::HashMap<String, String>,
+    customs: &std::collections::HashMap<String, CustomReach>,
 ) {
-    let Some(path) = customs.get(custom.id.as_str()) else {
+    let Some(CustomReach { path, tag }) = customs.get(custom.id.as_str()) else {
         return;
     };
     let convert = |converter: &mut boltffi_ast::CustomTypeConverter, method: &str| {
@@ -737,9 +810,7 @@ fn convert_through_site_path(
             boltffi_ast::CustomTypeConverter::TraitMethod(_) => {
                 format!("<{path} as ::boltffi::CustomFfiConvertible>::{method}")
             }
-            _ => format!(
-                "<{path} as ::boltffi::__private::CustomType<crate::__BoltffiTag>>::{method}"
-            ),
+            _ => format!("<{path} as ::boltffi::__private::CustomType<{tag}>>::{method}"),
         };
         *converter =
             boltffi_ast::CustomTypeConverter::Expr(boltffi_ast::CustomConverterExpr::new(source));
@@ -812,6 +883,7 @@ fn lane_definition(
         #[allow(non_local_definitions)]
         #[macro_export]
         macro_rules! #macro_name {
+            (@tag) => { $crate::__BoltffiTag };
             ([$($callback:tt)*] { $($state:tt)* }) => {
                 $($callback)*! { $($state)* #literal }
             };

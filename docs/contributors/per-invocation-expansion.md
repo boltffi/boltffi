@@ -61,7 +61,7 @@ constants, and rustc evaluates them:
 ```rust
 // emitted by #[data] Line
 const _: () = {
-    const SLOT_0: &[u8] = <Point as TypeDesc<crate::__BoltffiTag>>::DESC.as_bytes();
+    const SLOT_0: &[u8] = <Point as TypeDesc<Point!(@tag)>>::DESC.as_bytes();
     #[link_section = "__DATA,__boltffisrc"] #[used]
     static RECORD: Record = Record {
         module: *b"geo::shapes",                                 // from module_path!()
@@ -95,6 +95,7 @@ so every type BoltFFI declares also emits a macro under the type's own name:
 // emitted by #[data] Point, beside the struct
 #[macro_export]
 macro_rules! __boltffi_lane_geo_Point_0 {
+    (@tag) => { $crate::__BoltffiTag };
     ([$($callback:tt)*] { $($state:tt)* }) => {
         $($callback)*! { $($state)* r#"{"id":"geo::Point","entries":[…]}"# }
     };
@@ -244,6 +245,11 @@ dependency's artifact. `boltffi generate` binds:
 
 - the root crate and every path dependency it reaches through normal dependencies, in full;
 - registry and git crates only for the declarations the bound ones reach.
+
+A `custom_type!` implements its conversion for the declaring crate's `__BoltffiTag`,
+which keeps a foreign remote inside the orphan rule. A site reaches that tag through the
+type's lane, `Stamp!(@tag)`, whose `$crate` names the declaring crate however the root
+spells it.
 
 Two bound crates that declare the same name are refused, since the foreign namespace is
 flat. rustc links a dependency's rlib only when the root uses it. So after lowering,

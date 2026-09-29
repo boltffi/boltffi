@@ -66,13 +66,13 @@ pub mod __private {
     pub use boltffi_core::{
         ArcFromCallbackHandle, AsyncCallback, AsyncCallbackString, AsyncCallbackVoid,
         BoxFromCallbackHandle, CallbackForeignType, CallbackHandle, CallbackLocalHandle,
-        CallbackMarker, ClassHandle, CustomType, EventSubscription, FfiBuf, FfiSpan, FfiStatus,
-        ForeignCall, InternedString, InternedStringPool, InternedStringRepr, NativeCallbackOwner,
-        Passable, RustFutureContinuationCallback, RustFutureHandle, StreamContinuationCallback,
-        StreamPollResult, SubscriptionHandle, UnexpectedFfiCallbackError,
-        UnexpectedFfiCallbackPayload, VecTransport, WaitResult, WirePassable, callback_arc,
-        callback_box, rustfuture, set_last_error, set_last_error_debug, set_last_error_display,
-        set_last_error_len, take_last_error, wire,
+        CallbackMarker, ClassHandle, CustomReprTag, CustomType, EventSubscription, FfiBuf, FfiSpan,
+        FfiStatus, ForeignCall, InternedString, InternedStringPool, InternedStringRepr,
+        NativeCallbackOwner, Passable, RustFutureContinuationCallback, RustFutureHandle,
+        StreamContinuationCallback, StreamPollResult, SubscriptionHandle,
+        UnexpectedFfiCallbackError, UnexpectedFfiCallbackPayload, VecTransport, WaitResult,
+        WirePassable, callback_arc, callback_box, rustfuture, set_last_error, set_last_error_debug,
+        set_last_error_display, set_last_error_len, take_last_error, wire,
     };
     #[cfg(target_arch = "wasm32")]
     pub use boltffi_core::{
