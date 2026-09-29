@@ -381,16 +381,16 @@ fn local_identity_tokens<T: quote::ToTokens>(self_ty: &T, name: &str) -> TokenSt
     let facade = facade();
     quote! {
         const _: () = {
-            impl<Tag> #facade::__private::capture::TypeInfo<Tag> for #self_ty {
+            impl<__BoltffiAnyTag> #facade::__private::capture::TypeInfo<__BoltffiAnyTag> for #self_ty {
                 const MODULE: &'static str = ::core::module_path!();
                 const NAME: &'static str = #name;
             }
 
-            impl<Tag> #facade::__private::capture::TypeDesc<Tag> for #self_ty {
+            impl<__BoltffiAnyTag> #facade::__private::capture::TypeDesc<__BoltffiAnyTag> for #self_ty {
                 const DESC: #facade::__private::capture::DescBuf =
                     #facade::__private::capture::DescBuf::named(
-                        <#self_ty as #facade::__private::capture::TypeInfo<Tag>>::MODULE,
-                        <#self_ty as #facade::__private::capture::TypeInfo<Tag>>::NAME,
+                        <#self_ty as #facade::__private::capture::TypeInfo<__BoltffiAnyTag>>::MODULE,
+                        <#self_ty as #facade::__private::capture::TypeInfo<__BoltffiAnyTag>>::NAME,
                     );
             }
         };

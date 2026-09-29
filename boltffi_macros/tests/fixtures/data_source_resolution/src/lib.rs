@@ -13,6 +13,7 @@ pub mod mode;
 pub mod route;
 pub mod shadowing;
 pub mod stamps;
+pub mod tags;
 
 pub use coordinate::GeographicCoordinate;
 pub use event::RoadEvent;
