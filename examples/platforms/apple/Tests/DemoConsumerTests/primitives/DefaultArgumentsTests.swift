@@ -35,11 +35,11 @@ final class DefaultArgumentsTests: DemoTestCase {
         XCTAssertEqual(DefaultedCounter(withOffset: 5, offset: 3).offset(), 9)
 
         let limits = DefaultedCounter.integerLimits()
-        XCTAssertEqual(limits.0, Int64.min)
-        XCTAssertEqual(limits.1, UInt64.max)
+        XCTAssertEqual(limits.lower, Int64.min)
+        XCTAssertEqual(limits.upper, UInt64.max)
         let supplied = DefaultedCounter.integerLimits(lower: 0, upper: 1)
-        XCTAssertEqual(supplied.0, 0)
-        XCTAssertEqual(supplied.1, 1)
+        XCTAssertEqual(supplied.lower, 0)
+        XCTAssertEqual(supplied.upper, 1)
     }
 
     func testFloatAndEnumArguments() {

@@ -5,11 +5,12 @@ edition = "2024"
 
 [features]
 default = []
+async-initializers = []
 c-demo = []
 csharp-demo = []
 uniffi = ["dep:uniffi"]
 wasm-bench = ["dep:serde", "dep:serde-wasm-bindgen", "dep:wasm-bindgen", "dep:wasm-bindgen-futures"]
-wasm-interop = ["dep:wasm-bindgen", "dep:wasm-bindgen-futures", "dep:js-sys", "dep:futures-channel", "uuid/v4", "uuid/v7", "uuid/js", "chrono/clock", "chrono/wasmbind"]
+wasm-interop = ["async-initializers", "dep:wasm-bindgen", "dep:wasm-bindgen-futures", "dep:js-sys", "dep:futures-channel", "uuid/v4", "uuid/v7", "uuid/js", "chrono/clock", "chrono/wasmbind"]
 
 [lib]
 crate-type = ["staticlib", "cdylib", "rlib"]

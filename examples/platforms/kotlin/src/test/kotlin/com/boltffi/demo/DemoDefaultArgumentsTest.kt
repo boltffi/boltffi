@@ -42,8 +42,8 @@ class DemoDefaultArgumentsTest {
         DefaultedCounter(5).use { counter -> assertEquals(8, counter.offset(step = 3)) }
         DefaultedCounter(offset = 3).use { counter -> assertEquals(24, counter.offset()) }
         DefaultedCounter(start = 5, offset = 3).use { counter -> assertEquals(9, counter.offset()) }
-        assertEquals(Pair(Long.MIN_VALUE, ULong.MAX_VALUE), DefaultedCounter.integerLimits())
-        assertEquals(Pair(0L, 1uL), DefaultedCounter.integerLimits(lower = 0, upper = 1uL))
+        assertEquals(IntegerLimits(Long.MIN_VALUE, ULong.MAX_VALUE), DefaultedCounter.integerLimits())
+        assertEquals(IntegerLimits(0L, 1uL), DefaultedCounter.integerLimits(lower = 0, upper = 1uL))
     }
 
     @Test

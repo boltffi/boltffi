@@ -1,4 +1,6 @@
-use std::{convert::Infallible, sync::Arc};
+use std::convert::Infallible;
+#[cfg(feature = "async-initializers")]
+use std::sync::Arc;
 
 use boltffi::*;
 
@@ -73,6 +75,13 @@ pub struct DefaultedCounter {
     start: i32,
 }
 
+#[data]
+#[derive(Clone, Copy)]
+pub struct IntegerLimits {
+    pub lower: i64,
+    pub upper: u64,
+}
+
 #[export]
 impl DefaultedCounter {
     #[demo_bench_macros::demo_case(
@@ -104,6 +113,7 @@ impl DefaultedCounter {
         self.start + step
     }
 
+    #[cfg(feature = "async-initializers")]
     pub async fn start(
         #[boltffi::default(30)] start: i32,
         #[boltffi::default(None)] first: Option<Arc<dyn ValueCallback + Send + Sync>>,
@@ -117,8 +127,8 @@ impl DefaultedCounter {
     pub fn integer_limits(
         #[boltffi::default(-9223372036854775808)] lower: i64,
         #[boltffi::default(18446744073709551615)] upper: u64,
-    ) -> (i64, u64) {
-        (lower, upper)
+    ) -> IntegerLimits {
+        IntegerLimits { lower, upper }
     }
 }
 
@@ -132,6 +142,7 @@ pub enum DefaultMode {
 
 #[data(impl)]
 impl DefaultMode {
+    #[cfg(feature = "async-initializers")]
     pub async fn load(#[boltffi::default(DefaultMode::Quiet)] mode: Self) -> Self {
         mode
     }
@@ -210,6 +221,7 @@ pub struct NamedAmount {
 
 #[data(impl)]
 impl NamedAmount {
+    #[cfg(feature = "async-initializers")]
     pub async fn load(#[boltffi::default(6)] value: i32) -> Self {
         Self { value }
     }
