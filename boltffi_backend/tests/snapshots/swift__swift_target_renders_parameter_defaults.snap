@@ -41,12 +41,28 @@ public struct DefaultAmount: Hashable, Equatable, Sendable {
         writer.writeI32(self.value)
     }
 
-    public init(withValue value: Int32) {
-        self = DefaultAmount(fromC: boltffi_init_record_demo_default_amount_with_value(value))
-    }
-
     public func offset(step: Int32 = 2) -> Int32 {
         return boltffi_method_record_demo_default_amount_offset(self.cValue, step)
+    }
+}
+
+public struct NamedAmount: Hashable, Equatable, Sendable {
+    public var value: Int32
+
+    public init(value: Int32) {
+        self.value = value
+    }
+
+    @usableFromInline init(fromC c: ___NamedAmount) {
+        self.init(value: c.value)
+    }
+
+    @usableFromInline var cValue: ___NamedAmount {
+        ___NamedAmount(value: value)
+    }
+
+    public init(withValue value: Int32 = 5) {
+        self = NamedAmount(fromC: boltffi_init_record_demo_named_amount_with_value(value))
     }
 }
 

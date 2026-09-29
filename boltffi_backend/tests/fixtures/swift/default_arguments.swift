@@ -11,8 +11,9 @@ func checkDefaultArguments() async throws {
 
     let amount = DefaultAmount()
     _ = DefaultAmount(value: 9)
-    _ = DefaultAmount(withValue: 5)
     _ = amount.offset()
+    _ = NamedAmount()
+    _ = NamedAmount(withValue: 9)
     _ = DefaultMode.quiet.matches()
 
     _ = span()

@@ -77,12 +77,20 @@ pub struct DefaultAmount {
 
 #[data(impl)]
 impl DefaultAmount {
-    pub fn with_value(value: i32) -> Self {
-        Self { value }
-    }
-
     pub fn offset(&self, #[boltffi::default(2)] step: i32) -> i32 {
         self.value + step
+    }
+}
+
+#[data]
+pub struct NamedAmount {
+    pub value: i32,
+}
+
+#[data(impl)]
+impl NamedAmount {
+    pub fn with_value(#[boltffi::default(5)] value: i32) -> Self {
+        Self { value }
     }
 }
 
