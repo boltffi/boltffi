@@ -148,12 +148,17 @@ fn records(
         lane::Kind::Data => capture::item_tokens(
             item,
             capture::ImplCapture::Class(proc_macro2::TokenStream::new()),
+            false,
         ),
-        lane::Kind::Error => capture::error_item_tokens(item),
+        lane::Kind::Error => capture::item_tokens(
+            item,
+            capture::ImplCapture::Class(proc_macro2::TokenStream::new()),
+            true,
+        ),
         lane::Kind::Export => {
-            capture::item_tokens(item, capture::ImplCapture::Class(attribute.clone()))
+            capture::item_tokens(item, capture::ImplCapture::Class(attribute.clone()), false)
         }
-        lane::Kind::DataImpl => capture::item_tokens(item, capture::ImplCapture::Methods),
+        lane::Kind::DataImpl => capture::item_tokens(item, capture::ImplCapture::Methods, false),
         lane::Kind::CustomFfi => capture::custom_ffi_tokens(item),
         lane::Kind::CustomType => capture::custom_type_tokens(item),
         lane::Kind::Pool => capture::interned_string_pool_tokens(item),

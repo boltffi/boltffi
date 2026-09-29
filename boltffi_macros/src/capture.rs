@@ -32,93 +32,46 @@ pub(crate) enum ImplCapture {
     Methods,
 }
 
-pub(crate) fn item_tokens(item: proc_macro::TokenStream, impl_capture: ImplCapture) -> TokenStream {
+/// The source records `item` contributes, rendered from its [`fragments`] alongside the
+/// identity of the type it declares.
+pub(crate) fn item_tokens(
+    item: proc_macro::TokenStream,
+    impl_capture: ImplCapture,
+    error: bool,
+) -> TokenStream {
     let Ok(item) = syn::parse::<syn::Item>(item) else {
         return TokenStream::new();
     };
-    match &item {
-        syn::Item::Struct(item) => match capture_struct(item) {
-            Ok(captured) => data_tokens(
-                &item.ident,
-                SourceFragment::Record(captured.def),
-                &captured.slots,
-            ),
-            Err(error) => data_unsupported_tokens(&item.ident, &error.to_string()),
-        },
-        syn::Item::Enum(item) => match capture_enum(item) {
-            Ok(captured) => data_tokens(
-                &item.ident,
-                SourceFragment::Enum(captured.def),
-                &captured.slots,
-            ),
-            Err(error) => data_unsupported_tokens(&item.ident, &error.to_string()),
-        },
-        syn::Item::Fn(item) => match capture_function(item) {
-            Ok(captured) => record_tokens(&SourceFragment::Function(captured.def), &captured.slots),
-            Err(error) => unsupported_tokens(&item.sig.ident.to_string(), &error.to_string()),
-        },
-        syn::Item::Trait(item) => match capture_trait(item) {
-            Ok(captured) => record_tokens(&SourceFragment::Trait(captured.def), &captured.slots),
-            Err(error) => unsupported_tokens(&item.ident.to_string(), &error.to_string()),
-        },
-        syn::Item::Impl(item) => {
-            let self_ty = &*item.self_ty;
-            let name = type_leaf_name(self_ty).unwrap_or_else(|| "impl".to_owned());
-            match impl_capture {
-                ImplCapture::Class(marker_args) => {
-                    let identity = local_identity_tokens(self_ty, &name);
-                    let record = match capture_class(item, marker_args) {
-                        Ok(captured) => {
-                            record_tokens(&SourceFragment::Class(captured.def), &captured.slots)
-                        }
-                        Err(error) => unsupported_tokens(&name, &error.to_string()),
-                    };
-                    let streams = match capture_streams(item) {
-                        Ok(captured) => captured
-                            .def
-                            .into_iter()
-                            .map(|stream| {
-                                record_tokens(&SourceFragment::Stream(stream), &captured.slots)
-                            })
-                            .collect::<TokenStream>(),
-                        Err(error) => unsupported_tokens(&name, &error.to_string()),
-                    };
-                    let constants = match capture_class_constants(item) {
-                        Ok(captured) => captured
-                            .def
-                            .into_iter()
-                            .map(|constant| {
-                                record_tokens(&SourceFragment::Constant(constant), &captured.slots)
-                            })
-                            .collect::<TokenStream>(),
-                        Err(error) => unsupported_tokens(&name, &error.to_string()),
-                    };
-                    quote! {
-                        #identity
-                        #record
-                        #streams
-                        #constants
-                    }
-                }
-                ImplCapture::Methods => match capture_methods(item) {
-                    Ok(captured) => {
-                        let fragment = SourceFragment::Methods {
-                            target: captured.target,
-                            spelling: captured.spelling,
-                            methods: captured.methods,
-                            constants: captured.constants,
-                        };
-                        record_tokens(&fragment, &captured.slots)
-                    }
-                    Err(error) => unsupported_tokens(&name, &error.to_string()),
-                },
-            }
+    let (name, identity) = match (&item, &impl_capture) {
+        (syn::Item::Struct(item), _) => (
+            item.ident.to_string(),
+            Some(local_identity_tokens(&item.ident, &item.ident.to_string())),
+        ),
+        (syn::Item::Enum(item), _) => (
+            item.ident.to_string(),
+            Some(local_identity_tokens(&item.ident, &item.ident.to_string())),
+        ),
+        (syn::Item::Impl(item), capture) => {
+            let name = type_leaf_name(&item.self_ty).unwrap_or_else(|| "impl".to_owned());
+            let identity = matches!(capture, ImplCapture::Class(_))
+                .then(|| local_identity_tokens(&item.self_ty, &name));
+            (name, identity)
         }
-        syn::Item::Const(item) => match capture_constant(item) {
-            Ok(captured) => record_tokens(&SourceFragment::Constant(captured.def), &captured.slots),
-            Err(error) => unsupported_tokens(&item.ident.to_string(), &error.to_string()),
-        },
-        _ => TokenStream::new(),
+        (syn::Item::Fn(item), _) => (item.sig.ident.to_string(), None),
+        (syn::Item::Trait(item), _) => (item.ident.to_string(), None),
+        (syn::Item::Const(item), _) => (item.ident.to_string(), None),
+        _ => return TokenStream::new(),
+    };
+    let records = match fragments(&item, &impl_capture, error) {
+        Ok(fragments) => fragments
+            .iter()
+            .map(|(fragment, slots)| record_tokens(fragment, slots))
+            .collect(),
+        Err(reason) => unsupported_tokens(&name, &reason),
+    };
+    quote! {
+        #identity
+        #records
     }
 }
 
@@ -228,40 +181,6 @@ pub(crate) fn interned_string_pool_tokens(item: proc_macro::TokenStream) -> Toke
     }
 }
 
-pub(crate) fn error_item_tokens(item: proc_macro::TokenStream) -> TokenStream {
-    let Ok(item) = syn::parse::<syn::Item>(item) else {
-        return TokenStream::new();
-    };
-    match &item {
-        syn::Item::Struct(item) => match capture_error_struct(item) {
-            Ok(captured) => data_tokens(
-                &item.ident,
-                SourceFragment::Record(captured.def),
-                &captured.slots,
-            ),
-            Err(error) => data_unsupported_tokens(&item.ident, &error.to_string()),
-        },
-        syn::Item::Enum(item) => match capture_error_enum(item) {
-            Ok(captured) => data_tokens(
-                &item.ident,
-                SourceFragment::Enum(captured.def),
-                &captured.slots,
-            ),
-            Err(error) => data_unsupported_tokens(&item.ident, &error.to_string()),
-        },
-        _ => TokenStream::new(),
-    }
-}
-
-fn data_unsupported_tokens(ident: &syn::Ident, reason: &str) -> TokenStream {
-    let identity = local_identity_tokens(ident, &ident.to_string());
-    let unsupported = unsupported_tokens(&ident.to_string(), reason);
-    quote! {
-        #identity
-        #unsupported
-    }
-}
-
 pub(crate) fn unsupported_tokens(name: &str, reason: &str) -> TokenStream {
     record_tokens(
         &SourceFragment::Unsupported {
@@ -276,33 +195,6 @@ pub(crate) fn scaffolding_tokens() -> TokenStream {
     quote! {
         #[doc(hidden)]
         pub enum __BoltffiTag {}
-    }
-}
-
-fn data_tokens(
-    ident: &syn::Ident,
-    fragment: SourceFragment,
-    slots: &[boltffi_scan::SlotSource],
-) -> TokenStream {
-    let name = ident.to_string();
-    let record = record_tokens(&fragment, slots);
-    let facade = facade();
-    quote! {
-        const _: () = {
-            impl<Tag> #facade::__private::capture::TypeInfo<Tag> for #ident {
-                const MODULE: &'static str = ::core::module_path!();
-                const NAME: &'static str = #name;
-            }
-
-            impl<Tag> #facade::__private::capture::TypeDesc<Tag> for #ident {
-                const DESC: #facade::__private::capture::DescBuf =
-                    #facade::__private::capture::DescBuf::named(
-                        <#ident as #facade::__private::capture::TypeInfo<Tag>>::MODULE,
-                        <#ident as #facade::__private::capture::TypeInfo<Tag>>::NAME,
-                    );
-            }
-        };
-        #record
     }
 }
 
