@@ -9,6 +9,7 @@ pub struct CSharpConfig {
     #[serde(default = "default_csharp_output")]
     pub output: PathBuf,
     pub namespace: Option<String>,
+    pub module_class: Option<String>,
     pub package_id: Option<String>,
     pub target_framework: Option<String>,
     pub package_output: Option<PathBuf>,
@@ -27,6 +28,7 @@ impl Default for CSharpConfig {
         Self {
             output: default_csharp_output(),
             namespace: None,
+            module_class: None,
             package_id: None,
             target_framework: None,
             package_output: None,

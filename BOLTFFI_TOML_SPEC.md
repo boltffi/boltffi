@@ -472,6 +472,10 @@ Controls npm package generation in `boltffi pack wasm`.
 - `namespace` (string, optional): C# namespace for generated sources.
   - Default: PascalCase of `{package.crate}` (or `{package.name}` when `package.crate` is unset).
   - Must be dot-separated C# identifiers, for example `CounterApp.Shared`.
+- `module_class` (string, optional): C# class containing generated free functions and constants.
+  - Default: PascalCase of the Rust crate name, preserving the existing API.
+  - Must be a C# identifier and must not conflict with an exported type or `NativeMethods`.
+  - For a crate named `demo` exporting a `Demo` record, set `module_class = "DemoApi"` to generate `DemoApi.MakeDemo()` alongside the `Demo` record.
 - `package_id` (string, optional): NuGet package ID.
   - Default: `{package.name}`
 - `target_framework` (string, optional): Target framework for the generated NuGet package project.

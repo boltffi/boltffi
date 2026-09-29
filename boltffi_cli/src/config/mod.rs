@@ -284,6 +284,14 @@ impl Config {
                 )));
             }
 
+            if let Some(name) = self.targets.csharp.module_class.as_deref()
+                && !is_valid_csharp_namespace_segment(name)
+            {
+                return Err(ConfigError::Validation(format!(
+                    "targets.csharp.module_class must be a C# identifier, got '{name}'"
+                )));
+            }
+
             if let Some(target_framework) = self.targets.csharp.target_framework.as_deref()
                 && target_framework.trim().is_empty()
             {
@@ -917,6 +925,10 @@ impl Config {
 
     pub fn c_output(&self) -> PathBuf {
         self.targets.c.output.clone()
+    }
+
+    pub fn csharp_module_class(&self) -> Option<&str> {
+        self.targets.csharp.module_class.as_deref()
     }
 
     pub fn csharp_namespace(&self) -> Option<&str> {
@@ -2633,6 +2645,7 @@ enabled = true
         );
         assert_eq!(config.csharp_package_id(), "my-lib");
         assert_eq!(config.csharp_namespace(), None);
+        assert_eq!(config.csharp_module_class(), None);
         assert_eq!(config.csharp_target_framework(), "net10.0");
         assert_eq!(
             config.csharp_requested_runtime_identifiers(),
@@ -2654,6 +2667,7 @@ output = "artifacts/csharp"
 package_output = "artifacts/nuget"
 package_id = "Company.MyLib"
 namespace = "Company.MyLib.Bindings"
+module_class = "MyLibApi"
 target_framework = "net9.0"
 runtime_identifiers = ["current", "linux-x64", "windows-aarch64"]
 "#,
@@ -2666,6 +2680,7 @@ runtime_identifiers = ["current", "linux-x64", "windows-aarch64"]
         );
         assert_eq!(config.csharp_package_id(), "Company.MyLib");
         assert_eq!(config.csharp_namespace(), Some("Company.MyLib.Bindings"));
+        assert_eq!(config.csharp_module_class(), Some("MyLibApi"));
         assert_eq!(config.csharp_target_framework(), "net9.0");
         assert_eq!(
             config.csharp_requested_runtime_identifiers(),
@@ -2787,6 +2802,19 @@ runtime_identifiers = []
             Err(ConfigError::Validation(message))
                 if message.contains("targets.csharp.runtime_identifiers must be non-empty")
         ));
+    }
+
+    #[test]
+    fn rejects_invalid_csharp_module_class() {
+        for name in ["", "Demo.Api", "123Demo", "Demo Api"] {
+            let mut config = parse_config("[package]\nname = \"demo\"");
+            config.targets.csharp.enabled = true;
+            config.targets.csharp.module_class = Some(name.to_owned());
+            assert!(
+                matches!(config.validate(), Err(ConfigError::Validation(message))
+                if message.contains("targets.csharp.module_class must be a C# identifier"))
+            );
+        }
     }
 
     #[test]

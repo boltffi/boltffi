@@ -15,6 +15,16 @@ pub enum BackendError {
     #[allow(missing_docs)]
     #[error("C declarations require the same generated name `{name}`")]
     CNameCollision { name: String },
+    /// The generated C# module class conflicts with another type.
+    #[error(
+        "C# module class `{name}` conflicts with {declaration}; choose a different targets.csharp.module_class"
+    )]
+    CSharpModuleClassCollision {
+        /// Conflicting generated type name.
+        name: String,
+        /// Declaration or runtime type occupying the name.
+        declaration: String,
+    },
     /// A host cannot render a binding declaration shape present in the contract.
     #[error("backend `{target}` does not support binding capability {capability:?}: {status:?}")]
     BindingCapability {

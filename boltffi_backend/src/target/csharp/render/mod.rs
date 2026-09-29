@@ -2228,6 +2228,12 @@ impl<'module> Module<'module> {
         self,
         declarations: Vec<RenderedDeclaration<'decl, Native>>,
     ) -> Result<GeneratedOutput> {
+        if self.class_name.as_str() == "NativeMethods" {
+            return Err(Error::CSharpModuleClassCollision {
+                name: self.class_name.to_string(),
+                declaration: "the generated native method container".to_owned(),
+            });
+        }
         let mut functions = Vec::new();
         let mut native_functions = BTreeMap::<HelperId, Statement>::new();
         let mut support = BTreeMap::<String, Statement>::new();
@@ -2254,8 +2260,15 @@ impl<'module> Module<'module> {
                     DeclarationRef::Callback(callback) => callback.name(),
                     _ => unreachable!(),
                 };
+                let type_name = Name::new(name).pascal()?;
+                if type_name == self.class_name {
+                    return Err(Error::CSharpModuleClassCollision {
+                        name: type_name.to_string(),
+                        declaration: format!("exported type `{}`", name.as_path_string()),
+                    });
+                }
                 files.push(GeneratedFile::new(
-                    FilePath::new(format!("{}.cs", Name::new(name).pascal()?))?,
+                    FilePath::new(format!("{type_name}.cs"))?,
                     primary.into_string(),
                 ));
             } else if !primary.is_empty() {

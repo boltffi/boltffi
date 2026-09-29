@@ -34,6 +34,7 @@ pub use syntax::{ArgumentList, Expression, Identifier, Statement, Syntax, TypeFr
 #[non_exhaustive]
 pub struct CSharpHost {
     namespace: Option<Namespace>,
+    module_class: Option<Identifier>,
     library: Option<String>,
     custom_mappings: crate::core::CustomTypeMappingSet,
 }
@@ -47,6 +48,12 @@ impl CSharpHost {
     /// Selects the namespace used by generated C# source.
     pub fn namespace(mut self, namespace: impl AsRef<str>) -> Result<Self> {
         self.namespace = Some(Namespace::parse(namespace.as_ref())?);
+        Ok(self)
+    }
+
+    /// Selects the class containing generated free functions and constants.
+    pub fn module_class(mut self, name: impl AsRef<str>) -> Result<Self> {
+        self.module_class = Some(Identifier::escape(name.as_ref())?);
         Ok(self)
     }
 
@@ -239,7 +246,10 @@ impl host::HostBackend for CSharpHost {
         let namespace = self.namespace_for(bindings)?;
         render::Module::new(
             &namespace,
-            Name::new(bindings.package().name()).pascal()?,
+            self.module_class
+                .clone()
+                .map(Ok)
+                .unwrap_or_else(|| Name::new(bindings.package().name()).pascal())?,
             Literal::string(&self.library_for(bindings)),
             Literal::string(bridge.support().buffer_from_bytes()?.name()),
         )
