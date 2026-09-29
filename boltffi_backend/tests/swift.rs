@@ -1,5 +1,9 @@
+#[cfg(target_os = "macos")]
+use std::{fs, process::Command};
+
 use boltffi_ast::PackageInfo;
 use boltffi_backend::{
+    Error,
     core::{GeneratedFile, GeneratedOutput},
     target::swift::{SwiftCustomMapping, SwiftHost},
 };
@@ -552,6 +556,76 @@ fn swift_target_renders_custom_types_through_representations() {
 #[test]
 fn swift_target_renders_custom_type_defaults_through_representations() {
     insta::assert_snapshot!(rendered_fixture("records/custom_type_default"));
+}
+
+#[test]
+fn swift_target_renders_parameter_defaults() {
+    insta::assert_snapshot!(rendered_fixture("exports/defaulted_callables"));
+}
+
+#[test]
+fn swift_target_rejects_defaults_on_inout_parameters() {
+    let bindings = bindings(
+        r#"
+        #[export]
+        pub fn rename(#[boltffi::default("hello")] name: &mut String) {
+            name.push_str("!");
+        }
+        "#,
+    );
+    let error = SwiftHost::new("DemoFFI")
+        .expect("Swift host")
+        .into_target()
+        .expect("Swift target")
+        .render(&bindings)
+        .expect_err("Swift cannot default an inout parameter");
+
+    assert!(matches!(
+        error,
+        Error::UnsupportedTarget {
+            target: "swift",
+            shape: "default value for an inout parameter"
+        }
+    ));
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn swift_parameter_defaults_compile_at_call_sites() {
+    let workspace = tempfile::tempdir().expect("create Swift compilation directory");
+    let directory = workspace.path();
+    let output = rendered_output(SourceFixture::many([
+        "exports/defaulted_callables",
+        "exports/integer_limit_defaults",
+        "exports/optional_custom_defaults",
+    ]));
+    output.files().iter().for_each(|file| {
+        let path = directory.join(file.path().as_path());
+        fs::create_dir_all(path.parent().expect("generated file directory"))
+            .expect("create generated file directory");
+        fs::write(path, file.contents()).expect("write generated file");
+    });
+    fs::write(
+        directory.join("module.modulemap"),
+        "module DemoFFI { header \"boltffi.h\" export * }\n",
+    )
+    .expect("write C module map");
+    let compilation = Command::new("swiftc")
+        .args(["-typecheck", "-I"])
+        .arg(directory)
+        .arg(directory.join(swift_file(&output).path().as_path()))
+        .arg(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/swift/default_arguments.swift"
+        ))
+        .output()
+        .expect("run Swift compiler");
+    assert!(
+        compilation.status.success(),
+        "generated Swift failed to compile:\n{}\n{}",
+        String::from_utf8_lossy(&compilation.stdout),
+        String::from_utf8_lossy(&compilation.stderr)
+    );
 }
 
 #[test]

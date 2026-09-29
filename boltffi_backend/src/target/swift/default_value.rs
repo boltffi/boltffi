@@ -25,6 +25,11 @@ impl DefaultExpression {
         if let TypeRef::Custom(custom_type) = ty {
             return Self::custom(*custom_type, value, context);
         }
+        if let TypeRef::Optional(inner) = ty
+            && !matches!(value, DefaultValue::Null)
+        {
+            return Self::render(inner, value, context);
+        }
 
         match value {
             DefaultValue::Bool(value) => Ok(Expression::literal(Literal::bool(*value))),

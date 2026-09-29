@@ -24,6 +24,7 @@ use crate::{
             ArgumentBuffer, OwnedBuffer, ReadExpression, Reader, ScalarOption, WriteStatement,
             Writer,
         },
+        default_value::DefaultExpression,
         lexical::ScopeForm,
         name_style::{GeneratedLocal, Name},
         primitive::SwiftPrimitive,
@@ -136,6 +137,7 @@ enum ReceiverKind {
 pub struct Parameter {
     name: Identifier,
     ty: TypeName,
+    default: Option<Expression>,
     argument: Argument,
 }
 
@@ -962,7 +964,7 @@ impl InitializerSignature {
             Self::NamedInit { label } => {
                 ParameterList::new(parameters.split_first().into_iter().flat_map(
                     |(first, rest)| {
-                        std::iter::once(format!("{label} {}: {}", first.name, first.ty))
+                        std::iter::once(format!("{label} {}", first.signature()))
                             .chain(rest.iter().map(Parameter::signature))
                     },
                 ))
@@ -2042,20 +2044,44 @@ impl Parameter {
     ) -> Result<Self> {
         let source_name = Name::new(decl.name());
         let name = source_name.parameter()?;
+        let default = decl
+            .meta()
+            .default()
+            .map(|default| {
+                let ty = decl
+                    .payload()
+                    .as_value()
+                    .and_then(|plan| plan.value_type())
+                    .ok_or_else(|| {
+                        SwiftHost::unsupported("default value for this parameter type")
+                    })?;
+                DefaultExpression::render(&ty, default, context)
+            })
+            .transpose()?;
         let mut plan = ParameterPlan {
             source_name,
             name,
+            default,
             bridge,
             context,
         };
-        match decl.payload() {
+        let (ty, argument) = match decl.payload() {
             IncomingParam::Value(value) => value.render_with(&mut plan),
             IncomingParam::Closure(closure) => plan.closure(closure),
-        }
+        }?;
+        Ok(Self {
+            name: plan.name,
+            ty,
+            default: plan.default,
+            argument,
+        })
     }
 
     pub fn signature(&self) -> String {
-        format!("{}: {}", self.name, self.ty)
+        match &self.default {
+            Some(default) => format!("{}: {} = {default}", self.name, self.ty),
+            None => format!("{}: {}", self.name, self.ty),
+        }
     }
 
     fn argument(&self) -> Argument {
@@ -2342,15 +2368,25 @@ impl AsyncCall {
 struct ParameterPlan<'context, 'bindings> {
     source_name: Name,
     name: Identifier,
+    default: Option<Expression>,
     bridge: &'context CBridgeContract,
     context: &'context RenderContext<'bindings, Native>,
 }
 
 impl ParameterPlan<'_, '_> {
+    fn inout_type(&self, ty: TypeName) -> Result<TypeName> {
+        if self.default.is_some() {
+            return Err(SwiftHost::unsupported(
+                "default value for an inout parameter",
+            ));
+        }
+        Ok(TypeName::new(format!("inout {ty}")))
+    }
+
     fn closure(
         &mut self,
         closure: &boltffi_binding::ClosureParameter<Native, IntoRust>,
-    ) -> Result<Parameter> {
+    ) -> Result<(TypeName, Argument)> {
         let argument = ClosureArgument::new(
             &self.source_name,
             self.name.clone(),
@@ -2358,16 +2394,15 @@ impl ParameterPlan<'_, '_> {
             self.bridge,
             self.context,
         )?;
-        Ok(Parameter {
-            name: self.name.clone(),
-            ty: argument.parameter_ty(),
-            argument: Argument::Closure(Box::new(argument)),
-        })
+        Ok((
+            argument.parameter_ty(),
+            Argument::Closure(Box::new(argument)),
+        ))
     }
 }
 
 impl<'plan> ParamPlanRender<'plan, Native, IntoRust> for ParameterPlan<'_, '_> {
-    type Output = Result<Parameter>;
+    type Output = Result<(TypeName, Argument)>;
 
     fn direct(&mut self, ty: &'plan DirectValueType, receive: Receive) -> Self::Output {
         if receive == Receive::ByMutRef {
@@ -2381,11 +2416,7 @@ impl<'plan> ParamPlanRender<'plan, Native, IntoRust> for ParameterPlan<'_, '_> {
             }
             _ => Argument::Direct(input),
         };
-        Ok(Parameter {
-            name: self.name.clone(),
-            ty: direct.api_type().clone(),
-            argument,
-        })
+        Ok((direct.api_type().clone(), argument))
     }
 
     fn encoded(
@@ -2400,10 +2431,9 @@ impl<'plan> ParamPlanRender<'plan, Native, IntoRust> for ParameterPlan<'_, '_> {
         }
         if receive == Receive::ByMutRef {
             let read = codec.read_plan();
-            return Ok(Parameter {
-                name: self.name.clone(),
-                ty: TypeName::new(format!("inout {}", SwiftType::type_ref(ty, self.context)?)),
-                argument: Argument::MutableEncoded(MutableEncodedArgument::new(
+            return Ok((
+                self.inout_type(SwiftType::type_ref(ty, self.context)?)?,
+                Argument::MutableEncoded(MutableEncodedArgument::new(
                     &self.source_name,
                     codec,
                     &read,
@@ -2412,18 +2442,17 @@ impl<'plan> ParamPlanRender<'plan, Native, IntoRust> for ParameterPlan<'_, '_> {
                     self.bridge,
                     self.context,
                 )?),
-            });
+            ));
         }
-        Ok(Parameter {
-            name: self.name.clone(),
-            ty: SwiftType::type_ref(ty, self.context)?,
-            argument: Argument::Encoded(EncodedArgument::new(
+        Ok((
+            SwiftType::type_ref(ty, self.context)?,
+            Argument::Encoded(EncodedArgument::new(
                 &self.source_name,
                 codec,
                 Expression::identifier(self.name.clone()),
                 self.context,
             )?),
-        })
+        ))
     }
 
     fn handle(
@@ -2436,37 +2465,34 @@ impl<'plan> ParamPlanRender<'plan, Native, IntoRust> for ParameterPlan<'_, '_> {
         match target {
             HandleTarget::Class(class) => {
                 let handle = ClassHandle::new(*class, presence, self.context)?;
-                Ok(Parameter {
-                    name: self.name.clone(),
-                    ty: handle.api_type(),
-                    argument: if receive == Receive::ByValue {
-                        Argument::OwnedClass(OwnedClassArgument {
-                            parameter: self.name.clone(),
-                            local: Identifier::parse(format!("__boltffiOwnedHandle{}", self.name))?,
-                            release: Identifier::parse(
-                                self.context.class(*class).ok_or(Error::BrokenBridgeContract {
-                                    bridge: SwiftHost::TARGET,
-                                    invariant: "missing class declaration for ownership transfer",
-                                })?.release().name().as_str(),
-                            )?,
-                            presence,
-                        })
-                    } else {
-                        Argument::Direct(
-                            handle.parameter_argument(Expression::identifier(self.name.clone())),
-                        )
-                    },
-                })
+                let argument = if receive == Receive::ByValue {
+                    let release = self
+                        .context
+                        .class(*class)
+                        .ok_or(Error::BrokenBridgeContract {
+                            bridge: SwiftHost::TARGET,
+                            invariant: "missing class declaration for ownership transfer",
+                        })?
+                        .release();
+                    Argument::OwnedClass(OwnedClassArgument {
+                        parameter: self.name.clone(),
+                        local: Identifier::parse(format!("__boltffiOwnedHandle{}", self.name))?,
+                        release: Identifier::parse(release.name().as_str())?,
+                        presence,
+                    })
+                } else {
+                    Argument::Direct(
+                        handle.parameter_argument(Expression::identifier(self.name.clone())),
+                    )
+                };
+                Ok((handle.api_type(), argument))
             }
             HandleTarget::Callback(callback) => {
                 let handle = CallbackHandle::new(*callback, presence, self.context)?;
-                Ok(Parameter {
-                    name: self.name.clone(),
-                    ty: handle.api_type(),
-                    argument: Argument::Direct(
-                        handle.c_handle(Expression::identifier(self.name.clone())),
-                    ),
-                })
+                Ok((
+                    handle.api_type(),
+                    Argument::Direct(handle.c_handle(Expression::identifier(self.name.clone()))),
+                ))
             }
             HandleTarget::Stream(_) => Err(SwiftHost::unsupported("stream handle parameter")),
             _ => Err(SwiftHost::unsupported("unknown handle parameter")),
@@ -2474,15 +2500,14 @@ impl<'plan> ParamPlanRender<'plan, Native, IntoRust> for ParameterPlan<'_, '_> {
     }
 
     fn scalar_option(&mut self, primitive: Primitive) -> Self::Output {
-        Ok(Parameter {
-            name: self.name.clone(),
-            ty: ScalarOption::new(primitive).ty()?,
-            argument: Argument::Encoded(EncodedArgument::scalar_option(
+        Ok((
+            ScalarOption::new(primitive).ty()?,
+            Argument::Encoded(EncodedArgument::scalar_option(
                 &self.source_name,
                 primitive,
                 Expression::identifier(self.name.clone()),
             )?),
-        })
+        ))
     }
 
     fn direct_vector(
@@ -2492,18 +2517,17 @@ impl<'plan> ParamPlanRender<'plan, Native, IntoRust> for ParameterPlan<'_, '_> {
     ) -> Self::Output {
         let vector = DirectVector::from_element(element, self.bridge, self.context)?;
         let ty = match receive {
-            Receive::ByMutRef => TypeName::new(format!("inout {}", vector.ty())),
+            Receive::ByMutRef => self.inout_type(vector.ty().clone())?,
             _ => vector.ty().clone(),
         };
-        Ok(Parameter {
-            name: self.name.clone(),
+        Ok((
             ty,
-            argument: Argument::DirectVector(vector.borrowed(
+            Argument::DirectVector(vector.borrowed(
                 &self.source_name,
                 self.name.clone(),
                 receive,
             )?),
-        })
+        ))
     }
 }
 
