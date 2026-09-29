@@ -351,7 +351,7 @@ impl RustCall {
                 debug_assert!(arguments.is_empty());
                 quote! { #owner::#constant }
             }
-            RustCallTarget::Function(function) => quote! { #function(#(#arguments),*) },
+            RustCallTarget::Function(function) => quote! { self::#function(#(#arguments),*) },
             RustCallTarget::Associated { owner, method } => {
                 quote! { #owner::#method(#(#arguments),*) }
             }

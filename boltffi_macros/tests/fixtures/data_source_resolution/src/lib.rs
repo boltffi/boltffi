@@ -11,6 +11,7 @@ pub mod mode;
 #[path = "mode_experimental.rs"]
 pub mod mode;
 pub mod route;
+pub mod shadowing;
 pub mod stamps;
 
 pub use coordinate::GeographicCoordinate;
