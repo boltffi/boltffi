@@ -10,11 +10,11 @@ use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 
 use boltffi_ast::{
-    BuiltinType, ClassDef, ClassId, ConstantDef, ConstantId, ConstantOwner, CustomRemoteType,
-    CustomTypeConverter, CustomTypeDef, CustomTypeId, EnumDef, EnumId, FieldDef, FunctionDef,
-    FunctionId, MethodDef, NamePart, PackageInfo, Path, PathSegment, Primitive, RecordDef,
-    RecordId, ReturnDef, SourceContract, StreamDef, StreamId, TraitDef, TraitId, TypeExpr,
-    VariantPayload,
+    BuiltinType, ClassDef, ClassId, ConstantDef, ConstantId, ConstantOwner, CustomRemotePath,
+    CustomRemoteType, CustomTypeConverter, CustomTypeDef, CustomTypeId, EnumDef, EnumId, FieldDef,
+    FunctionDef, FunctionId, MethodDef, NamePart, PackageInfo, Path, PathRoot, PathSegment,
+    Primitive, RecordDef, RecordId, ReturnDef, SourceContract, StreamDef, StreamId, TraitDef,
+    TraitId, TypeExpr, VariantPayload,
 };
 use serde::{Deserialize, Serialize};
 
@@ -337,12 +337,25 @@ fn shadowed_builtin(fragment: &SourceFragment, id: &str) -> Option<String> {
             id.rsplit("::").next().unwrap_or(id)
         }
         SourceFragment::Custom(def) => match &def.remote {
-            CustomRemoteType::Path(path) => path.segments.last()?.name.as_str(),
-            CustomRemoteType::Tuple(_) => return None,
+            CustomRemoteType::Path(path) if may_name_builtin(path) => {
+                path.segments.last()?.name.as_str()
+            }
+            _ => return None,
         },
         _ => return None,
     };
     builtin_leaf(name).map(|_| name.to_owned())
+}
+
+/// A remote spelled bare or under a builtin's home crate may be the builtin itself;
+/// one under any other module cannot.
+fn may_name_builtin(path: &CustomRemotePath) -> bool {
+    matches!(path.root, PathRoot::Relative | PathRoot::Absolute)
+        && match path.segments.as_slice() {
+            [_] => path.root == PathRoot::Relative,
+            [home, ..] => ["std", "core", "uuid", "url"].contains(&home.name.as_str()),
+            [] => false,
+        }
 }
 
 fn declared_kind(fragment: &SourceFragment) -> Option<DeclaredKind> {
@@ -1204,39 +1217,59 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn a_custom_remote_shadowing_a_builtin_refuses_aggregation() {
+    fn custom_with_remote(segments: &[&str]) -> RawSourceRecord {
         let converter = || CustomTypeConverter::path(boltffi_ast::Path::single("instant_into_ffi"));
         let custom = CustomTypeDef::new(
             CustomTypeId::new(format!("{SELF_ID}::FixtureInstant")),
             name("FixtureInstant"),
             CustomRemoteType::path(boltffi_ast::CustomRemotePath::new(
                 boltffi_ast::PathRoot::Relative,
-                vec![
-                    boltffi_ast::CustomRemotePathSegment::new("std"),
-                    boltffi_ast::CustomRemotePathSegment::new("time"),
-                    boltffi_ast::CustomRemotePathSegment::new("Duration"),
-                ],
+                segments
+                    .iter()
+                    .map(|segment| boltffi_ast::CustomRemotePathSegment::new(*segment))
+                    .collect(),
             )),
             TypeExpr::Primitive(Primitive::I64),
             None,
             boltffi_ast::CustomTypeConverters::new(converter(), converter()),
         );
-        let custom = raw(
+        raw(
             "demo::customs",
             &[],
             serde_json::to_vec(&SourceFragment::Custom(custom)).expect("fragment serializes"),
-        );
+        )
+    }
 
-        let error = aggregate_records(
-            &[custom, duration_field_record()],
+    #[test]
+    fn a_custom_remote_shadowing_a_builtin_refuses_aggregation() {
+        for remote in [&["std", "time", "Duration"][..], &["Duration"]] {
+            let error = aggregate_records(
+                &[custom_with_remote(remote), duration_field_record()],
+                PackageInfo::new("demo", None),
+            )
+            .expect_err("the remote's builtin spelling is ambiguous");
+
+            assert!(matches!(
+                error,
+                SourceFragmentError::ShadowedBuiltin { name } if name == "Duration"
+            ));
+        }
+    }
+
+    #[test]
+    fn a_custom_remote_outside_the_builtin_home_leaves_the_builtin_alone() {
+        let contract = aggregate_records(
+            &[
+                custom_with_remote(&["other", "Duration"]),
+                duration_field_record(),
+            ],
             PackageInfo::new("demo", None),
         )
-        .expect_err("the remote's builtin spelling is ambiguous");
+        .expect("a remote under another module is not the builtin");
 
         assert!(matches!(
-            error,
-            SourceFragmentError::ShadowedBuiltin { name } if name == "Duration"
+            contract.records[0].fields[0].type_expr,
+            TypeExpr::Builtin(BuiltinType::Duration)
         ));
     }
 
