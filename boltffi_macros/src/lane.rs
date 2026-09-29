@@ -439,17 +439,18 @@ fn repr_tag(kind: Kind, item: &TokenStream, fragments: &Fragments) -> TokenStrea
     let Some((SourceFragment::Custom(custom), slots)) = fragments.first() else {
         return TokenStream::new();
     };
-    let boltffi_ast::TypeExpr::Record { id, .. } = &custom.repr else {
-        return TokenStream::new();
-    };
-    let Some(slot) = id
-        .as_str()
-        .strip_prefix(SLOT_ID_PREFIX)
-        .and_then(|index| index.parse::<usize>().ok())
-        .and_then(|index| slots.get(index))
-    else {
-        return TokenStream::new();
-    };
+    let mut lanes = Vec::new();
+    declared_in_repr(&custom.repr, &mut Vec::new(), &mut |expr, _| {
+        let slot = match expr {
+            boltffi_ast::TypeExpr::Record { id, .. } => id
+                .as_str()
+                .strip_prefix(SLOT_ID_PREFIX)
+                .and_then(|index| index.parse::<usize>().ok())
+                .and_then(|index| slots.get(index)),
+            _ => None,
+        };
+        lanes.push(slot.map(lane_path));
+    });
     let target = match kind {
         Kind::CustomType => crate::custom::r#type::parse_spec(item.clone().into())
             .ok()
@@ -462,12 +463,49 @@ fn repr_tag(kind: Kind, item: &TokenStream, fragments: &Fragments) -> TokenStrea
     let Some(target) = target else {
         return TokenStream::new();
     };
-    let lane = lane_path(slot);
-    quote! {
-        impl ::boltffi::__private::CustomReprTag<crate::__BoltffiTag> for #target {
-            type Tag = #lane!(@tag);
+    lanes
+        .into_iter()
+        .enumerate()
+        .filter_map(|(position, lane)| Some((position, lane?)))
+        .map(|(position, lane)| {
+            quote! {
+                impl ::boltffi::__private::CustomReprTag<crate::__BoltffiTag, #position> for #target {
+                    type Tag = #lane!(@tag);
+                }
+            }
+        })
+        .collect()
+}
+
+/// Visits the declared types a representation names in source order, each with the
+/// argument positions leading to it.
+fn declared_in_repr<'expr>(
+    expr: &'expr boltffi_ast::TypeExpr,
+    steps: &mut Vec<usize>,
+    visit: &mut impl FnMut(&'expr boltffi_ast::TypeExpr, &[usize]),
+) {
+    use boltffi_ast::TypeExpr;
+    let args: Vec<&TypeExpr> = match expr {
+        TypeExpr::Record { .. }
+        | TypeExpr::Enum { .. }
+        | TypeExpr::Class { .. }
+        | TypeExpr::Custom { .. } => return visit(expr, steps),
+        TypeExpr::Vec(inner)
+        | TypeExpr::Option(inner)
+        | TypeExpr::Boxed(inner)
+        | TypeExpr::Arc(inner) => {
+            vec![inner]
         }
-    }
+        TypeExpr::Result { ok, err } => vec![ok, err],
+        TypeExpr::Map { key, value, .. } => vec![key, value],
+        TypeExpr::Tuple(elements) => elements.iter().collect(),
+        _ => return,
+    };
+    args.into_iter().enumerate().for_each(|(position, arg)| {
+        steps.push(position);
+        declared_in_repr(arg, steps, visit);
+        steps.pop();
+    });
 }
 
 /// The id a fragment's declaration takes once aggregated, which is what gets expanded.
@@ -767,10 +805,7 @@ fn reach_through_reprs(
 ) -> std::collections::HashMap<String, CustomReach> {
     while let Some((id, reach)) = defs.iter().find_map(|custom| {
         let outer = reached.get(custom.id.as_str())?;
-        let boltffi_ast::TypeExpr::Custom { id, .. } = &custom.repr else {
-            return None;
-        };
-        let path = match custom.converters.into_ffi {
+        let repr = match custom.converters.into_ffi {
             boltffi_ast::CustomTypeConverter::TraitMethod(_) => {
                 format!(
                     "<{} as ::boltffi::CustomFfiConvertible>::FfiRepr",
@@ -782,14 +817,25 @@ fn reach_through_reprs(
                 outer.path, outer.tag
             ),
         };
-        let reach = CustomReach {
-            path,
-            tag: format!(
-                "<{} as ::boltffi::__private::CustomReprTag<{}>>::Tag",
+        let mut inner = Vec::new();
+        declared_in_repr(&custom.repr, &mut Vec::new(), &mut |expr, steps| {
+            let position = inner.len();
+            let boltffi_ast::TypeExpr::Custom { id, .. } = expr else {
+                return inner.push(None);
+            };
+            let path = steps.iter().fold(repr.clone(), |path, step| {
+                format!("<{path} as ::boltffi::__private::ReprArg<{step}>>::Arg")
+            });
+            let tag = format!(
+                "<{} as ::boltffi::__private::CustomReprTag<{}, {position}>>::Tag",
                 outer.path, outer.tag
-            ),
-        };
-        (!reached.contains_key(id.as_str())).then(|| (id.as_str().to_owned(), reach))
+            );
+            inner.push(Some((id.as_str().to_owned(), CustomReach { path, tag })));
+        });
+        inner
+            .into_iter()
+            .flatten()
+            .find(|(id, _)| !reached.contains_key(id.as_str()))
     }) {
         reached.insert(id, reach);
     }

@@ -249,7 +249,9 @@ dependency's artifact. `boltffi generate` binds:
 A `custom_type!` implements its conversion for the declaring crate's `__BoltffiTag`,
 which keeps a foreign remote inside the orphan rule. A site reaches that tag through the
 type's lane, `Stamp!(@tag)`, whose `$crate` names the declaring crate however the root
-spells it.
+spells it. A custom whose repr holds another, `repr = Vec<Stamp>`, records the held type's
+tag by position as `CustomReprTag<Tag, N>`, and the site steps into the repr with
+`ReprArg<N>` to name it.
 
 Two bound crates that declare the same name are refused, since the foreign namespace is
 flat. rustc links a dependency's rlib only when the root uses it. So after lowering,

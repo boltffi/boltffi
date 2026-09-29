@@ -27,9 +27,45 @@ pub trait CustomType<Tag> {
         Self: Sized;
 }
 
-/// Names the tag a custom's representation converts under when that representation is
-/// another declared type, so a site can follow a chain of customs across crates.
-pub trait CustomReprTag<Tag> {
-    /// The representation's declaring crate's anchor.
+/// Names the tag the `N`th declared type in a custom's representation converts under, so
+/// a site can follow a chain of customs across crates.
+pub trait CustomReprTag<Tag, const N: usize> {
+    /// That declared type's declaring crate's anchor.
     type Tag;
 }
+
+/// Names the type argument at position `N` of a representation, so a site can reach a
+/// custom type the representation holds.
+pub trait ReprArg<const N: usize> {
+    /// The argument at that position.
+    type Arg;
+}
+
+macro_rules! repr_arg {
+    ($([$($param:ident),+] $container:ty => $index:literal: $arg:ident;)*) => {
+        $(
+            impl<$($param),+> ReprArg<$index> for $container {
+                type Arg = $arg;
+            }
+        )*
+    };
+}
+
+repr_arg!(
+    [T] Vec<T> => 0: T;
+    [T] Option<T> => 0: T;
+    [T] Box<T> => 0: T;
+    [T] std::sync::Arc<T> => 0: T;
+    [T, E] Result<T, E> => 0: T;
+    [T, E] Result<T, E> => 1: E;
+    [K, V, S] std::collections::HashMap<K, V, S> => 0: K;
+    [K, V, S] std::collections::HashMap<K, V, S> => 1: V;
+    [K, V] std::collections::BTreeMap<K, V> => 0: K;
+    [K, V] std::collections::BTreeMap<K, V> => 1: V;
+    [A] (A,) => 0: A;
+    [A, B] (A, B) => 0: A;
+    [A, B] (A, B) => 1: B;
+    [A, B, C] (A, B, C) => 0: A;
+    [A, B, C] (A, B, C) => 1: B;
+    [A, B, C] (A, B, C) => 2: C;
+);

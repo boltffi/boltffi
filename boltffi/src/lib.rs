@@ -68,7 +68,7 @@ pub mod __private {
         BoxFromCallbackHandle, CallbackForeignType, CallbackHandle, CallbackLocalHandle,
         CallbackMarker, ClassHandle, CustomReprTag, CustomType, EventSubscription, FfiBuf, FfiSpan,
         FfiStatus, ForeignCall, InternedString, InternedStringPool, InternedStringRepr,
-        NativeCallbackOwner, Passable, RustFutureContinuationCallback, RustFutureHandle,
+        NativeCallbackOwner, Passable, ReprArg, RustFutureContinuationCallback, RustFutureHandle,
         StreamContinuationCallback, StreamPollResult, SubscriptionHandle,
         UnexpectedFfiCallbackError, UnexpectedFfiCallbackPayload, VecTransport, WaitResult,
         WirePassable, callback_arc, callback_box, rustfuture, set_last_error, set_last_error_debug,
