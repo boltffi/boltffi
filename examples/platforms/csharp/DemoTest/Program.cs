@@ -1977,6 +1977,10 @@ public static class DemoTest
             Require(counter.Get() == 7, "new Counter(7).Get()");
             counter.Increment();
             Require(counter.Get() == 8, "Counter.Increment then Get");
+            DemoCase("case:classes.methods.counter.decrement.should_call_a_method_declared_in_a_methods_block");
+            counter.Decrement();
+            Require(counter.Get() == 7, "Counter.Decrement from a methods block");
+            counter.Increment();
             counter.Add(10);
             Require(counter.Get() == 18, "Counter.Add(10) then Get");
             Require(counter.MaybeDouble() == 36, "Counter.MaybeDouble() returns Some when nonzero");

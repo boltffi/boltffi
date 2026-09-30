@@ -83,6 +83,19 @@ impl Counter {
     }
 }
 
+#[cfg(not(feature = "uniffi"))]
+#[export(methods)]
+impl Counter {
+    #[demo_bench_macros::demo_case(
+        "classes.methods.counter.decrement.should_call_a_method_declared_in_a_methods_block",
+        justification = "Ensure a method written in an `#[export(methods)]` block joins the class that its `#[export] impl` block declares.",
+        directions = "Construct `classes::methods::Counter` through the generated binding, call `decrement`, and assert the count dropped by one."
+    )]
+    pub fn decrement(&self) {
+        *self.count.lock().unwrap() -= 1;
+    }
+}
+
 #[cfg(feature = "uniffi")]
 #[benchmark_candidate(impl, uniffi, constructor = "new")]
 impl Counter {
