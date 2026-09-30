@@ -55,11 +55,11 @@ pub(crate) fn item_tokens(
         ),
         (syn::Item::Impl(item), capture) => {
             let name = type_leaf_name(&item.self_ty).unwrap_or_else(|| "impl".to_owned());
-            let identity = match capture {
-                ImplCapture::Class(_) => Some(local_identity_tokens(&item.self_ty, &name)),
-                ImplCapture::ClassMethods => Some(exported_class_tokens(&item.self_ty)),
-                ImplCapture::Methods => None,
-            };
+            let identity = matches!(capture, ImplCapture::Class(_)).then(|| {
+                let identity = local_identity_tokens(&item.self_ty, &name);
+                let class = class_identity_tokens(&item.self_ty);
+                quote! { #identity #class }
+            });
             (name, identity)
         }
         (syn::Item::Fn(item), _) => (item.sig.ident.to_string(), None),
@@ -70,7 +70,10 @@ pub(crate) fn item_tokens(
     let records = match fragments(&item, &impl_capture, error) {
         Ok(fragments) => fragments
             .iter()
-            .map(|(fragment, slots)| record_tokens(fragment, slots))
+            .map(|(fragment, slots)| match impl_capture {
+                ImplCapture::ClassMethods => class_methods_record_tokens(fragment, slots),
+                _ => record_tokens(fragment, slots),
+            })
             .collect(),
         Err(reason) => unsupported_tokens(&name, &reason),
     };
@@ -211,6 +214,23 @@ pub(crate) fn scaffolding_tokens() -> TokenStream {
 /// Lays a record out field by field so only the module path and slot descriptors, the parts
 /// rustc alone knows, are computed in const context; the bytes match `capture::record`.
 fn record_tokens(fragment: &SourceFragment, slots: &[boltffi_scan::SlotSource]) -> TokenStream {
+    record_tokens_describing(fragment, slots, false)
+}
+
+/// The record of an `#[export(methods)]` block, whose first slot is the class it extends
+/// and is described as one, so a missing `#[export] impl` is reported as such.
+fn class_methods_record_tokens(
+    fragment: &SourceFragment,
+    slots: &[boltffi_scan::SlotSource],
+) -> TokenStream {
+    record_tokens_describing(fragment, slots, true)
+}
+
+fn record_tokens_describing(
+    fragment: &SourceFragment,
+    slots: &[boltffi_scan::SlotSource],
+    extends_class: bool,
+) -> TokenStream {
     let Ok(json) = serde_json::to_vec(fragment) else {
         return TokenStream::new();
     };
@@ -232,6 +252,12 @@ fn record_tokens(fragment: &SourceFragment, slots: &[boltffi_scan::SlotSource]) 
         .map(|(index, source)| {
             let ident = format_ident!("SLOT_{index}");
             let desc = match source {
+                boltffi_scan::SlotSource::Type(ty) if extends_class && index == 0 => {
+                    let lane = crate::lane::lane_path(source);
+                    quote! {
+                        <#ty as #facade::__private::capture::ClassDesc<#lane!(@tag)>>::DESC
+                    }
+                }
                 boltffi_scan::SlotSource::Type(ty) => {
                     let lane = crate::lane::lane_path(source);
                     quote! {
@@ -407,14 +433,16 @@ fn local_identity_tokens<T: quote::ToTokens>(self_ty: &T, name: &str) -> TokenSt
     }
 }
 
-/// Requires the class an `#[export(methods)]` block extends to be declared, so a missing
-/// `#[export] impl` is reported as such.
-fn exported_class_tokens(self_ty: &syn::Type) -> TokenStream {
+/// Marks a type as a class at the block that declares it, which is what an
+/// `#[export(methods)]` block requires of its target.
+fn class_identity_tokens(self_ty: &syn::Type) -> TokenStream {
     let facade = facade();
     quote! {
-        const _: fn() = || {
-            fn exported<Class: #facade::__private::ClassHandle>() {}
-            exported::<#self_ty>();
+        const _: () = {
+            impl<__BoltffiAnyTag> #facade::__private::capture::ClassDesc<__BoltffiAnyTag> for #self_ty {
+                const DESC: #facade::__private::capture::DescBuf =
+                    <#self_ty as #facade::__private::capture::TypeDesc<__BoltffiAnyTag>>::DESC;
+            }
         };
     }
 }

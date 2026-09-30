@@ -26,6 +26,17 @@ pub trait TypeDesc<Tag> {
     const DESC: DescBuf;
 }
 
+/// Descriptor of an exported class, implemented by the `#[export] impl` that declares it.
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` is not an exported class",
+    label = "no `#[export] impl {Self}` block declares this class",
+    note = "`#[export(methods)]` adds to a class that one `#[export] impl {Self}` block declares"
+)]
+pub trait ClassDesc<Tag> {
+    /// One JSON type node naming the class.
+    const DESC: DescBuf;
+}
+
 /// Descriptor of a callback trait, carried by the marker value its export site defines
 /// under the trait's own name.
 pub trait TraitDesc {

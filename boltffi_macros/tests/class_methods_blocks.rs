@@ -46,4 +46,38 @@ fn a_methods_block_without_a_declaring_block_names_the_missing_class() {
             && stderr.contains("no `#[export] impl Orphan` block declares this class"),
         "undeclared class fixture failed for another reason\nstderr\n{stderr}"
     );
+    assert!(
+        !stderr.contains("no canonical id"),
+        "an undeclared class was reported as a missing data type\nstderr\n{stderr}"
+    );
+}
+
+#[test]
+fn a_methods_block_on_a_data_type_names_the_data_marker() {
+    let output = check("methods-on-data", &["--features", "methods_on_data"]);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(
+        !output.status.success(),
+        "a class methods block compiled on a data type\nstderr\n{stderr}"
+    );
+    assert!(
+        stderr.contains("`Step` is not one; use `#[data(impl)]` on a `#[data]` type"),
+        "methods on data fixture failed for another reason\nstderr\n{stderr}"
+    );
+}
+
+#[test]
+fn a_data_methods_block_on_a_class_names_the_export_marker() {
+    let output = check("data-impl-on-class", &["--features", "data_impl_on_class"]);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(
+        !output.status.success(),
+        "a data methods block compiled on a class\nstderr\n{stderr}"
+    );
+    assert!(
+        stderr.contains("`Counter` is an exported class; use `#[export(methods)]`"),
+        "data impl on class fixture failed for another reason\nstderr\n{stderr}"
+    );
 }

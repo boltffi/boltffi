@@ -5,6 +5,10 @@ use boltffi::{EventSubscription, StreamProducer, data, export};
 boltffi::scaffolding!();
 
 pub mod extras;
+#[cfg(feature = "data_impl_on_class")]
+mod data_impl_on_class;
+#[cfg(feature = "methods_on_data")]
+mod methods_on_data;
 #[cfg(feature = "undeclared")]
 mod undeclared;
 

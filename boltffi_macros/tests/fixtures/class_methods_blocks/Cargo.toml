@@ -8,6 +8,8 @@ publish = false
 
 [features]
 undeclared = []
+methods_on_data = []
+data_impl_on_class = []
 
 [dependencies]
 boltffi = { path = "../../../../boltffi" }
