@@ -140,9 +140,46 @@ impl From<&str> for CanonicalName {
 /// or `r#type`. `canonical` stores the normalized API name used by binding
 /// contracts and generated language names.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(from = "SerializedSourceName", into = "SerializedSourceName")]
 pub struct SourceName {
     spelling: String,
     canonical: CanonicalName,
+}
+
+/// Serialized form of a [`SourceName`], which omits the canonical name a spelling implies.
+#[derive(Serialize, Deserialize)]
+struct SerializedSourceName {
+    spelling: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    canonical: Option<CanonicalName>,
+}
+
+impl SerializedSourceName {
+    fn implied_canonical(spelling: &str) -> CanonicalName {
+        CanonicalName::from(spelling.strip_prefix("r#").unwrap_or(spelling))
+    }
+}
+
+impl From<SourceName> for SerializedSourceName {
+    fn from(name: SourceName) -> Self {
+        let implied = Self::implied_canonical(&name.spelling);
+        Self {
+            spelling: name.spelling,
+            canonical: Some(name.canonical).filter(|canonical| *canonical != implied),
+        }
+    }
+}
+
+impl From<SerializedSourceName> for SourceName {
+    fn from(name: SerializedSourceName) -> Self {
+        let canonical = name
+            .canonical
+            .unwrap_or_else(|| SerializedSourceName::implied_canonical(&name.spelling));
+        Self {
+            spelling: name.spelling,
+            canonical,
+        }
+    }
 }
 
 impl SourceName {
@@ -295,6 +332,7 @@ pub struct PathSegment {
     /// The canonical spelling of this path segment.
     pub name: NamePart,
     /// Generic arguments attached to this segment.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub arguments: Vec<GenericArgument>,
 }
 
@@ -342,4 +380,52 @@ pub enum GenericArgument {
         /// The type written on the right side of the equality.
         type_expr: TypeExpr,
     },
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    fn parts(parts: &[&str]) -> CanonicalName {
+        CanonicalName::new(parts.iter().copied().map(NamePart::new).collect())
+    }
+
+    fn round_trip(name: &SourceName) -> SourceName {
+        serde_json::from_value(serde_json::to_value(name).expect("name serializes"))
+            .expect("name deserializes")
+    }
+
+    #[test]
+    fn serialized_name_omits_the_canonical_name_its_spelling_implies() {
+        [
+            ("HTTPRequest", parts(&["http", "request"])),
+            ("make_handler", parts(&["make", "handler"])),
+            ("r#type", parts(&["type"])),
+        ]
+        .into_iter()
+        .for_each(|(spelling, canonical)| {
+            let name = SourceName::new(spelling, canonical);
+            assert_eq!(
+                serde_json::to_value(&name).expect("name serializes"),
+                json!({ "spelling": spelling }),
+                "the spelling alone carries the name"
+            );
+            assert_eq!(round_trip(&name), name, "the implied name is recomputed");
+        });
+    }
+
+    #[test]
+    fn serialized_name_keeps_a_canonical_name_its_spelling_does_not_imply() {
+        let name = SourceName::new("Ready", CanonicalName::single("Ready"));
+        assert_eq!(
+            serde_json::to_value(&name).expect("name serializes"),
+            json!({ "spelling": "Ready", "canonical": { "parts": ["Ready"] } }),
+            "a name the spelling does not imply is written out"
+        );
+        assert_eq!(round_trip(&name), name, "the written name is read back");
+        let path = SourceName::from_canonical(parts(&["http", "request"]));
+        assert_eq!(round_trip(&path), path, "a joined path keeps its parts");
+    }
 }
