@@ -13,7 +13,7 @@ custom_type! {
 #[data]
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Length {
-    value: f64::Length,
+    value: LengthMeters,
 }
 
 #[data(impl)]
