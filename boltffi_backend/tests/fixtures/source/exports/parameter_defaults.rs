@@ -61,6 +61,14 @@ pub enum DefaultMode {
 
 #[data(impl)]
 impl DefaultMode {
+    pub fn with_mode(#[boltffi::default(DefaultMode::Loud)] mode: Self) -> Self {
+        mode
+    }
+
+    pub fn new(#[boltffi::default(DefaultMode::Quiet)] mode: Self) -> Self {
+        mode
+    }
+
     pub async fn load(#[boltffi::default(DefaultMode::Quiet)] mode: Self) -> Self {
         mode
     }
@@ -103,6 +111,12 @@ pub struct DefaultCounter {
 
 #[export]
 impl DefaultCounter {
+    pub fn from_text(#[boltffi::default("40")] value: String) -> Self {
+        Self {
+            start: value.parse().unwrap(),
+        }
+    }
+
     pub fn new(#[boltffi::default(10)] start: i32) -> Self {
         Self { start }
     }
@@ -134,6 +148,14 @@ pub struct DefaultAmount {
 
 #[data(impl)]
 impl DefaultAmount {
+    pub fn with_scaled_value(#[boltffi::default(2)] value: i32) -> Self {
+        Self { value: value * 2 }
+    }
+
+    pub fn try_scaled_value(#[boltffi::default(2)] value: i32) -> Option<Self> {
+        (value >= 0).then_some(Self { value: value * 2 })
+    }
+
     pub fn offset(&self, #[boltffi::default(2)] step: i32) -> i32 {
         self.value + step
     }
@@ -146,6 +168,10 @@ pub struct NamedAmount {
 
 #[data(impl)]
 impl NamedAmount {
+    pub fn empty() -> Self {
+        Self { value: 0 }
+    }
+
     pub async fn load(#[boltffi::default(6)] value: i32) -> Self {
         Self { value }
     }
@@ -207,4 +233,69 @@ pub struct Quota {
 #[export]
 pub fn throttle(#[boltffi::default(None)] limit: LimitRust) -> LimitRust {
     limit
+}
+
+#[data]
+pub struct FloatDefaults {
+    #[boltffi::default(-0.0)]
+    pub single: f32,
+    #[boltffi::default(-0.0)]
+    pub double: f64,
+}
+
+#[export]
+pub fn default_float_bits(#[boltffi::default(-0.0)] value: f32) -> u32 {
+    value.to_bits()
+}
+
+#[export]
+pub fn default_double_bits(#[boltffi::default(-0.0)] value: f64) -> u64 {
+    value.to_bits()
+}
+
+custom_type!(
+    pub Email,
+    remote = EmailRust,
+    repr = String,
+    into_ffi = email_into_ffi,
+    try_from_ffi = email_from_ffi
+);
+
+custom_type!(
+    pub Identifier,
+    remote = IdentifierRust,
+    repr = String,
+    into_ffi = identifier_into_ffi,
+    try_from_ffi = identifier_from_ffi
+);
+
+#[data]
+pub struct ContactDefaults {
+    #[boltffi::default("mailto:ada@example.com")]
+    pub email: EmailRust,
+    #[boltffi::default("01234567-89ab-cdef-0123-456789abcdef")]
+    pub identifier: IdentifierRust,
+    #[boltffi::default(None)]
+    pub optional_email: Option<EmailRust>,
+}
+
+#[export]
+pub fn default_email(
+    #[boltffi::default("mailto:ada@example.com")] email: EmailRust,
+) -> EmailRust {
+    email
+}
+
+#[export]
+pub fn default_identifier(
+    #[boltffi::default("01234567-89ab-cdef-0123-456789abcdef")] identifier: IdentifierRust,
+) -> IdentifierRust {
+    identifier
+}
+
+#[export]
+pub fn default_optional_email(
+    #[boltffi::default("mailto:ada@example.com")] email: Option<EmailRust>,
+) -> Option<EmailRust> {
+    email
 }

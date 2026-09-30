@@ -53,7 +53,7 @@ impl DefaultExpression {
         value: &DefaultValue,
         context: &RenderContext<Native>,
     ) -> Result<Expression> {
-        match Representation::resolve(custom_type, context)? {
+        let representation = match Representation::resolve_ffi(custom_type, context)? {
             Representation::Transparent(representation) => {
                 Self::render(representation, value, context)
             }
@@ -78,6 +78,10 @@ impl DefaultExpression {
                         .collect::<ArgumentList>(),
                 ))
             }
+        }?;
+        match context.custom_type_mapping(custom_type) {
+            Some(mapping) => SwiftHost::custom_type_decode(mapping, representation),
+            None => Ok(representation),
         }
     }
 
@@ -97,7 +101,7 @@ impl DefaultExpression {
     }
 
     fn float32(value: f32) -> Expression {
-        match value.is_finite() {
+        match value.is_finite() && value.to_bits() != (-0.0_f32).to_bits() {
             true => Expression::literal(Literal::float32(value)),
             false => Expression::call(
                 "Float",
@@ -112,7 +116,7 @@ impl DefaultExpression {
     }
 
     fn float64(value: f64) -> Expression {
-        match value.is_finite() {
+        match value.is_finite() && value.to_bits() != (-0.0_f64).to_bits() {
             true => Expression::literal(Literal::float64(value)),
             false => Expression::call(
                 "Double",

@@ -10,7 +10,10 @@ package com.boltffi.demo
 import kotlinx.coroutines.launch
 @Suppress("FunctionName")
 private object Native {
+    @JvmStatic external fun boltffi_init_record_demo_default_amount_with_scaled_value(value: Int): ByteArray?
+    @JvmStatic external fun boltffi_method_record_demo_default_amount_try_scaled_value(value: Int): ByteArray?
     @JvmStatic external fun boltffi_method_record_demo_default_amount_offset(`receiver`: java.nio.ByteBuffer, step: Int): Int
+    @JvmStatic external fun boltffi_init_record_demo_named_amount_empty(): ByteArray?
     @JvmStatic external fun boltffi_init_record_demo_named_amount_load(value: Int): Long
     @JvmStatic external fun boltffi_async_init_record_demo_named_amount_load_poll(handle: Long, callback_data: Long): Byte
     @JvmStatic external fun boltffi_async_init_record_demo_named_amount_load_complete(handle: Long): ByteArray?
@@ -18,6 +21,8 @@ private object Native {
     @JvmStatic external fun boltffi_async_init_record_demo_named_amount_load_free(handle: Long): Unit
     @JvmStatic external fun boltffi_async_init_record_demo_named_amount_load_panic_message(handle: Long): ByteArray?
     @JvmStatic external fun boltffi_init_record_demo_named_amount_with_value(value: Int): ByteArray?
+    @JvmStatic external fun boltffi_init_enum_demo_default_mode_with_mode(mode: Byte): Byte
+    @JvmStatic external fun boltffi_init_enum_demo_default_mode_new(mode: Byte): Byte
     @JvmStatic external fun boltffi_init_enum_demo_default_mode_load(mode: Byte): Long
     @JvmStatic external fun boltffi_async_init_enum_demo_default_mode_load_poll(handle: Long, callback_data: Long): Byte
     @JvmStatic external fun boltffi_async_init_enum_demo_default_mode_load_complete(handle: Long): Byte
@@ -35,6 +40,7 @@ private object Native {
     @JvmStatic external fun boltffi_async_init_class_demo_server_start_panic_message(handle: Long): ByteArray?
     @JvmStatic external fun boltffi_method_class_demo_server_port(`receiver`: Long, mapped: Boolean): Short
     @JvmStatic external fun boltffi_release_class_demo_default_counter(handle: Long): Unit
+    @JvmStatic external fun boltffi_init_class_demo_default_counter_from_text(value: java.nio.ByteBuffer, __boltffi_value_len: Int): Long
     @JvmStatic external fun boltffi_init_class_demo_default_counter_new(start: Int): Long
     @JvmStatic external fun boltffi_init_class_demo_default_counter_with_offset(start: Int, offset: Int): Long
     @JvmStatic external fun boltffi_method_class_demo_default_counter_offset(`receiver`: Long, step: Int): Int
@@ -56,6 +62,11 @@ private object Native {
     @JvmStatic external fun boltffi_function_demo_default_amount(amount: java.nio.ByteBuffer, __boltffi_amount_len: Int): ByteArray?
     @JvmStatic external fun boltffi_function_demo_span(start: Long, end: Long): Long
     @JvmStatic external fun boltffi_function_demo_throttle(limit: java.nio.ByteBuffer, __boltffi_limit_len: Int): ByteArray?
+    @JvmStatic external fun boltffi_function_demo_default_float_bits(value: Float): Int
+    @JvmStatic external fun boltffi_function_demo_default_double_bits(value: Double): Long
+    @JvmStatic external fun boltffi_function_demo_default_email(email: java.nio.ByteBuffer, __boltffi_email_len: Int): ByteArray?
+    @JvmStatic external fun boltffi_function_demo_default_identifier(identifier: java.nio.ByteBuffer, __boltffi_identifier_len: Int): ByteArray?
+    @JvmStatic external fun boltffi_function_demo_default_optional_email(email: java.nio.ByteBuffer, __boltffi_email_len: Int): ByteArray?
 
     @JvmStatic fun boltffiFutureContinuationCallback(handle: Long, pollResult: Byte) {
         BoltFfiAsync.resume(handle, pollResult)
@@ -65,6 +76,10 @@ private object Native {
 typealias Amount = DefaultAmount
 
 typealias Limit = UInt?
+
+typealias Email = String
+
+typealias Identifier = String
 
 
 data class DefaultAmount(
@@ -118,6 +133,17 @@ data class DefaultAmount(
                 buffer.getInt(offset)
             )
         }
+
+        fun withScaledValue(value: Int = 2): DefaultAmount {
+            val __boltffi_result = Native.boltffi_init_record_demo_default_amount_with_scaled_value(value) ?: throw IllegalStateException("null buffer returned")
+            return DefaultAmount.fromByteArray(__boltffi_result)
+        }
+
+        fun tryScaledValue(value: Int = 2): DefaultAmount? {
+            val __boltffi_result = Native.boltffi_method_record_demo_default_amount_try_scaled_value(value) ?: throw IllegalStateException("null buffer returned")
+            val __boltffi_reader = WireReader(__boltffi_result)
+            return __boltffi_reader.readOptionalValue({ __boltffi_reader -> DefaultAmount.fromReader(__boltffi_reader) })
+        }
     }
 
     fun offset(step: Int = 2): Int {
@@ -165,6 +191,11 @@ data class NamedAmount(
             return NamedAmount(
                 buffer.getInt(offset)
             )
+        }
+
+        fun empty(): NamedAmount {
+            val __boltffi_result = Native.boltffi_init_record_demo_named_amount_empty() ?: throw IllegalStateException("null buffer returned")
+            return NamedAmount.fromByteArray(__boltffi_result)
         }
 
         suspend fun load(value: Int = 6): NamedAmount {
@@ -273,6 +304,89 @@ data class Quota(
 }
 
 
+data class FloatDefaults(
+    val single: Float = -0.0f,
+    val double: Double = -0.0
+) {
+    internal fun wireSize(): Int {
+        return 4 + 8
+    }
+
+    internal fun writeTo(writer: WireWriter) {
+        writer.writeF32(this.single)
+        writer.writeF64(this.double)
+    }
+
+    internal fun toByteArray(): ByteArray {
+        val buffer = WireWriterPool.acquire(wireSize())
+        val writer = buffer.writer
+        try {
+            writeTo(writer)
+            return buffer.bytes()
+        } finally {
+            buffer.close()
+        }
+    }
+
+    companion object {
+        internal fun fromReader(reader: WireReader): FloatDefaults {
+            return FloatDefaults(
+                reader.readF32(),
+                reader.readF64()
+            )
+        }
+
+        internal fun fromByteArray(bytes: ByteArray): FloatDefaults {
+            val reader = WireReader(bytes)
+            return fromReader(reader)
+        }
+    }
+}
+
+
+data class ContactDefaults(
+    val email: String = "mailto:ada@example.com",
+    val identifier: String = "01234567-89ab-cdef-0123-456789abcdef",
+    val optionalEmail: String? = null
+) {
+    internal fun wireSize(): Int {
+        return 4 + Utf8Codec.maxBytes(this.email) + 4 + Utf8Codec.maxBytes(this.identifier) + 1 + (this.optionalEmail?.let { __boltffi_value_0 -> 4 + Utf8Codec.maxBytes(__boltffi_value_0) } ?: 0)
+    }
+
+    internal fun writeTo(writer: WireWriter) {
+        writer.writeString(this.email)
+        writer.writeString(this.identifier)
+        writer.writeOptionalValue(this.optionalEmail, { writer, __boltffi_value_0 -> writer.writeString(__boltffi_value_0) })
+    }
+
+    internal fun toByteArray(): ByteArray {
+        val buffer = WireWriterPool.acquire(wireSize())
+        val writer = buffer.writer
+        try {
+            writeTo(writer)
+            return buffer.bytes()
+        } finally {
+            buffer.close()
+        }
+    }
+
+    companion object {
+        internal fun fromReader(reader: WireReader): ContactDefaults {
+            return ContactDefaults(
+                reader.readString(),
+                reader.readString(),
+                reader.readOptionalValue({ reader -> reader.readString() })
+            )
+        }
+
+        internal fun fromByteArray(bytes: ByteArray): ContactDefaults {
+            val reader = WireReader(bytes)
+            return fromReader(reader)
+        }
+    }
+}
+
+
 enum class Mode(val value: Byte) {
     FAST(1.toByte()),
     SLOW(2.toByte());
@@ -291,6 +405,14 @@ enum class DefaultMode(val value: Byte) {
     companion object {
         fun fromValue(value: Byte): DefaultMode =
             entries.first { it.value == value }
+
+        fun withMode(mode: DefaultMode = DefaultMode.LOUD): DefaultMode {
+            return DefaultMode.fromValue(Native.boltffi_init_enum_demo_default_mode_with_mode(mode.value.toByte()))
+        }
+
+        fun new(mode: DefaultMode = DefaultMode.QUIET): DefaultMode {
+            return DefaultMode.fromValue(Native.boltffi_init_enum_demo_default_mode_new(mode.value.toByte()))
+        }
 
         suspend fun load(mode: DefaultMode = DefaultMode.QUIET): DefaultMode {
             return boltffiCallAsync(
@@ -477,6 +599,16 @@ class DefaultCounter internal constructor(internal val handle: Long) : AutoClose
     constructor(start: Int = 20, offset: Int) : this(withOffset(start, offset).handle)
 
     companion object {
+        fun fromText(value: String = "40"): DefaultCounter {
+            val __boltffi_value_wire = WireWriterPool.acquire(4 + Utf8Codec.maxBytes(value))
+            val __boltffi_value_writer = __boltffi_value_wire.writer
+            __boltffi_value_writer.writeString(value)
+            try {
+                return DefaultCounter(Native.boltffi_init_class_demo_default_counter_from_text(__boltffi_value_wire.directBuffer(), __boltffi_value_wire.size()))
+            } finally {
+                __boltffi_value_wire.close()
+            }
+        }
         private fun new(start: Int): DefaultCounter {
             return DefaultCounter(Native.boltffi_init_class_demo_default_counter_new(start))
         }
@@ -598,5 +730,52 @@ fun throttle(limit: UInt? = null): UInt? {
         return __boltffi_reader.readOptionalValue({ __boltffi_reader -> __boltffi_reader.readU32() })
     } finally {
         __boltffi_limit_wire.close()
+    }
+}
+
+fun defaultFloatBits(value: Float = -0.0f): UInt {
+    return Native.boltffi_function_demo_default_float_bits(value).toUInt()
+}
+
+fun defaultDoubleBits(value: Double = -0.0): ULong {
+    return Native.boltffi_function_demo_default_double_bits(value).toULong()
+}
+
+fun defaultEmail(email: String = "mailto:ada@example.com"): String {
+    val __boltffi_email_wire = WireWriterPool.acquire(4 + Utf8Codec.maxBytes(email))
+    val __boltffi_email_writer = __boltffi_email_wire.writer
+    __boltffi_email_writer.writeString(email)
+    try {
+        val __boltffi_result = Native.boltffi_function_demo_default_email(__boltffi_email_wire.directBuffer(), __boltffi_email_wire.size()) ?: throw IllegalStateException("null buffer returned")
+        val __boltffi_reader = WireReader(__boltffi_result)
+        return __boltffi_reader.readString()
+    } finally {
+        __boltffi_email_wire.close()
+    }
+}
+
+fun defaultIdentifier(identifier: String = "01234567-89ab-cdef-0123-456789abcdef"): String {
+    val __boltffi_identifier_wire = WireWriterPool.acquire(4 + Utf8Codec.maxBytes(identifier))
+    val __boltffi_identifier_writer = __boltffi_identifier_wire.writer
+    __boltffi_identifier_writer.writeString(identifier)
+    try {
+        val __boltffi_result = Native.boltffi_function_demo_default_identifier(__boltffi_identifier_wire.directBuffer(), __boltffi_identifier_wire.size()) ?: throw IllegalStateException("null buffer returned")
+        val __boltffi_reader = WireReader(__boltffi_result)
+        return __boltffi_reader.readString()
+    } finally {
+        __boltffi_identifier_wire.close()
+    }
+}
+
+fun defaultOptionalEmail(email: String? = "mailto:ada@example.com"): String? {
+    val __boltffi_email_wire = WireWriterPool.acquire(1 + (email?.let { __boltffi_value_0 -> 4 + Utf8Codec.maxBytes(__boltffi_value_0) } ?: 0))
+    val __boltffi_email_writer = __boltffi_email_wire.writer
+    __boltffi_email_writer.writeOptionalValue(email, { __boltffi_email_writer, __boltffi_value_0 -> __boltffi_email_writer.writeString(__boltffi_value_0) })
+    try {
+        val __boltffi_result = Native.boltffi_function_demo_default_optional_email(__boltffi_email_wire.directBuffer(), __boltffi_email_wire.size()) ?: throw IllegalStateException("null buffer returned")
+        val __boltffi_reader = WireReader(__boltffi_result)
+        return __boltffi_reader.readOptionalValue({ __boltffi_reader -> __boltffi_reader.readString() })
+    } finally {
+        __boltffi_email_wire.close()
     }
 }

@@ -242,7 +242,7 @@ impl Initializer {
         // `(J)` JVM signature: an initializer erasing to it, a `ULong` one
         // included, stays a companion factory rather than a clashing overload.
         let reserved = BTreeSet::from([ConstructorSignature::handle()]);
-        let (_, initializers) = initializers.into_iter().fold(
+        let (_, mut initializers) = initializers.into_iter().fold(
             (reserved, Vec::new()),
             |(mut signatures, mut initializers), mut initializer| {
                 if initializer.constructor {
@@ -253,7 +253,30 @@ impl Initializer {
                 (signatures, initializers)
             },
         );
+        let default_initializer = initializers
+            .iter()
+            .enumerate()
+            .filter(|(_, initializer)| initializer.accepts_empty_call())
+            .min_by_key(|(_, initializer)| initializer.call.name().as_str() != "new")
+            .map(|(index, _)| index);
         initializers
+            .iter_mut()
+            .enumerate()
+            .for_each(|(index, initializer)| {
+                if initializer.accepts_empty_call() && Some(index) != default_initializer {
+                    initializer.constructor = false;
+                }
+            });
+        initializers
+    }
+
+    fn accepts_empty_call(&self) -> bool {
+        self.constructor
+            && self
+                .call
+                .parameters()
+                .iter()
+                .all(|parameter| parameter.has_default())
     }
 
     fn companion_method(mut self) -> Self {

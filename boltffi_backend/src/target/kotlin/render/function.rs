@@ -614,6 +614,10 @@ impl ExportedParameter {
         self.signature.ty()
     }
 
+    pub fn has_default(&self) -> bool {
+        self.default.is_some()
+    }
+
     /// `name: Type`, and ` = default` when the Rust parameter declares one:
     /// the parameter as the exported call's signature spells it.
     pub fn declaration(&self) -> String {

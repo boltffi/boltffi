@@ -3,9 +3,9 @@ use askama::Template;
 use boltffi_binding::{
     CanonicalName, ClosureReturn, DirectValueType, DirectVectorElementType, Direction, DocComment,
     EnumId, ErrorChannel, ErrorPlacement, ExecutionDecl, ExportedCallable, ExportedMethodDecl,
-    FunctionDecl, HandlePresence, HandleTarget, IncomingParam, InitializerDecl, IntoRust, Native,
-    NativeSymbol, OutOfRust, ParamDecl, ParamPlanRender, Primitive, ReadPlan, Receive, RecordId,
-    ReturnPlanRender, ReturnValueSlot, Surface, TypeRef, WritePlan, native,
+    FunctionDecl, HandlePresence, HandleTarget, IncomingParam, InitializerDecl, InitializerId,
+    IntoRust, Native, NativeSymbol, OutOfRust, ParamDecl, ParamPlanRender, Primitive, ReadPlan,
+    Receive, RecordId, ReturnPlanRender, ReturnValueSlot, Surface, TypeRef, WritePlan, native,
 };
 
 use crate::{
@@ -458,30 +458,35 @@ impl AssociatedFunction {
     pub fn from_value_methods(
         methods: &[ExportedMethodDecl<Native, NativeSymbol>],
         value_type: ValueType,
-        receiver: Option<Receiver>,
+        has_empty_initializer: bool,
         bridge: &CBridgeContract,
         context: &RenderContext<Native>,
     ) -> Result<ValueFunctions> {
         methods
             .iter()
-            .filter(|method| method.callable().receiver().is_some() == receiver.is_some())
+            .filter(|method| method.callable().receiver().is_none())
             .try_fold(ValueFunctions::default(), |functions, method| {
-                let invocation =
-                    Self::method_invocation(method, receiver.clone(), bridge, context)?;
-                if receiver.is_none()
-                    && value_type.accepts_return(method.callable().returns().plan())
-                {
-                    return match Initializer::from_value_method(method, value_type, invocation) {
+                let invocation = Self::method_invocation(method, None, bridge, context)?;
+                if value_type.accepts_return(method.callable().returns().plan()) {
+                    let has_empty_initializer = has_empty_initializer
+                        || functions
+                            .initializers
+                            .iter()
+                            .any(Initializer::accepts_empty_call);
+                    return match Initializer::from_value_method(
+                        method,
+                        value_type,
+                        has_empty_initializer,
+                        invocation,
+                    ) {
                         Ok(initializer) => Ok(functions.with_initializer(initializer)),
                         Err(error) => functions.with_unsupported_method(method, error),
                     };
                 }
                 match Self::from_parts(
                     Documentation::new(method.meta().doc(), "    "),
-                    receiver.is_none(),
-                    receiver.as_ref().is_some_and(|receiver| {
-                        receiver.requires_mutating(method.callable().receiver())
-                    }),
+                    true,
+                    false,
                     Name::new(method.name()).function()?,
                     invocation,
                 ) {
@@ -724,6 +729,11 @@ impl Initializer {
         let has_default_initializer = initializers
             .iter()
             .any(|initializer| InitializerSignature::is_default_name(initializer.name()));
+        let default_initializer = Self::default_declaration(
+            initializers,
+            ConstructedType::ClassHandle,
+            has_default_initializer,
+        );
         initializers
             .iter()
             .try_fold(Initializers::default(), |initializers, initializer| {
@@ -731,6 +741,7 @@ impl Initializer {
                     initializer,
                     ConstructedType::ClassHandle,
                     has_default_initializer,
+                    default_initializer,
                     bridge,
                     context,
                 ) {
@@ -742,9 +753,14 @@ impl Initializer {
 
     pub fn from_record_declarations(
         initializers: &[InitializerDecl<Native>],
+        memberwise_has_defaults: bool,
         bridge: &CBridgeContract,
         context: &RenderContext<Native>,
     ) -> Result<Initializers> {
+        let default_initializer = match memberwise_has_defaults {
+            true => None,
+            false => Self::default_declaration(initializers, ConstructedType::Record, false),
+        };
         initializers
             .iter()
             .try_fold(Initializers::default(), |initializers, initializer| {
@@ -752,6 +768,7 @@ impl Initializer {
                     initializer,
                     ConstructedType::Record,
                     false,
+                    default_initializer,
                     bridge,
                     context,
                 ) {
@@ -766,6 +783,8 @@ impl Initializer {
         bridge: &CBridgeContract,
         context: &RenderContext<Native>,
     ) -> Result<Initializers> {
+        let default_initializer =
+            Self::default_declaration(initializers, ConstructedType::Enum, false);
         initializers
             .iter()
             .try_fold(Initializers::default(), |initializers, initializer| {
@@ -773,6 +792,7 @@ impl Initializer {
                     initializer,
                     ConstructedType::Enum,
                     false,
+                    default_initializer,
                     bridge,
                     context,
                 ) {
@@ -782,9 +802,36 @@ impl Initializer {
             })
     }
 
+    fn default_declaration(
+        initializers: &[InitializerDecl<Native>],
+        constructed_type: ConstructedType,
+        has_default_initializer: bool,
+    ) -> Option<InitializerId> {
+        initializers
+            .iter()
+            .filter(|initializer| {
+                !initializer.callable().execution().uses_async_execution()
+                    && initializer
+                        .callable()
+                        .params()
+                        .iter()
+                        .all(|parameter| parameter.meta().default().is_some())
+                    && InitializerSignature::new(
+                        initializer.name(),
+                        initializer.callable().params().is_empty(),
+                        has_default_initializer,
+                        constructed_type,
+                    )
+                    .is_ok_and(|signature| !signature.factory())
+            })
+            .min_by_key(|initializer| !InitializerSignature::is_default_name(initializer.name()))
+            .map(InitializerDecl::id)
+    }
+
     fn from_value_method(
         method: &ExportedMethodDecl<Native, NativeSymbol>,
         value_type: ValueType,
+        has_empty_initializer: bool,
         invocation: Invocation,
     ) -> Result<Self> {
         if invocation.asynchronous() {
@@ -794,12 +841,23 @@ impl Initializer {
         let effect = InitializerEffect::new(constructed_type, &invocation);
         let requires_wire_runtime = invocation.requires_wire_runtime();
         let factory_return = invocation.returns.factory_type(constructed_type)?;
-        let signature = InitializerSignature::new(
-            method.name(),
-            invocation.parameters.is_empty(),
-            false,
-            constructed_type,
-        )?;
+        let signature = if has_empty_initializer
+            && invocation
+                .parameters
+                .iter()
+                .all(|parameter| parameter.default.is_some())
+        {
+            InitializerSignature::NamedFactory {
+                name: Name::new(method.name()).function()?,
+            }
+        } else {
+            InitializerSignature::new(
+                method.name(),
+                invocation.parameters.is_empty(),
+                false,
+                constructed_type,
+            )?
+        };
         let (parameters, body) = match signature.factory() {
             true => invocation.into_factory_rendered("        ")?,
             false => invocation.into_value_initializer_rendered("        ")?,
@@ -819,6 +877,7 @@ impl Initializer {
         initializer: &InitializerDecl<Native>,
         constructed_type: ConstructedType,
         has_default_initializer: bool,
+        default_initializer: Option<InitializerId>,
         bridge: &CBridgeContract,
         context: &RenderContext<Native>,
     ) -> Result<Self> {
@@ -835,12 +894,23 @@ impl Initializer {
         let effect = InitializerEffect::new(constructed_type, &invocation);
         let requires_wire_runtime = invocation.requires_wire_runtime();
         let factory_return = invocation.returns.factory_type(constructed_type)?;
-        let signature = InitializerSignature::new(
-            initializer.name(),
-            invocation.parameters.is_empty(),
-            has_default_initializer,
-            constructed_type,
-        )?;
+        let signature = if invocation
+            .parameters
+            .iter()
+            .all(|parameter| parameter.default.is_some())
+            && default_initializer != Some(initializer.id())
+        {
+            InitializerSignature::NamedFactory {
+                name: Name::new(initializer.name()).function()?,
+            }
+        } else {
+            InitializerSignature::new(
+                initializer.name(),
+                invocation.parameters.is_empty(),
+                has_default_initializer,
+                constructed_type,
+            )?
+        };
         let (parameters, body) = match signature.factory() {
             true => invocation.into_factory_rendered("        ")?,
             false => match constructed_type {
@@ -889,6 +959,14 @@ impl Initializer {
 
     pub fn factory(&self) -> bool {
         self.signature.factory()
+    }
+
+    pub fn accepts_empty_call(&self) -> bool {
+        !self.factory()
+            && self
+                .parameters
+                .iter()
+                .all(|parameter| parameter.default.is_some())
     }
 
     pub fn name(&self) -> &Identifier {

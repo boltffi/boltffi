@@ -33,6 +33,8 @@ final class DefaultArgumentsTests: DemoTestCase {
         XCTAssertEqual(DefaultedCounter(start: 5).offset(step: 3), 8)
         XCTAssertEqual(DefaultedCounter(offset: 3).offset(), 24)
         XCTAssertEqual(DefaultedCounter(withOffset: 5, offset: 3).offset(), 9)
+        XCTAssertEqual(DefaultedCounter.fromText().offset(), 41)
+        XCTAssertEqual(DefaultedCounter.fromText(start: "12").offset(), 13)
 
         let limits = DefaultedCounter.integerLimits()
         XCTAssertEqual(limits.lower, Int64.min)
@@ -50,6 +52,10 @@ final class DefaultArgumentsTests: DemoTestCase {
         XCTAssertTrue(DefaultMode.quiet.matches())
         XCTAssertFalse(DefaultMode.loud.matches())
         XCTAssertTrue(DefaultMode.loud.matches(mode: .loud))
+        XCTAssertEqual(defaultFloatBits(), Float(-0.0).bitPattern)
+        XCTAssertEqual(defaultDoubleBits(), Double(-0.0).bitPattern)
+        XCTAssertEqual(defaultFloatBits(value: 0), 0)
+        XCTAssertEqual(defaultDoubleBits(value: 0), 0)
     }
 
     func testRecordArguments() {
@@ -59,6 +65,10 @@ final class DefaultArgumentsTests: DemoTestCase {
         XCTAssertEqual(amount.offset(), 5)
         XCTAssertEqual(amount.offset(step: 4), 7)
         XCTAssertEqual(DefaultAmount(value: 9).value, 9)
+        XCTAssertEqual(DefaultAmount.withScaledValue().value, 4)
+        XCTAssertEqual(DefaultAmount.withScaledValue(value: 6).value, 12)
+        XCTAssertEqual(DefaultAmount.tryScaledValue()?.value, 4)
+        XCTAssertNil(DefaultAmount.tryScaledValue(value: -1))
         XCTAssertEqual(NamedAmount().value, 5)
         XCTAssertEqual(NamedAmount(withValue: 9).value, 9)
     }
@@ -69,6 +79,12 @@ final class DefaultArgumentsTests: DemoTestCase {
         XCTAssertEqual(defaultTimeoutSeconds(timeout: TimeoutFFI(seconds: 2.5)), 2.5)
         XCTAssertNil(defaultLimit())
         XCTAssertEqual(defaultLimit(limit: 7), 7)
+        XCTAssertEqual(defaultEmail().absoluteString, "mailto:ada@example.com")
+        let suppliedEmail = URL(string: "mailto:grace@example.com")!
+        XCTAssertEqual(defaultEmail(email: suppliedEmail), suppliedEmail)
+        XCTAssertEqual(defaultOptionalEmail()?.absoluteString, "mailto:ada@example.com")
+        XCTAssertEqual(defaultOptionalEmail(email: suppliedEmail), suppliedEmail)
+        XCTAssertNil(defaultOptionalEmail(email: nil))
     }
 
     func testAsyncArguments() async throws {

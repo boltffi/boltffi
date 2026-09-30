@@ -5,6 +5,7 @@ use std::sync::Arc;
 use boltffi::*;
 
 use crate::callbacks::sync_traits::ValueCallback;
+use crate::custom_types::Email;
 
 #[demo_bench_macros::demo_case(
     "primitives.default_arguments.should_apply_omitted_scalar_and_string_defaults",
@@ -84,6 +85,12 @@ pub struct IntegerLimits {
 
 #[export]
 impl DefaultedCounter {
+    pub fn from_text(#[boltffi::default("40")] start: String) -> Self {
+        Self {
+            start: start.parse().unwrap(),
+        }
+    }
+
     #[demo_bench_macros::demo_case(
         "primitives.default_arguments.defaulted_counter.should_apply_constructor_and_method_defaults",
         justification = "Constructors and methods take parameter defaults the same way free functions do.",
@@ -172,6 +179,16 @@ pub fn scale_default(
     f64::from(ratio) * weight.unwrap_or(1.0) * f64::from(mode as u8)
 }
 
+#[export]
+pub fn default_float_bits(#[boltffi::default(-0.0)] value: f32) -> u32 {
+    value.to_bits()
+}
+
+#[export]
+pub fn default_double_bits(#[boltffi::default(-0.0)] value: f64) -> u64 {
+    value.to_bits()
+}
+
 #[demo_bench_macros::demo_case(
     "primitives.default_arguments.should_apply_async_defaults",
     justification = "Async functions, methods and factories preserve parameter defaults",
@@ -197,6 +214,14 @@ pub struct DefaultAmount {
 
 #[data(impl)]
 impl DefaultAmount {
+    pub fn with_scaled_value(#[boltffi::default(2)] value: i32) -> Self {
+        Self { value: value * 2 }
+    }
+
+    pub fn try_scaled_value(#[boltffi::default(2)] value: i32) -> Option<Self> {
+        (value >= 0).then_some(Self { value: value * 2 })
+    }
+
     #[demo_bench_macros::demo_case(
         "primitives.default_arguments.should_apply_record_defaults",
         justification = "Record fields and exported record callables each preserve their own defaults",
@@ -266,4 +291,16 @@ pub fn default_limit(#[boltffi::default(None)] limit: DefaultLimit) -> Option<u3
 #[export]
 pub fn default_timeout_seconds(#[boltffi::default(1.5)] timeout: chrono::TimeDelta) -> f64 {
     timeout.num_milliseconds() as f64 / 1_000.0
+}
+
+#[export]
+pub fn default_email(#[boltffi::default("mailto:ada@example.com")] email: Email) -> Email {
+    email
+}
+
+#[export]
+pub fn default_optional_email(
+    #[boltffi::default("mailto:ada@example.com")] email: Option<Email>,
+) -> Option<Email> {
+    email
 }

@@ -163,7 +163,7 @@ fn kotlin_compiler() -> Option<PathBuf> {
 fn run_with_generated_kotlin(
     compiler: &Path,
     label: &str,
-    source: &str,
+    files: Vec<(String, String)>,
     caller_file: &str,
     caller: &str,
 ) {
@@ -191,7 +191,7 @@ fn run_with_generated_kotlin(
         UNIX_EPOCH.elapsed().expect("system clock").as_nanos()
     ));
     fs::create_dir_all(&directory).expect("create Kotlin test directory");
-    let source_paths = super::files(source)
+    let source_paths = files
         .into_iter()
         .filter(|(path, _)| path.ends_with(".kt"))
         .map(|(path, source)| {
@@ -253,7 +253,7 @@ fn kotlin_exception_messages_compile_and_preserve_payloads() {
     run_with_generated_kotlin(
         &compiler,
         "error-messages",
-        &fixture("enums/error_message"),
+        super::files(&fixture("enums/error_message")),
         "ErrorMessages.kt",
         include_str!("../fixtures/kotlin/error_messages.kt"),
     );
@@ -621,6 +621,24 @@ fn kotlin_companion_factory_style_preserves_parameter_defaults() {
 }
 
 #[test]
+fn kotlin_defaults_use_mapped_custom_types() {
+    let host = KotlinHost::new("com.boltffi.demo", "Demo")
+        .expect("Kotlin host")
+        .custom_mapping("Email", KotlinCustomMapping::url_string("URI"))
+        .custom_mapping("Identifier", KotlinCustomMapping::uuid_string("UUID"));
+    let rendered = rendered_fixture_with_host("exports/parameter_defaults", host);
+
+    assert!(
+        rendered.contains("email: java.net.URI = java.net.URI.create(\"mailto:ada@example.com\")")
+    );
+    assert!(
+        rendered.contains("email: java.net.URI? = java.net.URI.create(\"mailto:ada@example.com\")")
+    );
+    assert!(rendered.contains("optionalEmail: java.net.URI? = null"));
+    assert!(rendered.contains("identifier: java.util.UUID = java.util.UUID.fromString(\"01234567-89ab-cdef-0123-456789abcdef\")"));
+}
+
+#[test]
 fn kotlin_target_keeps_a_long_initializer_off_the_handle_constructor_signature() {
     let rendered = rendered_fixture("exports/long_initializer");
 
@@ -662,11 +680,23 @@ fn kotlin_generated_defaults_and_long_initializers_compile() {
         return;
     };
 
-    run_with_generated_kotlin(
-        &compiler,
-        "defaults",
-        &SourceFixture::many(["exports/parameter_defaults", "exports/long_initializer"]).read(),
-        "DefaultsAndInitializers.kt",
-        include_str!("../fixtures/kotlin/defaults_and_initializers.kt"),
-    );
+    let source =
+        SourceFixture::many(["exports/parameter_defaults", "exports/long_initializer"]).read();
+    [
+        KotlinHost::new("com.boltffi.demo", "Demo").expect("Kotlin host"),
+        KotlinHost::new("com.boltffi.demo", "Demo")
+            .expect("Kotlin host")
+            .custom_mapping("Email", KotlinCustomMapping::url_string("URI"))
+            .custom_mapping("Identifier", KotlinCustomMapping::uuid_string("UUID")),
+    ]
+    .into_iter()
+    .for_each(|host| {
+        run_with_generated_kotlin(
+            &compiler,
+            "defaults",
+            files_with_host(&source, host),
+            "DefaultsAndInitializers.kt",
+            include_str!("../fixtures/kotlin/defaults_and_initializers.kt"),
+        );
+    });
 }

@@ -41,6 +41,16 @@ public struct DefaultAmount: Hashable, Equatable, Sendable {
         writer.writeI32(self.value)
     }
 
+    public static func withScaledValue(value: Int32 = 2) -> DefaultAmount {
+        return DefaultAmount(fromC: boltffi_init_record_demo_default_amount_with_scaled_value(value))
+    }
+
+    public static func tryScaledValue(value: Int32 = 2) -> DefaultAmount? {
+        let boltffiResult = boltffi_method_record_demo_default_amount_try_scaled_value(value)
+        defer { boltffi_free_buf(boltffiResult) }
+        return boltffiDecodeOwnedBuf(boltffiResult.ptr, Int(boltffiResult.len)) { boltffiReader in boltffiReader.readOptional { boltffiReader in DefaultAmount.decode(from: &boltffiReader) } }
+    }
+
     public func offset(step: Int32 = 2) -> Int32 {
         return boltffi_method_record_demo_default_amount_offset(self.cValue, step)
     }
@@ -59,6 +69,10 @@ public struct NamedAmount: Hashable, Equatable, Sendable {
 
     @usableFromInline var cValue: ___NamedAmount {
         ___NamedAmount(value: value)
+    }
+
+    public static func empty() -> NamedAmount {
+        return NamedAmount(fromC: boltffi_init_record_demo_named_amount_empty())
     }
 
     public static func load(value: Int32 = 6) async throws -> NamedAmount {
@@ -117,6 +131,47 @@ public struct Quota: Hashable, Equatable, Sendable {
     }
 }
 
+public struct FloatDefaults: Hashable, Equatable, Sendable {
+    public var single: Float
+    public var double: Double
+
+    public init(single: Float = Float(bitPattern: 0x80000000), double: Double = Double(bitPattern: 0x8000000000000000)) {
+        self.single = single
+        self.double = double
+    }
+
+    @inlinable static func decode(from reader: inout WireReader) -> FloatDefaults {
+        FloatDefaults(single: reader.readF32(), double: reader.readF64())
+    }
+
+    @inlinable func encode(to writer: inout WireWriter) {
+        writer.writeF32(self.single)
+        writer.writeF64(self.double)
+    }
+}
+
+public struct ContactDefaults: Hashable, Equatable, Sendable {
+    public var email: Email
+    public var identifier: Identifier
+    public var optionalEmail: Email?
+
+    public init(email: Email = "mailto:ada@example.com", identifier: Identifier = "01234567-89ab-cdef-0123-456789abcdef", optionalEmail: Email? = nil) {
+        self.email = email
+        self.identifier = identifier
+        self.optionalEmail = optionalEmail
+    }
+
+    @inlinable static func decode(from reader: inout WireReader) -> ContactDefaults {
+        ContactDefaults(email: reader.readString(), identifier: reader.readString(), optionalEmail: reader.readOptional { reader in reader.readString() })
+    }
+
+    @inlinable func encode(to writer: inout WireWriter) {
+        writer.writeString(self.email)
+        writer.writeString(self.identifier)
+        writer.writeOptional(self.optionalEmail) { writer, boltffiValue0 in writer.writeString(boltffiValue0) }
+    }
+}
+
 public enum Mode: UInt8, Hashable, Sendable, CaseIterable {
     case fast = 1
     case slow = 2
@@ -140,6 +195,14 @@ public enum DefaultMode: UInt8, Hashable, Sendable, CaseIterable {
 
     @usableFromInline var cValue: UInt8 {
         rawValue
+    }
+
+    public static func withMode(mode: DefaultMode = DefaultMode.loud) -> DefaultMode {
+        return DefaultMode(fromC: boltffi_init_enum_demo_default_mode_with_mode(mode.cValue))
+    }
+
+    public init(mode: DefaultMode = DefaultMode.quiet) {
+        self = DefaultMode(fromC: boltffi_init_enum_demo_default_mode_new(mode.cValue))
     }
 
     public static func load(mode: DefaultMode = DefaultMode.quiet) async throws -> DefaultMode {
@@ -230,6 +293,13 @@ public final class DefaultCounter {
     deinit {
         let handle = __boltffiTakeHandle()
         if handle != 0 { boltffi_release_class_demo_default_counter(handle) }
+    }
+
+    public static func fromText(value: String = "40") -> Self {
+        let boltffiValueBytes = boltffiEncode { boltffiValueWriter in boltffiValueWriter.writeString(value) }
+        return boltffiValueBytes.withUnsafeBufferPointer { boltffiValueBuffer in
+            return Self(handle: boltffi_init_class_demo_default_counter_from_text(boltffiValueBuffer.baseAddress!, UInt(boltffiValueBuffer.count)))
+        }
     }
 
     public init(start: Int32 = 10) {
@@ -471,9 +541,48 @@ public func throttle(limit: Limit = nil) -> Limit {
     }
 }
 
+public func defaultFloatBits(value: Float = Float(bitPattern: 0x80000000)) -> UInt32 {
+    return boltffi_function_demo_default_float_bits(value)
+}
+
+public func defaultDoubleBits(value: Double = Double(bitPattern: 0x8000000000000000)) -> UInt64 {
+    return boltffi_function_demo_default_double_bits(value)
+}
+
+public func defaultEmail(email: Email = "mailto:ada@example.com") -> Email {
+    let boltffiEmailBytes = boltffiEncode { boltffiEmailWriter in boltffiEmailWriter.writeString(email) }
+    return boltffiEmailBytes.withUnsafeBufferPointer { boltffiEmailBuffer in
+        let boltffiResult = boltffi_function_demo_default_email(boltffiEmailBuffer.baseAddress!, UInt(boltffiEmailBuffer.count))
+        defer { boltffi_free_buf(boltffiResult) }
+        return boltffiDecodeOwnedBuf(boltffiResult.ptr, Int(boltffiResult.len)) { boltffiReader in boltffiReader.readString() }
+    }
+}
+
+public func defaultIdentifier(identifier: Identifier = "01234567-89ab-cdef-0123-456789abcdef") -> Identifier {
+    let boltffiIdentifierBytes = boltffiEncode { boltffiIdentifierWriter in boltffiIdentifierWriter.writeString(identifier) }
+    return boltffiIdentifierBytes.withUnsafeBufferPointer { boltffiIdentifierBuffer in
+        let boltffiResult = boltffi_function_demo_default_identifier(boltffiIdentifierBuffer.baseAddress!, UInt(boltffiIdentifierBuffer.count))
+        defer { boltffi_free_buf(boltffiResult) }
+        return boltffiDecodeOwnedBuf(boltffiResult.ptr, Int(boltffiResult.len)) { boltffiReader in boltffiReader.readString() }
+    }
+}
+
+public func defaultOptionalEmail(email: Email? = "mailto:ada@example.com") -> Email? {
+    let boltffiEmailBytes = boltffiEncode { boltffiEmailWriter in boltffiEmailWriter.writeOptional(email) { boltffiEmailWriter, boltffiValue0 in boltffiEmailWriter.writeString(boltffiValue0) } }
+    return boltffiEmailBytes.withUnsafeBufferPointer { boltffiEmailBuffer in
+        let boltffiResult = boltffi_function_demo_default_optional_email(boltffiEmailBuffer.baseAddress!, UInt(boltffiEmailBuffer.count))
+        defer { boltffi_free_buf(boltffiResult) }
+        return boltffiDecodeOwnedBuf(boltffiResult.ptr, Int(boltffiResult.len)) { boltffiReader in boltffiReader.readOptional { boltffiReader in boltffiReader.readString() } }
+    }
+}
+
 public typealias Amount = DefaultAmount
 
 public typealias Limit = UInt32?
+
+public typealias Email = String
+
+public typealias Identifier = String
 
 public let floor: Int64 = -9223372036854775808
 

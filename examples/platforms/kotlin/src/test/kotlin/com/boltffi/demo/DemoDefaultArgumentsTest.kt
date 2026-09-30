@@ -42,6 +42,8 @@ class DemoDefaultArgumentsTest {
         DefaultedCounter(5).use { counter -> assertEquals(8, counter.offset(step = 3)) }
         DefaultedCounter(offset = 3).use { counter -> assertEquals(24, counter.offset()) }
         DefaultedCounter(start = 5, offset = 3).use { counter -> assertEquals(9, counter.offset()) }
+        DefaultedCounter.fromText().use { counter -> assertEquals(41, counter.offset()) }
+        DefaultedCounter.fromText(start = "12").use { counter -> assertEquals(13, counter.offset()) }
         assertEquals(IntegerLimits(Long.MIN_VALUE, ULong.MAX_VALUE), DefaultedCounter.integerLimits())
         assertEquals(IntegerLimits(0L, 1uL), DefaultedCounter.integerLimits(lower = 0, upper = 1uL))
     }
@@ -55,6 +57,10 @@ class DemoDefaultArgumentsTest {
         assertTrue(DefaultMode.QUIET.matches())
         assertFalse(DefaultMode.LOUD.matches())
         assertTrue(DefaultMode.LOUD.matches(mode = DefaultMode.LOUD))
+        assertEquals(0x80000000u, defaultFloatBits())
+        assertEquals(0x8000000000000000uL, defaultDoubleBits())
+        assertEquals(0u, defaultFloatBits(value = 0.0f))
+        assertEquals(0uL, defaultDoubleBits(value = 0.0))
     }
 
     @Test
@@ -65,6 +71,10 @@ class DemoDefaultArgumentsTest {
         assertEquals(5, amount.offset())
         assertEquals(7, amount.offset(step = 4))
         assertEquals(9, DefaultAmount(value = 9).value)
+        assertEquals(4, DefaultAmount.withScaledValue().value)
+        assertEquals(12, DefaultAmount.withScaledValue(value = 6).value)
+        assertEquals(4, DefaultAmount.tryScaledValue()?.value)
+        assertNull(DefaultAmount.tryScaledValue(value = -1))
         assertEquals(5, NamedAmount.withValue().value)
         assertEquals(9, NamedAmount.withValue(value = 9).value)
     }
@@ -76,6 +86,11 @@ class DemoDefaultArgumentsTest {
         assertEquals(2.5, defaultTimeoutSeconds(timeout = TimeoutFFI(seconds = 2.5)))
         assertNull(defaultLimit())
         assertEquals(7u, defaultLimit(limit = 7u))
+        assertEquals("mailto:ada@example.com", defaultEmail())
+        assertEquals("mailto:grace@example.com", defaultEmail(email = "mailto:grace@example.com"))
+        assertEquals("mailto:ada@example.com", defaultOptionalEmail())
+        assertEquals("mailto:grace@example.com", defaultOptionalEmail(email = "mailto:grace@example.com"))
+        assertNull(defaultOptionalEmail(email = null))
     }
 
     @Test

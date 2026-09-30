@@ -15,10 +15,7 @@ use crate::{
         primitive::SwiftPrimitive,
         render::{
             AssociatedConstants, Documentation, SwiftType,
-            function::{
-                AssociatedFunction, AssociatedFunctions, Initializer, Receiver, ValueFunctions,
-                ValueType,
-            },
+            function::{AssociatedFunction, AssociatedFunctions, Initializer, Receiver, ValueType},
         },
         syntax::{ArgumentList, Expression, Identifier, ParameterList, Statement, TypeName},
     },
@@ -225,16 +222,26 @@ impl Record {
                 invariant: "direct record field count mismatch",
             });
         }
-        let (mut initializers, mut diagnostics) =
-            Initializer::from_record_declarations(record.initializers(), bridge, context)?
-                .into_parts();
-        let (value_initializers, static_methods, static_diagnostics) = Self::value_methods(
-            record.methods(),
-            ValueType::record(record.id()),
+        let memberwise_has_defaults = record
+            .fields()
+            .iter()
+            .all(|field| field.meta().default().is_some());
+        let (mut initializers, mut diagnostics) = Initializer::from_record_declarations(
+            record.initializers(),
+            memberwise_has_defaults,
             bridge,
             context,
         )?
         .into_parts();
+        let (value_initializers, static_methods, static_diagnostics) =
+            AssociatedFunction::from_value_methods(
+                record.methods(),
+                ValueType::record(record.id()),
+                memberwise_has_defaults || initializers.iter().any(Initializer::accepts_empty_call),
+                bridge,
+                context,
+            )?
+            .into_parts();
         let (instance_methods, instance_diagnostics) = Self::methods(
             record.methods(),
             Some(Receiver::direct_record(
@@ -283,16 +290,26 @@ impl Record {
     ) -> Result<Self> {
         let reader = Identifier::parse("reader")?;
         let writer = Identifier::parse("writer")?;
-        let (mut initializers, mut diagnostics) =
-            Initializer::from_record_declarations(record.initializers(), bridge, context)?
-                .into_parts();
-        let (value_initializers, static_methods, static_diagnostics) = Self::value_methods(
-            record.methods(),
-            ValueType::record(record.id()),
+        let memberwise_has_defaults = record
+            .fields()
+            .iter()
+            .all(|field| field.meta().default().is_some());
+        let (mut initializers, mut diagnostics) = Initializer::from_record_declarations(
+            record.initializers(),
+            memberwise_has_defaults,
             bridge,
             context,
         )?
         .into_parts();
+        let (value_initializers, static_methods, static_diagnostics) =
+            AssociatedFunction::from_value_methods(
+                record.methods(),
+                ValueType::record(record.id()),
+                memberwise_has_defaults || initializers.iter().any(Initializer::accepts_empty_call),
+                bridge,
+                context,
+            )?
+            .into_parts();
         let (instance_methods, instance_diagnostics) = Self::methods(
             record.methods(),
             Some(Receiver::encoded(
@@ -338,15 +355,6 @@ impl Record {
         context: &RenderContext<Native>,
     ) -> Result<AssociatedFunctions> {
         AssociatedFunction::from_methods(methods, receiver, bridge, context)
-    }
-
-    fn value_methods(
-        methods: &[ExportedMethodDecl<Native, NativeSymbol>],
-        value_type: ValueType,
-        bridge: &CBridgeContract,
-        context: &RenderContext<Native>,
-    ) -> Result<ValueFunctions> {
-        AssociatedFunction::from_value_methods(methods, value_type, None, bridge, context)
     }
 }
 
