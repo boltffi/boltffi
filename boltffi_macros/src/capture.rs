@@ -5,9 +5,9 @@
 
 use boltffi_binding::SourceFragment;
 use boltffi_scan::{
-    capture_class, capture_class_constants, capture_constant, capture_enum, capture_error_enum,
-    capture_error_struct, capture_function, capture_methods, capture_streams, capture_struct,
-    capture_trait,
+    capture_class, capture_class_constants, capture_class_methods, capture_constant, capture_enum,
+    capture_error_enum, capture_error_struct, capture_function, capture_methods, capture_streams,
+    capture_struct, capture_trait,
 };
 use proc_macro2::{Literal, TokenStream};
 use quote::{format_ident, quote};
@@ -30,6 +30,8 @@ pub(crate) enum ImplCapture {
     Class(TokenStream),
     /// `#[data(impl)]` adds methods to a type whose identity the `#[data]` site owns.
     Methods,
+    /// `#[export(methods)]` adds methods to a class another `#[export] impl` declares.
+    ClassMethods,
 }
 
 /// The source records `item` contributes, rendered from its [`fragments`] alongside the
@@ -53,8 +55,11 @@ pub(crate) fn item_tokens(
         ),
         (syn::Item::Impl(item), capture) => {
             let name = type_leaf_name(&item.self_ty).unwrap_or_else(|| "impl".to_owned());
-            let identity = matches!(capture, ImplCapture::Class(_))
-                .then(|| local_identity_tokens(&item.self_ty, &name));
+            let identity = match capture {
+                ImplCapture::Class(_) => Some(local_identity_tokens(&item.self_ty, &name)),
+                ImplCapture::ClassMethods => Some(exported_class_tokens(&item.self_ty)),
+                ImplCapture::Methods => None,
+            };
             (name, identity)
         }
         (syn::Item::Fn(item), _) => (item.sig.ident.to_string(), None),
@@ -127,14 +132,19 @@ pub(crate) fn fragments(
                     }));
                     Ok(fragments)
                 }
-                ImplCapture::Methods => {
-                    let captured = capture_methods(item).map_err(failed)?;
+                ImplCapture::Methods | ImplCapture::ClassMethods => {
+                    let captured = match impl_capture {
+                        ImplCapture::ClassMethods => capture_class_methods(item),
+                        _ => capture_methods(item),
+                    }
+                    .map_err(failed)?;
                     Ok(vec![(
                         SourceFragment::Methods {
                             target: captured.target,
                             spelling: captured.spelling,
                             methods: captured.methods,
                             constants: captured.constants,
+                            streams: captured.streams,
                         },
                         captured.slots,
                     )])
@@ -393,6 +403,18 @@ fn local_identity_tokens<T: quote::ToTokens>(self_ty: &T, name: &str) -> TokenSt
                         <#self_ty as #facade::__private::capture::TypeInfo<__BoltffiAnyTag>>::NAME,
                     );
             }
+        };
+    }
+}
+
+/// Requires the class an `#[export(methods)]` block extends to be declared, so a missing
+/// `#[export] impl` is reported as such.
+fn exported_class_tokens(self_ty: &syn::Type) -> TokenStream {
+    let facade = facade();
+    quote! {
+        const _: fn() = || {
+            fn exported<Class: #facade::__private::ClassHandle>() {}
+            exported::<#self_ty>();
         };
     }
 }

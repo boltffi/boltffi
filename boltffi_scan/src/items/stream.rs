@@ -134,11 +134,20 @@ pub(crate) fn scan_item(
     declared_types: &DeclaredTypes,
 ) -> Result<Vec<StreamDef>, ScanError> {
     let owner = class::resolve_id(item, scope, declared_types)?;
+    scan_owned(item, &owner, scope, declared_types)
+}
+
+pub(crate) fn scan_owned(
+    item: &syn::ItemImpl,
+    owner: &ClassId,
+    scope: &ModuleScope,
+    declared_types: &DeclaredTypes,
+) -> Result<Vec<StreamDef>, ScanError> {
     let scanner = Scanner::new(declared_types, scope);
     item.items
         .iter()
         .filter_map(|item| match item {
-            syn::ImplItem::Fn(method) => method_stream(method, &owner, scope, &scanner).transpose(),
+            syn::ImplItem::Fn(method) => method_stream(method, owner, scope, &scanner).transpose(),
             _ => None,
         })
         .collect()

@@ -225,9 +225,9 @@ impl<'expansion, 'lowered> Stream<'expansion, 'lowered, Native> {
                 }
             }),
             Subscription::Method { owner, rust_type } => {
-                let class = names::SourceSpelling::new(&owner.source().name)
-                    .ident("source class name is not a Rust identifier")?;
-                let handle_type = names::Class::new(&class).handle();
+                let handle_type = quote! {
+                    <#rust_type as ::boltffi::__private::ClassHandle>::Handle
+                };
                 let receiver_handle = names::Parameter::new(&receiver).handle();
                 let carrier = wrapper::handle::CarrierTokens::native(owner.binding().handle())?;
                 let ffi_type = carrier.ty();
@@ -513,9 +513,9 @@ impl<'expansion, 'lowered> Stream<'expansion, 'lowered, Wasm32> {
                 }
             }),
             Subscription::Method { owner, rust_type } => {
-                let class = names::SourceSpelling::new(&owner.source().name)
-                    .ident("source class name is not a Rust identifier")?;
-                let handle_type = names::Class::new(&class).handle();
+                let handle_type = quote! {
+                    <#rust_type as ::boltffi::__private::ClassHandle>::Handle
+                };
                 let receiver_handle = names::Parameter::new(&receiver).handle();
                 let carrier = wrapper::handle::CarrierTokens::wasm32(owner.binding().handle())?;
                 let ffi_type = carrier.ty();

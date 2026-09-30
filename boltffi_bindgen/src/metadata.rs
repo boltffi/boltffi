@@ -1883,6 +1883,75 @@ pub fn captured_value() -> u32 { 42 }
     }
 
     #[test]
+    fn cargo_build_merges_class_methods_blocks_into_their_class() {
+        if cfg!(miri) {
+            return;
+        }
+
+        let fixture = FixtureCrate::with_class_methods_block();
+
+        let source = BindingMetadataBuild::new(fixture.manifest())
+            .read_source()
+            .expect("cargo source metadata read");
+        let contract =
+            boltffi_binding::aggregate_records(&source.source_records, source.package.clone())
+                .expect("records aggregate");
+
+        assert_eq!(contract.classes.len(), 1, "both blocks declare one class");
+        let methods = contract.classes[0]
+            .methods
+            .iter()
+            .map(|method| method.id.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            methods,
+            [
+                "metadata_fixture::Session::new",
+                "metadata_fixture::Session::shift",
+                "metadata_fixture::Session::restored",
+                "metadata_fixture::Session::reset",
+            ],
+            "the methods block's members follow the declaring block's"
+        );
+        assert_eq!(
+            contract.classes[0].thread_safety,
+            boltffi_ast::ClassThreadSafety::UnsafeSingleThreaded,
+            "thread safety is the declaring block's"
+        );
+        let owned_by_session = |owner: Option<&str>| owner == Some("metadata_fixture::Session");
+        assert_eq!(
+            contract
+                .streams
+                .iter()
+                .filter(|stream| owned_by_session(stream.owner.as_ref().map(|id| id.as_str())))
+                .map(|stream| stream.id.as_str())
+                .collect::<Vec<_>>(),
+            [
+                "metadata_fixture::Session::moves",
+                "metadata_fixture::Session::resets"
+            ]
+        );
+        assert_eq!(
+            contract
+                .constants
+                .iter()
+                .filter(|constant| matches!(
+                    &constant.owner,
+                    Some(boltffi_ast::ConstantOwner::Class(id))
+                        if id.as_str() == "metadata_fixture::Session"
+                ))
+                .map(|constant| constant.id.as_str())
+                .collect::<Vec<_>>(),
+            [
+                "metadata_fixture::Session::MAX_SHIFT",
+                "metadata_fixture::Session::MIN_SHIFT"
+            ]
+        );
+        boltffi_binding::lower::<Native>(&contract).expect("merged class lowers natively");
+        boltffi_binding::lower::<Wasm32>(&contract).expect("merged class lowers to wasm32");
+    }
+
+    #[test]
     fn cargo_build_reads_source_records_from_a_wasm32_target_build() {
         if cfg!(miri) {
             return;
@@ -2065,6 +2134,10 @@ pub fn captured_value() -> u32 { 42 }
 
         fn with_shadowed_builtin() -> Self {
             Self::write(Source::with_shadowed_builtin(), Dependency::Boltffi)
+        }
+
+        fn with_class_methods_block() -> Self {
+            Self::write(Source::with_class_methods_block(), Dependency::Boltffi)
         }
 
         fn with_feature_gated_boltffi_macros() -> Self {
@@ -2472,6 +2545,73 @@ pub mod api {
 
         #[boltffi::ffi_stream(item = Point)]
         pub fn moves(&self) -> Arc<EventSubscription<Point>> {
+            todo!()
+        }
+    }
+}
+"#
+                .to_owned(),
+            }
+        }
+
+        fn with_class_methods_block() -> Self {
+            Self {
+                code: r#"
+use std::sync::Arc;
+
+use boltffi::{EventSubscription, data, export};
+
+boltffi::scaffolding!();
+
+#[data]
+#[derive(Clone, Copy)]
+pub struct Point {
+    pub x: f64,
+}
+
+pub struct Session {
+    origin: Point,
+}
+
+#[export(single_threaded)]
+impl Session {
+    pub const MAX_SHIFT: f64 = 9.0;
+
+    pub fn new() -> Self {
+        Self { origin: Point { x: 0.0 } }
+    }
+
+    pub fn shift(&self, by: f64) -> Point {
+        Point { x: self.origin.x + by }
+    }
+
+    #[boltffi::ffi_stream(item = Point)]
+    pub fn moves(&self) -> Arc<EventSubscription<Point>> {
+        todo!()
+    }
+}
+
+pub mod recovery {
+    use std::sync::Arc;
+
+    use boltffi::{EventSubscription, export};
+
+    use crate::{Point, Session};
+
+    #[export(methods)]
+    impl Session {
+        pub const MIN_SHIFT: f64 = -9.0;
+
+        pub fn restored(origin: Point) -> Self {
+            Self { origin }
+        }
+
+        pub fn reset(&mut self) {
+            self.origin = Point { x: 0.0 };
+        }
+
+        #[boltffi::ffi_stream(item = Point)]
+        pub fn resets(&self) -> Arc<EventSubscription<Point>> {
             todo!()
         }
     }

@@ -5,7 +5,7 @@
 //! to project through the compiler at the invocation site.
 
 use boltffi_ast::{
-    ClassDef, ConstantDef, ConstantOwner, CustomTypeDef, EnumDef, FunctionDef, MethodDef,
+    ClassDef, ClassId, ConstantDef, ConstantOwner, CustomTypeDef, EnumDef, FunctionDef, MethodDef,
     RecordDef, RecordId, StreamDef, TraitDef, TypeExpr,
 };
 
@@ -142,7 +142,8 @@ pub fn capture_interned_string_pool(
     })
 }
 
-/// Methods captured from one `#[data(impl)]` block, targeting a slot-deferred type.
+/// Methods captured from one `#[data(impl)]` or `#[export(methods)]` block, targeting a
+/// slot-deferred type.
 pub struct CapturedMethods {
     /// The impl target as a slot-deferred type expression.
     pub target: TypeExpr,
@@ -153,12 +154,29 @@ pub struct CapturedMethods {
     /// The block's associated constants, with ids nested under the target's slot
     /// placeholder and a provisional owner replaced when the target resolves.
     pub constants: Vec<ConstantDef>,
+    /// The block's `#[ffi_stream]` methods, owned by the target's slot placeholder.
+    pub streams: Vec<StreamDef>,
     /// Written references, in slot-index order.
     pub slots: Vec<SlotSource>,
 }
 
 /// Captures a `#[data(impl)]` methods block against its slot-deferred target.
 pub fn capture_methods(item: &syn::ItemImpl) -> Result<CapturedMethods, ScanError> {
+    methods_block(item, MethodsTarget::Data)
+}
+
+/// Captures an `#[export(methods)]` block against its slot-deferred class.
+pub fn capture_class_methods(item: &syn::ItemImpl) -> Result<CapturedMethods, ScanError> {
+    methods_block(item, MethodsTarget::Class)
+}
+
+#[derive(Clone, Copy)]
+enum MethodsTarget {
+    Data,
+    Class,
+}
+
+fn methods_block(item: &syn::ItemImpl, kind: MethodsTarget) -> Result<CapturedMethods, ScanError> {
     let scope = ModuleScope::with_spans(ModulePath::root("$self"), &[], None);
     let mut declared_types = DeclaredTypes::deferred();
     let scanner = crate::type_expr::Scanner::new(&declared_types, &scope);
@@ -167,7 +185,21 @@ pub fn capture_methods(item: &syn::ItemImpl) -> Result<CapturedMethods, ScanErro
         TypeExpr::Record { id, .. } => id.as_str().to_owned(),
         _ => return Err(ScanError::unsupported_type(&item.self_ty)),
     };
-    let methods = items::impl_methods::scan_value_methods(item, &parent, &scope, &declared_types)?;
+    let (methods, streams) = match kind {
+        MethodsTarget::Data => (
+            items::impl_methods::scan_value_methods(item, &parent, &scope, &declared_types)?,
+            Vec::new(),
+        ),
+        MethodsTarget::Class => (
+            items::impl_methods::class_methods(item, &parent, &scope, &declared_types)?,
+            items::stream::scan_owned(
+                item,
+                &ClassId::new(parent.clone()),
+                &scope,
+                &declared_types,
+            )?,
+        ),
+    };
     let owner = ConstantOwner::Record(RecordId::new(parent));
     let constants =
         items::constant::scan_associated_in_impl(item, &owner, &scope, &declared_types)?;
@@ -180,6 +212,7 @@ pub fn capture_methods(item: &syn::ItemImpl) -> Result<CapturedMethods, ScanErro
         spelling,
         methods,
         constants,
+        streams,
         slots: declared_types.take_slots(),
     })
 }
@@ -554,6 +587,49 @@ mod tests {
         assert!(
             matches!(&captured.constants[1].type_expr, TypeExpr::SelfType),
             "Self stays a self type"
+        );
+    }
+
+    #[test]
+    fn captures_a_class_methods_block_under_the_target_placeholder() {
+        let item: syn::ItemImpl = syn::parse_quote! {
+            impl model::Counter {
+                pub const LIMIT: i32 = 9;
+
+                pub fn moved(&self, by: Point) -> i32 {
+                    unimplemented!()
+                }
+
+                #[ffi_stream(item = Point)]
+                pub fn changes(&self) -> Arc<EventSubscription<Point>> {
+                    unimplemented!()
+                }
+            }
+        };
+
+        let captured = capture_class_methods(&item).expect("class methods block captures");
+
+        assert_eq!(captured.spelling, "model::Counter");
+        assert_eq!(
+            captured.slots[0].to_token_stream().to_string(),
+            "model :: Counter",
+            "the class is the first slot, whatever path names it"
+        );
+        assert_eq!(captured.methods.len(), 1, "the stream is not a method");
+        assert_eq!(captured.methods[0].id.as_str(), "$slot:0::moved");
+        assert_eq!(captured.constants[0].id.as_str(), "$slot:0::LIMIT");
+        assert_eq!(captured.streams[0].id.as_str(), "$slot:0::changes");
+        assert_eq!(
+            captured.streams[0]
+                .owner
+                .as_ref()
+                .map(|owner| owner.as_str()),
+            Some("$slot:0"),
+            "the stream's owner defers to the class's slot"
+        );
+        assert!(
+            capture_methods(&item).is_err(),
+            "a data methods block takes no streams"
         );
     }
 

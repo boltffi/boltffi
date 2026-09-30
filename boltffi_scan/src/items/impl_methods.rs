@@ -8,7 +8,7 @@ use crate::{ModuleScope, ScanError, attributes};
 
 use super::{signature, stream};
 
-pub(super) fn class_methods(
+pub(crate) fn class_methods(
     item: &syn::ItemImpl,
     parent: &str,
     scope: &ModuleScope,

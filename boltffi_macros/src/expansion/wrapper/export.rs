@@ -56,7 +56,7 @@ enum RustCallTarget {
 }
 
 pub enum ClassReceiverBinding {
-    Raw(syn::Ident),
+    Raw(TokenStream),
     Retained(syn::Ident),
 }
 

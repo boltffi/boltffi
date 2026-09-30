@@ -14,31 +14,43 @@ pub fn scan(
     marked: &[Marked<'_, syn::ItemImpl>],
     declared_types: &DeclaredTypes,
 ) -> Result<Vec<ClassDef>, ScanError> {
-    marked
-        .iter()
-        .try_fold(Vec::<ClassDef>::new(), |mut classes, marked| {
+    let merged = marked.iter().try_fold(
+        Vec::<(ClassDef, Option<ClassThreadSafety>)>::new(),
+        |mut classes, marked| {
+            let export = marked
+                .marker()
+                .export()
+                .expect("class scanner only receives export markers");
             let class = build(
                 marked.item(),
                 marked.scope(),
                 declared_types,
-                marked
-                    .marker()
-                    .export()
-                    .expect("class scanner only receives export markers")
-                    .class_thread_safety(),
+                export.class_thread_safety(),
             )?;
+            let declared = (!export.adds_methods()).then_some(class.thread_safety);
             match classes
                 .iter_mut()
-                .find(|candidate| candidate.id == class.id)
+                .find(|(candidate, _)| candidate.id == class.id)
             {
-                Some(existing) => {
-                    existing.thread_safety = existing.thread_safety.merge(class.thread_safety);
+                Some((existing, thread_safety)) => {
+                    *thread_safety = match (*thread_safety, declared) {
+                        (Some(first), Some(second)) => Some(first.merge(second)),
+                        (first, second) => first.or(second),
+                    };
                     existing.methods.extend(class.methods);
                 }
-                None => classes.push(class),
+                None => classes.push((class, declared)),
             }
-            Ok(classes)
+            Ok::<_, ScanError>(classes)
+        },
+    )?;
+    Ok(merged
+        .into_iter()
+        .map(|(mut class, thread_safety)| {
+            class.thread_safety = thread_safety.unwrap_or_default();
+            class
         })
+        .collect())
 }
 
 pub(crate) fn scan_item(
@@ -257,8 +269,9 @@ mod tests {
             "demo",
             syn::parse_str::<syn::File>(
                 "pub struct Engine; \
-                 #[export] impl Engine { pub fn new() -> Self { todo!() } } \
-                 #[export] impl Engine { pub fn start(&self) {} }",
+                 #[export(methods)] impl Engine { pub fn stop(&mut self) {} } \
+                 #[export(single_threaded)] impl Engine { pub fn new() -> Self { todo!() } } \
+                 #[export(methods)] impl Engine { pub fn start(&self) {} }",
             )
             .expect("valid source")
             .items,
@@ -271,11 +284,22 @@ mod tests {
 
         assert_eq!(classes.len(), 1);
         assert_eq!(classes[0].id, ClassId::new("demo::Engine"));
-        assert_eq!(classes[0].methods.len(), 2);
-        assert_eq!(classes[0].methods[0].id, MethodId::new("demo::Engine::new"));
         assert_eq!(
-            classes[0].methods[1].id,
-            MethodId::new("demo::Engine::start")
+            classes[0]
+                .methods
+                .iter()
+                .map(|method| method.id.as_str())
+                .collect::<Vec<_>>(),
+            [
+                "demo::Engine::stop",
+                "demo::Engine::new",
+                "demo::Engine::start"
+            ]
+        );
+        assert_eq!(
+            classes[0].thread_safety,
+            ClassThreadSafety::UnsafeSingleThreaded,
+            "thread safety is the declaring block's alone"
         );
     }
 }

@@ -78,7 +78,20 @@ pub fn error(attribute: TokenStream, item: TokenStream) -> TokenStream {
 
 #[proc_macro_attribute]
 pub fn export(attribute: TokenStream, item: TokenStream) -> TokenStream {
+    let methods = match export_methods(attribute.clone().into()) {
+        Ok(methods) => methods,
+        Err(error) => return error.to_compile_error().into(),
+    };
     match syn::parse::<syn::Item>(item.clone()) {
+        Ok(syn::Item::Impl(block)) if methods && block.trait_.is_none() => {
+            invocation(lane::Kind::ExportMethods, attribute, item)
+        }
+        Ok(item) if methods => syn::Error::new_spanned(
+            item,
+            "export(methods) can only be applied to an inherent impl block",
+        )
+        .to_compile_error()
+        .into(),
         Ok(syn::Item::Const(_) | syn::Item::Fn(_) | syn::Item::Impl(_) | syn::Item::Trait(_)) => {
             invocation(lane::Kind::Export, attribute, item)
         }
@@ -89,6 +102,27 @@ pub fn export(attribute: TokenStream, item: TokenStream) -> TokenStream {
         .to_compile_error()
         .into(),
         Err(error) => error.to_compile_error().into(),
+    }
+}
+
+/// Whether an export marker's arguments name a block that extends an existing class.
+fn export_methods(attribute: proc_macro2::TokenStream) -> syn::Result<bool> {
+    let Ok(arguments) = syn::parse::Parser::parse2(
+        syn::punctuated::Punctuated::<syn::Ident, syn::Token![,]>::parse_terminated,
+        attribute,
+    ) else {
+        return Ok(false);
+    };
+    let methods = arguments.iter().any(|argument| argument == "methods");
+    match arguments.iter().find(|argument| *argument != "methods") {
+        Some(other) if methods => Err(syn::Error::new_spanned(
+            other,
+            format!(
+                "export(methods) takes no other arguments; `{other}` belongs on the \
+                 `#[export] impl` block that declares the class"
+            ),
+        )),
+        _ => Ok(methods),
     }
 }
 
@@ -159,6 +193,9 @@ fn records(
             capture::item_tokens(item, capture::ImplCapture::Class(attribute.clone()), false)
         }
         lane::Kind::DataImpl => capture::item_tokens(item, capture::ImplCapture::Methods, false),
+        lane::Kind::ExportMethods => {
+            capture::item_tokens(item, capture::ImplCapture::ClassMethods, false)
+        }
         lane::Kind::CustomFfi => capture::custom_ffi_tokens(item),
         lane::Kind::CustomType => capture::custom_type_tokens(item),
         lane::Kind::Pool => capture::interned_string_pool_tokens(item),

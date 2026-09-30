@@ -17,12 +17,13 @@ use crate::expansion::{
 pub struct Class<'expansion, 'lowered, S: boltffi_binding::SurfaceLower> {
     pair: DeclarationPair<'lowered, ClassDef, ClassDecl<S>>,
     expansion: &'expansion Expansion<'lowered, S>,
+    extending: bool,
 }
 
 struct ClassOwner<'lowered, C> {
     source: &'lowered ClassDef,
     class: TokenStream,
-    handle_type: Ident,
+    handle_type: TokenStream,
     handle: C,
 }
 
@@ -31,7 +32,17 @@ impl<'expansion, 'lowered, S: boltffi_binding::SurfaceLower> Class<'expansion, '
         pair: DeclarationPair<'lowered, ClassDef, ClassDecl<S>>,
         expansion: &'expansion Expansion<'lowered, S>,
     ) -> Self {
-        Self { pair, expansion }
+        Self {
+            pair,
+            expansion,
+            extending: false,
+        }
+    }
+
+    /// Renders only the members, reaching the handle the class's own block defines.
+    pub fn extending(mut self, extending: bool) -> Self {
+        self.extending = extending;
+        self
     }
 }
 
@@ -45,14 +56,15 @@ impl<'expansion, 'lowered> Class<'expansion, 'lowered, Native> {
         let class_names = names::Class::new(&class);
         let handle_type = class_names.handle();
         let retained_handle_type = class_names.retained_handle();
-        let handle = self.handle(&class_type, &handle_type, &retained_handle_type);
-        let thread_safety = self.thread_safety(binding, &class, &class_type);
-        let release = self.release(binding.release(), binding.handle(), &handle_type)?;
+        let owner_handle = match self.extending {
+            true => quote! { <#class_type as ::boltffi::__private::ClassHandle>::Handle },
+            false => quote! { #handle_type },
+        };
         let exports = associated_fn::AssociatedFunctions::new(
             ClassOwner {
                 source,
-                class: class_type,
-                handle_type,
+                class: class_type.clone(),
+                handle_type: owner_handle,
                 handle: binding.handle(),
             },
             binding.initializers(),
@@ -60,6 +72,12 @@ impl<'expansion, 'lowered> Class<'expansion, 'lowered, Native> {
             self.expansion,
         )
         .render()?;
+        if self.extending {
+            return Ok(exports);
+        }
+        let handle = self.handle(&class_type, &handle_type, &retained_handle_type);
+        let thread_safety = self.thread_safety(binding, &class, &class_type);
+        let release = self.release(binding.release(), binding.handle(), &handle_type)?;
 
         Ok(quote! {
             #handle
@@ -103,14 +121,15 @@ impl<'expansion, 'lowered> Class<'expansion, 'lowered, Wasm32> {
         let class_names = names::Class::new(&class);
         let handle_type = class_names.handle();
         let retained_handle_type = class_names.retained_handle();
-        let handle = self.handle(&class_type, &handle_type, &retained_handle_type);
-        let thread_safety = self.thread_safety(binding, &class, &class_type);
-        let release = self.release(binding.release(), binding.handle(), &handle_type)?;
+        let owner_handle = match self.extending {
+            true => quote! { <#class_type as ::boltffi::__private::ClassHandle>::Handle },
+            false => quote! { #handle_type },
+        };
         let exports = associated_fn::AssociatedFunctions::new(
             ClassOwner {
                 source,
-                class: class_type,
-                handle_type,
+                class: class_type.clone(),
+                handle_type: owner_handle,
                 handle: binding.handle(),
             },
             binding.initializers(),
@@ -118,6 +137,12 @@ impl<'expansion, 'lowered> Class<'expansion, 'lowered, Wasm32> {
             self.expansion,
         )
         .render()?;
+        if self.extending {
+            return Ok(exports);
+        }
+        let handle = self.handle(&class_type, &handle_type, &retained_handle_type);
+        let thread_safety = self.thread_safety(binding, &class, &class_type);
+        let release = self.release(binding.release(), binding.handle(), &handle_type)?;
 
         Ok(quote! {
             #handle
