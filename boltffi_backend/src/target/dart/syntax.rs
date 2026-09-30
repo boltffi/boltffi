@@ -203,10 +203,6 @@ impl TypeFragment {
         Self::new(format!("{self}?"))
     }
 
-    pub fn optional_function(self) -> Self {
-        Self::new(format!("({self})?"))
-    }
-
     pub fn future(self) -> Self {
         Self::new(format!("Future<{self}>"))
     }

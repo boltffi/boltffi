@@ -211,6 +211,8 @@ void main() {
     final observedValue = [0];
 
     expect(applyClosure((value) => value * 2, 5), 10);
+    expect(applyOptionalClosure(21, null), 21);
+    expect(applyOptionalClosure(21, (value) => value * 2), 42);
     applyVoidClosure((value) => observedValue[0] = value, 42);
     expect(observedValue[0], 42);
     expect(applyNullaryClosure(() => 99), 99);

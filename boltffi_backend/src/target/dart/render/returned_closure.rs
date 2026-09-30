@@ -100,7 +100,7 @@ impl ReturnedClosure {
             _ => return super::super::unsupported("unknown returned-closure presence"),
         };
         let public_type = match presence {
-            HandlePresence::Nullable => closure_type.optional_function(),
+            HandlePresence::Nullable => closure_type.optional(),
             _ => closure_type,
         };
         let native_signature = NativeFunctionSignature::from_pointer(protocol.call_type())?;

@@ -644,7 +644,8 @@ mod tests {
         assert!(source.contains(".callPtr"));
         assert!(source.contains(".releasePtr"));
         assert!(source.contains(".insert("));
-        assert!(source.contains("(int Function(int))? callback"));
+        assert!(source.contains("int maybeApply(int Function(int)? callback, int value)"));
+        assert!(!source.contains("(int Function(int))"));
         assert!(source.contains("int tryApply(int Function(int) callback, int value)"));
         assert!(source.contains("on MathError catch"));
         assert!(output.diagnostics().is_empty());
@@ -662,6 +663,11 @@ mod tests {
             #[export]
             pub fn make_labeler(prefix: String) -> Box<dyn Fn(String) -> String> {
                 Box::new(move |value| format!("{prefix}{value}"))
+            }
+
+            #[export]
+            pub fn make_optional_adder(base: i32) -> Option<Box<dyn Fn(i32) -> i32>> {
+                Some(Box::new(move |value| base + value))
             }
 
             #[export]
@@ -689,6 +695,7 @@ mod tests {
         let source = file(&output, "demo/lib/demo.dart");
         assert!(source.contains("int Function(int) makeAdder(int $base)"));
         assert!(source.contains("String Function(String) makeLabeler(String prefix)"));
+        assert!(source.contains("int Function(int)? makeOptionalAdder(int $base)"));
         assert!(source.contains(
             "Future<int Function(int)> makeAsyncAdder(int $base, {$$BoltCancellationToken? cancellationToken})"
         ));
