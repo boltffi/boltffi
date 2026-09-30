@@ -237,6 +237,10 @@ double boltffi_function_geo_length(const uint8_t *line_ptr, uintptr_t line_len);
 `custom_type!` and `interned_string_pool!` define lanes. A declaration that refers to
 itself calls its own lane, which already exists.
 
+`#[data(impl)]` and `#[export(methods)]` define no lane. Each writes a methods fragment
+whose target is a slot, reads the target's lane, and expands only its own members against
+it. Bindgen merges the fragment into the record, enum or class the slot resolves to.
+
 ## Dependencies
 
 A dependency's macros expand inside the dependency, so its wrappers are compiled into its
@@ -307,6 +311,8 @@ the item from them, then writes its record and starts its lane chain.
   that name as an alias of the remote type.
 - A class's `#[export] impl` sits in the same module as the struct, since its lane is
   defined there.
+- One `#[export] impl` declares a class, since two would each define its lane, handle
+  and identity. Further blocks are `#[export(methods)]`.
 - A `type` alias names only the type, so a signature cannot name a declared type through
   one. `use … as` renames the type and its lane together.
 - A `macro_rules!` with a declared type's name collides with, or shadows, its lane.

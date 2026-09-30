@@ -117,7 +117,31 @@ printf("%d\\n", demo_counter_get(&counter));
 demo_counter_free(&counter);`}
 />
 
-Write the `#[export] impl` in the same module as the struct, as one block per class. BoltFFI finds the class through the struct's name in that module. With the impl anywhere else, a signature that names the class, such as `fn peek(c: &model::Counter)`, fails to compile with ``cannot find `Counter` in `model` ``.
+Write the `#[export] impl` in the same module as the struct. BoltFFI finds the class through the struct's name in that module. With the impl anywhere else, a signature that names the class, such as `fn peek(c: &model::Counter)`, fails to compile with ``cannot find `Counter` in `model` ``.
+
+### More than one impl block
+
+One `#[export] impl` block declares the class. Every further block is marked `#[export(methods)]` and adds its methods, constructors, constants and streams to that class. A methods block can sit in any module of the crate where the class is in scope.
+
+```rust
+#[export]
+impl Counter {
+    pub fn new() -> Self {
+        Counter { value: Mutex::new(0) }
+    }
+}
+
+#[export(methods)]
+impl Counter {
+    pub fn increment(&self) {
+        *self.value.lock().unwrap() += 1;
+    }
+}
+```
+
+Thread safety belongs to the block that declares the class, so `#[export(single_threaded)]` goes there and a methods block takes no other arguments.
+
+A second plain `#[export] impl Counter` does not compile. The errors name generated items, starting with ``the name `__boltffi_declared_Counter` is defined multiple times``. Mark the extra block `#[export(methods)]`. A methods block for a class that no `#[export] impl` declares fails with `` `Counter` is not an exported class ``.
 
 ## Constructors
 
