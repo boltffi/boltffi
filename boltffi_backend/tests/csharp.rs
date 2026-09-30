@@ -92,6 +92,80 @@ fn csharp_rejects_runtime_defaults_with_identical_overload_signatures() {
 }
 
 #[test]
+fn csharp_bounds_runtime_default_overloads_without_limiting_constant_defaults() {
+    [8, 9, 20].into_iter().for_each(|runtime_default_count| {
+        let records = (0..runtime_default_count)
+            .map(|index| {
+                format!(
+                    r#"
+                    #[data]
+                    pub struct Amount{index} {{ pub value: i32 }}
+
+                    custom_type!(
+                        pub CustomAmount{index},
+                        remote = AmountRust{index},
+                        repr = Amount{index},
+                        into_ffi = amount_into_ffi{index},
+                        try_from_ffi = amount_from_ffi{index}
+                    );
+                    "#
+                )
+            })
+            .collect::<String>();
+        let parameters = (0..runtime_default_count)
+            .map(|index| format!("#[boltffi::default(3)] amount{index}: AmountRust{index}"))
+            .chain((0..16).map(|index| format!("#[boltffi::default(7)] constant{index}: i32")))
+            .chain(["required: i32".to_owned()])
+            .collect::<Vec<_>>()
+            .join(",");
+        let source = format!("{records} #[export] pub fn many_defaults({parameters}) {{}}");
+        let result =
+            target(CSharpHost::new().native_library("demo_native")).render(&bindings(&source));
+        if runtime_default_count > 8 {
+            let error = result.expect_err("excessive runtime defaults must be rejected");
+            assert!(
+                error.to_string().contains("more than 8 runtime defaults"),
+                "{error}"
+            );
+            return;
+        }
+
+        let mut output = result.expect("eight runtime defaults should render");
+        let module = output
+            .files()
+            .iter()
+            .find(|file| file.path().as_path() == Path::new("Demo.cs"))
+            .map(|file| file.contents())
+            .expect("generated Demo.cs");
+        assert_eq!(
+            module.matches("public static void ManyDefaults(").count(),
+            256
+        );
+        output.append(GeneratedOutput::new(
+            vec![GeneratedFile::new(
+                FilePath::new("RuntimeDefaultCalls.cs").expect("call-site path"),
+                r#"
+                using Demo;
+                using static Demo.Demo;
+
+                public static class RuntimeDefaultCalls
+                {
+                    public static void Compile()
+                    {
+                        ManyDefaults(required: 1);
+                        ManyDefaults(required: 1, amount7: new Amount7(7));
+                        ManyDefaults(required: 1, amount0: new Amount0(5), constant15: 2);
+                    }
+                }
+                "#,
+            )],
+            Vec::new(),
+        ));
+        compile_csharp_with_dotnet_when_available(&output, "csharp-runtime-default-limit");
+    });
+}
+
+#[test]
 fn csharp_non_trailing_and_constructed_defaults_compile_at_call_sites() {
     let source = format!(
         "{PARAMETER_DEFAULTS}{}",

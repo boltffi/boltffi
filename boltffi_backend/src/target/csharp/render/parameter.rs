@@ -89,19 +89,25 @@ impl Parameter {
 
 impl Overload {
     pub fn from_parameters(parameters: &[Parameter]) -> Result<Vec<Self>> {
-        let mut runtime_defaults = parameters
-            .iter()
-            .enumerate()
-            .filter_map(|(index, parameter)| {
-                parameter
-                    .default
-                    .as_ref()
-                    .and_then(DefaultExpression::runtime)
-                    .map(|value| (index, parameter, value))
-            })
-            .peekable();
-        if runtime_defaults.peek().is_none() {
-            return Ok(Vec::new());
+        let mut runtime_defaults =
+            parameters
+                .iter()
+                .enumerate()
+                .filter_map(|(index, parameter)| {
+                    parameter
+                        .default
+                        .as_ref()
+                        .and_then(DefaultExpression::runtime)
+                        .map(|value| (index, parameter, value))
+                });
+        match runtime_defaults.clone().count() {
+            0 => return Ok(Vec::new()),
+            1..=8 => {}
+            _ => {
+                return unsupported(
+                    "callables with more than 8 runtime defaults require too many C# overloads",
+                );
+            }
         }
         let mut overloads = vec![Self {
             parameters: parameters.to_vec(),
