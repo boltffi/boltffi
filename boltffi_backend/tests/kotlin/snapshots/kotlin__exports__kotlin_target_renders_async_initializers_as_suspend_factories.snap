@@ -47,7 +47,7 @@ class Client internal constructor(internal val handle: Long) : AutoCloseable {
     constructor() : this(new().handle)
 
     companion object {
-        fun new(): Client {
+        private fun new(): Client {
             return Client(Native.boltffi_init_class_demo_client_new())
         }
         suspend fun connect(port: UInt): Client {

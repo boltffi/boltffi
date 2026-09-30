@@ -264,7 +264,7 @@ impl CallbackParameter {
                     native
                 )];
                 let entry_argument = format!(
-                    "List<{public_record}>.generate(_l${name}Count, (_l$index) => {public_record}._m$fromStruct({pointer}.cast<{}>().elementAt(_l$index).ref))",
+                    "List<{public_record}>.generate(_l${name}Count, (_l$index) => {public_record}._m$fromStruct(({pointer}.cast<{}>() + _l$index).ref))",
                     native
                 );
                 let proxy_setup = vec![
@@ -273,7 +273,7 @@ impl CallbackParameter {
                         native, native
                     ),
                     format!(
-                        "for (var _l$index = 0; _l$index < {name}.length; _l$index++) {{ {name}[_l$index]._m$writeStruct({storage}.ptr.elementAt(_l$index)); }}"
+                        "for (var _l$index = 0; _l$index < {name}.length; _l$index++) {{ {name}[_l$index]._m$writeStruct(({storage}.ptr + _l$index)); }}"
                     ),
                 ];
                 let proxy_arguments = vec![
@@ -341,14 +341,14 @@ impl CallbackParameter {
             HandleTarget::Callback(_) => {
                 let entry_argument = match presence {
                     HandlePresence::Required => {
-                        format!("{required_type}Bridge.wrap({native_name})")
+                        format!("_{required_type}Bridge.wrap({native_name})")
                     }
                     HandlePresence::Nullable => format!(
-                        "{native_name}.handle == 0 ? null : {required_type}Bridge.wrap({native_name})"
+                        "{native_name}.handle == 0 ? null : _{required_type}Bridge.wrap({native_name})"
                     ),
                     _ => return super::unsupported("unknown callback callback-handle presence"),
                 };
-                let proxy_argument = format!("{required_type}Bridge.create({name})");
+                let proxy_argument = format!("_{required_type}Bridge.create({name})");
                 Ok(Self::new(
                     name,
                     public_type,

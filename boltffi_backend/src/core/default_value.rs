@@ -32,6 +32,13 @@ impl<'bindings> Representation<'bindings> {
             });
         }
 
+        Self::resolve_ffi(custom_type, context)
+    }
+
+    pub fn resolve_ffi<S: Surface>(
+        custom_type: CustomTypeId,
+        context: &'bindings RenderContext<S>,
+    ) -> Result<Self> {
         match context
             .custom_type(custom_type)
             .ok_or(Error::BrokenBridgeContract {

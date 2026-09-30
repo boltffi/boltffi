@@ -1,11 +1,11 @@
 use askama::Template;
 
 use boltffi_binding::{
-    CanonicalName, ClosureReturn, DirectValueType, DirectVectorElementType, Direction, EnumId,
-    ErrorChannel, ErrorPlacement, ExecutionDecl, ExportedCallable, ExportedMethodDecl,
-    FunctionDecl, HandlePresence, HandleTarget, IncomingParam, InitializerDecl, IntoRust, Native,
-    NativeSymbol, OutOfRust, ParamDecl, ParamPlanRender, Primitive, ReadPlan, Receive, RecordId,
-    ReturnPlanRender, ReturnValueSlot, Surface, TypeRef, WritePlan, native,
+    CanonicalName, ClosureReturn, DirectValueType, DirectVectorElementType, Direction, DocComment,
+    EnumId, ErrorChannel, ErrorPlacement, ExecutionDecl, ExportedCallable, ExportedMethodDecl,
+    FunctionDecl, HandlePresence, HandleTarget, IncomingParam, InitializerDecl, InitializerId,
+    IntoRust, Native, NativeSymbol, OutOfRust, ParamDecl, ParamPlanRender, Primitive, ReadPlan,
+    Receive, RecordId, ReturnPlanRender, ReturnValueSlot, Surface, TypeRef, WritePlan, native,
 };
 
 use crate::{
@@ -24,6 +24,7 @@ use crate::{
             ArgumentBuffer, OwnedBuffer, ReadExpression, Reader, ScalarOption, WriteStatement,
             Writer,
         },
+        default_value::DefaultExpression,
         lexical::ScopeForm,
         name_style::{GeneratedLocal, Name},
         primitive::SwiftPrimitive,
@@ -104,6 +105,7 @@ enum InitializerEffect {
     Plain,
     Throwing,
     Failable,
+    Asynchronous,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -136,6 +138,7 @@ enum ReceiverKind {
 pub struct Parameter {
     name: Identifier,
     ty: TypeName,
+    default: Option<Expression>,
     argument: Argument,
 }
 
@@ -455,30 +458,35 @@ impl AssociatedFunction {
     pub fn from_value_methods(
         methods: &[ExportedMethodDecl<Native, NativeSymbol>],
         value_type: ValueType,
-        receiver: Option<Receiver>,
+        has_empty_initializer: bool,
         bridge: &CBridgeContract,
         context: &RenderContext<Native>,
     ) -> Result<ValueFunctions> {
         methods
             .iter()
-            .filter(|method| method.callable().receiver().is_some() == receiver.is_some())
+            .filter(|method| method.callable().receiver().is_none())
             .try_fold(ValueFunctions::default(), |functions, method| {
-                let invocation =
-                    Self::method_invocation(method, receiver.clone(), bridge, context)?;
-                if receiver.is_none()
-                    && value_type.accepts_return(method.callable().returns().plan())
-                {
-                    return match Initializer::from_value_method(method, value_type, invocation) {
+                let invocation = Self::method_invocation(method, None, bridge, context)?;
+                if value_type.accepts_return(method.callable().returns().plan()) {
+                    let has_empty_initializer = has_empty_initializer
+                        || functions
+                            .initializers
+                            .iter()
+                            .any(Initializer::accepts_empty_call);
+                    return match Initializer::from_value_method(
+                        method,
+                        value_type,
+                        has_empty_initializer,
+                        invocation,
+                    ) {
                         Ok(initializer) => Ok(functions.with_initializer(initializer)),
                         Err(error) => functions.with_unsupported_method(method, error),
                     };
                 }
                 match Self::from_parts(
                     Documentation::new(method.meta().doc(), "    "),
-                    receiver.is_none(),
-                    receiver.as_ref().is_some_and(|receiver| {
-                        receiver.requires_mutating(method.callable().receiver())
-                    }),
+                    true,
+                    false,
                     Name::new(method.name()).function()?,
                     invocation,
                 ) {
@@ -721,6 +729,11 @@ impl Initializer {
         let has_default_initializer = initializers
             .iter()
             .any(|initializer| InitializerSignature::is_default_name(initializer.name()));
+        let default_initializer = Self::default_declaration(
+            initializers,
+            ConstructedType::ClassHandle,
+            has_default_initializer,
+        );
         initializers
             .iter()
             .try_fold(Initializers::default(), |initializers, initializer| {
@@ -728,6 +741,7 @@ impl Initializer {
                     initializer,
                     ConstructedType::ClassHandle,
                     has_default_initializer,
+                    default_initializer,
                     bridge,
                     context,
                 ) {
@@ -739,9 +753,14 @@ impl Initializer {
 
     pub fn from_record_declarations(
         initializers: &[InitializerDecl<Native>],
+        memberwise_has_defaults: bool,
         bridge: &CBridgeContract,
         context: &RenderContext<Native>,
     ) -> Result<Initializers> {
+        let default_initializer = match memberwise_has_defaults {
+            true => None,
+            false => Self::default_declaration(initializers, ConstructedType::Record, false),
+        };
         initializers
             .iter()
             .try_fold(Initializers::default(), |initializers, initializer| {
@@ -749,6 +768,7 @@ impl Initializer {
                     initializer,
                     ConstructedType::Record,
                     false,
+                    default_initializer,
                     bridge,
                     context,
                 ) {
@@ -763,6 +783,8 @@ impl Initializer {
         bridge: &CBridgeContract,
         context: &RenderContext<Native>,
     ) -> Result<Initializers> {
+        let default_initializer =
+            Self::default_declaration(initializers, ConstructedType::Enum, false);
         initializers
             .iter()
             .try_fold(Initializers::default(), |initializers, initializer| {
@@ -770,6 +792,7 @@ impl Initializer {
                     initializer,
                     ConstructedType::Enum,
                     false,
+                    default_initializer,
                     bridge,
                     context,
                 ) {
@@ -779,21 +802,62 @@ impl Initializer {
             })
     }
 
+    fn default_declaration(
+        initializers: &[InitializerDecl<Native>],
+        constructed_type: ConstructedType,
+        has_default_initializer: bool,
+    ) -> Option<InitializerId> {
+        initializers
+            .iter()
+            .filter(|initializer| {
+                !initializer.callable().execution().uses_async_execution()
+                    && initializer
+                        .callable()
+                        .params()
+                        .iter()
+                        .all(|parameter| parameter.meta().default().is_some())
+                    && InitializerSignature::new(
+                        initializer.name(),
+                        initializer.callable().params().is_empty(),
+                        has_default_initializer,
+                        constructed_type,
+                    )
+                    .is_ok_and(|signature| !signature.factory())
+            })
+            .min_by_key(|initializer| !InitializerSignature::is_default_name(initializer.name()))
+            .map(InitializerDecl::id)
+    }
+
     fn from_value_method(
         method: &ExportedMethodDecl<Native, NativeSymbol>,
         value_type: ValueType,
+        has_empty_initializer: bool,
         invocation: Invocation,
     ) -> Result<Self> {
+        if invocation.asynchronous() {
+            return Self::from_async(method.name(), method.meta().doc(), invocation);
+        }
         let constructed_type = value_type.constructed_type();
         let effect = InitializerEffect::new(constructed_type, &invocation);
         let requires_wire_runtime = invocation.requires_wire_runtime();
         let factory_return = invocation.returns.factory_type(constructed_type)?;
-        let signature = InitializerSignature::new(
-            method.name(),
-            invocation.parameters.is_empty(),
-            false,
-            constructed_type,
-        )?;
+        let signature = if has_empty_initializer
+            && invocation
+                .parameters
+                .iter()
+                .all(|parameter| parameter.default.is_some())
+        {
+            InitializerSignature::NamedFactory {
+                name: Name::new(method.name()).function()?,
+            }
+        } else {
+            InitializerSignature::new(
+                method.name(),
+                invocation.parameters.is_empty(),
+                false,
+                constructed_type,
+            )?
+        };
         let (parameters, body) = match signature.factory() {
             true => invocation.into_factory_rendered("        ")?,
             false => invocation.into_value_initializer_rendered("        ")?,
@@ -813,6 +877,7 @@ impl Initializer {
         initializer: &InitializerDecl<Native>,
         constructed_type: ConstructedType,
         has_default_initializer: bool,
+        default_initializer: Option<InitializerId>,
         bridge: &CBridgeContract,
         context: &RenderContext<Native>,
     ) -> Result<Self> {
@@ -823,15 +888,29 @@ impl Initializer {
             bridge,
             context,
         )?;
+        if invocation.asynchronous() {
+            return Self::from_async(initializer.name(), initializer.meta().doc(), invocation);
+        }
         let effect = InitializerEffect::new(constructed_type, &invocation);
         let requires_wire_runtime = invocation.requires_wire_runtime();
         let factory_return = invocation.returns.factory_type(constructed_type)?;
-        let signature = InitializerSignature::new(
-            initializer.name(),
-            invocation.parameters.is_empty(),
-            has_default_initializer,
-            constructed_type,
-        )?;
+        let signature = if invocation
+            .parameters
+            .iter()
+            .all(|parameter| parameter.default.is_some())
+            && default_initializer != Some(initializer.id())
+        {
+            InitializerSignature::NamedFactory {
+                name: Name::new(initializer.name()).function()?,
+            }
+        } else {
+            InitializerSignature::new(
+                initializer.name(),
+                invocation.parameters.is_empty(),
+                has_default_initializer,
+                constructed_type,
+            )?
+        };
         let (parameters, body) = match signature.factory() {
             true => invocation.into_factory_rendered("        ")?,
             false => match constructed_type {
@@ -852,12 +931,42 @@ impl Initializer {
         })
     }
 
+    fn from_async(
+        name: &CanonicalName,
+        documentation: Option<&DocComment>,
+        invocation: Invocation,
+    ) -> Result<Self> {
+        let requires_wire_runtime = invocation.requires_wire_runtime();
+        let (parameters, body, returns) = invocation.into_rendered("        ")?;
+        Ok(Self {
+            documentation: Documentation::new(documentation, "    "),
+            signature: InitializerSignature::NamedFactory {
+                name: Name::new(name).function()?,
+            },
+            parameters,
+            body,
+            factory_return: returns
+                .ty
+                .ok_or(SwiftHost::unsupported("void async initializer"))?,
+            effect: InitializerEffect::Asynchronous,
+            requires_wire_runtime,
+        })
+    }
+
     pub fn documentation(&self) -> &Documentation {
         &self.documentation
     }
 
     pub fn factory(&self) -> bool {
         self.signature.factory()
+    }
+
+    pub fn accepts_empty_call(&self) -> bool {
+        !self.factory()
+            && self
+                .parameters
+                .iter()
+                .all(|parameter| parameter.default.is_some())
     }
 
     pub fn name(&self) -> &Identifier {
@@ -877,8 +986,8 @@ impl Initializer {
         self.effect.failable_marker()
     }
 
-    pub fn throwing_keyword(&self) -> &str {
-        self.effect.throwing_keyword()
+    pub fn effect_keywords(&self) -> &str {
+        self.effect.keywords()
     }
 
     pub fn body(&self) -> &str {
@@ -887,6 +996,10 @@ impl Initializer {
 
     pub fn requires_wire_runtime(&self) -> bool {
         self.requires_wire_runtime
+    }
+
+    pub fn requires_async_runtime(&self) -> bool {
+        self.effect == InitializerEffect::Asynchronous
     }
 }
 
@@ -962,7 +1075,7 @@ impl InitializerSignature {
             Self::NamedInit { label } => {
                 ParameterList::new(parameters.split_first().into_iter().flat_map(
                     |(first, rest)| {
-                        std::iter::once(format!("{label} {}: {}", first.name, first.ty))
+                        std::iter::once(format!("{label} {}", first.signature()))
                             .chain(rest.iter().map(Parameter::signature))
                     },
                 ))
@@ -992,13 +1105,14 @@ impl InitializerEffect {
     fn failable_marker(self) -> &'static str {
         match self {
             Self::Failable => "?",
-            Self::Plain | Self::Throwing => "",
+            Self::Plain | Self::Throwing | Self::Asynchronous => "",
         }
     }
 
-    fn throwing_keyword(self) -> &'static str {
+    fn keywords(self) -> &'static str {
         match self {
             Self::Throwing => " throws",
+            Self::Asynchronous => " async throws",
             Self::Plain | Self::Failable => "",
         }
     }
@@ -2042,20 +2156,44 @@ impl Parameter {
     ) -> Result<Self> {
         let source_name = Name::new(decl.name());
         let name = source_name.parameter()?;
+        let default = decl
+            .meta()
+            .default()
+            .map(|default| {
+                let ty = decl
+                    .payload()
+                    .as_value()
+                    .and_then(|plan| plan.value_type())
+                    .ok_or_else(|| {
+                        SwiftHost::unsupported("default value for this parameter type")
+                    })?;
+                DefaultExpression::render(&ty, default, context)
+            })
+            .transpose()?;
         let mut plan = ParameterPlan {
             source_name,
             name,
+            default,
             bridge,
             context,
         };
-        match decl.payload() {
+        let (ty, argument) = match decl.payload() {
             IncomingParam::Value(value) => value.render_with(&mut plan),
             IncomingParam::Closure(closure) => plan.closure(closure),
-        }
+        }?;
+        Ok(Self {
+            name: plan.name,
+            ty,
+            default: plan.default,
+            argument,
+        })
     }
 
     pub fn signature(&self) -> String {
-        format!("{}: {}", self.name, self.ty)
+        match &self.default {
+            Some(default) => format!("{}: {} = {default}", self.name, self.ty),
+            None => format!("{}: {}", self.name, self.ty),
+        }
     }
 
     fn argument(&self) -> Argument {
@@ -2342,15 +2480,25 @@ impl AsyncCall {
 struct ParameterPlan<'context, 'bindings> {
     source_name: Name,
     name: Identifier,
+    default: Option<Expression>,
     bridge: &'context CBridgeContract,
     context: &'context RenderContext<'bindings, Native>,
 }
 
 impl ParameterPlan<'_, '_> {
+    fn inout_type(&self, ty: TypeName) -> Result<TypeName> {
+        if self.default.is_some() {
+            return Err(SwiftHost::unsupported(
+                "default value for an inout parameter",
+            ));
+        }
+        Ok(TypeName::new(format!("inout {ty}")))
+    }
+
     fn closure(
         &mut self,
         closure: &boltffi_binding::ClosureParameter<Native, IntoRust>,
-    ) -> Result<Parameter> {
+    ) -> Result<(TypeName, Argument)> {
         let argument = ClosureArgument::new(
             &self.source_name,
             self.name.clone(),
@@ -2358,16 +2506,15 @@ impl ParameterPlan<'_, '_> {
             self.bridge,
             self.context,
         )?;
-        Ok(Parameter {
-            name: self.name.clone(),
-            ty: argument.parameter_ty(),
-            argument: Argument::Closure(Box::new(argument)),
-        })
+        Ok((
+            argument.parameter_ty(),
+            Argument::Closure(Box::new(argument)),
+        ))
     }
 }
 
 impl<'plan> ParamPlanRender<'plan, Native, IntoRust> for ParameterPlan<'_, '_> {
-    type Output = Result<Parameter>;
+    type Output = Result<(TypeName, Argument)>;
 
     fn direct(&mut self, ty: &'plan DirectValueType, receive: Receive) -> Self::Output {
         if receive == Receive::ByMutRef {
@@ -2381,11 +2528,7 @@ impl<'plan> ParamPlanRender<'plan, Native, IntoRust> for ParameterPlan<'_, '_> {
             }
             _ => Argument::Direct(input),
         };
-        Ok(Parameter {
-            name: self.name.clone(),
-            ty: direct.api_type().clone(),
-            argument,
-        })
+        Ok((direct.api_type().clone(), argument))
     }
 
     fn encoded(
@@ -2400,10 +2543,9 @@ impl<'plan> ParamPlanRender<'plan, Native, IntoRust> for ParameterPlan<'_, '_> {
         }
         if receive == Receive::ByMutRef {
             let read = codec.read_plan();
-            return Ok(Parameter {
-                name: self.name.clone(),
-                ty: TypeName::new(format!("inout {}", SwiftType::type_ref(ty, self.context)?)),
-                argument: Argument::MutableEncoded(MutableEncodedArgument::new(
+            return Ok((
+                self.inout_type(SwiftType::type_ref(ty, self.context)?)?,
+                Argument::MutableEncoded(MutableEncodedArgument::new(
                     &self.source_name,
                     codec,
                     &read,
@@ -2412,18 +2554,17 @@ impl<'plan> ParamPlanRender<'plan, Native, IntoRust> for ParameterPlan<'_, '_> {
                     self.bridge,
                     self.context,
                 )?),
-            });
+            ));
         }
-        Ok(Parameter {
-            name: self.name.clone(),
-            ty: SwiftType::type_ref(ty, self.context)?,
-            argument: Argument::Encoded(EncodedArgument::new(
+        Ok((
+            SwiftType::type_ref(ty, self.context)?,
+            Argument::Encoded(EncodedArgument::new(
                 &self.source_name,
                 codec,
                 Expression::identifier(self.name.clone()),
                 self.context,
             )?),
-        })
+        ))
     }
 
     fn handle(
@@ -2436,37 +2577,34 @@ impl<'plan> ParamPlanRender<'plan, Native, IntoRust> for ParameterPlan<'_, '_> {
         match target {
             HandleTarget::Class(class) => {
                 let handle = ClassHandle::new(*class, presence, self.context)?;
-                Ok(Parameter {
-                    name: self.name.clone(),
-                    ty: handle.api_type(),
-                    argument: if receive == Receive::ByValue {
-                        Argument::OwnedClass(OwnedClassArgument {
-                            parameter: self.name.clone(),
-                            local: Identifier::parse(format!("__boltffiOwnedHandle{}", self.name))?,
-                            release: Identifier::parse(
-                                self.context.class(*class).ok_or(Error::BrokenBridgeContract {
-                                    bridge: SwiftHost::TARGET,
-                                    invariant: "missing class declaration for ownership transfer",
-                                })?.release().name().as_str(),
-                            )?,
-                            presence,
-                        })
-                    } else {
-                        Argument::Direct(
-                            handle.parameter_argument(Expression::identifier(self.name.clone())),
-                        )
-                    },
-                })
+                let argument = if receive == Receive::ByValue {
+                    let release = self
+                        .context
+                        .class(*class)
+                        .ok_or(Error::BrokenBridgeContract {
+                            bridge: SwiftHost::TARGET,
+                            invariant: "missing class declaration for ownership transfer",
+                        })?
+                        .release();
+                    Argument::OwnedClass(OwnedClassArgument {
+                        parameter: self.name.clone(),
+                        local: Identifier::parse(format!("__boltffiOwnedHandle{}", self.name))?,
+                        release: Identifier::parse(release.name().as_str())?,
+                        presence,
+                    })
+                } else {
+                    Argument::Direct(
+                        handle.parameter_argument(Expression::identifier(self.name.clone())),
+                    )
+                };
+                Ok((handle.api_type(), argument))
             }
             HandleTarget::Callback(callback) => {
                 let handle = CallbackHandle::new(*callback, presence, self.context)?;
-                Ok(Parameter {
-                    name: self.name.clone(),
-                    ty: handle.api_type(),
-                    argument: Argument::Direct(
-                        handle.c_handle(Expression::identifier(self.name.clone())),
-                    ),
-                })
+                Ok((
+                    handle.api_type(),
+                    Argument::Direct(handle.c_handle(Expression::identifier(self.name.clone()))),
+                ))
             }
             HandleTarget::Stream(_) => Err(SwiftHost::unsupported("stream handle parameter")),
             _ => Err(SwiftHost::unsupported("unknown handle parameter")),
@@ -2474,15 +2612,14 @@ impl<'plan> ParamPlanRender<'plan, Native, IntoRust> for ParameterPlan<'_, '_> {
     }
 
     fn scalar_option(&mut self, primitive: Primitive) -> Self::Output {
-        Ok(Parameter {
-            name: self.name.clone(),
-            ty: ScalarOption::new(primitive).ty()?,
-            argument: Argument::Encoded(EncodedArgument::scalar_option(
+        Ok((
+            ScalarOption::new(primitive).ty()?,
+            Argument::Encoded(EncodedArgument::scalar_option(
                 &self.source_name,
                 primitive,
                 Expression::identifier(self.name.clone()),
             )?),
-        })
+        ))
     }
 
     fn direct_vector(
@@ -2492,18 +2629,17 @@ impl<'plan> ParamPlanRender<'plan, Native, IntoRust> for ParameterPlan<'_, '_> {
     ) -> Self::Output {
         let vector = DirectVector::from_element(element, self.bridge, self.context)?;
         let ty = match receive {
-            Receive::ByMutRef => TypeName::new(format!("inout {}", vector.ty())),
+            Receive::ByMutRef => self.inout_type(vector.ty().clone())?,
             _ => vector.ty().clone(),
         };
-        Ok(Parameter {
-            name: self.name.clone(),
+        Ok((
             ty,
-            argument: Argument::DirectVector(vector.borrowed(
+            Argument::DirectVector(vector.borrowed(
                 &self.source_name,
                 self.name.clone(),
                 receive,
             )?),
-        })
+        ))
     }
 }
 

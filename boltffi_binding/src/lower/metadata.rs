@@ -85,7 +85,25 @@ fn lower_default(
         (_, SourceDefaultValue::Path(_)) => {
             Err(LowerError::unsupported_type(UnsupportedType::DefaultValue))
         }
+        // `None` is only a value of an `Option`: on anything else no host
+        // could spell it, so reject it here instead of in every backend.
+        (type_expr, SourceDefaultValue::None) if !is_option(index, type_expr) => {
+            Err(LowerError::unsupported_type(UnsupportedType::DefaultValue))
+        }
         (_, default) => DefaultValue::try_from(default),
+    }
+}
+
+/// Whether `type_expr` crosses as an `Option`: a custom type does when its
+/// representation does, since hosts spell its values as that
+/// representation's.
+fn is_option(index: &Index, type_expr: &TypeExpr) -> bool {
+    match type_expr {
+        TypeExpr::Option(_) => true,
+        TypeExpr::Custom { id, .. } => index
+            .custom(id)
+            .is_some_and(|custom| is_option(index, &custom.repr)),
+        _ => false,
     }
 }
 

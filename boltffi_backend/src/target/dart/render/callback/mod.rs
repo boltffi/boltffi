@@ -98,7 +98,7 @@ impl Callback {
             .collect::<Result<Vec<_>>>()?;
         Ok(Self {
             documentation: Documentation::new(declaration.meta().doc(), 0),
-            bridge_name: Identifier::parse(format!("{name}Bridge"))?,
+            bridge_name: Identifier::parse(format!("_{name}Bridge"))?,
             proxy_name: Identifier::parse(format!("_{name}Proxy"))?,
             register_declaration: native::declaration(protocol.register())?,
             create_declaration: native::declaration(protocol.create_handle())?,

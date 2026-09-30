@@ -209,7 +209,7 @@ impl CallbackMethod {
             let fast_source = (
                 None,
                 format!(
-                    "$$ffi.Pointer.fromFunction<{native_signature}>({callback_name}Bridge.{entry_name}{exceptional})"
+                    "$$ffi.Pointer.fromFunction<{native_signature}>(_{callback_name}Bridge.{entry_name}{exceptional})"
                 ),
             );
             let fast_declaration = format!(
@@ -617,12 +617,24 @@ pub fn render_fallible_entry_return(
         context,
     )?;
     failure.push("return _l$errorBuffer;".to_owned());
-    Ok(vec![format!(
-        "try {{\n{}\n}} on {} catch ({}) {{\n{}\n}} catch (_l$unexpectedError) {{\n  return _f$encodeUnexpectedCallbackError(_l$unexpectedError);\n}}",
-        indent(&success.join("\n"), 2),
+    let on_catch = format!(
+        "on {} catch ({}) {{\n{}\n}}",
         error_binding.ty,
         error_binding.name,
         indent(&failure.join("\n"), 2),
+    );
+    // `on Object` already catches every throwable, so the unexpected-error
+    // fallback is unreachable for untyped (string) payloads.
+    let catches = if error_binding.ty.as_str() == "Object" {
+        on_catch
+    } else {
+        format!(
+            "{on_catch} catch (_l$unexpectedError) {{\n  return _f$encodeUnexpectedCallbackError(_l$unexpectedError);\n}}"
+        )
+    };
+    Ok(vec![format!(
+        "try {{\n{}\n}} {catches}",
+        indent(&success.join("\n"), 2),
     )])
 }
 
@@ -1389,7 +1401,7 @@ fn encode_direct_vector(
             let native = native::direct_record_struct(bridge, *record)?;
             statements.extend([
                 format!("final {prefix}Storage = _$$BoltCallocPtr<{native}>.alloc($$ffi.sizeOf<{native}>() * _l$value.length);"),
-                format!("for (var _l$index = 0; _l$index < _l$value.length; _l$index++) {{ _l$value[_l$index]._m$writeStruct({prefix}Storage.ptr.elementAt(_l$index)); }}"),
+                format!("for (var _l$index = 0; _l$index < _l$value.length; _l$index++) {{ _l$value[_l$index]._m$writeStruct(({prefix}Storage.ptr + _l$index)); }}"),
                 format!("final {prefix}Buffer = _f$buffer_symbol({prefix}Storage.ptr.cast<$$ffi.Uint8>(), _l$value.length * $$ffi.sizeOf<{native}>());")
                     .replace("buffer_symbol", bridge.support().buffer_from_bytes()?.name()),
             ]);
@@ -1487,7 +1499,7 @@ fn direct_vector_decode_statements(
             vec![
                 format!("final _l$count = {buffer}.len ~/ $$ffi.sizeOf<{native}>();"),
                 format!(
-                    "final {value} = List<{public}>.generate(_l$count, (_l$index) => {public}._m$fromStruct({buffer}.ptr.cast<{native}>().elementAt(_l$index).ref));"
+                    "final {value} = List<{public}>.generate(_l$count, (_l$index) => {public}._m$fromStruct(({buffer}.ptr.cast<{native}>() + _l$index).ref));"
                 ),
             ]
         }
@@ -1540,7 +1552,7 @@ fn handle_into_native(
             _ => return super::unsupported("Dart callback class return presence"),
         }),
         HandleTarget::Callback(id) => Ok(format!(
-            "{}Bridge.create({expression})",
+            "_{}Bridge.create({expression})",
             callback_type(*id, context)?
         )),
         HandleTarget::Stream(_) => super::unsupported("Dart callback stream return"),
@@ -1564,9 +1576,9 @@ fn handle_from_native(
             _ => return super::unsupported("Dart callback class proxy return presence"),
         }),
         HandleTarget::Callback(_) => Ok(match presence {
-            HandlePresence::Required => format!("{required}Bridge.wrap({expression})"),
+            HandlePresence::Required => format!("_{required}Bridge.wrap({expression})"),
             HandlePresence::Nullable => {
-                format!("{expression}.handle == 0 ? null : {required}Bridge.wrap({expression})")
+                format!("{expression}.handle == 0 ? null : _{required}Bridge.wrap({expression})")
             }
             _ => return super::unsupported("Dart callback proxy return presence"),
         }),

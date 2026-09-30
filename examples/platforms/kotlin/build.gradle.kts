@@ -53,6 +53,8 @@ val generateKotlinBindings = tasks.register<Exec>("generateKotlinBindings") {
         "-p",
         "boltffi_cli",
         "--",
+        "--cargo-arg=--features",
+        "--cargo-arg=async-initializers",
         "generate",
         "kotlin",
         "--experimental",
@@ -61,7 +63,7 @@ val generateKotlinBindings = tasks.register<Exec>("generateKotlinBindings") {
 
 val buildDemoLibrary = tasks.register<Exec>("buildDemoLibrary") {
     workingDir = demoDir
-    commandLine("cargo", "build", "-q")
+    commandLine("cargo", "build", "-q", "--features", "async-initializers")
     environment("BOLTFFI_BINDING_EXPANSION", "1")
     environment("BOLTFFI_BINDING_EXPANSION_ROOT", demoDir.absolutePath)
     environment("BOLTFFI_BINDING_EXPANSION_SOURCE", demoSource.absolutePath)

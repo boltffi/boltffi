@@ -375,6 +375,30 @@ public final class DemoTest {
 
     private static void testCustomTypes() {
         System.out.println("Testing custom types...");
+        demoCase("case:custom_types.length.should_construct_in_meters");
+        Length length = Length._new(2.5);
+        assert length.value() == 2.5 : "Length meters";
+        demoCase("case:custom_types.length.should_convert_to_centimeters");
+        assert length.centimeters() == 250.0 : "Length centimeters";
+
+        demoCase("case:custom_types.length.should_roundtrip_wrapper");
+        Length returnedLength = Demo.echoLength(length);
+        assert returnedLength.value() == 2.5 : "echoLength meters";
+        assert returnedLength.centimeters() == 250.0 : "echoLength centimeters";
+        assert Demo.echoLength(new Length(-1.25)).centimeters() == -125.0 : "negative length";
+
+        demoCase("case:custom_types.length.should_write_back_in_meters");
+        Length updatedLength = returnedLength.setCentimeters(75.0);
+        assert updatedLength.value() == 0.75 : "updated length meters";
+        assert updatedLength.centimeters() == 75.0 : "updated length centimeters";
+        assert length.value() == 2.5 : "original length meters";
+        assert length.centimeters() == 250.0 : "original length centimeters";
+
+        demoCase("case:custom_types.length.should_roundtrip_nested_wrapper");
+        Fabric fabric = Demo.echoFabric(new Fabric(new Length(1.25)));
+        assert fabric.length().value() == 1.25 : "nested length meters";
+        assert fabric.length().centimeters() == 125.0 : "nested length centimeters";
+
         long timestamp = 1_710_000_000_000L;
         demoCase("case:custom_types.datetime.should_roundtrip_millis");
         assert Demo.echoDatetime(timestamp) == timestamp : "echoDatetime";

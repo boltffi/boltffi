@@ -1,53 +1,56 @@
-{{ function.documentation() }}{% if function.async_call().is_some() %}suspend {% endif %}fun {{ function.name() }}({% for parameter in function.parameters() %}{{ parameter.name() }}: {{ parameter.ty() }}{% if !loop.last %}, {% endif %}{% endfor %}){% if let Some(return_type) = function.returns() %}: {{ return_type }}{% endif %} {
-{%- if let Some(async_call) = function.async_call() %}
+{%- macro exported_call(call, indent) -%}
+{{ call.documentation().indented(indent) }}{{ indent }}{% if call.async_call().is_some() %}suspend {% endif %}fun {{ call.name() }}({% for parameter in call.parameters() %}{{ parameter.declaration() }}{% if !loop.last %}, {% endif %}{% endfor %}){% if let Some(return_type) = call.returns() %}: {{ return_type }}{% endif %} {
+{%- if let Some(async_call) = call.async_call() %}
 {%- if async_call.returns_value() %}
-    return boltffiCallAsync(
+{{ indent }}    return boltffiCallAsync(
 {%- else %}
-    boltffiCallAsync(
+{{ indent }}    boltffiCallAsync(
 {%- endif %}
-        createFuture = {
+{{ indent }}        createFuture = {
 {%- for statement in async_call.create_setup() %}
-            {{ statement }}
+{{ indent }}            {{ statement }}
 {%- endfor %}
 {%- if async_call.has_create_cleanup() %}
-            try {
-                {{ async_call.create() }}
-            } finally {
+{{ indent }}            try {
+{{ indent }}                {{ async_call.create() }}
+{{ indent }}            } finally {
 {%- for statement in async_call.create_cleanup() %}
-                {{ statement }}
+{{ indent }}                {{ statement }}
 {%- endfor %}
-            }
+{{ indent }}            }
 {%- else %}
-            {{ async_call.create() }}
+{{ indent }}            {{ async_call.create() }}
 {%- endif %}
-        },
-        poll = { future, contHandle -> Native.{{ async_call.poll() }}(future, contHandle) },
-        complete = { future ->
+{{ indent }}        },
+{{ indent }}        poll = { future, contHandle -> Native.{{ async_call.poll() }}(future, contHandle) },
+{{ indent }}        complete = { future ->
 {%- for statement in async_call.complete_body() %}
-            {{ statement }}
+{{ indent }}            {{ statement }}
 {%- endfor %}
-        },
-        free = { future -> Native.{{ async_call.free() }}(future) },
-        cancel = { future -> Native.{{ async_call.cancel() }}(future) },
-    )
+{{ indent }}        },
+{{ indent }}        free = { future -> Native.{{ async_call.free() }}(future) },
+{{ indent }}        cancel = { future -> Native.{{ async_call.cancel() }}(future) },
+{{ indent }}    )
 {%- else %}
-{%- for statement in function.setup() %}
-    {{ statement }}
+{%- for statement in call.setup() %}
+{{ indent }}    {{ statement }}
 {%- endfor %}
-{%- if function.has_cleanup() %}
-    try {
-{%- for statement in function.call() %}
-        {{ statement }}
+{%- if call.has_cleanup() %}
+{{ indent }}    try {
+{%- for statement in call.call() %}
+{{ indent }}        {{ statement }}
 {%- endfor %}
-    } finally {
-{%- for statement in function.cleanup() %}
-        {{ statement }}
+{{ indent }}    } finally {
+{%- for statement in call.cleanup() %}
+{{ indent }}        {{ statement }}
 {%- endfor %}
-    }
+{{ indent }}    }
 {%- else %}
-{%- for statement in function.call() %}
-    {{ statement }}
+{%- for statement in call.call() %}
+{{ indent }}    {{ statement }}
 {%- endfor %}
 {%- endif %}
 {%- endif %}
-}
+{{ indent }}}
+{%- endmacro -%}
+{% call exported_call(function, "") %}{% endcall %}

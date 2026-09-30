@@ -163,7 +163,7 @@ prepare_selected_platforms
 for selected_platform in "${selected_platforms[@]}"; do
     case "$selected_platform" in
         apple)
-            run_step "pack apple" run_boltffi pack apple --release
+            run_step "pack apple" run_boltffi --cargo-arg=--features --cargo-arg=async-initializers pack apple --release
             run_step "swift test" swift test --package-path "$apple_dir"
             run_step "xcodebuild xcframework modulemap smoke" bash "$apple_dir/verify-xcframework-modulemap-collision.sh"
             run_step "xcodebuild static library symbolication" bash "$apple_dir/verify-static-library-symbolication.sh"

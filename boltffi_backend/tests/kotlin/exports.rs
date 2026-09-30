@@ -1,4 +1,9 @@
-use std::{env, fs, process::Command, time::UNIX_EPOCH};
+use std::{
+    env, fs,
+    path::{Path, PathBuf},
+    process::Command,
+    time::UNIX_EPOCH,
+};
 
 use boltffi_backend::{
     Error,
@@ -139,25 +144,54 @@ fn kotlin_target_overrides_exception_messages() {
     insta::assert_snapshot!(rendered_fixture("enums/error_message"));
 }
 
-#[test]
-fn kotlin_exception_messages_compile_and_preserve_payloads() {
+fn kotlin_compiler() -> Option<PathBuf> {
     let compiler = if cfg!(windows) {
         "kotlinc.bat"
     } else {
         "kotlinc"
     };
-    if Command::new(compiler).arg("-version").output().is_err() {
-        eprintln!("Kotlin compiler is unavailable; exception runtime coverage runs in the demo");
-        return;
-    }
+    env::split_paths(&env::var_os("PATH")?)
+        .find_map(|directory| directory.join(compiler).canonicalize().ok())
+        .filter(|compiler| {
+            Command::new(compiler)
+                .arg("-version")
+                .output()
+                .is_ok_and(|output| output.status.success())
+        })
+}
 
+fn run_with_generated_kotlin(
+    compiler: &Path,
+    label: &str,
+    files: Vec<(String, String)>,
+    caller_file: &str,
+    caller: &str,
+) {
+    let kotlin_home = env::var_os("KOTLIN_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            compiler
+                .parent()
+                .and_then(Path::parent)
+                .expect("Kotlin compiler installation directory")
+                .to_path_buf()
+        });
+    let coroutines = ["lib", "libexec/lib"]
+        .into_iter()
+        .map(|directory| {
+            kotlin_home
+                .join(directory)
+                .join("kotlinx-coroutines-core-jvm.jar")
+        })
+        .find(|path| path.is_file())
+        .expect("Kotlin installation must include kotlinx-coroutines-core-jvm.jar");
     let directory = env::temp_dir().join(format!(
-        "boltffi-kotlin-error-messages-{}-{}",
+        "boltffi-kotlin-{label}-{}-{}",
         std::process::id(),
         UNIX_EPOCH.elapsed().expect("system clock").as_nanos()
     ));
     fs::create_dir_all(&directory).expect("create Kotlin test directory");
-    let source_paths = super::files(&fixture("enums/error_message"))
+    let source_paths = files
         .into_iter()
         .filter(|(path, _)| path.ends_with(".kt"))
         .map(|(path, source)| {
@@ -168,16 +202,14 @@ fn kotlin_exception_messages_compile_and_preserve_payloads() {
             path
         })
         .collect::<Vec<_>>();
-    let assertions = directory.join("ErrorMessages.kt");
-    fs::write(
-        &assertions,
-        include_str!("../fixtures/kotlin/error_messages.kt"),
-    )
-    .expect("write Kotlin assertions");
-    let jar = directory.join("errors.jar");
+    let caller_path = directory.join(caller_file);
+    fs::write(&caller_path, caller).expect("write Kotlin caller");
+    let jar = directory.join(format!("{label}.jar"));
     let compilation = Command::new(compiler)
+        .arg("-classpath")
+        .arg(&coroutines)
         .args(&source_paths)
-        .arg(assertions)
+        .arg(caller_path)
         .args(["-include-runtime", "-d"])
         .arg(&jar)
         .output()
@@ -189,18 +221,42 @@ fn kotlin_exception_messages_compile_and_preserve_payloads() {
         String::from_utf8_lossy(&compilation.stdout),
         String::from_utf8_lossy(&compilation.stderr)
     );
+    let main_class = format!(
+        "com.boltffi.demo.{}Kt",
+        Path::new(caller_file)
+            .file_stem()
+            .and_then(|name| name.to_str())
+            .expect("Kotlin caller file name")
+    );
     let execution = Command::new("java")
-        .arg("-jar")
-        .arg(jar)
+        .arg("-classpath")
+        .arg(env::join_paths([&jar, &coroutines]).expect("Kotlin runtime classpath"))
+        .arg(main_class)
         .output()
-        .expect("run Kotlin assertions");
+        .expect("run Kotlin caller");
     assert!(
         execution.status.success(),
-        "Kotlin exception assertions failed:\n{}\n{}",
+        "Kotlin {label} assertions failed:\n{}\n{}",
         String::from_utf8_lossy(&execution.stdout),
         String::from_utf8_lossy(&execution.stderr)
     );
     fs::remove_dir_all(directory).expect("remove Kotlin test directory");
+}
+
+#[test]
+fn kotlin_exception_messages_compile_and_preserve_payloads() {
+    let Some(compiler) = kotlin_compiler() else {
+        eprintln!("Kotlin compiler is unavailable; exception runtime coverage runs in the demo");
+        return;
+    };
+
+    run_with_generated_kotlin(
+        &compiler,
+        "error-messages",
+        super::files(&fixture("enums/error_message")),
+        "ErrorMessages.kt",
+        include_str!("../fixtures/kotlin/error_messages.kt"),
+    );
 }
 
 #[test]
@@ -530,4 +586,117 @@ fn kotlin_target_uses_configured_c_header_in_jni_bridge() {
     assert!(!jni_source.contains("#include \"boltffi.h\""));
 
     insta::assert_snapshot!(rendered_files(&files));
+}
+
+#[test]
+fn kotlin_target_renders_parameter_defaults_as_default_arguments() {
+    let rendered = rendered_fixture("exports/parameter_defaults");
+
+    assert!(rendered.contains("fun greet(name: String, greeting: String = \"world\", times: UInt = 3.toUInt(), offset: Long = -1, shout: Boolean = true, ratio: Float = 0.5f, mode: Mode = Mode.SLOW, suffix: String? = null, limit: UShort? = 7.toUShort()): String"));
+    assert!(rendered.contains("constructor(port: UShort = 8080.toUShort())"));
+    assert!(rendered.contains("private fun new(port: UShort): Server"));
+    assert!(!rendered.contains("fun new(port: UShort ="));
+    assert!(rendered.contains(
+        "suspend fun start(port: UShort, first: Handler? = null, second: Handler? = null)"
+    ));
+    assert!(rendered.contains("fun port(mapped: Boolean = false)"));
+    assert!(rendered.contains("val value: Int = 3"));
+    assert!(!rendered.contains("fun new(value: Int"));
+    assert!(rendered.contains("fun withValue(value: Int = 5): NamedAmount"));
+    assert!(!rendered.contains("external fun boltffi_greet(name: String, greeting: String ="));
+
+    insta::assert_snapshot!(rendered);
+}
+
+#[test]
+fn kotlin_companion_factory_style_preserves_parameter_defaults() {
+    let host = KotlinHost::new("com.boltffi.demo", "Demo")
+        .expect("Kotlin host")
+        .factory_style(KotlinFactoryStyle::CompanionMethods);
+    let rendered = rendered_fixture_with_host("exports/parameter_defaults", host);
+
+    assert!(rendered.contains("fun new(port: UShort = 8080.toUShort()): Server"));
+    assert!(!rendered.contains("constructor(port: UShort"));
+    assert!(!rendered.contains("private fun new"));
+}
+
+#[test]
+fn kotlin_defaults_use_mapped_custom_types() {
+    let host = KotlinHost::new("com.boltffi.demo", "Demo")
+        .expect("Kotlin host")
+        .custom_mapping("Email", KotlinCustomMapping::url_string("URI"))
+        .custom_mapping("Identifier", KotlinCustomMapping::uuid_string("UUID"));
+    let rendered = rendered_fixture_with_host("exports/parameter_defaults", host);
+
+    assert!(
+        rendered.contains("email: java.net.URI = java.net.URI.create(\"mailto:ada@example.com\")")
+    );
+    assert!(
+        rendered.contains("email: java.net.URI? = java.net.URI.create(\"mailto:ada@example.com\")")
+    );
+    assert!(rendered.contains("optionalEmail: java.net.URI? = null"));
+    assert!(rendered.contains("identifier: java.util.UUID = java.util.UUID.fromString(\"01234567-89ab-cdef-0123-456789abcdef\")"));
+}
+
+#[test]
+fn kotlin_target_keeps_a_long_initializer_off_the_handle_constructor_signature() {
+    let rendered = rendered_fixture("exports/long_initializer");
+
+    // `constructor(balance: Long)` would clash with `internal constructor(handle: Long)`
+    assert!(rendered.contains("class Ledger internal constructor(internal val handle: Long)"));
+    assert!(!rendered.contains("constructor(balance: Long)"));
+    assert!(rendered.contains("fun new(balance: Long): Ledger"));
+    // so would `constructor(count: ULong)`: both take a JVM `long`
+    assert!(rendered.contains("class Tally internal constructor(internal val handle: Long)"));
+    assert!(!rendered.contains("constructor(count: ULong)"));
+    assert!(rendered.contains("fun new(count: ULong): Tally"));
+}
+
+#[test]
+fn kotlin_target_writes_integer_limit_defaults_as_literals_kotlin_accepts() {
+    let rendered = rendered_fixture("exports/parameter_defaults");
+
+    assert!(rendered.contains("val floor: Long = Long.MIN_VALUE"));
+    assert!(rendered.contains("val ceiling: ULong = 18446744073709551615uL"));
+    assert!(rendered.contains("val start: Long = Long.MIN_VALUE,"));
+    assert!(rendered.contains("val end: ULong = 18446744073709551615uL"));
+    assert!(rendered.contains(
+        "fun span(start: Long = Long.MIN_VALUE, end: ULong = 18446744073709551615uL): ULong"
+    ));
+}
+
+#[test]
+fn kotlin_target_defaults_a_custom_type_represented_as_an_option_to_null() {
+    let rendered = rendered_fixture("exports/parameter_defaults");
+
+    assert!(rendered.contains("val limit: UInt? = null"));
+    assert!(rendered.contains("fun throttle(limit: UInt? = null): UInt?"));
+}
+
+#[test]
+fn kotlin_generated_defaults_and_long_initializers_compile() {
+    let Some(compiler) = kotlin_compiler() else {
+        eprintln!("Kotlin compiler is unavailable; default-argument coverage runs in the demo");
+        return;
+    };
+
+    let source =
+        SourceFixture::many(["exports/parameter_defaults", "exports/long_initializer"]).read();
+    [
+        KotlinHost::new("com.boltffi.demo", "Demo").expect("Kotlin host"),
+        KotlinHost::new("com.boltffi.demo", "Demo")
+            .expect("Kotlin host")
+            .custom_mapping("Email", KotlinCustomMapping::url_string("URI"))
+            .custom_mapping("Identifier", KotlinCustomMapping::uuid_string("UUID")),
+    ]
+    .into_iter()
+    .for_each(|host| {
+        run_with_generated_kotlin(
+            &compiler,
+            "defaults",
+            files_with_host(&source, host),
+            "DefaultsAndInitializers.kt",
+            include_str!("../fixtures/kotlin/defaults_and_initializers.kt"),
+        );
+    });
 }

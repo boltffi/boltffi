@@ -17,6 +17,33 @@ import kotlin.test.assertTrue
 
 class DemoValueTypesTest {
     @Test
+    fun wrappedLengthPreservesUnitsAndValueSemantics() {
+        demoCase("case:custom_types.length.should_construct_in_meters")
+        val length = Length.new(2.5)
+        assertEquals(2.5, length.value)
+        demoCase("case:custom_types.length.should_convert_to_centimeters")
+        assertEquals(250.0, length.centimeters())
+
+        demoCase("case:custom_types.length.should_roundtrip_wrapper")
+        val returned = echoLength(length)
+        assertEquals(2.5, returned.value)
+        assertEquals(250.0, returned.centimeters())
+        assertEquals(-125.0, echoLength(Length(-1.25)).centimeters())
+
+        demoCase("case:custom_types.length.should_write_back_in_meters")
+        val updated = returned.setCentimeters(75.0)
+        assertEquals(0.75, updated.value)
+        assertEquals(75.0, updated.centimeters())
+        assertEquals(2.5, length.value)
+        assertEquals(250.0, length.centimeters())
+
+        demoCase("case:custom_types.length.should_roundtrip_nested_wrapper")
+        val fabric = echoFabric(Fabric(Length(1.25)))
+        assertEquals(1.25, fabric.length.value)
+        assertEquals(125.0, fabric.length.centimeters())
+    }
+
+    @Test
     fun builtinsAndCustomTypesRoundTrip() {
         val duration = Duration.ofSeconds(2).plusMillis(500)
         demoCase("case:builtins.duration.should_roundtrip_value")

@@ -26,6 +26,10 @@ impl DefaultExpression {
         if let TypeRef::Custom(custom_type) = ty {
             return Self::custom(*custom_type, value, context);
         }
+        // a present value of an `Option<T>` is spelled as the `T` it holds
+        if let (TypeRef::Optional(inner), false) = (ty, matches!(value, DefaultValue::Null)) {
+            return Self::render(inner, value, context);
+        }
 
         match value {
             DefaultValue::Bool(value) => Ok(Expression::bool(*value)),
@@ -69,7 +73,7 @@ impl DefaultExpression {
         value: &DefaultValue,
         context: &RenderContext<Native>,
     ) -> Result<Expression> {
-        match Representation::resolve(custom_type, context)? {
+        let representation = match Representation::resolve_ffi(custom_type, context)? {
             Representation::Transparent(representation) => {
                 Self::render(representation, value, context)
             }
@@ -87,6 +91,10 @@ impl DefaultExpression {
                     [value].into_iter().collect::<ArgumentList>(),
                 ))
             }
+        }?;
+        match context.custom_type_mapping(custom_type) {
+            Some(mapping) => KotlinHost::custom_type_decode(mapping, representation),
+            None => Ok(representation),
         }
     }
 

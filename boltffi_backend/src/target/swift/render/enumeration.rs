@@ -13,10 +13,7 @@ use crate::{
         name_style::Name,
         render::{
             AssociatedConstants, Documentation, SwiftType,
-            function::{
-                AssociatedFunction, AssociatedFunctions, Initializer, Receiver, ValueFunctions,
-                ValueType,
-            },
+            function::{AssociatedFunction, AssociatedFunctions, Initializer, Receiver, ValueType},
         },
         syntax::{Expression, Identifier, Statement, TypeName},
     },
@@ -186,10 +183,14 @@ impl Enumeration {
     }
 
     fn requires_async_runtime(&self) -> bool {
-        self.static_methods
+        self.initializers
             .iter()
-            .chain(self.instance_methods.iter())
-            .any(AssociatedFunction::requires_async_runtime)
+            .any(Initializer::requires_async_runtime)
+            || self
+                .static_methods
+                .iter()
+                .chain(self.instance_methods.iter())
+                .any(AssociatedFunction::requires_async_runtime)
     }
 
     fn from_c_style(
@@ -200,13 +201,15 @@ impl Enumeration {
         let (mut initializers, mut diagnostics) =
             Initializer::from_enum_declarations(enumeration.initializers(), bridge, context)?
                 .into_parts();
-        let (value_initializers, static_methods, static_diagnostics) = Self::value_methods(
-            enumeration.methods(),
-            ValueType::enumeration(enumeration.id()),
-            bridge,
-            context,
-        )?
-        .into_parts();
+        let (value_initializers, static_methods, static_diagnostics) =
+            AssociatedFunction::from_value_methods(
+                enumeration.methods(),
+                ValueType::enumeration(enumeration.id()),
+                initializers.iter().any(Initializer::accepts_empty_call),
+                bridge,
+                context,
+            )?
+            .into_parts();
         let (instance_methods, instance_diagnostics) = Self::methods(
             enumeration.methods(),
             Some(Receiver::direct()),
@@ -250,13 +253,15 @@ impl Enumeration {
         let (mut initializers, mut diagnostics) =
             Initializer::from_enum_declarations(enumeration.initializers(), bridge, context)?
                 .into_parts();
-        let (value_initializers, static_methods, static_diagnostics) = Self::value_methods(
-            enumeration.methods(),
-            ValueType::enumeration(enumeration.id()),
-            bridge,
-            context,
-        )?
-        .into_parts();
+        let (value_initializers, static_methods, static_diagnostics) =
+            AssociatedFunction::from_value_methods(
+                enumeration.methods(),
+                ValueType::enumeration(enumeration.id()),
+                initializers.iter().any(Initializer::accepts_empty_call),
+                bridge,
+                context,
+            )?
+            .into_parts();
         let (instance_methods, instance_diagnostics) = Self::methods(
             enumeration.methods(),
             Some(Receiver::encoded(
@@ -304,15 +309,6 @@ impl Enumeration {
         context: &RenderContext<Native>,
     ) -> Result<AssociatedFunctions> {
         AssociatedFunction::from_methods(methods, receiver, bridge, context)
-    }
-
-    fn value_methods(
-        methods: &[ExportedMethodDecl<Native, NativeSymbol>],
-        value_type: ValueType,
-        bridge: &CBridgeContract,
-        context: &RenderContext<Native>,
-    ) -> Result<ValueFunctions> {
-        AssociatedFunction::from_value_methods(methods, value_type, None, bridge, context)
     }
 }
 

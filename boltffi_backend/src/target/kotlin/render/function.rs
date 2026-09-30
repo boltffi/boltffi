@@ -1,7 +1,7 @@
 use askama::Template as AskamaTemplate;
 use boltffi_binding::{
-    CallbackId, ClassId, ClosureReturn, DirectValueType, DirectVectorElementType, Direction,
-    DocComment, EnumId, ErrorChannel, ErrorPlacement, ExecutionDecl, ExportedCallable,
+    CallbackId, ClassId, ClosureReturn, DefaultValue, DirectValueType, DirectVectorElementType,
+    Direction, DocComment, EnumId, ErrorChannel, ErrorPlacement, ExecutionDecl, ExportedCallable,
     FunctionDecl, HandlePresence, HandleTarget, IncomingParam, IntoRust, Native, NativeSymbol,
     OutOfRust, ParamDecl, ParamPlan, ParamPlanRender, Primitive, Receive, RecordId,
     ReturnPlanRender, ReturnValueSlot, Surface, TypeRef, native,
@@ -20,6 +20,7 @@ use crate::{
             callback::CallbackHandle,
             class::{ClassHandle, OwnedCallTemplate, OwnedClassArgument},
             closure::Closure,
+            default_value::DefaultExpression,
             direct_vector::DirectVector,
             enumeration::Enumeration,
             native::NativeCall,
@@ -78,6 +79,9 @@ pub struct ReceiverCarrier {
 pub struct ExportedParameter {
     owned_class: Option<OwnedClassArgument>,
     signature: signature::Parameter,
+    /// `#[boltffi::default(..)]` on the Rust parameter, as a Kotlin default
+    /// argument: callers may leave the parameter out.
+    default: Option<Expression>,
     native_arguments: Vec<Expression>,
     mutation: Option<ParameterMutation>,
     setup: Vec<Statement>,
@@ -576,6 +580,7 @@ impl ExportedParameter {
     ) -> Result<Self> {
         let source_name = Name::new(parameter.name());
         let name = source_name.parameter()?;
+        let default = Self::default_for(parameter, context)?;
         let (ty, native_argument) = match parameter.payload() {
             IncomingParam::Value(plan) => (
                 Self::type_name(plan, package, context)?,
@@ -595,6 +600,7 @@ impl ExportedParameter {
             native_arguments: native_argument.expressions,
             mutation: native_argument.mutation,
             signature: signature::Parameter::new(name, ty),
+            default,
             setup: native_argument.setup,
             cleanup: native_argument.cleanup,
         })
@@ -606,6 +612,40 @@ impl ExportedParameter {
 
     pub fn ty(&self) -> &TypeName {
         self.signature.ty()
+    }
+
+    pub fn has_default(&self) -> bool {
+        self.default.is_some()
+    }
+
+    /// `name: Type`, and ` = default` when the Rust parameter declares one:
+    /// the parameter as the exported call's signature spells it.
+    pub fn declaration(&self) -> String {
+        match &self.default {
+            Some(default) => format!("{}: {} = {default}", self.name(), self.ty()),
+            None => format!("{}: {}", self.name(), self.ty()),
+        }
+    }
+
+    /// The Kotlin spelling of the parameter's default, rendered against the
+    /// value type the parameter crosses as. A closure has none: its only
+    /// default is `null`, which lowering admits on an optional one alone.
+    fn default_for(
+        parameter: &ParamDecl<Native, IntoRust>,
+        context: &RenderContext<Native>,
+    ) -> Result<Option<Expression>> {
+        let Some(value) = parameter.meta().default() else {
+            return Ok(None);
+        };
+        let ty = match parameter.payload() {
+            IncomingParam::Value(plan) => plan.value_type(),
+            IncomingParam::Closure(_) if matches!(value, DefaultValue::Null) => {
+                return Ok(Some(Expression::null()));
+            }
+            IncomingParam::Closure(_) => None,
+        }
+        .ok_or_else(|| KotlinHost::unsupported("default value for this parameter type"))?;
+        DefaultExpression::render(&ty, value, context).map(Some)
     }
 
     fn native_arguments(&self) -> &[Expression] {

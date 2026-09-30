@@ -145,13 +145,22 @@ impl CodecSize for Sizer<'_, '_> {
     }
 
     fn optional(&mut self, value: &ValueRef, binder: BinderId, inner: Self::Expr) -> Self::Expr {
-        Ok(SizeExpression::new(format!(
-            "1 + ({} == null ? 0 : (() {{ final {} = {}!; return {}; }})())",
-            self.value(value)?,
-            binder_name(binder),
-            self.value(value)?,
-            inner?.source
-        )))
+        let value = self.value(value)?;
+        let binder = binder_name(binder);
+        let inner = inner?.source;
+        // Constant inner sizes never read the binder, so skip the unwrap
+        // local entirely. When it does, bind once into a fresh local —
+        // locals are always promotable, unlike non-final fields.
+        // Wrap the value expression: `a ?? b == null` would parse as
+        // `a ?? (b == null)`, so composite operands need parens.
+        let source = if inner.contains(&binder) {
+            format!(
+                "1 + (() {{ final {binder} = {value}; return {binder} == null ? 0 : {inner}; }})()"
+            )
+        } else {
+            format!("1 + (({value}) == null ? 0 : {inner})")
+        };
+        Ok(SizeExpression::new(source))
     }
 
     fn sequence(
@@ -161,12 +170,17 @@ impl CodecSize for Sizer<'_, '_> {
         binder: BinderId,
         element: Self::Expr,
     ) -> Self::Expr {
-        Ok(SizeExpression::new(format!(
-            "4 + {}.fold<int>(0, (_l$size, {}) => _l$size + {})",
-            self.value(value)?,
-            binder_name(binder),
-            element?.source
-        )))
+        let value = self.value(value)?;
+        let binder = binder_name(binder);
+        let element = element?.source;
+        // Wrap both operands: `v.length * 4 + 4` would mis-apply an
+        // additive element size, and `a ?? b.length` mis-parses too.
+        let source = if element.contains(&binder) {
+            format!("4 + ({value}).fold<int>(0, (_l$size, {binder}) => _l$size + {element})")
+        } else {
+            format!("4 + ({value}).length * ({element})")
+        };
+        Ok(SizeExpression::new(source))
     }
 
     fn tuple(&mut self, _: &ValueRef, elements: Vec<Self::Expr>) -> Self::Expr {
@@ -208,13 +222,28 @@ impl CodecSize for Sizer<'_, '_> {
         value_binder: BinderId,
         map_value: Self::Expr,
     ) -> Self::Expr {
-        Ok(SizeExpression::new(format!(
-            "4 + {}.entries.fold<int>(0, (_l$size, _l$entry) {{ final {} = _l$entry.key; final {} = _l$entry.value; return _l$size + {} + {}; }})",
-            self.value(value)?,
-            binder_name(key_binder),
-            binder_name(value_binder),
-            key?.source,
-            map_value?.source,
-        )))
+        let value = self.value(value)?;
+        let key_binder = binder_name(key_binder);
+        let value_binder = binder_name(value_binder);
+        let key = key?.source;
+        let map_value = map_value?.source;
+        let key_used = key.contains(&key_binder);
+        let value_used = map_value.contains(&value_binder);
+        let source = match (key_used, value_used) {
+            (false, false) => format!("4 + ({value}).length * ({key} + {map_value})"),
+            _ => {
+                let mut locals = String::new();
+                if key_used {
+                    locals.push_str(&format!("final {key_binder} = _l$entry.key; "));
+                }
+                if value_used {
+                    locals.push_str(&format!("final {value_binder} = _l$entry.value; "));
+                }
+                format!(
+                    "4 + ({value}).entries.fold<int>(0, (_l$size, _l$entry) {{ {locals}return _l$size + {key} + {map_value}; }})"
+                )
+            }
+        };
+        Ok(SizeExpression::new(source))
     }
 }

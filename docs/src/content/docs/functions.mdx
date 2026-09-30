@@ -411,6 +411,28 @@ DemoOptionU64 no_callback = {false, 0};
 demo_set_timeout(1000, no_callback);`}
 />
 
+### Default arguments
+
+Put `#[boltffi::default(...)]` on a parameter to give it a default. Kotlin renders it as a default argument, so callers may leave the parameter out or pass the ones they need by name. It takes the same values as [record field defaults](/docs/records#supported-default-values), and applies to free functions, methods, constructors and factories alike. `None` is accepted on `Option<T>` parameters only.
+
+```rust
+#[export]
+pub fn connect(
+    host: String,
+    #[boltffi::default(8080)] port: u16,
+    #[boltffi::default(None)] on_event: Option<Box<dyn EventListener>>,
+) -> Connection { /* ... */ }
+```
+
+```kotlin
+fun connect(host: String, port: UShort = 8080.toUShort(), onEvent: EventListener? = null): Connection
+
+connect("localhost")
+connect("localhost", onEvent = listener)
+```
+
+The other targets still take every argument, so pass the default value explicitly there. What crosses the FFI boundary is the same either way.
+
 ### Classes
 
 Functions can accept class instances as parameters. The class reference passes across the boundary without copying the object.

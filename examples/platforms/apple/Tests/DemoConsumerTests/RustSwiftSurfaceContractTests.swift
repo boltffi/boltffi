@@ -330,7 +330,10 @@ final class RustSwiftSurfaceContractTests: DemoTestCase {
             return nil
         }
 
+        // a parameter attribute such as `#[boltffi::default(10)]` is not a
+        // label, and its `::` would otherwise match as one
         return parameterList
+            .replacingOccurrences(of: #"#\[[^\]]*\]"#, with: "", options: .regularExpression)
             .captures(pattern: #"([A-Za-z0-9_]+)\s*:"#)
             .compactMap { $0.first }
             .first(where: { $0 != "self" })
@@ -584,6 +587,7 @@ private let rustToSwiftCoverageFile: [String: String] = [
     "classes/unsafe_single_threaded.rs": "classes/UnsafeSingleThreadedTests.swift",
     "collections/mod.rs": "collections/CollectionsTests.swift",
     "custom_types/mod.rs": "custom_types/CustomTypesTests.swift",
+    "custom_types/length.rs": "custom_types/CustomTypesTests.swift",
     "enums/c_style.rs": "enums/CStyleEnumsTests.swift",
     "enums/complex_variants.rs": "enums/ComplexVariantsEnumsTests.swift",
     "enums/data_enum.rs": "enums/DataEnumTests.swift",
@@ -591,6 +595,7 @@ private let rustToSwiftCoverageFile: [String: String] = [
     "multicrate/mod.rs": "multicrate/MultiCrateTests.swift",
     "options/complex.rs": "options/ComplexOptionsTests.swift",
     "options/primitives.rs": "options/PrimitivesOptionsTests.swift",
+    "primitives/default_arguments.rs": "primitives/DefaultArgumentsTests.swift",
     "primitives/scalars.rs": "primitives/ScalarsTests.swift",
     "primitives/strings.rs": "primitives/StringsTests.swift",
     "primitives/vecs.rs": "primitives/VecsTests.swift",

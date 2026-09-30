@@ -36,8 +36,8 @@
 {%- endfor %}
 {%- for initializer in record.initializers() %}
 
-{{ initializer.documentation() }}{% if initializer.factory() %}    public static func {{ initializer.name() }}({{ initializer.parameter_list() }}){{ initializer.throwing_keyword() }} -> {{ initializer.factory_return() }} {
-{% else %}    public init{{ initializer.failable_marker() }}({{ initializer.parameter_list() }}){{ initializer.throwing_keyword() }} {
+{{ initializer.documentation() }}{% if initializer.factory() %}    public static func {{ initializer.name() }}({{ initializer.parameter_list() }}){{ initializer.effect_keywords() }} -> {{ initializer.factory_return() }} {
+{% else %}    public init{{ initializer.failable_marker() }}({{ initializer.parameter_list() }}){{ initializer.effect_keywords() }} {
 {% endif -%}
 {{ initializer.body() }}
     }

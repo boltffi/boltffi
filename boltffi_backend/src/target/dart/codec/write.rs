@@ -99,9 +99,9 @@ impl CodecWrite for Writer<'_, '_> {
 
     fn direct_record(&mut self, _: RecordId, value: &ValueRef) -> Vec<Self::Stmt> {
         vec![
-            self.scope
-                .value(value)
-                .map(|value| WriteStatement::new(format!("{value}._m$wireEncode({});", self.name))),
+            self.scope.value(value).map(|value| {
+                WriteStatement::new(format!("({value})._m$wireEncode({});", self.name))
+            }),
         ]
     }
 
@@ -113,7 +113,7 @@ impl CodecWrite for Writer<'_, '_> {
         vec![self.scope.value(value).and_then(|value| {
             let representation = CStyleEnumRepresentation::resolve(id, self.context)?;
             Ok(WriteStatement::new(format!(
-                "{}.{}({value}.value);",
+                "{}.{}(({value}).value);",
                 self.name,
                 representation.write_method()
             )))
@@ -122,9 +122,9 @@ impl CodecWrite for Writer<'_, '_> {
 
     fn data_enum(&mut self, _: EnumId, value: &ValueRef) -> Vec<Self::Stmt> {
         vec![
-            self.scope
-                .value(value)
-                .map(|value| WriteStatement::new(format!("{value}._m$wireEncode({});", self.name))),
+            self.scope.value(value).map(|value| {
+                WriteStatement::new(format!("({value})._m$wireEncode({});", self.name))
+            }),
         ]
     }
 
@@ -167,22 +167,32 @@ impl CodecWrite for Writer<'_, '_> {
         inner: Vec<Self::Stmt>,
     ) -> Vec<Self::Stmt> {
         vec![self.scope.value(value).and_then(|value| {
-            Ok(WriteStatement::new(format!(
-                "if ({value} == null) {{\n  {}.writeU8(0);\n}} else {{\n  {}.writeU8(1);\n  final {} = {value}!;\n{}\n}}",
-                self.name,
-                self.name,
-                binder_name(binder),
-                indent(
-                    inner
-                        .into_iter()
-                        .collect::<Result<Vec<_>>>()?
-                        .into_iter()
-                        .map(WriteStatement::into_source)
-                        .collect::<Vec<_>>()
-                        .join("\n"),
-                    2
-                ),
-            )))
+            let binder = binder_name(binder);
+            let inner = indent(
+                inner
+                    .into_iter()
+                    .collect::<Result<Vec<_>>>()?
+                    .into_iter()
+                    .map(WriteStatement::into_source)
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+                2,
+            );
+            // A null-check pattern binds the payload into a fresh local
+            // scoped to the `if` — non-final fields don't promote, sibling
+            // optionals share the binder name safely, and no `!` is needed.
+            // Skip the pattern when the payload never reads the binder.
+            if inner.contains(&binder) {
+                Ok(WriteStatement::new(format!(
+                    "if ({value} case final {binder}?) {{\n  {}.writeU8(1);\n{inner}\n}} else {{\n  {}.writeU8(0);\n}}",
+                    self.name, self.name,
+                )))
+            } else {
+                Ok(WriteStatement::new(format!(
+                    "if (({value}) == null) {{\n  {}.writeU8(0);\n}} else {{\n  {}.writeU8(1);\n{inner}\n}}",
+                    self.name, self.name,
+                )))
+            }
         })]
     }
 
@@ -195,7 +205,7 @@ impl CodecWrite for Writer<'_, '_> {
     ) -> Vec<Self::Stmt> {
         vec![self.scope.value(value).and_then(|value| {
             Ok(WriteStatement::new(format!(
-                "{}.writeU32({value}.length);\nfor (final {} in {value}) {{\n{}\n}}",
+                "{}.writeU32(({value}).length);\nfor (final {} in {value}) {{\n{}\n}}",
                 self.name,
                 binder_name(binder),
                 indent(
@@ -260,7 +270,7 @@ impl CodecWrite for Writer<'_, '_> {
     ) -> Vec<Self::Stmt> {
         vec![self.scope.value(value).and_then(|value| {
             Ok(WriteStatement::new(format!(
-                "{}.writeU32({value}.length);\nfor (final _l$entry in {value}.entries) {{\n  final {} = _l$entry.key;\n  final {} = _l$entry.value;\n{}\n{}\n}}",
+                "{}.writeU32(({value}).length);\nfor (final _l$entry in ({value}).entries) {{\n  final {} = _l$entry.key;\n  final {} = _l$entry.value;\n{}\n{}\n}}",
                 self.name,
                 binder_name(key_binder),
                 binder_name(value_binder),

@@ -5,11 +5,12 @@ edition = "2024"
 
 [features]
 default = []
+async-initializers = []
 c-demo = []
 csharp-demo = []
 uniffi = ["dep:uniffi"]
 wasm-bench = ["dep:serde", "dep:serde-wasm-bindgen", "dep:wasm-bindgen", "dep:wasm-bindgen-futures"]
-wasm-interop = ["dep:wasm-bindgen", "dep:wasm-bindgen-futures", "dep:js-sys", "dep:futures-channel", "uuid/v4", "uuid/v7", "uuid/js", "chrono/clock", "chrono/wasmbind"]
+wasm-interop = ["async-initializers", "dep:wasm-bindgen", "dep:wasm-bindgen-futures", "dep:js-sys", "dep:futures-channel", "uuid/v4", "uuid/v7", "uuid/js", "chrono/clock", "chrono/wasmbind"]
 
 [lib]
 crate-type = ["staticlib", "cdylib", "rlib"]
@@ -32,6 +33,7 @@ serde-wasm-bindgen = { version = "0.6.5", optional = true }
 uniffi = { version = "0.31", optional = true }
 uuid = "1"
 url = "2"
+uom = { version = "0.38", default-features = false, features = ["f64", "si", "std"] }
 wasm-bindgen = { version = "0.2.108", optional = true }
 wasm-bindgen-futures = { version = "0.4.48", optional = true }
 js-sys = { version = "0.3", optional = true }
