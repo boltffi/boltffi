@@ -1,14 +1,11 @@
 use askama::Template as AskamaTemplate;
-use boltffi_binding::{
-    CStyleEnumDecl, ConstantDecl, ConstantOwner, ConstantValueDecl, DeclarationRef, DefaultValue,
-    EnumDecl, IntegerRepr, TypeRef, Wasm32,
-};
+use boltffi_binding::{ConstantDecl, ConstantOwner, ConstantValueDecl, DeclarationRef, Wasm32};
 
 use crate::core::{Emitted, Error, RenderContext, RenderedDeclaration, Result};
 
 use super::super::{
     name_style::Name,
-    syntax::{Expression, Identifier, IntegerLiteral, TypeName},
+    syntax::{Expression, Identifier, TypeName},
 };
 use super::{DefaultExpression, Function, Type};
 
@@ -67,7 +64,7 @@ impl Constant {
                 name,
                 body: Body::Inline(Inline {
                     ty: Type::from_ref(ty, context)?,
-                    value: Self::default_value(declaration, ty, value, context)?,
+                    value: DefaultExpression::render(ty, value, context)?,
                 }),
             }),
             ConstantValueDecl::Accessor { symbol, callable } => {
@@ -113,41 +110,6 @@ impl Constant {
             })
             .collect::<Result<Vec<_>>>()
             .map(|initializers| initializers.concat())
-    }
-
-    fn default_value(
-        declaration: &ConstantDecl<Wasm32>,
-        ty: &TypeRef,
-        value: &DefaultValue,
-        context: &RenderContext<Wasm32>,
-    ) -> Result<Expression> {
-        if let (
-            Some(ConstantOwner::Enum(owner)),
-            TypeRef::Enum(type_id),
-            DefaultValue::EnumVariant { variant_name, .. },
-        ) = (declaration.owner(), ty, value)
-            && owner == *type_id
-            && let Some(EnumDecl::CStyle(enumeration)) = context.enumeration(owner)
-        {
-            return Self::c_style_variant(enumeration, variant_name);
-        }
-        DefaultExpression::render(ty, value, context)
-    }
-
-    fn c_style_variant(
-        enumeration: &CStyleEnumDecl<Wasm32>,
-        variant_name: &boltffi_binding::CanonicalName,
-    ) -> Result<Expression> {
-        let discriminant = enumeration
-            .variants()
-            .iter()
-            .find(|variant| variant.name() == variant_name)
-            .map(|variant| variant.discriminant().get())
-            .ok_or_else(|| Self::unsupported("associated enum constant variant"))?;
-        Ok(Expression::integer_literal(match enumeration.repr() {
-            IntegerRepr::I64 | IntegerRepr::U64 => IntegerLiteral::bigint(discriminant),
-            _ => IntegerLiteral::number(discriminant),
-        }))
     }
 
     fn body(&self) -> &Body {

@@ -1,68 +1,116 @@
 import { assert, demo } from "../support/index.mjs";
 
-// TypeScript renders no parameter defaults yet (the demo cases exclude it), so
-// every argument is passed here; the values match the Rust defaults.
 export async function run() {
-  assert.equal(demo.repeatGreeting("ada", "hello", 2, false), "hello ada, hello ada");
-  assert.equal(demo.describeLimit(null, 7), "none:7");
+  globalThis.demoCase("case:primitives.default_arguments.should_apply_omitted_scalar_and_string_defaults");
+  assert.equal(demo.repeatGreeting("ada"), "hello ada, hello ada");
+  assert.equal(demo.repeatGreeting("ada", undefined, undefined, true), "HELLO ADA, HELLO ADA");
+  assert.equal(demo.repeatGreeting("ada", "hi", 1, false), "hi ada");
+  assert.equal(demo.repeatGreeting("ada", "", 0, false), "");
+
+  globalThis.demoCase("case:primitives.default_arguments.should_apply_none_and_value_defaults_to_optionals");
+  assert.equal(demo.describeLimit(), "none:7");
+  assert.equal(demo.describeLimit("daily"), "daily:7");
+  assert.equal(demo.describeLimit(undefined, null), "none:unlimited");
+  assert.equal(demo.describeLimit("", 0), ":0");
+
+  globalThis.demoCase("case:primitives.default_arguments.should_default_an_optional_callback_to_none");
+  assert.equal(demo.applyOptionalCallback(21), 21);
   assert.equal(demo.applyOptionalCallback(21, null), 21);
   assert.equal(demo.applyOptionalCallback(21, { onValue: (value) => value * 2 }), 42);
 
-  const counter = demo.DefaultedCounter.new(10);
+  globalThis.demoCase("case:primitives.default_arguments.defaulted_counter.should_apply_constructor_and_method_defaults");
+  const counter = demo.DefaultedCounter.new();
   try {
-    assert.equal(counter.offset(1), 11);
-    assert.equal(await counter.asyncOffset(3), 13);
+    assert.equal(counter.offset(), 11);
+    assert.equal(counter.offset(3), 13);
+    assert.equal(counter.offset(0), 10);
   } finally {
     counter.dispose();
   }
 
-  const offsetCounter = demo.DefaultedCounter.withOffset(20, 3);
+  const explicitCounter = demo.DefaultedCounter.new(5);
   try {
-    assert.equal(offsetCounter.offset(1), 24);
+    assert.equal(explicitCounter.offset(3), 8);
+  } finally {
+    explicitCounter.dispose();
+  }
+
+  const offsetCounter = demo.DefaultedCounter.withOffset(undefined, 3);
+  try {
+    assert.equal(offsetCounter.offset(), 24);
   } finally {
     offsetCounter.dispose();
   }
 
-  const textCounter = demo.DefaultedCounter.fromText("40");
+  const textCounter = demo.DefaultedCounter.fromText();
   try {
-    assert.equal(textCounter.offset(1), 41);
+    assert.equal(textCounter.offset(), 41);
   } finally {
     textCounter.dispose();
   }
 
-  const started = await demo.DefaultedCounter.start(30, null, { onValue: (value) => value * 2 });
+  assert.deepEqual(
+    demo.DefaultedCounter.integerLimits(),
+    { lower: -9223372036854775808n, upper: 18446744073709551615n },
+  );
+
+  globalThis.demoCase("case:primitives.default_arguments.should_apply_async_defaults");
+  const started = await demo.DefaultedCounter.start();
   try {
-    assert.equal(started.offset(1), 61);
+    assert.equal(await started.asyncOffset(), 33);
+    assert.equal(await started.asyncOffset(0), 30);
   } finally {
     started.dispose();
   }
 
-  assert.deepEqual(
-    demo.DefaultedCounter.integerLimits(-9223372036854775808n, 18446744073709551615n),
-    { lower: -9223372036854775808n, upper: 18446744073709551615n },
-  );
-  assert.equal(demo.scaleDefault(0.5, 1.5, demo.DefaultMode.Quiet), 0.75);
-  assert.equal(demo.scaleDefault(2, 4, demo.DefaultMode.Loud), 16);
-  assert.equal(demo.scaleDefault(0.5, null, demo.DefaultMode.Quiet), 0.5);
-  assert.equal(demo.defaultFloatBits(-0), 0x80000000);
-  assert.equal(demo.defaultDoubleBits(-0), 0x8000000000000000n);
-  assert.equal(demo.DefaultMode.matches(demo.DefaultMode.Quiet, demo.DefaultMode.Quiet), true);
-  assert.equal(demo.DefaultMode.matches(demo.DefaultMode.Loud, demo.DefaultMode.Quiet), false);
-  assert.equal(await demo.DefaultMode.load(demo.DefaultMode.Loud), demo.DefaultMode.Loud);
-  assert.equal(await demo.asyncDefault(9), 9);
+  const callbackCounter = await demo.DefaultedCounter.start(undefined, undefined, { onValue: (value) => value * 2 });
+  try {
+    assert.equal(callbackCounter.offset(), 61);
+  } finally {
+    callbackCounter.dispose();
+  }
+
+  assert.equal(await demo.asyncDefault(), 9);
+  assert.equal(await demo.asyncDefault(undefined, { signal: new AbortController().signal }), 9);
+  await assert.rejects(demo.asyncDefault(undefined, { signal: AbortSignal.abort() }), { name: "BoltFFICancelledError" });
+  assert.equal(await demo.asyncDefault(0), 0);
   assert.equal(await demo.asyncDefault(0x80000000), 0x80000000);
   assert.equal(await demo.asyncDefault(0xffffffff), 0xffffffff);
-  assert.equal(demo.DefaultAmount.offset({ value: 3 }, 2), 5);
-  assert.deepEqual(demo.DefaultAmount.withScaledValue(2), { value: 4 });
-  assert.deepEqual(demo.DefaultAmount.tryScaledValue(2), { value: 4 });
+
+  globalThis.demoCase("case:primitives.default_arguments.should_apply_float_and_enum_defaults");
+  assert.equal(demo.scaleDefault(), 0.75);
+  assert.equal(demo.scaleDefault(2, 4, demo.DefaultMode.Loud), 16);
+  assert.equal(demo.scaleDefault(undefined, null), 0.5);
+  assert.equal(demo.defaultFloatBits(), 0x80000000);
+  assert.equal(demo.defaultFloatBits(0), 0);
+  assert.equal(demo.defaultDoubleBits(), 0x8000000000000000n);
+  assert.equal(demo.defaultDoubleBits(0), 0n);
+  assert.equal(demo.DefaultMode.matches(demo.DefaultMode.Quiet), true);
+  assert.equal(demo.DefaultMode.matches(demo.DefaultMode.Loud), false);
+  assert.equal(demo.DefaultMode.matches(demo.DefaultMode.Loud, demo.DefaultMode.Loud), true);
+  assert.equal(await demo.DefaultMode.load(), demo.DefaultMode.Quiet);
+  assert.equal(await demo.DefaultMode.load(demo.DefaultMode.Loud), demo.DefaultMode.Loud);
+
+  globalThis.demoCase("case:primitives.default_arguments.should_apply_record_defaults");
+  assert.equal(demo.DefaultAmount.offset({}), 5);
+  assert.equal(demo.DefaultAmount.offset({ value: 4 }, 3), 7);
+  assert.deepEqual(demo.DefaultAmount.withScaledValue(), { value: 4 });
+  assert.deepEqual(demo.DefaultAmount.withScaledValue(3), { value: 6 });
+  assert.deepEqual(demo.DefaultAmount.tryScaledValue(), { value: 4 });
   assert.equal(demo.DefaultAmount.tryScaledValue(-1), null);
-  assert.deepEqual(demo.NamedAmount.withValue(5), { value: 5 });
-  assert.deepEqual(await demo.NamedAmount.load(6), { value: 6 });
-  assert.equal(demo.defaultLimit(null), null);
+  assert.deepEqual(demo.NamedAmount.withValue(), { value: 5 });
+  assert.deepEqual(demo.NamedAmount.withValue(8), { value: 8 });
+  assert.deepEqual(await demo.NamedAmount.load(), { value: 6 });
+  assert.deepEqual(await demo.NamedAmount.load(8), { value: 8 });
+
+  globalThis.demoCase("case:primitives.default_arguments.should_apply_custom_type_defaults");
+  assert.equal(demo.defaultLimit(), null);
   assert.equal(demo.defaultLimit(7), 7);
-  assert.equal(demo.defaultTimeoutSeconds({ seconds: 1.5 }), 1.5);
+  assert.equal(demo.defaultTimeoutSeconds(), 1.5);
   assert.equal(demo.defaultTimeoutSeconds({ seconds: 2.5 }), 2.5);
-  assert.equal(demo.defaultEmail("mailto:ada@example.com"), "mailto:ada@example.com");
-  assert.equal(demo.defaultOptionalEmail("mailto:ada@example.com"), "mailto:ada@example.com");
+  assert.equal(demo.defaultEmail(), "mailto:ada@example.com");
+  assert.equal(demo.defaultEmail("mailto:grace@example.com"), "mailto:grace@example.com");
+  assert.equal(demo.defaultOptionalEmail(), "mailto:ada@example.com");
+  assert.equal(demo.defaultOptionalEmail("mailto:grace@example.com"), "mailto:grace@example.com");
   assert.equal(demo.defaultOptionalEmail(null), null);
 }

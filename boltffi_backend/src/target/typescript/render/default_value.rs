@@ -1,4 +1,6 @@
-use boltffi_binding::{CustomTypeId, DefaultValue, EnumDecl, Primitive, TypeRef, Wasm32};
+use boltffi_binding::{
+    CustomTypeId, DefaultValue, EnumDecl, IntegerRepr, Primitive, TypeRef, Wasm32,
+};
 
 use crate::core::{
     Error, RenderContext, Result,
@@ -41,17 +43,22 @@ impl DefaultExpression {
             )),
             DefaultValue::Float(value) => Ok(Expression::floating(value.to_f64())),
             DefaultValue::String(value) => Ok(Expression::string(StringLiteral::new(value))),
-            DefaultValue::EnumVariant {
-                enum_name,
-                variant_name,
-            } => match ty {
+            DefaultValue::EnumVariant { variant_name, .. } => match ty {
                 TypeRef::Enum(id) => match context.enumeration(*id) {
-                    Some(EnumDecl::CStyle(_)) => Ok(Expression::property(
-                        Expression::identifier(Identifier::parse(
-                            Name::new(enum_name).type_name().to_string(),
-                        )?),
-                        Name::new(variant_name).variant_identifier()?,
-                    )),
+                    Some(EnumDecl::CStyle(enumeration)) => {
+                        let discriminant = enumeration
+                            .variants()
+                            .iter()
+                            .find(|variant| variant.name() == variant_name)
+                            .map(|variant| variant.discriminant().get())
+                            .ok_or_else(|| Self::unsupported("default enum variant"))?;
+                        Ok(Expression::integer_literal(match enumeration.repr() {
+                            IntegerRepr::I64 | IntegerRepr::U64 => {
+                                IntegerLiteral::bigint(discriminant)
+                            }
+                            _ => IntegerLiteral::number(discriminant),
+                        }))
+                    }
                     Some(EnumDecl::Data(_)) => Ok(Expression::object([(
                         PropertyKey::Named(Identifier::known("tag")),
                         Expression::string(StringLiteral::new(

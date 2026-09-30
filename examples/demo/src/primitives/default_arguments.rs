@@ -10,10 +10,9 @@ use crate::custom_types::Email;
 #[demo_bench_macros::demo_case(
     "primitives.default_arguments.should_apply_omitted_scalar_and_string_defaults",
     justification = "A parameter's `#[boltffi::default(..)]` becomes a default argument, so a caller may leave trailing and named parameters out.",
-    directions = "Call `primitives::default_arguments::repeat_greeting` with only a name and assert it uses the default greeting, count and case; then pass only `shout` by name and assert the other defaults still apply.",
+    directions = "Call `primitives::default_arguments::repeat_greeting` with only a name and assert it uses the default greeting, count and case; then supply only `shout`, using `undefined` for skipped positional arguments where needed, and assert the other defaults still apply.",
     exclude(java, reason = ExclusionReason::ImplementationGap, details = "The Java backend renders parameters without their Rust defaults, so every argument is required."),
     exclude(csharp, reason = ExclusionReason::ImplementationGap, details = "The C# backend renders parameters without their Rust defaults, so every argument is required."),
-    exclude(typescript, reason = ExclusionReason::ImplementationGap, details = "The TypeScript backend renders parameters without their Rust defaults, so every argument is required."),
     exclude(python, reason = ExclusionReason::ImplementationGap, details = "The Python extension parses positional arguments only and requires all of them."),
     exclude(dart, reason = ExclusionReason::ImplementationGap, details = "The Dart backend renders parameters without their Rust defaults, so every argument is required."),
     exclude(c, reason = ExclusionReason::ImplementationGap, details = "C has no default arguments.")
@@ -35,7 +34,6 @@ pub fn repeat_greeting(
     directions = "Call `primitives::default_arguments::describe_limit` with no arguments and assert it reports no label and the default limit of 7; then pass a label and assert it is used.",
     exclude(java, reason = ExclusionReason::ImplementationGap, details = "The Java backend renders parameters without their Rust defaults, so every argument is required."),
     exclude(csharp, reason = ExclusionReason::ImplementationGap, details = "The C# backend renders parameters without their Rust defaults, so every argument is required."),
-    exclude(typescript, reason = ExclusionReason::ImplementationGap, details = "The TypeScript backend renders parameters without their Rust defaults, so every argument is required."),
     exclude(python, reason = ExclusionReason::ImplementationGap, details = "The Python extension parses positional arguments only and requires all of them."),
     exclude(dart, reason = ExclusionReason::ImplementationGap, details = "The Dart backend renders parameters without their Rust defaults, so every argument is required."),
     exclude(c, reason = ExclusionReason::ImplementationGap, details = "C has no default arguments.")
@@ -58,7 +56,6 @@ pub fn describe_limit(
     directions = "Call `primitives::default_arguments::apply_optional_callback` with only a value and assert it is returned unchanged; then pass a doubling callback by name and assert it is applied.",
     exclude(java, reason = ExclusionReason::ImplementationGap, details = "The Java backend renders parameters without their Rust defaults, so every argument is required."),
     exclude(csharp, reason = ExclusionReason::ImplementationGap, details = "The C# backend renders parameters without their Rust defaults, so every argument is required."),
-    exclude(typescript, reason = ExclusionReason::ImplementationGap, details = "The TypeScript backend renders parameters without their Rust defaults, so every argument is required."),
     exclude(python, reason = ExclusionReason::ImplementationGap, details = "The Python extension parses positional arguments only and requires all of them."),
     exclude(dart, reason = ExclusionReason::ImplementationGap, details = "The Dart backend renders parameters without their Rust defaults, so every argument is required."),
     exclude(c, reason = ExclusionReason::ImplementationGap, details = "C has no default arguments.")
@@ -97,7 +94,6 @@ impl DefaultedCounter {
         directions = "Construct `primitives::default_arguments::DefaultedCounter` without a start and call `offset` without a step; assert 10 + 1. Then construct with 5 and call `offset` with 3; assert 8.",
         exclude(java, reason = ExclusionReason::ImplementationGap, details = "The Java backend renders parameters without their Rust defaults, so every argument is required."),
         exclude(csharp, reason = ExclusionReason::ImplementationGap, details = "The C# backend renders parameters without their Rust defaults, so every argument is required."),
-        exclude(typescript, reason = ExclusionReason::ImplementationGap, details = "The TypeScript backend renders parameters without their Rust defaults, so every argument is required."),
         exclude(python, reason = ExclusionReason::ImplementationGap, details = "The Python extension parses positional arguments only and requires all of them."),
         exclude(dart, reason = ExclusionReason::ImplementationGap, details = "The Dart backend renders parameters without their Rust defaults, so every argument is required."),
         exclude(c, reason = ExclusionReason::ImplementationGap, details = "C has no default arguments.")
@@ -165,7 +161,6 @@ impl DefaultMode {
     directions = "Call scale_default with omitted and explicit arguments, including a null weight, then check the default argument on DefaultMode::matches",
     exclude(java, reason = ExclusionReason::ImplementationGap, details = "The Java backend renders parameters without their Rust defaults, so every argument is required."),
     exclude(csharp, reason = ExclusionReason::ImplementationGap, details = "The C# backend renders parameters without their Rust defaults, so every argument is required."),
-    exclude(typescript, reason = ExclusionReason::ImplementationGap, details = "The TypeScript backend renders parameters without their Rust defaults, so every argument is required."),
     exclude(python, reason = ExclusionReason::ImplementationGap, details = "The Python extension parses positional arguments only and requires all of them."),
     exclude(dart, reason = ExclusionReason::ImplementationGap, details = "The Dart backend renders parameters without their Rust defaults, so every argument is required."),
     exclude(c, reason = ExclusionReason::ImplementationGap, details = "C has no default arguments.")
@@ -195,7 +190,6 @@ pub fn default_double_bits(#[boltffi::default(-0.0)] value: f64) -> u64 {
     directions = "Call async_default and DefaultedCounter::async_offset with omitted and explicit values, then create a counter through start with omitted callbacks and with only the second callback supplied",
     exclude(java, reason = ExclusionReason::ImplementationGap, details = "The Java backend renders parameters without their Rust defaults, so every argument is required."),
     exclude(csharp, reason = ExclusionReason::ImplementationGap, details = "The C# backend renders parameters without their Rust defaults, so every argument is required."),
-    exclude(typescript, reason = ExclusionReason::ImplementationGap, details = "The TypeScript backend renders parameters without their Rust defaults, so every argument is required."),
     exclude(python, reason = ExclusionReason::ImplementationGap, details = "The Python extension parses positional arguments only and requires all of them."),
     exclude(dart, reason = ExclusionReason::ImplementationGap, details = "The Dart backend renders parameters without their Rust defaults, so every argument is required."),
     exclude(c, reason = ExclusionReason::ImplementationGap, details = "C has no default arguments.")
@@ -228,7 +222,6 @@ impl DefaultAmount {
         directions = "Construct DefaultAmount through its memberwise initializer and call offset with omitted and explicit values, then call NamedAmount::with_value with and without its value",
         exclude(java, reason = ExclusionReason::ImplementationGap, details = "The Java backend renders parameters without their Rust defaults, so every argument is required."),
         exclude(csharp, reason = ExclusionReason::ImplementationGap, details = "The C# backend renders parameters without their Rust defaults, so every argument is required."),
-        exclude(typescript, reason = ExclusionReason::ImplementationGap, details = "The TypeScript backend renders parameters without their Rust defaults, so every argument is required."),
         exclude(python, reason = ExclusionReason::ImplementationGap, details = "The Python extension parses positional arguments only and requires all of them."),
         exclude(dart, reason = ExclusionReason::ImplementationGap, details = "The Dart backend renders parameters without their Rust defaults, so every argument is required."),
         exclude(c, reason = ExclusionReason::ImplementationGap, details = "C has no default arguments.")
@@ -283,7 +276,6 @@ pub fn default_limit(#[boltffi::default(None)] limit: DefaultLimit) -> Option<u3
     directions = "Call default_timeout_seconds without a timeout and with an explicit TimeoutFFI, then call default_limit without a limit and with a supplied value",
     exclude(java, reason = ExclusionReason::ImplementationGap, details = "The Java backend renders parameters without their Rust defaults, so every argument is required."),
     exclude(csharp, reason = ExclusionReason::ImplementationGap, details = "The C# backend renders parameters without their Rust defaults, so every argument is required."),
-    exclude(typescript, reason = ExclusionReason::ImplementationGap, details = "The TypeScript backend renders parameters without their Rust defaults, so every argument is required."),
     exclude(python, reason = ExclusionReason::ImplementationGap, details = "The Python extension parses positional arguments only and requires all of them."),
     exclude(dart, reason = ExclusionReason::ImplementationGap, details = "The Dart backend renders parameters without their Rust defaults, so every argument is required."),
     exclude(c, reason = ExclusionReason::ImplementationGap, details = "C has no default arguments.")

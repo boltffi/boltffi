@@ -1,10 +1,10 @@
 use askama::Template as AskamaTemplate;
 use boltffi_binding::{
-    CallbackId, CanonicalName, ClassId, DirectValueType, DirectVectorElementType, EnumDecl, EnumId,
-    ErrorChannel, ErrorPlacement, ExecutionDecl, ExportedCallable, ExportedMethodDecl,
-    FunctionDecl, HandlePresence, HandleTarget, InitializerDecl, IntoRust, NativeSymbol,
-    ParamPlanRender, Primitive, Receive, RecordDecl, RecordId, ReturnPlanRender, ReturnValueSlot,
-    TypeRef, Wasm32, WasmIncomingClosure, wasm32,
+    CallbackId, CanonicalName, ClassId, DefaultValue, DirectValueType, DirectVectorElementType,
+    EnumDecl, EnumId, ErrorChannel, ErrorPlacement, ExecutionDecl, ExportedCallable,
+    ExportedMethodDecl, FunctionDecl, HandlePresence, HandleTarget, IncomingParam, InitializerDecl,
+    IntoRust, NativeSymbol, ParamDecl, ParamPlanRender, Primitive, Receive, RecordDecl, RecordId,
+    ReturnPlanRender, ReturnValueSlot, TypeRef, Wasm32, WasmIncomingClosure, wasm32,
 };
 
 use crate::core::{CoverageMode, Diagnostic, Emitted, Error, RenderContext, Result};
@@ -18,7 +18,7 @@ use super::super::{
         ArgumentList, Expression, Identifier, MemberName, MethodDeclaration, Statement, TypeName,
     },
 };
-use super::closure::ClosureAdapter;
+use super::{closure::ClosureAdapter, default_value::DefaultExpression};
 
 #[derive(AskamaTemplate)]
 #[template(path = "target/typescript/function.ts", escape = "none")]
@@ -34,6 +34,7 @@ pub struct Function {
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 struct Parameter {
+    default: Option<Expression>,
     owned: Option<OwnedArgument>,
     name: Identifier,
     ty: TypeName,
@@ -566,17 +567,12 @@ impl Function {
             .and_then(|receiver| receiver.parameter.clone())
             .map(Ok)
             .into_iter()
-            .chain(callable.params().iter().map(|parameter| {
-                let name = Name::new(parameter.name()).identifier()?;
-                match parameter.payload() {
-                    boltffi_binding::IncomingParam::Value(plan) => {
-                        plan.render_with(&mut ParameterRenderer { name, context })
-                    }
-                    boltffi_binding::IncomingParam::Closure(closure) => {
-                        Parameter::closure(name, closure, context)
-                    }
-                }
-            }))
+            .chain(
+                callable
+                    .params()
+                    .iter()
+                    .map(|parameter| Parameter::from_declaration(parameter, context)),
+            )
             .collect::<Result<Vec<_>>>()?;
         let returns = callable
             .returns()
@@ -986,6 +982,43 @@ impl FailureValue {
 }
 
 impl Parameter {
+    fn from_declaration(
+        parameter: &ParamDecl<Wasm32, IntoRust>,
+        context: &RenderContext<Wasm32>,
+    ) -> Result<Self> {
+        let name = Name::new(parameter.name()).identifier()?;
+        let mut rendered = match parameter.payload() {
+            IncomingParam::Value(plan) => {
+                plan.render_with(&mut ParameterRenderer { name, context })?
+            }
+            IncomingParam::Closure(closure) => Self::closure(name, closure, context)?,
+        };
+        if let Some(value) = parameter.meta().default() {
+            rendered.default = Some(match parameter.payload() {
+                IncomingParam::Value(plan) => {
+                    let ty = plan.value_type().ok_or_else(|| {
+                        Function::unsupported("default value for this parameter type")
+                    })?;
+                    DefaultExpression::render(&ty, value, context)?
+                }
+                IncomingParam::Closure(_) if matches!(value, DefaultValue::Null) => {
+                    Expression::null()
+                }
+                IncomingParam::Closure(_) => {
+                    return Err(Function::unsupported("non-null closure default"));
+                }
+            });
+        }
+        Ok(rendered)
+    }
+
+    fn declaration(&self) -> String {
+        match &self.default {
+            Some(default) => format!("{}: {} = {default}", self.name, self.ty),
+            None => format!("{}: {}", self.name, self.ty),
+        }
+    }
+
     fn closure(
         name: Identifier,
         closure: &boltffi_binding::ClosureParameter<Wasm32, IntoRust>,
@@ -996,6 +1029,7 @@ impl Parameter {
                 .ok_or_else(|| Function::unsupported("closure parameter"))?;
         let handle = Identifier::parse(format!("__boltffi_{name}_handle"))?;
         Ok(Self {
+            default: None,
             owned: Some(OwnedArgument::Closure {
                 parameter: name.clone(),
                 local: handle.clone(),
@@ -1081,6 +1115,7 @@ impl Parameter {
 
     fn direct(name: Identifier, primitive: Primitive) -> Result<Self> {
         Ok(Self {
+            default: None,
             owned: None,
             ty: Type::primitive(primitive)?,
             arguments: vec![Expression::identifier(name.clone())],
@@ -1100,6 +1135,7 @@ impl Parameter {
             .map(|enumeration| TypeName::named(Name::new(enumeration.name()).type_name()))
             .ok_or_else(|| Function::unsupported("enum without declaration"))?;
         Ok(Self {
+            default: None,
             owned: None,
             ty,
             arguments: vec![Expression::identifier(name.clone())],
@@ -1135,6 +1171,7 @@ impl Parameter {
             let allocation = Identifier::parse(format!("__boltffi_{name}_allocation"))?;
             let allocation_value = Expression::identifier(allocation.clone());
             return Ok(Self {
+                default: None,
                 owned: None,
                 ty,
                 setup: vec![Statement::constant(
@@ -1174,6 +1211,7 @@ impl Parameter {
         let Some(allocation_method) = allocation_method else {
             let writer_value = Expression::identifier(writer.clone());
             return Ok(Self {
+                default: None,
                 owned: None,
                 ty,
                 setup: std::iter::once(Statement::constant(
@@ -1203,6 +1241,7 @@ impl Parameter {
         let allocation = Identifier::parse(format!("__boltffi_{name}_allocation"))?;
         let allocation_value = Expression::identifier(allocation.clone());
         Ok(Self {
+            default: None,
             owned: None,
             ty,
             setup: vec![Statement::constant(
@@ -1266,6 +1305,7 @@ impl Parameter {
             false => vec![free],
         };
         Ok(Self {
+            default: None,
             owned: None,
             ty: vector.parameter_type()?,
             setup: vec![Statement::constant(
@@ -1286,6 +1326,7 @@ impl Parameter {
     fn scalar_option(name: Identifier, primitive: Primitive) -> Result<Self> {
         let option = ScalarOption::new(primitive)?;
         Ok(Self {
+            default: None,
             owned: None,
             ty: option.ty()?,
             arguments: vec![option.argument(Expression::identifier(name.clone()))],
@@ -1339,6 +1380,7 @@ impl Parameter {
             [writer_value.clone()].into_iter().collect::<ArgumentList>(),
         )));
         Ok(Self {
+            default: None,
             owned: None,
             ty: Name::new(record.name()).type_name(),
             setup: vec![
@@ -1420,6 +1462,7 @@ impl Parameter {
             )],
         };
         Ok(Self {
+            default: None,
             owned,
             ty,
             arguments,
@@ -1457,6 +1500,7 @@ impl Parameter {
             _ => return Err(Function::unsupported("unknown callback handle presence")),
         };
         Ok(Self {
+            default: None,
             owned: None,
             name,
             ty,

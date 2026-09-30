@@ -548,6 +548,7 @@ fn transpile_typescript_bundle(config: &Config, output_dir: &Path) -> Result<()>
         .arg(output_dir)
         .arg("--skipLibCheck")
         .arg("--strictBindCallApply")
+        .arg("--strictNullChecks")
         .arg("--noImplicitAny")
         .arg("--noEmitOnError")
         .arg("true")
