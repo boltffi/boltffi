@@ -50,13 +50,19 @@ impl Scalar {
         }
     }
 
+    pub fn carrier_type(self) -> TypeName {
+        match self.primitive {
+            Primitive::Bool => TypeName::number(),
+            _ => self.ty(),
+        }
+    }
+
     pub fn lift(self, value: Expression) -> Expression {
         match self.primitive {
             Primitive::Bool => value.not_zero(),
             Primitive::U32 | Primitive::USize => value.unsigned_shift_right(0),
-            Primitive::U64 => Expression::static_call(
-                "BigInt",
-                Identifier::known("asUintN"),
+            Primitive::U64 => Expression::invoke(
+                Identifier::known("__boltffiAsUintN"),
                 [Expression::integer(64), value].into_iter().collect(),
             ),
             _ => value,

@@ -767,7 +767,7 @@ mod tests {
         [
             "return ((_exports.boltffi_function_demo_echo_u32 as Function)(value) >>> 0);",
             "return ((_exports.boltffi_function_demo_echo_usize as Function)(value) >>> 0);",
-            "return BigInt.asUintN(64, (_exports.boltffi_function_demo_echo_u64 as Function)(value));",
+            "return __boltffiAsUintN(64, (_exports.boltffi_function_demo_echo_u64 as Function)(value));",
             "return (_exports.boltffi_function_demo_add as Function)(left, right);",
         ]
         .into_iter()

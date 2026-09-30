@@ -60,29 +60,11 @@ impl Parameter {
             public_type: scalar.ty(),
             bindings: vec![Binding {
                 name,
-                carrier_type: Self::carrier_type(primitive)?,
+                carrier_type: scalar.carrier_type(),
             }],
             setup: Vec::new(),
             argument: scalar.lift(value),
         })
-    }
-
-    pub fn carrier_type(primitive: Primitive) -> Result<TypeName> {
-        match primitive {
-            Primitive::I64 | Primitive::U64 => Ok(TypeName::bigint()),
-            Primitive::Bool
-            | Primitive::I8
-            | Primitive::U8
-            | Primitive::I16
-            | Primitive::U16
-            | Primitive::I32
-            | Primitive::U32
-            | Primitive::ISize
-            | Primitive::USize
-            | Primitive::F32
-            | Primitive::F64 => Ok(TypeName::number()),
-            _ => Err(Self::unsupported("imported primitive carrier")),
-        }
     }
 
     fn direct(

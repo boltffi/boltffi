@@ -131,15 +131,18 @@ impl ClosureAdapter {
                 ),
                 ReturnPlan::DirectViaReturnSlot {
                     ty: DirectValueType::Primitive(primitive),
-                } => (
-                    Scalar::new(*primitive)?.ty(),
-                    Self::primitive_signature(*primitive)?.to_owned(),
-                    ImportedParameter::carrier_type(*primitive)?,
-                    false,
-                    false,
-                    Some(*primitive),
-                    Vec::new(),
-                ),
+                } => {
+                    let scalar = Scalar::new(*primitive)?;
+                    (
+                        scalar.ty(),
+                        Self::primitive_signature(*primitive)?.to_owned(),
+                        scalar.carrier_type(),
+                        false,
+                        false,
+                        Some(*primitive),
+                        Vec::new(),
+                    )
+                }
                 ReturnPlan::DirectViaReturnSlot {
                     ty: DirectValueType::Enum(id),
                 } => {
@@ -157,7 +160,7 @@ impl ClosureAdapter {
                     (
                         name.clone(),
                         name.to_string(),
-                        ImportedParameter::carrier_type(enumeration.repr().primitive())?,
+                        Scalar::new(enumeration.repr().primitive())?.carrier_type(),
                         false,
                         false,
                         None,

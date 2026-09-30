@@ -73,6 +73,7 @@ await Promise.all([synchronous, asynchronous].map(async (module) => {
     assert.equal(module.u64Bytes, 8);
     assert.equal(await module.answer(), 42);
     assert.equal(module.invoke(value => value + 1, 41), 42);
+    assert.equal(module.globalThis(module.BigInt.Maximum), 0xffffffffffffffffn);
 }));
 await assert.rejects(asynchronous.default(new Uint8Array()));
 assert.equal(await asynchronous.answer(), 42);

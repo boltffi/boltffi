@@ -413,10 +413,10 @@ impl Method {
             ReturnPlan::Void => Ok(ReturnShape::void()),
             ReturnPlan::DirectViaReturnSlot {
                 ty: DirectValueType::Primitive(primitive),
-            } => Ok(ReturnShape::direct(
-                Scalar::new(*primitive)?.ty(),
-                Parameter::carrier_type(*primitive)?,
-            )),
+            } => {
+                let scalar = Scalar::new(*primitive)?;
+                Ok(ReturnShape::direct(scalar.ty(), scalar.carrier_type()))
+            }
             ReturnPlan::DirectViaReturnSlot {
                 ty: DirectValueType::Enum(id),
             } => {
@@ -428,7 +428,7 @@ impl Method {
                 };
                 Ok(ReturnShape::direct(
                     Name::new(enumeration.name()).type_name(),
-                    Parameter::carrier_type(enumeration.repr().primitive())?,
+                    Scalar::new(enumeration.repr().primitive())?.carrier_type(),
                 ))
             }
             ReturnPlan::DirectViaOutPointer {
