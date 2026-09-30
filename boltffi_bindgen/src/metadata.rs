@@ -528,7 +528,9 @@ impl<'build> CargoBuild<'build> {
     ///
     /// `None` leaves cargo's default in place: a caller that chose a target
     /// directory itself keeps it, and a failure to resolve one is not worth
-    /// failing the build over.
+    /// failing the build over. The builds then share a directory, and each
+    /// alternation reruns `boltffi`'s build script and recompiles `boltffi`
+    /// and every crate that depends on it.
     fn metadata_target_dir(&self) -> Option<PathBuf> {
         if self
             .cargo_args
@@ -838,7 +840,7 @@ mod tests {
 
     use super::{
         BindingMetadataBuild, BindingMetadataBuildError, CargoBuild, MetadataCargoArgs,
-        SOURCE_RECORDS_ENV,
+        SOURCE_RECORDS_ENV, host_target,
     };
     use crate::artifact::BindingMetadataReader;
     use crate::cargo::LibraryCargoArgsError;
@@ -1603,9 +1605,12 @@ pub fn captured_value() -> u32 { 42 }
 
         let fixture = FixtureCrate::with_boltffi_macros();
         let target_dir = fixture.root.join("target");
+        let host = host_target(None, &[]).expect("cargo names its host");
         let status = Command::new(std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into()))
             .arg("build")
             .arg("--quiet")
+            .arg("--target")
+            .arg(&host)
             .arg("--manifest-path")
             .arg(fixture.manifest())
             .arg("--target-dir")
@@ -1615,10 +1620,13 @@ pub fn captured_value() -> u32 { 42 }
             .expect("cargo runs");
         assert!(status.success(), "the fixture builds without the records");
 
-        let records =
-            BindingMetadataReader::new([target_dir.join("debug").join("libmetadata_fixture.rlib")])
-                .read_source_records()
-                .expect("the library reads");
+        let library = target_dir
+            .join(host)
+            .join("debug")
+            .join("libmetadata_fixture.rlib");
+        let records = BindingMetadataReader::new([library])
+            .read_source_records()
+            .expect("the library reads");
         assert!(
             records.is_empty(),
             "only the metadata build embeds source records"
