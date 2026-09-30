@@ -76,7 +76,7 @@ The macro only wrote the path `Point`. The compiler resolved it through imports,
 and re-exports, and filled in which `Point` that is.
 
 `source_record!` keeps the static only when the `boltffi` build script sees
-`BOLTFFI_SOURCE_RECORDS`, so an ordinary build, and every shipped binary, carries no
+`BOLTFFI_SOURCE_RECORDS=1`, so an ordinary build, and every shipped binary, carries no
 records. The lanes and wrappers are the same in both builds.
 
 `boltffi generate` runs one `cargo build` with that variable set, in a target directory
