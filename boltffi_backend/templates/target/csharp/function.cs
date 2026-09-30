@@ -25,8 +25,7 @@
 {% endif %}        }
 {% else %}        {{ function.visibility }} {% if function.is_static %}static {% endif %}{{ function.public_return_type }} {{ function.name }}({% if let Some(owner) = function.extension_owner %}this {{ owner }} self{% if !function.parameters.is_empty() %}, {% endif %}{% endif %}{% for parameter in function.parameter_declarations() %}{{ parameter }}{% if !loop.last %}, {% endif %}{% endfor %})
             => {{ function.invocation }};
-{% endif %}
-{% if function.visibility == "public" %}{% for overload in function.overloads %}
+{% endif %}{% if function.visibility == "public" %}{% for overload in function.overloads %}
         [global::System.Runtime.CompilerServices.OverloadResolutionPriority(-1)]
         public {% if function.is_static %}static {% endif %}{% if function.asynchronous.is_some() %}global::System.Threading.Tasks.Task{% if !function.returns_void %}<{{ function.public_return_type }}>{% endif %}{% else %}{{ function.public_return_type }}{% endif %} {{ function.name }}({% if let Some(owner) = function.extension_owner %}this {{ owner }} self{% if !overload.parameters.is_empty() || function.asynchronous.is_some() %}, {% endif %}{% endif %}{% for parameter in overload.parameter_declarations() %}{{ parameter }}{% if !loop.last || function.asynchronous.is_some() %}, {% endif %}{% endfor %}{% if function.asynchronous.is_some() %}global::System.Threading.CancellationToken {{ function.names.cancellation_token }} = default{% endif %})
             => {{ function.name }}({% if function.extension_owner.is_some() %}self{% if !overload.arguments.is_empty() || function.asynchronous.is_some() %}, {% endif %}{% endif %}{% for argument in overload.arguments %}{{ argument }}{% if !loop.last || function.asynchronous.is_some() %}, {% endif %}{% endfor %}{% if function.asynchronous.is_some() %}{{ function.names.cancellation_token }}{% endif %});

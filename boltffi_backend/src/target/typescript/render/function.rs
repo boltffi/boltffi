@@ -53,6 +53,7 @@ enum OwnedArgument {
     },
     Closure {
         parameter: Identifier,
+        presence: HandlePresence,
         local: Identifier,
         register: Identifier,
         unregister: Identifier,
@@ -1032,11 +1033,16 @@ impl Parameter {
             default: None,
             owned: Some(OwnedArgument::Closure {
                 parameter: name.clone(),
+                presence: closure.presence(),
                 local: handle.clone(),
                 register: adapter.register(),
                 unregister: adapter.unregister().clone(),
             }),
-            ty: adapter.parameter_type(),
+            ty: match closure.presence() {
+                HandlePresence::Required => adapter.parameter_type(),
+                HandlePresence::Nullable => adapter.parameter_type().nullable(),
+                _ => return Err(Function::unsupported("closure parameter presence")),
+            },
             setup: Vec::new(),
             arguments: vec![Expression::identifier(handle)],
             cleanup: Vec::new(),

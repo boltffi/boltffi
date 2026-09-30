@@ -105,6 +105,14 @@ pub async fn async_default(#[boltffi::default(9)] value: u32) -> u32 {
     value
 }
 
+#[export]
+pub fn apply_optional_closure(
+    value: i32,
+    #[boltffi::default(None)] callback: Option<Box<dyn Fn(i32) -> i32>>,
+) -> i32 {
+    callback.map_or(value, |callback| callback(value))
+}
+
 pub struct DefaultCounter {
     start: i32,
 }

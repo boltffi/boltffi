@@ -17,6 +17,10 @@ export async function run() {
   assert.equal(demo.applyOptionalCallback(21), 21);
   assert.equal(demo.applyOptionalCallback(21, null), 21);
   assert.equal(demo.applyOptionalCallback(21, { onValue: (value) => value * 2 }), 42);
+  assert.equal(demo.applyOptionalClosure(21), 21);
+  assert.equal(demo.applyOptionalClosure(21, undefined), 21);
+  assert.equal(demo.applyOptionalClosure(21, null), 21);
+  assert.equal(demo.applyOptionalClosure(21, (value) => value * 2), 42);
 
   globalThis.demoCase("case:primitives.default_arguments.defaulted_counter.should_apply_constructor_and_method_defaults");
   const counter = demo.DefaultedCounter.new();
@@ -81,6 +85,10 @@ export async function run() {
   assert.equal(demo.scaleDefault(), 0.75);
   assert.equal(demo.scaleDefault(2, 4, demo.DefaultMode.Loud), 16);
   assert.equal(demo.scaleDefault(undefined, null), 0.5);
+  assert.equal(demo.chooseDefault(), 0);
+  assert.equal(demo.chooseDefault({ tag: "Value", value0: 7 }), 7);
+  assert.equal(demo.chooseDefault(undefined, { tag: "Value", value0: 7 }), -7);
+  assert.equal(demo.chooseDefault(undefined, null), 0);
   assert.equal(demo.defaultFloatBits(), 0x80000000);
   assert.equal(demo.defaultFloatBits(0), 0);
   assert.equal(demo.defaultDoubleBits(), 0x8000000000000000n);

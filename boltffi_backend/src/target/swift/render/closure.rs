@@ -23,6 +23,7 @@ use crate::{
 pub struct ClosureArgument {
     source: Identifier,
     ty: TypeName,
+    presence: HandlePresence,
     box_binding: Identifier,
     context: Identifier,
     call: Identifier,
@@ -113,8 +114,11 @@ impl ClosureArgument {
         bridge: &CBridgeContract,
         context: &RenderContext<Native>,
     ) -> Result<Self> {
-        if closure.presence() != HandlePresence::Required {
-            return Err(SwiftHost::unsupported("nullable closure parameter"));
+        if !matches!(
+            closure.presence(),
+            HandlePresence::Required | HandlePresence::Nullable
+        ) {
+            return Err(SwiftHost::unsupported("closure parameter presence"));
         }
         let callable = closure.invoke();
         let error = ClosureError::from_channel(callable.error().channel(), bridge, context)?;
@@ -131,6 +135,7 @@ impl ClosureArgument {
         Ok(Self {
             source,
             ty,
+            presence: closure.presence(),
             box_binding: source_name.generated("box")?,
             context: source_name.generated("context")?,
             call: source_name.generated("call")?,
@@ -142,45 +147,69 @@ impl ClosureArgument {
     }
 
     pub fn parameter_ty(&self) -> TypeName {
-        self.ty.clone().escaping()
+        match self.presence {
+            HandlePresence::Nullable => self.ty.clone().optional_function_pointer(),
+            _ => self.ty.clone().escaping(),
+        }
     }
 
     pub fn arguments(&self) -> Vec<Expression> {
-        vec![
-            Expression::identifier(self.call.clone()),
-            Expression::identifier(self.context.clone()),
-            Expression::identifier(self.release.clone()),
-        ]
+        let call = Expression::identifier(self.call.clone());
+        let release = Expression::identifier(self.release.clone());
+        let (call, release) = match self.presence {
+            HandlePresence::Nullable => {
+                let present = Expression::not_equal(&self.context, Expression::nil());
+                (
+                    Expression::conditional(&present, call, Expression::nil()),
+                    Expression::conditional(present, release, Expression::nil()),
+                )
+            }
+            _ => (call, release),
+        };
+        vec![call, Expression::identifier(self.context.clone()), release]
     }
 
     pub fn wrap(&self, body: String, indent: &str) -> String {
+        let implementation = match self.presence {
+            HandlePresence::Nullable => Expression::new("implementation"),
+            _ => Expression::identifier(self.source.clone()),
+        };
+        let box_value = Expression::call(self.box_type(), [implementation].into_iter().collect());
+        let box_value = match self.presence {
+            HandlePresence::Nullable => Expression::trailing_closure(
+                Expression::member(&self.source, "map"),
+                ArgumentList::default(),
+                "implementation",
+                box_value,
+            ),
+            _ => box_value,
+        };
+        let retained_box = match self.presence {
+            HandlePresence::Nullable => Expression::new("closureBox"),
+            _ => Expression::identifier(self.box_binding.clone()),
+        };
+        let retained_context = Expression::call(
+            Expression::member(
+                Expression::call(
+                    Expression::member("Unmanaged", "passRetained"),
+                    [retained_box].into_iter().collect(),
+                ),
+                "toOpaque",
+            ),
+            ArgumentList::default(),
+        );
+        let retained_context = match self.presence {
+            HandlePresence::Nullable => Expression::trailing_closure(
+                Expression::member(&self.box_binding, "map"),
+                ArgumentList::default(),
+                "closureBox",
+                retained_context,
+            ),
+            _ => retained_context,
+        };
         [
-            Statement::let_value(
-                &self.box_binding,
-                Expression::call(
-                    self.box_type(),
-                    [Expression::identifier(self.source.clone())]
-                        .into_iter()
-                        .collect(),
-                ),
-            )
-            .indented(indent),
-            Statement::let_value(
-                &self.context,
-                Expression::call(
-                    Expression::member(
-                        Expression::call(
-                            Expression::member("Unmanaged", "passRetained"),
-                            [Expression::identifier(self.box_binding.clone())]
-                                .into_iter()
-                                .collect(),
-                        ),
-                        "toOpaque",
-                    ),
-                    ArgumentList::default(),
-                ),
-            )
-            .indented(indent),
+            Statement::let_value(&self.box_binding, box_value).indented(indent),
+            Statement::let_value(&self.context, retained_context).indented(indent),
             self.call_statement(indent),
             self.release_statement(indent),
             body,

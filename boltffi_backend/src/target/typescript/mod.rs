@@ -1661,6 +1661,7 @@ mod tests {
             "matches(self: DefaultMode, mode: DefaultMode = 1)",
             "async load(mode: DefaultMode = 1, options?:",
             "asyncDefault(value: number = 9, options?:",
+            "applyOptionalClosure(value: number, callback: ClosureI32ToI32 | null = null)",
             "defaultAmount(amount: Amount = { value: 5 })",
             "span(start: bigint = -9223372036854775808n, end: bigint = 18446744073709551615n)",
             "throttle(limit: Limit = null)",
@@ -1671,6 +1672,7 @@ mod tests {
         ]
         .into_iter()
         .for_each(|signature| assert!(source.contains(signature), "missing {signature}"));
+        assert!(source.contains("callback === null ? 0 : registerClosureI32ToI32(callback)"));
     }
 
     #[test]

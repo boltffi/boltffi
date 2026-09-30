@@ -24,6 +24,9 @@ final class DefaultArgumentsTests: DemoTestCase {
         demoCase("case:primitives.default_arguments.should_default_an_optional_callback_to_none")
         XCTAssertEqual(applyOptionalCallback(value: 21), 21)
         XCTAssertEqual(applyOptionalCallback(value: 21, callback: Doubler()), 42)
+        XCTAssertEqual(applyOptionalClosure(value: 21), 21)
+        XCTAssertEqual(applyOptionalClosure(value: 21, callback: nil), 21)
+        XCTAssertEqual(applyOptionalClosure(value: 21, callback: { value in value * 2 }), 42)
     }
 
     func testConstructorAndMethodArguments() {

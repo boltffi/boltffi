@@ -21,6 +21,9 @@ public static class DefaultArguments
         DefaultCounter.Sum(right: 7);
         await counter.AsyncOffset(cancellationToken: cancellationToken);
         await AsyncDefault(cancellationToken: cancellationToken);
+        ApplyOptionalClosure(21);
+        ApplyOptionalClosure(21, callback: null);
+        ApplyOptionalClosure(21, callback: value => value * 2);
         DefaultMode.Quiet.Matches();
         await DefaultModeMethods.Load();
         new DefaultAmount().Offset();

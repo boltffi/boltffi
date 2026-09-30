@@ -3,7 +3,7 @@
 {% endfor %}  let __boltffiEntered = false;
   try {
 {% for argument in owned %}{% match argument %}{% when OwnedArgument::Class with { parameter, class, local, .. } %}    {{ local }} = {{ class }}._takeHandle({{ parameter }});
-{% when OwnedArgument::Closure with { parameter, local, register, .. } %}    {{ local }} = {{ register }}({{ parameter }});
+{% when OwnedArgument::Closure with { parameter, presence, local, register, .. } %}    {{ local }} = {% if *presence == HandlePresence::Nullable %}{{ parameter }} === null ? 0 : {% endif %}{{ register }}({{ parameter }});
 {% endmatch %}{% endfor %}{% for (name, value) in arguments %}    const {{ name }} = {{ value }};
 {% endfor %}    if (typeof _exports.{{ symbol }} !== "function") throw new Error("Missing native function: {{ symbol }}");
     __boltffiEntered = true;

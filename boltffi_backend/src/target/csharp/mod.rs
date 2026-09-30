@@ -994,12 +994,8 @@ mod tests {
         assert!(source.contains(
             "public static readonly global::Demo.State DefaultState = new global::Demo.State.Idle();"
         ));
-        assert!(
-            source.contains("public static readonly nint NativeOffset = unchecked((nint)-7L);")
-        );
-        assert!(
-            source.contains("public static readonly nuint NativeLimit = unchecked((nuint)9UL);")
-        );
+        assert!(source.contains("public static readonly nint NativeOffset = -7;"));
+        assert!(source.contains("public static readonly nuint NativeLimit = 9U;"));
         assert!(source.contains("public static byte[] Magic"));
         assert!(source.contains("get"));
         assert!(source.contains("NativeMethods.NativeMagic"));
@@ -1067,13 +1063,13 @@ mod tests {
         let palette = file(&output, "Palette.cs");
 
         assert!(source.contains("public static Color Black"));
-        assert!(source.contains("public const byte ChannelCount = 4;"));
+        assert!(source.contains("public const byte ChannelCount = (byte)4;"));
         assert!(!mode.contains("Default = Fast"));
         assert!(mode.contains("public static class ModeConstants"));
         assert!(mode.contains("public const global::Demo.Mode Default = global::Demo.Mode.Fast;"));
         assert!(mode.contains("public static Mode Fallback"));
-        assert!(mode.contains("public const byte VariantCount = 2;"));
-        assert!(palette.contains("public const byte MaxColors = 16;"));
+        assert!(mode.contains("public const byte VariantCount = (byte)2;"));
+        assert!(palette.contains("public const byte MaxColors = (byte)16;"));
         assert!(!palette.contains("UnexportedAssociated"));
         assert!(output.diagnostics().is_empty());
     }
