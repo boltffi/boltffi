@@ -28,11 +28,6 @@ pub trait CallbackLocalHandle {
 }
 
 /// Links an exported class to the handle type its export site generates.
-#[diagnostic::on_unimplemented(
-    message = "`{Self}` is not an exported class",
-    label = "no `#[export] impl {Self}` block declares this class",
-    note = "`#[export(methods)]` adds to a class that one `#[export] impl {Self}` block declares"
-)]
 pub trait ClassHandle {
     /// The generated handle type that owns one class instance across the boundary.
     type Handle;

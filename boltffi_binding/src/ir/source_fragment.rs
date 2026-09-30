@@ -215,7 +215,7 @@ fn aggregate(
             continue;
         }
         if is_lookup && matches!(fragment, SourceFragment::Class(_)) {
-            lookup_classes.insert(id);
+            lookup_classes.insert(id.clone());
         }
         if !is_lookup {
             resolve_fragment(&mut fragment, &slots, &declared)?;
@@ -236,6 +236,7 @@ fn aggregate(
                 constants,
                 streams,
             } => method_blocks.push(MethodsBlock {
+                order: (module, id),
                 target,
                 spelling,
                 methods,
@@ -246,6 +247,7 @@ fn aggregate(
         }
     }
 
+    method_blocks.sort_by(|a, b| a.order.cmp(&b.order));
     for block in method_blocks {
         merge_methods(&mut contract, block, &mut lookup_classes)?;
     }
@@ -273,6 +275,8 @@ fn same_declaration(
 }
 
 struct MethodsBlock {
+    /// The block's module and id, so blocks merge in an order no build layout changes.
+    order: (String, String),
     target: TypeExpr,
     spelling: String,
     methods: Vec<MethodDef>,
@@ -288,6 +292,7 @@ fn merge_methods(
     lookup_classes: &mut HashSet<String>,
 ) -> Result<(), SourceFragmentError> {
     let MethodsBlock {
+        order: _,
         target,
         spelling,
         methods,
@@ -1649,6 +1654,52 @@ mod tests {
             ["demo::Counter::moved"],
             "the declaring block's unresolved methods stay with their own invocation"
         );
+    }
+
+    #[test]
+    fn merges_methods_blocks_in_module_order_whatever_order_they_arrive_in() {
+        let block = |module: &str, method: &str| {
+            raw(
+                module,
+                &[r#"{"id":"demo::Counter"}"#],
+                serde_json::to_vec(&SourceFragment::Methods {
+                    target: slot_leaf(0, "Counter"),
+                    spelling: "Counter".to_owned(),
+                    methods: vec![class_method(
+                        format!("{SLOT_ID_PREFIX}0::{method}"),
+                        method,
+                        None,
+                    )],
+                    constants: Vec::new(),
+                    streams: Vec::new(),
+                })
+                .expect("fragment serializes"),
+            )
+        };
+        let class = || raw("demo", &[], counter_class(Vec::new()));
+        let merged = |records: &[RawSourceRecord]| {
+            aggregate_records(records, PackageInfo::new("demo", None))
+                .expect("records aggregate")
+                .classes[0]
+                .methods
+                .iter()
+                .map(|method| method.id.as_str().to_owned())
+                .collect::<Vec<_>>()
+        };
+
+        let forward = merged(&[
+            class(),
+            block("demo", "reset"),
+            block("demo::extras", "bump"),
+        ]);
+        let reversed = merged(&[
+            block("demo::extras", "bump"),
+            block("demo", "reset"),
+            class(),
+        ]);
+
+        assert_eq!(forward, ["demo::Counter::reset", "demo::Counter::bump"]);
+        assert_eq!(reversed, forward, "a parent module's block merges first");
     }
 
     #[test]
