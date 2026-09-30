@@ -35,25 +35,14 @@ impl Scalar {
     pub fn ty(self) -> TypeName {
         match self.primitive {
             Primitive::Bool => TypeName::boolean(),
-            Primitive::I64 | Primitive::U64 => TypeName::bigint(),
-            Primitive::I8
-            | Primitive::U8
-            | Primitive::I16
-            | Primitive::U16
-            | Primitive::I32
-            | Primitive::U32
-            | Primitive::ISize
-            | Primitive::USize
-            | Primitive::F32
-            | Primitive::F64 => TypeName::number(),
-            _ => unreachable!(),
+            _ => self.carrier_type(),
         }
     }
 
     pub fn carrier_type(self) -> TypeName {
         match self.primitive {
-            Primitive::Bool => TypeName::number(),
-            _ => self.ty(),
+            Primitive::I64 | Primitive::U64 => TypeName::bigint(),
+            _ => TypeName::number(),
         }
     }
 
