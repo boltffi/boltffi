@@ -17,8 +17,11 @@ use super::super::{
     syntax::{Expression, Identifier, Statement, TypeFragment},
     type_name,
 };
-use super::default_value::DefaultExpression;
 use super::{AssociatedConstants, Documentation, Function, WireTemplate, primitive_type};
+use super::{
+    default_value::DefaultExpression,
+    parameter::{Overload, Parameter},
+};
 
 #[derive(Template)]
 #[template(path = "target/csharp/record.cs", escape = "none")]
@@ -37,7 +40,7 @@ pub(in crate::target::csharp) struct Record {
     error_payload: bool,
     error_message_field: Option<Identifier>,
     fields: Vec<Field>,
-    default_constructors: Vec<DefaultConstructor>,
+    default_constructors: Vec<Overload>,
     constants: AssociatedConstants,
     methods: Vec<Function>,
     diagnostics: Vec<Diagnostic>,
@@ -52,18 +55,6 @@ struct Field {
     default: Option<Expression>,
     read: Expression,
     write: Vec<Statement>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct DefaultConstructor {
-    parameters: Vec<ConstructorParameter>,
-    arguments: Vec<Expression>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct ConstructorParameter {
-    name: Identifier,
-    ty: TypeFragment,
 }
 
 impl Record {
@@ -133,6 +124,7 @@ impl Record {
                                 None,
                                 context,
                             )
+                            .map(DefaultExpression::into_expression)
                         })
                         .transpose()?,
                     read: Expression::new(format!("reader.{}()", primitive_read_method(primitive))),
@@ -188,7 +180,7 @@ impl Record {
             bridge,
             context,
         )?;
-        let default_constructors = DefaultConstructor::from_fields(&fields);
+        let default_constructors = Self::default_constructors(&fields);
         Ok(Self {
             documentation: Documentation::summary(declaration.meta().doc(), "    "),
             namespace,
@@ -245,7 +237,10 @@ impl Record {
                     default: field
                         .meta()
                         .default()
-                        .map(|value| DefaultExpression::render(field.ty(), value, None, context))
+                        .map(|value| {
+                            DefaultExpression::render(field.ty(), value, None, context)
+                                .map(DefaultExpression::into_expression)
+                        })
                         .transpose()?,
                     read: field
                         .read()
@@ -303,7 +298,7 @@ impl Record {
             bridge,
             context,
         )?;
-        let default_constructors = DefaultConstructor::from_fields(&fields);
+        let default_constructors = Self::default_constructors(&fields);
         Ok(Self {
             documentation: Documentation::summary(declaration.meta().doc(), "    "),
             namespace,
@@ -345,8 +340,8 @@ impl Record {
     }
 }
 
-impl DefaultConstructor {
-    fn from_fields(fields: &[Field]) -> Vec<Self> {
+impl Record {
+    fn default_constructors(fields: &[Field]) -> Vec<Overload> {
         let trailing_defaults = fields
             .iter()
             .rev()
@@ -355,13 +350,14 @@ impl DefaultConstructor {
         (1..=trailing_defaults)
             .map(|omitted| {
                 let included = fields.len() - omitted;
-                Self {
+                Overload {
                     parameters: fields
                         .iter()
                         .take(included)
-                        .map(|field| ConstructorParameter {
+                        .map(|field| Parameter {
                             name: field.name.clone(),
                             ty: field.ty.clone(),
+                            default: None,
                         })
                         .collect(),
                     arguments: fields

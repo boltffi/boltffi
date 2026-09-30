@@ -1,6 +1,7 @@
 use boltffi_binding::{
     CanonicalName, ClosureParameter, DirectValueType, DirectVectorElementType, ErrorChannel,
-    ErrorPlacement, Native, OutgoingParam, ParamPlan, Primitive, ReturnPlan, TypeRef, native,
+    ErrorPlacement, HandlePresence, Native, OutgoingParam, ParamPlan, Primitive, ReturnPlan,
+    TypeRef, native,
 };
 
 use crate::{
@@ -271,16 +272,29 @@ impl ClosureArgument {
                 .map(|line| format!("            {line}\n"))
                 .collect::<String>(),
         );
+        let call_argument = format!("NativeMethods.{call_delegate}Instance");
+        let release_argument = format!("NativeMethods.{release_delegate}Instance");
+        let (nullable_suffix, call_argument, release_argument) = match declaration.presence() {
+            HandlePresence::Required => ("", call_argument, release_argument),
+            HandlePresence::Nullable => (
+                "?",
+                format!("{name} is null ? null : {call_argument}"),
+                format!("{name} is null ? null : {release_argument}"),
+            ),
+            _ => return super::super::unsupported("unknown closure parameter presence"),
+        };
         Ok(Self {
             parameter: Parameter {
                 name: name.clone(),
-                ty: public_type,
-                marshal_i1: false,
+                ty: TypeFragment::new(format!("{public_type}{nullable_suffix}")),
+                default: None,
             },
             native_parameters: vec![
                 NativeParameter {
                     name: Identifier::parse(format!("{name}Call"))?,
-                    ty: TypeFragment::new(format!("NativeMethods.{call_delegate}")),
+                    ty: TypeFragment::new(format!(
+                        "NativeMethods.{call_delegate}{nullable_suffix}"
+                    )),
                     modifier: "",
                     marshal_i1: false,
                     marshal_bool_array: false,
@@ -298,7 +312,9 @@ impl ClosureArgument {
                 },
                 NativeParameter {
                     name: Identifier::parse(format!("{name}Release"))?,
-                    ty: TypeFragment::new(format!("NativeMethods.{release_delegate}")),
+                    ty: TypeFragment::new(format!(
+                        "NativeMethods.{release_delegate}{nullable_suffix}"
+                    )),
                     modifier: "",
                     marshal_i1: false,
                     marshal_bool_array: false,
@@ -307,13 +323,14 @@ impl ClosureArgument {
                 },
             ],
             invocation_arguments: vec![
-                Expression::new(format!("NativeMethods.{call_delegate}Instance")),
+                Expression::new(call_argument),
                 Expression::new(format!("{handle}.Handle")),
-                Expression::new(format!("NativeMethods.{release_delegate}Instance")),
+                Expression::new(release_argument),
             ],
             ownership: OwnedArgument::Closure {
                 parameter: name,
                 local: handle,
+                presence: declaration.presence(),
             },
             helper: ClosureHelper {
                 id: HelperId::new(CanonicalName::single(helper_name.as_str())),

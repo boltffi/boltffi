@@ -1,7 +1,10 @@
 use std::{fs, path::Path, process::Command, sync::Mutex, time::UNIX_EPOCH};
 
 use boltffi_ast::PackageInfo;
-use boltffi_backend::{GeneratedOutput, Target, bridge::c::CBridge, target::csharp::CSharpHost};
+use boltffi_backend::{
+    FilePath, GeneratedFile, GeneratedOutput, Target, bridge::c::CBridge,
+    target::csharp::CSharpHost,
+};
 use boltffi_binding::{Bindings, Native, lower};
 
 // NuGet first-run setup uses a process-global migration mutex.
@@ -21,6 +24,158 @@ fn target(host: CSharpHost) -> Target<CSharpHost, CBridge> {
 }
 
 const CUSTOM_TYPE_DEFAULT: &str = include_str!("fixtures/source/records/custom_type_default.rs");
+const PARAMETER_DEFAULTS: &str = include_str!("fixtures/source/exports/parameter_defaults.rs");
+
+#[test]
+fn csharp_parameter_defaults_use_optional_arguments_and_runtime_overloads() {
+    let output = target(CSharpHost::new().native_library("demo_native"))
+        .render(&bindings(PARAMETER_DEFAULTS))
+        .expect("parameter defaults render");
+    let sources = output
+        .files()
+        .iter()
+        .map(|file| file.contents())
+        .collect::<String>();
+    [
+        "string greeting = \"world\"",
+        "uint times = 3U",
+        "long offset = -1L",
+        "bool shout = true",
+        "float ratio = 0.5F",
+        "ushort? limit = (ushort)7",
+        "public Server(ushort port = (ushort)8080)",
+        "public DefaultCounter(int start = 10)",
+        "Offset(int step = 1)",
+        "DefaultParameterValue(20)] int start, int offset",
+        "AsyncDefault(uint value = 9U, global::System.Threading.CancellationToken",
+        "Span(long start = -9223372036854775808L, ulong end = 18446744073709551615UL)",
+        "DefaultAmount()\n            => DefaultAmount(new global::Demo.DefaultAmount(5));",
+    ]
+    .into_iter()
+    .for_each(|signature| assert!(sources.contains(signature), "missing {signature}"));
+    compile_csharp_with_dotnet_when_available(&output, "csharp-parameter-defaults");
+}
+
+#[test]
+fn csharp_rejects_runtime_defaults_with_identical_overload_signatures() {
+    [
+        r#"
+        #[export]
+        pub fn ambiguous(
+            #[boltffi::default(3)] first: AmountRust,
+            #[boltffi::default(4)] second: AmountRust,
+        ) {}
+        "#,
+        r#"
+        #[data]
+        pub enum Choice { Empty, Value(i32) }
+
+        #[export]
+        pub fn ambiguous(
+            #[boltffi::default(Choice::Empty)] first: Choice,
+            middle: Option<Choice>,
+            #[boltffi::default(Choice::Empty)] last: Choice,
+        ) {}
+        "#,
+    ]
+    .into_iter()
+    .for_each(|declaration| {
+        let source = format!("{PARAMETER_DEFAULTS}{declaration}");
+        let error = target(CSharpHost::new().native_library("demo_native"))
+            .render(&bindings(&source))
+            .expect_err("identical C# overload signatures must be rejected");
+        assert!(
+            error.to_string().contains("indistinguishable C# overloads"),
+            "{error}"
+        );
+    });
+}
+
+#[test]
+fn csharp_non_trailing_and_constructed_defaults_compile_at_call_sites() {
+    let source = format!(
+        "{PARAMETER_DEFAULTS}{}",
+        r#"
+        #[export]
+        pub fn non_trailing_defaults(
+            #[boltffi::default(-1)] signed_byte: i8,
+            #[boltffi::default(2)] byte: u8,
+            #[boltffi::default(-3)] short: i16,
+            #[boltffi::default(7)] limit: Option<u16>,
+            #[boltffi::default(0.5)] ratio: Option<f32>,
+            #[boltffi::default(DefaultMode::Quiet)] mode: DefaultMode,
+            #[boltffi::default(3)] native_signed: isize,
+            #[boltffi::default(4)] native_unsigned: usize,
+            required: i32,
+        ) {}
+
+        #[export]
+        pub fn native_boundaries(
+            #[boltffi::default(-9223372036854775808)] lower: isize,
+            #[boltffi::default(18446744073709551615)] upper: usize,
+            required: i32,
+        ) {}
+
+        #[export]
+        pub fn optional_closure(
+            #[boltffi::default(None)] callback: Option<Box<dyn Fn(i32) -> i32>>,
+            value: i32,
+        ) -> i32 { value }
+
+        pub struct RuntimeDefaults;
+
+        #[export]
+        impl RuntimeDefaults {
+            pub fn new(#[boltffi::default(5)] amount: AmountRust) -> Self { Self }
+
+            pub fn amount(&self, #[boltffi::default(5)] amount: AmountRust) -> i32 { 0 }
+
+            pub async fn start(#[boltffi::default(5)] amount: AmountRust) -> Self { Self }
+
+            pub async fn async_amount(&self, #[boltffi::default(5)] amount: AmountRust) -> i32 { 0 }
+        }
+
+        #[repr(u8)]
+        #[data]
+        pub enum RuntimeMode { Low, High }
+
+        #[data(impl)]
+        impl RuntimeMode {
+            pub fn amount(&self, #[boltffi::default(5)] amount: AmountRust) -> i32 { 0 }
+
+            pub async fn async_amount(&self, #[boltffi::default(5)] amount: AmountRust) -> i32 { 0 }
+        }
+
+        #[data]
+        pub enum Choice { Empty, Value(i32) }
+
+        #[export]
+        pub fn mixed_defaults(
+            #[boltffi::default(5)] amount: AmountRust,
+            #[boltffi::default(Choice::Empty)] choice: Choice,
+            #[boltffi::default(7)] limit: Option<u16>,
+            required: i32,
+        ) {}
+
+        #[export]
+        pub fn optional_record_defaults(
+            #[boltffi::default(5)] amount: AmountRust,
+            #[boltffi::default(6)] optional_amount: Option<AmountRust>,
+        ) {}
+        "#
+    );
+    let mut output = target(CSharpHost::new().native_library("demo_native"))
+        .render(&bindings(&source))
+        .expect("non-trailing and constructed defaults render");
+    output.append(GeneratedOutput::new(
+        vec![GeneratedFile::new(
+            FilePath::new("DefaultArguments.cs").expect("call-site path"),
+            include_str!("fixtures/csharp/default_arguments.cs"),
+        )],
+        Vec::new(),
+    ));
+    compile_csharp_with_dotnet_when_available(&output, "csharp-default-call-sites");
+}
 
 #[test]
 fn csharp_generated_helpers_do_not_shadow_exported_parameters() {

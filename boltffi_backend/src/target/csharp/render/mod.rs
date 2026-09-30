@@ -5,6 +5,7 @@ mod constant;
 mod default_value;
 mod documentation;
 mod enumeration;
+mod parameter;
 mod record;
 mod stream;
 
@@ -44,15 +45,9 @@ use super::{
     type_name,
 };
 use documentation::Documentation;
+use parameter::{Overload, Parameter};
 
 const TARGET: &str = "csharp";
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct Parameter {
-    name: Identifier,
-    ty: TypeFragment,
-    marshal_i1: bool,
-}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct FunctionNames {
@@ -157,6 +152,7 @@ pub(super) struct Function {
     name: Identifier,
     native_name: Identifier,
     parameters: Vec<Parameter>,
+    overloads: Vec<Overload>,
     native_parameters: Vec<NativeParameter>,
     public_return_type: TypeFragment,
     returns_void: bool,
@@ -211,6 +207,7 @@ enum OwnedArgument {
     Closure {
         parameter: Identifier,
         local: Identifier,
+        presence: HandlePresence,
     },
 }
 
@@ -637,6 +634,7 @@ impl Function {
                     })?;
             parameter_group_index += 1;
             let name = Name::new(parameter.name()).camel()?;
+            let default = Parameter::default_for(parameter, type_namespace, context)?;
             match parameter.payload() {
                 IncomingParam::Value(ParamPlan::Direct { ty, receive }) => {
                     let ParameterGroup::Value(index) = group else {
@@ -650,7 +648,7 @@ impl Function {
                     parameters.push(Parameter {
                         name: name.clone(),
                         ty: rendered_type.clone(),
-                        marshal_i1,
+                        default,
                     });
                     native_parameters.push(NativeParameter {
                         name: name.clone(),
@@ -697,7 +695,7 @@ impl Function {
                     parameters.push(Parameter {
                         name: name.clone(),
                         ty: render_type_ref(ty, type_namespace, context)?,
-                        marshal_i1: false,
+                        default,
                     });
                     let writer = generated_identifier(&name, "Writer")?;
                     let bytes = generated_identifier(&name, "Bytes")?;
@@ -851,7 +849,7 @@ impl Function {
                     parameters.push(Parameter {
                         name: name.clone(),
                         ty: public_type,
-                        marshal_i1: false,
+                        default,
                     });
                     native_parameters.push(NativeParameter {
                         name: name.clone(),
@@ -882,7 +880,7 @@ impl Function {
                     parameters.push(Parameter {
                         name: name.clone(),
                         ty: TypeFragment::new(format!("{}?", primitive_type(*primitive))),
-                        marshal_i1: false,
+                        default,
                     });
                     let writer = generated_identifier(&name, "Writer")?;
                     let bytes = generated_identifier(&name, "Bytes")?;
@@ -971,7 +969,7 @@ impl Function {
                     parameters.push(Parameter {
                         name: name.clone(),
                         ty: array_type.clone(),
-                        marshal_i1: false,
+                        default,
                     });
                     native_parameters.extend([
                         NativeParameter {
@@ -1016,13 +1014,14 @@ impl Function {
                         "{native_name}{}Closure",
                         Name::new(parameter.name()).pascal()?
                     ))?;
-                    let closure = closure::ClosureArgument::from_declaration(
+                    let mut closure = closure::ClosureArgument::from_declaration(
                         name.clone(),
                         helper_name,
                         declaration,
                         closure_group,
                         context,
                     )?;
+                    closure.parameter.default = default;
                     parameters.push(closure.parameter);
                     native_parameters.extend(closure.native_parameters);
                     invocation_arguments.extend(closure.invocation_arguments);
@@ -1503,6 +1502,7 @@ impl Function {
             visibility: "public",
             name,
             native_name,
+            overloads: Overload::from_parameters(&parameters)?,
             parameters,
             native_parameters,
             public_return_type,
@@ -1599,6 +1599,10 @@ impl Function {
             .into_iter()
             .fold(emitted, Emitted::with_aux)
             .with_diagnostics(diagnostics))
+    }
+
+    fn parameter_declarations(&self) -> Vec<String> {
+        Parameter::declarations(&self.parameters)
     }
 }
 
