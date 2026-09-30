@@ -1,0 +1,15 @@
+error: BoltFFI: a declared type named `Url` shadows the builtin `Url`, which every signature spelling `Url` crosses as; rename the type
+ --> tests/diagnostics/builtin_names/class_named_url.rs:3:1
+  |
+3 | #[boltffi::export]
+  | ^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `boltffi::export` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error: BoltFFI: unsupported source type `Url`
+ --> tests/diagnostics/builtin_names/class_named_url.rs:8:1
+  |
+8 | #[boltffi::export]
+  | ^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `boltffi::export` (in Nightly builds, run with -Z macro-backtrace for more info)

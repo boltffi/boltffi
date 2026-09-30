@@ -1,0 +1,5 @@
+error: export can only be applied to const, enum, fn, impl, struct, or trait
+ --> tests/diagnostics/unsupported_items/export_on_a_type_alias.rs:4:1
+  |
+4 | pub type Count = u32;
+  | ^^^^^^^^^^^^^^^^^^^^^

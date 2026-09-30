@@ -1,0 +1,11 @@
+error: cannot find macro `IpAddr` in this scope
+ --> tests/diagnostics/undeclared_types/foreign_type_in_record_field.rs:8:18
+  |
+8 |     pub address: IpAddr,
+  |                  ^^^^^^
+  |
+note: `IpAddr` is imported here, but it is an enum, not a macro
+ --> tests/diagnostics/undeclared_types/foreign_type_in_record_field.rs:3:5
+  |
+3 | use std::net::IpAddr;
+  |     ^^^^^^^^^^^^^^^^

@@ -1,0 +1,7 @@
+error: cannot find macro `Point` in this scope
+ --> tests/diagnostics/undeclared_types/plain_struct_in_signature.rs:9:20
+  |
+9 | pub fn origin() -> Point {
+  |                    ^^^^^
+  |
+  = note: `Point` is in scope, but it is a struct, not a macro

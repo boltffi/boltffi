@@ -1,0 +1,7 @@
+error: BoltFFI: unsupported expansion: floating-point encoded map key
+ --> tests/diagnostics/unsupported_signatures/float_map_key.rs:5:1
+  |
+5 | #[boltffi::export]
+  | ^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `boltffi::export` (in Nightly builds, run with -Z macro-backtrace for more info)

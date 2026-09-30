@@ -1,0 +1,11 @@
+error: cannot find macro `Length` in this scope
+  --> tests/diagnostics/custom_type_naming/imported_remote_name_in_signature.rs:18:23
+   |
+18 | pub fn double(length: Length) -> Length {
+   |                       ^^^^^^
+   |
+note: `Length` is imported here, but it is a struct, not a macro
+  --> tests/diagnostics/custom_type_naming/imported_remote_name_in_signature.rs:7:5
+   |
+ 7 | use units::Length;
+   |     ^^^^^^^^^^^^^

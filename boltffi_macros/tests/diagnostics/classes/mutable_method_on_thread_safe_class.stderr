@@ -1,0 +1,7 @@
+error: BoltFFI: a `&mut self` method needs `#[export(single_threaded)]` on its class's struct or enum, since a thread-safe class can be borrowed from many threads at once
+ --> tests/diagnostics/classes/mutable_method_on_thread_safe_class.rs:8:1
+  |
+8 | #[boltffi::export]
+  | ^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the macro `::boltffi::__private::lane_resume` (in Nightly builds, run with -Z macro-backtrace for more info)
