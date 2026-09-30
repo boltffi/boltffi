@@ -95,8 +95,8 @@ struct AsyncCall {
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 enum ReturnConversion {
     Void,
-    Direct,
-    Boolean,
+    Scalar(Scalar),
+    ScalarEnum(Scalar),
     String,
     Utf8String,
     Bytes,
@@ -1713,8 +1713,12 @@ impl Return {
     fn render(&self, call: Expression) -> Vec<Statement> {
         match &self.conversion {
             ReturnConversion::Void => vec![Statement::expression(call)],
-            ReturnConversion::Direct => vec![Statement::return_value(call)],
-            ReturnConversion::Boolean => vec![Statement::return_value(call.not_zero())],
+            ReturnConversion::Scalar(scalar) => vec![Statement::return_value(scalar.lift(call))],
+            ReturnConversion::ScalarEnum(scalar) => {
+                vec![Statement::return_value(
+                    scalar.lift(call).cast(self.ty.clone()),
+                )]
+            }
             ReturnConversion::String => vec![Statement::return_value(Expression::call(
                 Expression::identifier(Identifier::known("_module")),
                 Identifier::known("takePackedWireString"),
@@ -1951,21 +1955,22 @@ impl<'plan> ReturnPlanRender<'plan, Wasm32, boltffi_binding::OutOfRust> for Retu
     fn direct(&mut self, slot: ReturnValueSlot, ty: &'plan DirectValueType) -> Self::Output {
         match (slot, ty) {
             (ReturnValueSlot::ReturnSlot, DirectValueType::Primitive(primitive)) => {
+                let scalar = Scalar::new(*primitive)?;
+                Ok(Return::new(scalar.ty(), ReturnConversion::Scalar(scalar)))
+            }
+            (ReturnValueSlot::ReturnSlot, DirectValueType::Enum(id)) => {
+                let enumeration = self
+                    .context
+                    .enumeration(*id)
+                    .ok_or_else(|| Function::unsupported("enum without declaration"))?;
+                let EnumDecl::CStyle(enumeration) = enumeration else {
+                    return Err(Function::unsupported("direct data enum return"));
+                };
                 Ok(Return::new(
-                    Type::primitive(*primitive)?,
-                    match primitive {
-                        Primitive::Bool => ReturnConversion::Boolean,
-                        _ => ReturnConversion::Direct,
-                    },
+                    Name::new(enumeration.name()).type_name(),
+                    ReturnConversion::ScalarEnum(Scalar::new(enumeration.repr().primitive())?),
                 ))
             }
-            (ReturnValueSlot::ReturnSlot, DirectValueType::Enum(id)) => Ok(Return::new(
-                self.context
-                    .enumeration(*id)
-                    .map(|enumeration| Name::new(enumeration.name()).type_name())
-                    .ok_or_else(|| Function::unsupported("enum without declaration"))?,
-                ReturnConversion::Direct,
-            )),
             (ReturnValueSlot::OutPointer, DirectValueType::Primitive(primitive)) => {
                 let scalar = Scalar::new(*primitive)?;
                 let read = scalar.read_method();

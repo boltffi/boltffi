@@ -44,12 +44,14 @@ export async function run() {
   assert.equal(demo.scaleDefault(0.5, 1.5, demo.DefaultMode.Quiet), 0.75);
   assert.equal(demo.scaleDefault(2, 4, demo.DefaultMode.Loud), 16);
   assert.equal(demo.scaleDefault(0.5, null, demo.DefaultMode.Quiet), 0.5);
-  assert.equal(demo.defaultFloatBits(1), 0x3f800000);
-  assert.equal(demo.defaultDoubleBits(1), 0x3ff0000000000000n);
+  assert.equal(demo.defaultFloatBits(-0), 0x80000000);
+  assert.equal(demo.defaultDoubleBits(-0), 0x8000000000000000n);
   assert.equal(demo.DefaultMode.matches(demo.DefaultMode.Quiet, demo.DefaultMode.Quiet), true);
   assert.equal(demo.DefaultMode.matches(demo.DefaultMode.Loud, demo.DefaultMode.Quiet), false);
   assert.equal(await demo.DefaultMode.load(demo.DefaultMode.Loud), demo.DefaultMode.Loud);
   assert.equal(await demo.asyncDefault(9), 9);
+  assert.equal(await demo.asyncDefault(0x80000000), 0x80000000);
+  assert.equal(await demo.asyncDefault(0xffffffff), 0xffffffff);
   assert.equal(demo.DefaultAmount.offset({ value: 3 }, 2), 5);
   assert.deepEqual(demo.DefaultAmount.withScaledValue(2), { value: 4 });
   assert.deepEqual(demo.DefaultAmount.tryScaledValue(2), { value: 4 });

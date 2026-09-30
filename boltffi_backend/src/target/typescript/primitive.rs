@@ -2,7 +2,7 @@ use boltffi_binding::Primitive;
 
 use crate::core::{Error, Result};
 
-use super::syntax::{Identifier, TypeName};
+use super::syntax::{Expression, Identifier, TypeName};
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct Scalar {
@@ -47,6 +47,19 @@ impl Scalar {
             | Primitive::F32
             | Primitive::F64 => TypeName::number(),
             _ => unreachable!(),
+        }
+    }
+
+    pub fn lift(self, value: Expression) -> Expression {
+        match self.primitive {
+            Primitive::Bool => value.not_zero(),
+            Primitive::U32 | Primitive::USize => value.unsigned_shift_right(0),
+            Primitive::U64 => Expression::static_call(
+                "BigInt",
+                Identifier::known("asUintN"),
+                [Expression::integer(64), value].into_iter().collect(),
+            ),
+            _ => value,
         }
     }
 

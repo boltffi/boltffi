@@ -1,5 +1,5 @@
 use boltffi_binding::{
-    DirectValueType, DirectVectorElementType, HandlePresence, HandleTarget, OutOfRust,
+    DirectValueType, DirectVectorElementType, EnumDecl, HandlePresence, HandleTarget, OutOfRust,
     ParamPlanRender, Primitive, TypeRef, Wasm32, wasm32,
 };
 
@@ -52,20 +52,18 @@ impl Parameter {
     }
 
     pub fn primitive(name: Identifier, primitive: Primitive) -> Result<Self> {
+        let scalar = Scalar::new(primitive)?;
         let value = Expression::identifier(name.clone());
         Ok(Self {
             class_release: None,
             name: name.clone(),
-            public_type: Scalar::new(primitive)?.ty(),
+            public_type: scalar.ty(),
             bindings: vec![Binding {
                 name,
                 carrier_type: Self::carrier_type(primitive)?,
             }],
             setup: Vec::new(),
-            argument: match primitive {
-                Primitive::Bool => value.not_zero(),
-                _ => value,
-            },
+            argument: scalar.lift(value),
         })
     }
 
@@ -95,21 +93,17 @@ impl Parameter {
         match ty {
             DirectValueType::Primitive(primitive) => Self::primitive(name, *primitive),
             DirectValueType::Enum(id) => {
-                let public_type = context
+                let enumeration = context
                     .enumeration(*id)
-                    .map(|enumeration| Name::new(enumeration.name()).type_name())
                     .ok_or_else(|| Self::unsupported("imported enum without declaration"))?;
-                Ok(Self {
-                    class_release: None,
-                    name: name.clone(),
-                    public_type: public_type.clone(),
-                    bindings: vec![Binding {
-                        name: name.clone(),
-                        carrier_type: TypeName::number(),
-                    }],
-                    setup: Vec::new(),
-                    argument: Expression::identifier(name).cast(public_type),
-                })
+                let EnumDecl::CStyle(enumeration) = enumeration else {
+                    return Err(Self::unsupported("direct data enum parameter"));
+                };
+                let public_type = Name::new(enumeration.name()).type_name();
+                let mut parameter = Self::primitive(name, enumeration.repr().primitive())?;
+                parameter.public_type = public_type.clone();
+                parameter.argument = parameter.argument.cast(public_type);
+                Ok(parameter)
             }
             DirectValueType::Record(id) => {
                 let record = context

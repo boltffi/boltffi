@@ -1,7 +1,7 @@
 use askama::Template as AskamaTemplate;
 use boltffi_binding::{
-    CallbackDecl, DirectValueType, DirectVectorElementType, ExecutionDecl, Primitive, ReturnPlan,
-    TypeRef, Wasm32, wasm32,
+    CallbackDecl, DirectValueType, DirectVectorElementType, EnumDecl, ExecutionDecl, Primitive,
+    ReturnPlan, TypeRef, Wasm32, wasm32,
 };
 
 use crate::core::{Emitted, Error, RenderContext, Result};
@@ -419,13 +419,18 @@ impl Method {
             )),
             ReturnPlan::DirectViaReturnSlot {
                 ty: DirectValueType::Enum(id),
-            } => Ok(ReturnShape::direct(
-                context
+            } => {
+                let enumeration = context
                     .enumeration(*id)
-                    .map(|enumeration| Name::new(enumeration.name()).type_name())
-                    .ok_or_else(|| Self::unsupported("callback enum without declaration"))?,
-                TypeName::number(),
-            )),
+                    .ok_or_else(|| Self::unsupported("callback enum without declaration"))?;
+                let EnumDecl::CStyle(enumeration) = enumeration else {
+                    return Err(Self::unsupported("direct data enum callback return"));
+                };
+                Ok(ReturnShape::direct(
+                    Name::new(enumeration.name()).type_name(),
+                    Parameter::carrier_type(enumeration.repr().primitive())?,
+                ))
+            }
             ReturnPlan::DirectViaOutPointer {
                 ty: DirectValueType::Record(id),
             } => ReturnShape::direct_record(*id, context),

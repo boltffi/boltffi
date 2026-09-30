@@ -194,6 +194,10 @@ impl Expression {
         Self(format!("({self} * {other})"))
     }
 
+    pub fn unsigned_shift_right(self, bits: u8) -> Self {
+        Self(format!("({self} >>> {bits})"))
+    }
+
     pub fn strict_equal(self, other: Self) -> Self {
         Self(format!("{self} === {other}"))
     }

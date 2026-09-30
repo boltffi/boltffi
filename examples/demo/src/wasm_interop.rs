@@ -1,6 +1,6 @@
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use boltffi::{CustomFfiConvertible, custom_ffi, export};
+use boltffi::{CustomFfiConvertible, custom_ffi, data, export};
 use wasm_bindgen::{JsCast, JsValue, closure::Closure, prelude::wasm_bindgen};
 use wasm_bindgen_futures::JsFuture;
 
@@ -118,4 +118,91 @@ pub async fn wasm_await_promise(value: String) -> String {
 pub async fn wasm_async_panic() {
     wasm_await_promise("wake before panicking".to_owned()).await;
     panic!("async demo panic");
+}
+
+#[data]
+#[derive(Clone, Copy)]
+#[repr(u32)]
+pub enum WasmUnsigned32 {
+    HighBit = 0x80000000,
+    Maximum = 0xffffffff,
+}
+
+#[data]
+#[derive(Clone, Copy)]
+#[repr(u64)]
+pub enum WasmUnsigned64 {
+    HighBit = 0x8000000000000000,
+    Maximum = 0xffffffffffffffff,
+}
+
+#[export]
+pub fn wasm_unsigned_enum32(value: WasmUnsigned32) -> WasmUnsigned32 {
+    value
+}
+
+#[export]
+pub fn wasm_unsigned_enum64(value: WasmUnsigned64) -> WasmUnsigned64 {
+    value
+}
+
+#[export]
+pub trait WasmUnsignedCallback {
+    fn matches(&self, word: u32, wide: u64, size: usize) -> bool;
+    fn echo_enums(&self, word: WasmUnsigned32, wide: WasmUnsigned64) -> WasmUnsigned64;
+}
+
+#[export]
+pub fn wasm_unsigned_callback(
+    callback: impl WasmUnsignedCallback,
+    word: u32,
+    wide: u64,
+    size: usize,
+) -> bool {
+    callback.matches(word, wide, size)
+}
+
+#[export]
+pub fn wasm_unsigned_enum_callback(
+    callback: impl WasmUnsignedCallback,
+    word: WasmUnsigned32,
+    wide: WasmUnsigned64,
+) -> WasmUnsigned64 {
+    callback.echo_enums(word, wide)
+}
+
+#[export]
+pub fn wasm_unsigned_closure(
+    callback: impl Fn(u32, u64, usize) -> bool,
+    word: u32,
+    wide: u64,
+    size: usize,
+) -> bool {
+    callback(word, wide, size)
+}
+
+#[export]
+pub fn wasm_unsigned_enum_closure(
+    callback: impl Fn(WasmUnsigned32, WasmUnsigned64) -> WasmUnsigned64,
+    word: WasmUnsigned32,
+    wide: WasmUnsigned64,
+) -> WasmUnsigned64 {
+    callback(word, wide)
+}
+
+pub struct WasmUnsignedValue(u64);
+
+#[export]
+impl WasmUnsignedValue {
+    pub fn new(value: u64) -> Self {
+        Self(value)
+    }
+
+    pub fn value(&self) -> u64 {
+        self.0
+    }
+
+    pub async fn async_value(&self) -> u64 {
+        self.0
+    }
 }

@@ -12,8 +12,17 @@ export async function run() {
   globalThis.demoCase("case:primitives.scalars.named_status.should_accept_both_names");
   demo.notifyStatusCollision(7, 11);
   assert.equal(demo.echoU32(2_147_483_647), 2_147_483_647, "case:primitives.scalars.u32.should_roundtrip_large_value");
+  [0, 0x7fffffff, 0x80000000, 0xffffffff].forEach((value) => {
+    assert.equal(demo.echoU32(value), value);
+    assert.equal(demo.echoUsize(value), value);
+  });
   assert.equal(demo.echoI64(-9_999_999_999n), -9_999_999_999n, "case:primitives.scalars.i64.should_roundtrip_large_negative_value");
   assert.equal(demo.echoU64(9_999_999_999n), 9_999_999_999n, "case:primitives.scalars.u64.should_roundtrip_large_value");
+  [0n, 0x7fffffffffffffffn, 0x8000000000000000n, 0xffffffffffffffffn].forEach((value) => {
+    assert.equal(demo.echoU64(value), value);
+  });
+  assert.equal(demo.echoI32(-2147483648), -2147483648);
+  assert.equal(demo.echoI64(-9223372036854775808n), -9223372036854775808n);
   globalThis.demoCase("case:primitives.scalars.f32.should_roundtrip_value_with_tolerance");
   assertApprox(demo.echoF32(3.5), 3.5, 1e-6);
   globalThis.demoCase("case:primitives.scalars.f32.should_add_two_values_with_tolerance");

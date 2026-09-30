@@ -195,6 +195,12 @@ mod tests {
                 pub fn echo_u64(value: u64) -> u64 { value }
 
                 #[export]
+                pub fn echo_u32(value: u32) -> u32 { value }
+
+                #[export]
+                pub fn echo_usize(value: usize) -> usize { value }
+
+                #[export]
                 pub fn echo_string(value: String) -> String { value }
 
                 #[export]
@@ -743,6 +749,29 @@ mod tests {
         assert!(browser.contents().contains(
             "export default async function init(source: BufferSource | Response | WebAssembly.Module): Promise<void>"
         ));
+    }
+
+    #[test]
+    fn renders_unsigned_returns_as_unsigned_javascript_values() {
+        let output = TypeScriptHost::new("demo")
+            .expect("TypeScript host")
+            .into_target()
+            .render(&bindings())
+            .expect("rendered module");
+        let module = output
+            .files()
+            .iter()
+            .find(|file| file.path().as_path().ends_with("demo.ts"))
+            .expect("browser module");
+
+        [
+            "return ((_exports.boltffi_function_demo_echo_u32 as Function)(value) >>> 0);",
+            "return ((_exports.boltffi_function_demo_echo_usize as Function)(value) >>> 0);",
+            "return BigInt.asUintN(64, (_exports.boltffi_function_demo_echo_u64 as Function)(value));",
+            "return (_exports.boltffi_function_demo_add as Function)(left, right);",
+        ]
+        .into_iter()
+        .for_each(|expected| assert!(module.contents().contains(expected), "missing {expected}"));
     }
 
     #[test]
