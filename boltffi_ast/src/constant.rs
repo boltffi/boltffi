@@ -39,19 +39,23 @@ pub struct ConstantDef {
     /// Source constant name.
     pub name: SourceName,
     /// Exported type that owns this constant, or `None` for a top-level constant.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub owner: Option<ConstantOwner>,
     /// Declared Rust source type.
     pub type_expr: TypeExpr,
     /// Source expression used as the constant value.
     pub value: ConstExpr,
     /// User attributes preserved from the constant.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub user_attrs: Vec<UserAttr>,
     /// Documentation attached to the constant.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub doc: Option<DocComment>,
     /// Deprecation metadata attached to the constant.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub deprecated: Option<DeprecationInfo>,
     /// Visibility and source location for diagnostics.
+    #[serde(default, skip_serializing_if = "Source::is_exported")]
     pub source: Source,
     /// Span available during macro expansion.
     #[serde(default, skip_serializing, skip_deserializing)]
