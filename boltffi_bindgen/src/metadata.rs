@@ -12,10 +12,15 @@ use thiserror::Error;
 use crate::artifact::{BindingMetadataReadError, BindingMetadataReader};
 use crate::cargo::{LibraryCargoArgs, LibraryCargoArgsError};
 
+/// Environment variable the `boltffi` build script turns into the cfg that emits source
+/// records. Only the metadata build sets it, which keeps records out of shipped binaries.
+pub const SOURCE_RECORDS_ENV: &str = "BOLTFFI_SOURCE_RECORDS";
+
 /// A Cargo library build that reads the BoltFFI source records its artifacts embed.
 ///
-/// The build enables the `boltffi_metadata` cfg and reads Cargo's JSON
-/// artifact stream. Artifact decoding is delegated to [`BindingMetadataReader`].
+/// The build enables the `boltffi_metadata` cfg, sets [`SOURCE_RECORDS_ENV`] so every
+/// crate emits its records, and reads Cargo's JSON artifact stream. Artifact decoding
+/// is delegated to [`BindingMetadataReader`].
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BindingMetadataBuild {
     manifest_path: PathBuf,
@@ -575,6 +580,7 @@ impl<'build> CargoBuild<'build> {
                 .iter()
                 .map(|(key, value)| (key, value)),
         );
+        command.env(SOURCE_RECORDS_ENV, "1");
         if let Some(toolchain_selector) = self.build.toolchain_selector.as_deref() {
             command.arg(toolchain_selector);
         }
@@ -823,13 +829,18 @@ mod tests {
     use std::ffi::{OsStr, OsString};
     use std::fs;
     use std::path::{Path, PathBuf};
+    use std::process::Command;
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use boltffi_ast::PackageInfo;
     use boltffi_binding::{BindingMetadataSurface, Decl, Native, Wasm32};
 
-    use super::{BindingMetadataBuild, BindingMetadataBuildError, CargoBuild, MetadataCargoArgs};
+    use super::{
+        BindingMetadataBuild, BindingMetadataBuildError, CargoBuild, MetadataCargoArgs,
+        SOURCE_RECORDS_ENV,
+    };
+    use crate::artifact::BindingMetadataReader;
     use crate::cargo::LibraryCargoArgsError;
 
     #[test]
@@ -888,6 +899,12 @@ mod tests {
             *key == OsStr::new("CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER")
                 && *value == Some(OsStr::new("/opt/cross/bin/clang"))
         }));
+        assert!(
+            environment
+                .iter()
+                .any(|(key, value)| *key == OsStr::new(SOURCE_RECORDS_ENV) && value.is_some()),
+            "the metadata build asks every crate for its source records"
+        );
     }
 
     #[test]
@@ -1575,6 +1592,36 @@ pub fn captured_value() -> u32 { 42 }
                 .files()
                 .iter()
                 .any(|file| file.contents().contains("capturedValue"))
+        );
+    }
+
+    #[test]
+    fn ordinary_cargo_build_embeds_no_source_records() {
+        if cfg!(miri) {
+            return;
+        }
+
+        let fixture = FixtureCrate::with_boltffi_macros();
+        let target_dir = fixture.root.join("target");
+        let status = Command::new(std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into()))
+            .arg("build")
+            .arg("--quiet")
+            .arg("--manifest-path")
+            .arg(fixture.manifest())
+            .arg("--target-dir")
+            .arg(&target_dir)
+            .env_remove(SOURCE_RECORDS_ENV)
+            .status()
+            .expect("cargo runs");
+        assert!(status.success(), "the fixture builds without the records");
+
+        let records =
+            BindingMetadataReader::new([target_dir.join("debug").join("libmetadata_fixture.rlib")])
+                .read_source_records()
+                .expect("the library reads");
+        assert!(
+            records.is_empty(),
+            "only the metadata build embeds source records"
         );
     }
 

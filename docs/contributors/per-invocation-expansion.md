@@ -59,7 +59,7 @@ Each invocation writes its fragment into the compiled artifact as a `static` in 
 constants, and rustc evaluates them:
 
 ```rust
-// emitted by #[data] Line
+// emitted by #[data] Line, inside boltffi::__private::source_record! { … }
 const _: () = {
     const SLOT_0: &[u8] = <Point as TypeDesc<Point!(@tag)>>::DESC.as_bytes();
     #[link_section = "__DATA,__boltffisrc"] #[used]
@@ -75,8 +75,13 @@ const _: () = {
 The macro only wrote the path `Point`. The compiler resolved it through imports, renames
 and re-exports, and filled in which `Point` that is.
 
-`boltffi generate` runs one ordinary `cargo build` and reads every record from the
-artifact (`boltffi_bindgen/src/artifact.rs`). `aggregate_records` then:
+`source_record!` keeps the static only when the `boltffi` build script sees
+`BOLTFFI_SOURCE_RECORDS`, so an ordinary build, and every shipped binary, carries no
+records. The lanes and wrappers are the same in both builds.
+
+`boltffi generate` runs one `cargo build` with that variable set, in a target directory
+of its own, and reads every record from the artifact (`boltffi_bindgen/src/artifact.rs`).
+`aggregate_records` then:
 
 - fills `$self` from the record's crate;
 - fills each slot from the value rustc wrote, with the module dropped
