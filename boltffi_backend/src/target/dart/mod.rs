@@ -212,7 +212,7 @@ mod tests {
     use boltffi_ast::PackageInfo;
     use boltffi_binding::{Bindings, Native, lower};
 
-    use crate::{GeneratedOutput, Target, bridge::c::CBridge};
+    use crate::{GeneratedOutput, Target, bridge::c::CBridge, core::Error};
 
     use super::DartHost;
 
@@ -279,9 +279,176 @@ mod tests {
 
         assert!(source.contains("Length? maxRejoinDistance,"), "{source}");
         assert!(
-            source.contains("maxRejoinDistance = maxRejoinDistance ?? LengthFfi(meters: 1500)"),
+            source.contains("maxRejoinDistance = maxRejoinDistance ?? LengthFfi(meters: 1500.0)"),
             "{source}"
         );
+    }
+
+    #[test]
+    fn dart_target_renders_parameter_defaults_from_the_shared_fixture() {
+        let bindings = bindings(include_str!(
+            "../../../tests/fixtures/source/exports/parameter_defaults.rs"
+        ));
+        let output = target(DartHost::new().package("demo"))
+            .render(&bindings)
+            .expect("parameter defaults should render");
+        let source = file(&output, "demo/lib/demo.dart");
+
+        assert!(source.contains("String greet(String name, {String greeting = \"world\", int times = 3, int offset = -1, bool shout = true, double ratio = 0.5, Mode mode = Mode.slow, String? suffix = null, int? limit = 7})"));
+        assert!(source.contains("factory DefaultCounter({int start = 10})"));
+        assert!(source.contains("factory DefaultCounter.fromText({String value = \"40\"})"));
+        assert!(
+            source.contains(
+                "factory DefaultCounter.withOffset({int start = 20, required int offset})"
+            )
+        );
+        assert!(source.contains("int offset({int step = 1})"));
+        assert!(source.contains(
+            "Future<int> asyncOffset({int step = 3, $$BoltCancellationToken? cancellationToken})"
+        ));
+        assert!(source.contains(
+            "Future<int> asyncDefault({int value = 9, $$BoltCancellationToken? cancellationToken})"
+        ));
+        assert!(
+            source.contains(
+                "int applyOptionalClosure(int value, {int Function(int)? callback = null})"
+            )
+        );
+        assert!(source.contains("DefaultAmount({\n    this.value = 3,"));
+        assert!(source.contains("static DefaultAmount withScaledValue({int value = 2})"));
+        assert!(source.contains("static DefaultAmount? tryScaledValue({int value = 2})"));
+        assert!(source.contains("Amount defaultAmount({Amount? amount = null}) {\n  amount ??= DefaultAmount(value: 5);\n"));
+        assert!(source.contains("Limit throttle({Limit limit = null})"));
+        assert!(
+            source.contains(
+                "Email? defaultOptionalEmail({Email? email = \"mailto:ada@example.com\"})"
+            )
+        );
+        assert!(source.contains("int defaultFloatBits({double value = -0.0})"));
+        assert!(source.contains("int defaultDoubleBits({double value = -0.0})"));
+        assert!(source.contains(
+            "int span({int start = -9223372036854775808, int end = 0xffffffffffffffff})"
+        ));
+        assert!(source.contains("const int ceiling = 0xffffffffffffffff;"));
+        assert!(output.diagnostics().is_empty());
+    }
+
+    #[test]
+    fn dart_target_preserves_string_contents_and_uuid_types_in_defaults() {
+        let bindings = bindings(
+            r#"
+            #[export]
+            pub fn echo_text(#[boltffi::default("$name ${greeting} \"quote\" \\ newline\n\0")] value: String) -> String { value }
+
+            #[export]
+            pub fn echo_uuid(#[boltffi::default("fedcba98-7654-3210-ffff-ffffffffffff")] value: uuid::Uuid) -> uuid::Uuid { value }
+
+            #[export]
+            pub fn echo_optional_uuid(#[boltffi::default("01234567-89ab-cdef-0123-456789abcdef")] value: Option<uuid::Uuid>) -> Option<uuid::Uuid> { value }
+
+            #[export]
+            pub fn echo_large_float(#[boltffi::default(974192668992941184.0)] value: f64) -> f64 { value }
+
+            #[data]
+            pub enum Choice { Empty, Value(i32) }
+
+            #[export]
+            pub fn choose(#[boltffi::default(Choice::Empty)] choice: Choice) -> Choice { choice }
+            "#,
+        );
+        let output = target(DartHost::new().package("demo"))
+            .render(&bindings)
+            .expect("string and UUID defaults should render");
+        let source = file(&output, "demo/lib/demo.dart");
+
+        assert!(source.contains(
+            r#"String echoText({String value = "\$name \${greeting} \"quote\" \\ newline\n\u{0}"})"#
+        ));
+        assert!(source.contains("$$BoltUUIDValue echoUuid({$$BoltUUIDValue value = const $$BoltUUIDValue(0xfedcba9876543210, 0xffffffffffffffff)})"));
+        assert!(source.contains("$$BoltUUIDValue? echoOptionalUuid({$$BoltUUIDValue? value = const $$BoltUUIDValue(0x0123456789abcdef, 0x0123456789abcdef)})"));
+        assert!(source.contains("double echoLargeFloat({double value = 9.741926689929412e17})"));
+        assert!(source.contains("Choice choose({Choice choice = const Choice$Empty()})"));
+        assert!(output.diagnostics().is_empty());
+    }
+
+    #[test]
+    fn dart_target_keeps_interleaved_required_parameters_required() {
+        let bindings = bindings(
+            r#"
+            #[export]
+            pub fn combine(
+                head: i32,
+                #[boltffi::default(1)] left: i32,
+                middle: i32,
+                #[boltffi::default(2)] right: i32,
+                tail: i32,
+            ) -> i32 { head + left + middle + right + tail }
+
+            #[export]
+            pub async fn collision(#[boltffi::default(3)] cancellation_token: u32) -> u32 { cancellation_token }
+            "#,
+        );
+        let output = target(DartHost::new().package("demo"))
+            .render(&bindings)
+            .expect("interleaved parameters should render");
+        let source = file(&output, "demo/lib/demo.dart");
+
+        assert!(source.contains("int combine(int head, {int left = 1, required int middle, int right = 2, required int tail})"));
+        assert!(source.contains("Future<int> collision({int cancellationToken = 3, $$BoltCancellationToken? boltCancellationToken})"));
+        assert!(output.diagnostics().is_empty());
+    }
+
+    #[test]
+    fn dart_target_rejects_nullable_constructed_defaults_that_would_replace_null() {
+        let bindings = bindings(
+            r#"
+            #[data]
+            pub struct AmountFfi { pub value: i32 }
+
+            custom_type!(
+                pub Amount,
+                remote = AmountRust,
+                repr = AmountFfi,
+                into_ffi = into_ffi,
+                try_from_ffi = from_ffi
+            );
+
+            #[export]
+            pub fn amount(#[boltffi::default(3)] amount: Option<AmountRust>) -> Option<AmountRust> { amount }
+            "#,
+        );
+        let error = target(DartHost::new().package("demo"))
+            .render(&bindings)
+            .expect_err("nullable constructed defaults must preserve explicit null");
+
+        assert!(matches!(
+            error,
+            Error::UnsupportedTarget {
+                target: "dart",
+                shape: "optional custom-record default",
+            }
+        ));
+    }
+
+    #[test]
+    fn dart_target_rejects_invalid_uuid_defaults_before_emitting_bindings() {
+        let bindings = bindings(
+            r#"
+            #[export]
+            pub fn identifier(#[boltffi::default("fedc-ba987654-3210-ffff-ffffffffffff")] value: uuid::Uuid) -> uuid::Uuid { value }
+            "#,
+        );
+        let error = target(DartHost::new().package("demo"))
+            .render(&bindings)
+            .expect_err("invalid UUID defaults must fail generation");
+
+        assert!(matches!(
+            error,
+            Error::UnsupportedTarget {
+                target: "dart",
+                shape: "invalid UUID default",
+            }
+        ));
     }
 
     #[test]
