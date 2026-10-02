@@ -108,6 +108,14 @@ static void {{ release }}(void *context) {
 }
 
 static int {{ parser }}(PyObject *value, {{ call_output_declaration }}, {{ context_output_declaration }}, {{ release_output_declaration }}) {
+{%- if nullable %}
+    if (value == Py_None) {
+        *out_call = NULL;
+        *out_context = NULL;
+        *out_release = NULL;
+        return 1;
+    }
+{%- endif %}
     if (!PyCallable_Check(value)) {
         PyErr_SetString(PyExc_TypeError, "expected callable");
         return 0;

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import uuid
+from uuid import UUID as _UUID
 
 {% if !records.is_empty() || has_data_enums %}
 from dataclasses import dataclass
@@ -16,6 +16,10 @@ from collections.abc import {% if uses_callable_annotations %}Callable{% if uses
 {% endif %}
 {% if has_associated_constants %}
 from typing import ClassVar
+
+{% endif %}
+{% if uses_overloads %}
+from typing import overload as _overload
 
 {% endif %}
 MODULE_NAME: str
@@ -34,15 +38,30 @@ class {{ record.class_name }}:
 {{- field.documentation.docstring("    ") }}
 {%- endfor %}
 {%- for constructor in record.constructors %}
+{%- for signature in constructor.parameters.stub_declarations() %}
+{%- if constructor.parameters.has_stub_overloads() %}
+    @_overload
+{%- endif %}
     @classmethod
-    {% if constructor.asynchronous %}async {% endif %}def {{ constructor.python_name }}(cls{% for parameter in constructor.parameters %}, {{ parameter.name }}: {{ parameter.annotation }}{% endfor %}) -> "{{ record.class_name }}":{% if constructor.documentation.is_empty() %} ...{% else %}{{ constructor.documentation.docstring("        ") }}{% endif %}
+    {% if constructor.asynchronous %}async {% endif %}def {{ constructor.python_name }}(cls{% if !constructor.parameters.is_empty() %}, {{ signature }}{% endif %}) -> "{{ record.class_name }}":{% if constructor.documentation.is_empty() %} ...{% else %}{{ constructor.documentation.docstring("        ") }}{% endif %}
+{%- endfor %}
 {%- endfor %}
 {%- for method in record.static_methods %}
+{%- for signature in method.parameters.stub_declarations() %}
+{%- if method.parameters.has_stub_overloads() %}
+    @_overload
+{%- endif %}
     @staticmethod
-    {% if method.asynchronous %}async {% endif %}def {{ method.python_name }}({% for parameter in method.parameters %}{{ parameter.name }}: {{ parameter.annotation }}{% if !loop.last %}, {% endif %}{% endfor %}) -> {{ method.return_annotation }}:{% if method.documentation.is_empty() %} ...{% else %}{{ method.documentation.docstring("        ") }}{% endif %}
+    {% if method.asynchronous %}async {% endif %}def {{ method.python_name }}({{ signature }}) -> {{ method.return_annotation }}:{% if method.documentation.is_empty() %} ...{% else %}{{ method.documentation.docstring("        ") }}{% endif %}
+{%- endfor %}
 {%- endfor %}
 {%- for method in record.instance_methods %}
-    {% if method.asynchronous %}async {% endif %}def {{ method.python_name }}(self{% for parameter in method.parameters %}, {{ parameter.name }}: {{ parameter.annotation }}{% endfor %}) -> {{ method.return_annotation }}:{% if method.documentation.is_empty() %} ...{% else %}{{ method.documentation.docstring("        ") }}{% endif %}
+{%- for signature in method.parameters.stub_declarations() %}
+{%- if method.parameters.has_stub_overloads() %}
+    @_overload
+{%- endif %}
+    {% if method.asynchronous %}async {% endif %}def {{ method.python_name }}(self{% if !method.parameters.is_empty() %}, {{ signature }}{% endif %}) -> {{ method.return_annotation }}:{% if method.documentation.is_empty() %} ...{% else %}{{ method.documentation.docstring("        ") }}{% endif %}
+{%- endfor %}
 {%- endfor %}
 
 {% if let Some(exception_name) = record.exception_name %}
@@ -64,15 +83,30 @@ class {{ enumeration.class_name }}:
 {{- constant.documentation.docstring("    ") }}
 {%- endfor %}
 {%- for constructor in enumeration.constructors %}
+{%- for signature in constructor.parameters.stub_declarations() %}
+{%- if constructor.parameters.has_stub_overloads() %}
+    @_overload
+{%- endif %}
     @classmethod
-    {% if constructor.asynchronous %}async {% endif %}def {{ constructor.python_name }}(cls{% for parameter in constructor.parameters %}, {{ parameter.name }}: {{ parameter.annotation }}{% endfor %}) -> "{{ enumeration.class_name }}":{% if constructor.documentation.is_empty() %} ...{% else %}{{ constructor.documentation.docstring("        ") }}{% endif %}
+    {% if constructor.asynchronous %}async {% endif %}def {{ constructor.python_name }}(cls{% if !constructor.parameters.is_empty() %}, {{ signature }}{% endif %}) -> "{{ enumeration.class_name }}":{% if constructor.documentation.is_empty() %} ...{% else %}{{ constructor.documentation.docstring("        ") }}{% endif %}
+{%- endfor %}
 {%- endfor %}
 {%- for method in enumeration.static_methods %}
+{%- for signature in method.parameters.stub_declarations() %}
+{%- if method.parameters.has_stub_overloads() %}
+    @_overload
+{%- endif %}
     @staticmethod
-    {% if method.asynchronous %}async {% endif %}def {{ method.python_name }}({% for parameter in method.parameters %}{{ parameter.name }}: {{ parameter.annotation }}{% if !loop.last %}, {% endif %}{% endfor %}) -> {{ method.return_annotation }}:{% if method.documentation.is_empty() %} ...{% else %}{{ method.documentation.docstring("        ") }}{% endif %}
+    {% if method.asynchronous %}async {% endif %}def {{ method.python_name }}({{ signature }}) -> {{ method.return_annotation }}:{% if method.documentation.is_empty() %} ...{% else %}{{ method.documentation.docstring("        ") }}{% endif %}
+{%- endfor %}
 {%- endfor %}
 {%- for method in enumeration.instance_methods %}
-    {% if method.asynchronous %}async {% endif %}def {{ method.python_name }}(self{% for parameter in method.parameters %}, {{ parameter.name }}: {{ parameter.annotation }}{% endfor %}) -> {{ method.return_annotation }}:{% if method.documentation.is_empty() %} ...{% else %}{{ method.documentation.docstring("        ") }}{% endif %}
+{%- for signature in method.parameters.stub_declarations() %}
+{%- if method.parameters.has_stub_overloads() %}
+    @_overload
+{%- endif %}
+    {% if method.asynchronous %}async {% endif %}def {{ method.python_name }}(self{% if !method.parameters.is_empty() %}, {{ signature }}{% endif %}) -> {{ method.return_annotation }}:{% if method.documentation.is_empty() %} ...{% else %}{{ method.documentation.docstring("        ") }}{% endif %}
+{%- endfor %}
 {%- endfor %}
 
 {% for variant in wire.variants %}
@@ -100,15 +134,30 @@ class {{ enumeration.class_name }}(IntEnum):
 {{- constant.documentation.docstring("    ") }}
 {%- endfor %}
 {%- for constructor in enumeration.constructors %}
+{%- for signature in constructor.parameters.stub_declarations() %}
+{%- if constructor.parameters.has_stub_overloads() %}
+    @_overload
+{%- endif %}
     @classmethod
-    {% if constructor.asynchronous %}async {% endif %}def {{ constructor.python_name }}(cls{% for parameter in constructor.parameters %}, {{ parameter.name }}: {{ parameter.annotation }}{% endfor %}) -> "{{ enumeration.class_name }}":{% if constructor.documentation.is_empty() %} ...{% else %}{{ constructor.documentation.docstring("        ") }}{% endif %}
+    {% if constructor.asynchronous %}async {% endif %}def {{ constructor.python_name }}(cls{% if !constructor.parameters.is_empty() %}, {{ signature }}{% endif %}) -> "{{ enumeration.class_name }}":{% if constructor.documentation.is_empty() %} ...{% else %}{{ constructor.documentation.docstring("        ") }}{% endif %}
+{%- endfor %}
 {%- endfor %}
 {%- for method in enumeration.static_methods %}
+{%- for signature in method.parameters.stub_declarations() %}
+{%- if method.parameters.has_stub_overloads() %}
+    @_overload
+{%- endif %}
     @staticmethod
-    {% if method.asynchronous %}async {% endif %}def {{ method.python_name }}({% for parameter in method.parameters %}{{ parameter.name }}: {{ parameter.annotation }}{% if !loop.last %}, {% endif %}{% endfor %}) -> {{ method.return_annotation }}:{% if method.documentation.is_empty() %} ...{% else %}{{ method.documentation.docstring("        ") }}{% endif %}
+    {% if method.asynchronous %}async {% endif %}def {{ method.python_name }}({{ signature }}) -> {{ method.return_annotation }}:{% if method.documentation.is_empty() %} ...{% else %}{{ method.documentation.docstring("        ") }}{% endif %}
+{%- endfor %}
 {%- endfor %}
 {%- for method in enumeration.instance_methods %}
-    {% if method.asynchronous %}async {% endif %}def {{ method.python_name }}(self{% for parameter in method.parameters %}, {{ parameter.name }}: {{ parameter.annotation }}{% endfor %}) -> {{ method.return_annotation }}:{% if method.documentation.is_empty() %} ...{% else %}{{ method.documentation.docstring("        ") }}{% endif %}
+{%- for signature in method.parameters.stub_declarations() %}
+{%- if method.parameters.has_stub_overloads() %}
+    @_overload
+{%- endif %}
+    {% if method.asynchronous %}async {% endif %}def {{ method.python_name }}(self{% if !method.parameters.is_empty() %}, {{ signature }}{% endif %}) -> {{ method.return_annotation }}:{% if method.documentation.is_empty() %} ...{% else %}{{ method.documentation.docstring("        ") }}{% endif %}
+{%- endfor %}
 {%- endfor %}
 
 {%- endif %}
@@ -129,7 +178,12 @@ class {{ class.class_name }}:
 {%- endfor %}
 {% if !class.init.is_empty() %}
 {% for init in class.init %}
-    def __init__(self{% for parameter in init.parameters %}, {{ parameter.name }}: {{ parameter.annotation }}{% endfor %}) -> None:{% if init.documentation.is_empty() %} ...{% else %}{{ init.documentation.docstring("        ") }}{% endif %}
+{%- for signature in init.parameters.stub_declarations() %}
+{%- if init.parameters.has_stub_overloads() %}
+    @_overload
+{%- endif %}
+    def __init__(self{% if !init.parameters.is_empty() %}, {{ signature }}{% endif %}) -> None:{% if init.documentation.is_empty() %} ...{% else %}{{ init.documentation.docstring("        ") }}{% endif %}
+{%- endfor %}
 {% endfor %}
 {% else %}
     def __init__(self) -> None: ...
@@ -138,15 +192,30 @@ class {{ class.class_name }}:
     def _from_handle(cls, handle: int) -> "{{ class.class_name }}": ...
     def __del__(self) -> None: ...
 {%- for constructor in class.constructors %}
+{%- for signature in constructor.parameters.stub_declarations() %}
+{%- if constructor.parameters.has_stub_overloads() %}
+    @_overload
+{%- endif %}
     @classmethod
-    {% if constructor.asynchronous %}async {% endif %}def {{ constructor.python_name }}(cls{% for parameter in constructor.parameters %}, {{ parameter.name }}: {{ parameter.annotation }}{% endfor %}) -> "{{ class.class_name }}":{% if constructor.documentation.is_empty() %} ...{% else %}{{ constructor.documentation.docstring("        ") }}{% endif %}
+    {% if constructor.asynchronous %}async {% endif %}def {{ constructor.python_name }}(cls{% if !constructor.parameters.is_empty() %}, {{ signature }}{% endif %}) -> "{{ class.class_name }}":{% if constructor.documentation.is_empty() %} ...{% else %}{{ constructor.documentation.docstring("        ") }}{% endif %}
+{%- endfor %}
 {%- endfor %}
 {%- for method in class.static_methods %}
+{%- for signature in method.parameters.stub_declarations() %}
+{%- if method.parameters.has_stub_overloads() %}
+    @_overload
+{%- endif %}
     @staticmethod
-    {% if method.asynchronous %}async {% endif %}def {{ method.python_name }}({% for parameter in method.parameters %}{{ parameter.name }}: {{ parameter.annotation }}{% if !loop.last %}, {% endif %}{% endfor %}) -> {{ method.return_annotation }}:{% if method.documentation.is_empty() %} ...{% else %}{{ method.documentation.docstring("        ") }}{% endif %}
+    {% if method.asynchronous %}async {% endif %}def {{ method.python_name }}({{ signature }}) -> {{ method.return_annotation }}:{% if method.documentation.is_empty() %} ...{% else %}{{ method.documentation.docstring("        ") }}{% endif %}
+{%- endfor %}
 {%- endfor %}
 {%- for method in class.instance_methods %}
-    {% if method.asynchronous %}async {% endif %}def {{ method.python_name }}(self{% for parameter in method.parameters %}, {{ parameter.name }}: {{ parameter.annotation }}{% endfor %}) -> {{ method.return_annotation }}:{% if method.documentation.is_empty() %} ...{% else %}{{ method.documentation.docstring("        ") }}{% endif %}
+{%- for signature in method.parameters.stub_declarations() %}
+{%- if method.parameters.has_stub_overloads() %}
+    @_overload
+{%- endif %}
+    {% if method.asynchronous %}async {% endif %}def {{ method.python_name }}(self{% if !method.parameters.is_empty() %}, {{ signature }}{% endif %}) -> {{ method.return_annotation }}:{% if method.documentation.is_empty() %} ...{% else %}{{ method.documentation.docstring("        ") }}{% endif %}
+{%- endfor %}
 {%- endfor %}
 {%- for stream in class.streams %}
     def {{ stream.python_name }}(self) -> "{{ stream.subscription_class }}":{% if stream.documentation.is_empty() %} ...{% else %}{{ stream.documentation.docstring("        ") }}{% endif %}
@@ -170,5 +239,10 @@ class {{ stream.subscription_class }}:
 {{- constant.documentation.docstring("") }}
 {% endfor %}
 {% for function in functions %}
-{% if function.asynchronous %}async {% endif %}def {{ function.python_name }}({% for parameter in function.parameters %}{{ parameter.name }}: {{ parameter.annotation }}{% if !loop.last %}, {% endif %}{% endfor %}) -> {{ function.return_annotation }}:{% if function.documentation.is_empty() %} ...{% else %}{{ function.documentation.docstring("    ") }}{% endif %}
+{%- for signature in function.parameters.stub_declarations() %}
+{%- if function.parameters.has_stub_overloads() %}
+@_overload
+{%- endif %}
+{% if function.asynchronous %}async {% endif %}def {{ function.python_name }}({{ signature }}) -> {{ function.return_annotation }}:{% if function.documentation.is_empty() %} ...{% else %}{{ function.documentation.docstring("    ") }}{% endif %}
+{%- endfor %}
 {%- endfor %}

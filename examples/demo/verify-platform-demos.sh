@@ -185,10 +185,10 @@ for selected_platform in "${selected_platforms[@]}"; do
             ;;
         python)
             if [[ -n "$python_interpreter" ]]; then
-                run_step "pack python" run_boltffi pack python --release --python "$python_interpreter"
+                run_step "pack python" run_boltffi --cargo-arg=--features --cargo-arg=async-initializers pack python --release --python "$python_interpreter"
                 run_step "python demo" "$python_dir/test-demo.sh" --python "$python_interpreter"
             else
-                run_step "pack python" run_boltffi pack python --release
+                run_step "pack python" run_boltffi --cargo-arg=--features --cargo-arg=async-initializers pack python --release
                 run_step "python demo" "$python_dir/test-demo.sh"
             fi
             ;;

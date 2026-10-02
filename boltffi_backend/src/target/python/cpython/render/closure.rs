@@ -35,6 +35,7 @@ struct Template {
     returns: ReturnValue,
     fallible_return: Option<FallibleReturn>,
     wire_payload: bool,
+    nullable: bool,
 }
 
 pub struct Parameter {
@@ -87,6 +88,7 @@ impl Parameter {
                 .declaration()?,
             copy_buffer_storage,
             wire_payload: signature.wire_payload(),
+            nullable: parameter.presence() == HandlePresence::Nullable,
             params: signature.params.clone(),
             returns: signature.returns.clone(),
             fallible_return: signature.fallible_return.clone(),
