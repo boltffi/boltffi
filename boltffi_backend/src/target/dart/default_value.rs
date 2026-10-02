@@ -107,13 +107,8 @@ impl DefaultExpression {
             DefaultValue::Integer(value) => value.get().to_string(),
             DefaultValue::Float(value) => match value.to_f64() {
                 value if value.is_nan() => "double.nan".to_owned(),
-                value if value.is_infinite() => {
-                    if value.is_sign_positive() {
-                        "double.infinity".to_owned()
-                    } else {
-                        "double.negativeInfinity".to_owned()
-                    }
-                }
+                value if value == f64::INFINITY => "double.infinity".to_owned(),
+                value if value == f64::NEG_INFINITY => "double.negativeInfinity".to_owned(),
                 value => format!("{value:?}"),
             },
             DefaultValue::String(value) => return Ok(Literal::string(value)),
@@ -143,16 +138,14 @@ impl DefaultExpression {
             .chars()
             .filter(|character| *character != '-')
             .collect::<String>();
-        if !digits.is_ascii() || digits.len() != 32 {
+        if digits.len() != 32 || !digits.bytes().all(|digit| digit.is_ascii_hexdigit()) {
             return unsupported("invalid UUID default");
         }
-        let (high_digits, low_digits) = digits.split_at(16);
-        let (Ok(high_bits), Ok(low_bits)) = (
-            u64::from_str_radix(high_digits, 16),
-            u64::from_str_radix(low_digits, 16),
-        ) else {
+        let Ok(uuid_bits) = u128::from_str_radix(&digits, 16) else {
             return unsupported("invalid UUID default");
         };
+        let high_bits = uuid_bits >> 64;
+        let low_bits = uuid_bits & u128::from(u64::MAX);
         Ok(Literal::new(format!(
             "const $$BoltUUIDValue(0x{high_bits:016x}, 0x{low_bits:016x})"
         )))

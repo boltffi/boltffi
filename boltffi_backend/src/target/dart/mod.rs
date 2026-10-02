@@ -347,6 +347,9 @@ mod tests {
             pub fn echo_optional_uuid(#[boltffi::default("01234567-89ab-cdef-0123-456789abcdef")] value: Option<uuid::Uuid>) -> Option<uuid::Uuid> { value }
 
             #[export]
+            pub fn echo_compact_uuid(#[boltffi::default("FEDCBA9876543210FFFFFFFFFFFFFFFF")] value: uuid::Uuid) -> uuid::Uuid { value }
+
+            #[export]
             pub fn echo_large_float(#[boltffi::default(974192668992941184.0)] value: f64) -> f64 { value }
 
             #[data]
@@ -366,6 +369,7 @@ mod tests {
         ));
         assert!(source.contains("$$BoltUUIDValue echoUuid({$$BoltUUIDValue value = const $$BoltUUIDValue(0xfedcba9876543210, 0xffffffffffffffff)})"));
         assert!(source.contains("$$BoltUUIDValue? echoOptionalUuid({$$BoltUUIDValue? value = const $$BoltUUIDValue(0x0123456789abcdef, 0x0123456789abcdef)})"));
+        assert!(source.contains("$$BoltUUIDValue echoCompactUuid({$$BoltUUIDValue value = const $$BoltUUIDValue(0xfedcba9876543210, 0xffffffffffffffff)})"));
         assert!(source.contains("double echoLargeFloat({double value = 9.741926689929412e17})"));
         assert!(source.contains("Choice choose({Choice choice = const Choice$Empty()})"));
         assert!(output.diagnostics().is_empty());
@@ -432,23 +436,36 @@ mod tests {
 
     #[test]
     fn dart_target_rejects_invalid_uuid_defaults_before_emitting_bindings() {
-        let bindings = bindings(
-            r#"
-            #[export]
-            pub fn identifier(#[boltffi::default("fedc-ba987654-3210-ffff-ffffffffffff")] value: uuid::Uuid) -> uuid::Uuid { value }
-            "#,
-        );
-        let error = target(DartHost::new().package("demo"))
-            .render(&bindings)
-            .expect_err("invalid UUID defaults must fail generation");
+        [
+            "fedc-ba987654-3210-ffff-ffffffffffff",
+            "+edcba9876543210ffffffffffffffff",
+            "fedcba9876543210+fffffffffffffff",
+            "+edcba98-7654-3210-ffff-ffffffffffff",
+            "fedcba98-7654-3210-+fff-ffffffffffff",
+        ]
+        .into_iter()
+        .for_each(|value| {
+            let bindings = bindings(&format!(
+                r#"
+                #[export]
+                pub fn identifier(#[boltffi::default("{value}")] value: uuid::Uuid) -> uuid::Uuid {{ value }}
+                "#,
+            ));
+            let error = target(DartHost::new().package("demo"))
+                .render(&bindings)
+                .expect_err("invalid UUID defaults must fail generation");
 
-        assert!(matches!(
-            error,
-            Error::UnsupportedTarget {
-                target: "dart",
-                shape: "invalid UUID default",
-            }
-        ));
+            assert!(
+                matches!(
+                    error,
+                    Error::UnsupportedTarget {
+                        target: "dart",
+                        shape: "invalid UUID default",
+                    }
+                ),
+                "UUID default {value:?} must be rejected"
+            );
+        });
     }
 
     #[test]

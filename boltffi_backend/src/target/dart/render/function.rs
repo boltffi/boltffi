@@ -61,7 +61,7 @@ pub struct Function {
     documentation: Documentation,
     name: Identifier,
     parameters: Vec<Parameter>,
-    first_default: Option<usize>,
+    positional_count: usize,
     return_type: TypeFragment,
     placement: FunctionPlacement,
     body: String,
@@ -228,61 +228,65 @@ impl Function {
                     },
                 )?;
                 group_index += 1;
-                let rendered = match parameter.payload() {
-                    IncomingParam::Value(plan) => render_parameter(
-                        Name::new(parameter.name()).lower_camel()?,
-                        plan,
-                        group,
-                        start_function,
-                        bridge,
-                        context,
-                    ),
-                    IncomingParam::Closure(closure) => {
+                let default_value = parameter.meta().default();
+                let (dart_parameter, default) = match parameter.payload() {
+                    IncomingParam::Value(plan) => {
+                        let dart_parameter = render_parameter(
+                            Name::new(parameter.name()).lower_camel()?,
+                            plan,
+                            group,
+                            start_function,
+                            bridge,
+                            context,
+                        )?;
+                        let default = default_value
+                            .map(|value| {
+                                let value_type =
+                                    plan.value_type().ok_or(Error::UnsupportedTarget {
+                                        target: "dart",
+                                        shape: "default value for this parameter type",
+                                    })?;
+                                DefaultExpression::render(&value_type, value, context)
+                            })
+                            .transpose()?;
+                        (dart_parameter, default)
+                    }
+                    IncomingParam::Closure(declaration) => {
                         let ParameterGroup::Closure(protocol) = group else {
                             return broken("Dart closure parameter disagrees with C bridge group");
                         };
                         let closure = ClosureArgument::from_declaration(
                             parameter.name(),
-                            closure,
+                            declaration,
                             protocol,
                             start_function,
                             bridge,
                             context,
                         )?;
-                        if let Some(helper) = closure.helper.clone() {
+                        if let Some(helper) = closure.helper {
                             helpers.push(helper);
                         }
-                        Ok(DartParameter::new(
-                            closure.name,
-                            closure.public_type,
-                            DartArgument::new(closure.setup, closure.arguments, Vec::new()),
-                        ))
+                        let default = default_value
+                            .map(|value| match value {
+                                DefaultValue::Null
+                                    if declaration.presence() == HandlePresence::Nullable =>
+                                {
+                                    Ok(DefaultExpression::Constant(Literal::new("null")))
+                                }
+                                _ => super::super::unsupported("non-null closure default"),
+                            })
+                            .transpose()?;
+                        (
+                            DartParameter::new(
+                                closure.name,
+                                closure.public_type,
+                                DartArgument::new(closure.setup, closure.arguments, Vec::new()),
+                            ),
+                            default,
+                        )
                     }
-                }?;
-                let default = parameter
-                    .meta()
-                    .default()
-                    .map(|value| match parameter.payload() {
-                        IncomingParam::Value(plan) => DefaultExpression::render(
-                            &plan.value_type().ok_or(Error::UnsupportedTarget {
-                                target: "dart",
-                                shape: "default value for this parameter type",
-                            })?,
-                            value,
-                            context,
-                        ),
-                        IncomingParam::Closure(closure)
-                            if closure.presence() == HandlePresence::Nullable
-                                && matches!(value, DefaultValue::Null) =>
-                        {
-                            Ok(DefaultExpression::Constant(Literal::new("null")))
-                        }
-                        IncomingParam::Closure(_) => {
-                            super::super::unsupported("non-null closure default")
-                        }
-                    })
-                    .transpose()?;
-                Ok(rendered.with_default(default))
+                };
+                Ok(dart_parameter.with_default(default))
             })
             .collect::<Result<Vec<_>>>()?;
 
@@ -313,9 +317,10 @@ impl Function {
             .iter()
             .map(|parameter| parameter.signature.clone())
             .collect::<Vec<_>>();
-        let first_default = declarations
+        let positional_count = declarations
             .iter()
-            .position(|parameter| parameter.default().is_some());
+            .position(|parameter| parameter.default().is_some())
+            .unwrap_or(declarations.len());
         receiver_setup.extend(
             parameters
                 .iter()
@@ -429,7 +434,7 @@ impl Function {
             documentation: Documentation::new(doc, 0),
             name,
             parameters: declarations,
-            first_default,
+            positional_count,
             return_type: public_return_type,
             placement,
             body: indent(&body, 2),
@@ -468,15 +473,15 @@ impl Function {
     }
 
     fn positional_parameters(&self) -> &[Parameter] {
-        &self.parameters[..self.first_default.unwrap_or(self.parameters.len())]
+        &self.parameters[..self.positional_count]
     }
 
     fn named_parameters(&self) -> &[Parameter] {
-        &self.parameters[self.first_default.unwrap_or(self.parameters.len())..]
+        &self.parameters[self.positional_count..]
     }
 
     fn has_named_parameters(&self) -> bool {
-        self.first_default.is_some() || self.cancellable()
+        !self.named_parameters().is_empty() || self.cancellable()
     }
 
     fn return_type(&self) -> &TypeFragment {
