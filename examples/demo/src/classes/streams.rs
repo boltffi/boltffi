@@ -81,7 +81,12 @@ impl EventBus {
         c,
         reason = ExclusionReason::ImplementationGap,
         details = "C target is sync-only; streams are not yet supported"
-    )
+    ),
+        exclude(
+            ruby,
+            reason = ExclusionReason::ImplementationGap,
+            details = "the Ruby target does not support classes yet"
+        )
 )]
     #[ffi_stream(item = StreamMessage)]
     pub fn subscribe_messages(&self) -> Arc<EventSubscription<StreamMessage>> {

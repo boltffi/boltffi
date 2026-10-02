@@ -190,6 +190,11 @@ pub trait StringResultMessageCallback {
         c,
         reason = ExclusionReason::ImplementationGap,
         details = "C target does not yet wrap callback result payloads ergonomically"
+    ),
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not support Result values yet"
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -201,6 +206,11 @@ pub trait StringResultMessageCallback {
         c,
         reason = ExclusionReason::ImplementationGap,
         details = "C target does not yet wrap callback result payloads ergonomically"
+    ),
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not support Result values yet"
     )
 )]
 #[export]

@@ -11,6 +11,11 @@ use super::error_enums::MathError;
         c,
         reason = ExclusionReason::ImplementationGap,
         details = "C target is sync-only; async results are not yet supported"
+    ),
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not support async functions yet"
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -22,6 +27,11 @@ use super::error_enums::MathError;
         c,
         reason = ExclusionReason::ImplementationGap,
         details = "C target is sync-only; async results are not yet supported"
+    ),
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not support async functions yet"
     )
 )]
 #[export]
@@ -42,6 +52,11 @@ pub async fn async_safe_divide(a: i32, b: i32) -> Result<i32, MathError> {
         c,
         reason = ExclusionReason::ImplementationGap,
         details = "C target is sync-only; async results are not yet supported"
+    ),
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not support async functions yet"
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -53,6 +68,11 @@ pub async fn async_safe_divide(a: i32, b: i32) -> Result<i32, MathError> {
         c,
         reason = ExclusionReason::ImplementationGap,
         details = "C target is sync-only; async results are not yet supported"
+    ),
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not support async functions yet"
     )
 )]
 #[export]
@@ -76,6 +96,11 @@ pub async fn async_fallible_fetch(key: i32) -> Result<String, String> {
         c,
         reason = ExclusionReason::ImplementationGap,
         details = "C target is sync-only; async results are not yet supported"
+    ),
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not support async functions yet"
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -87,6 +112,11 @@ pub async fn async_fallible_fetch(key: i32) -> Result<String, String> {
         c,
         reason = ExclusionReason::ImplementationGap,
         details = "C target is sync-only; async results are not yet supported"
+    ),
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not support async functions yet"
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -98,6 +128,11 @@ pub async fn async_fallible_fetch(key: i32) -> Result<String, String> {
         c,
         reason = ExclusionReason::ImplementationGap,
         details = "C target is sync-only; async results are not yet supported"
+    ),
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not support async functions yet"
     )
 )]
 #[export]

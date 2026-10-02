@@ -46,7 +46,12 @@ impl MixedRecord {
 #[demo_bench_macros::demo_case(
     "records.mixed.should_roundtrip_composed_record",
     justification = "Ensure a MixedRecord composed from strings, records, enums, options, and vectors crosses the wire and returns unchanged.",
-    directions = "Call `records::mixed::echo_mixed_record` through the generated binding and assert a MixedRecord composed from strings, records, enums, options, and vectors crosses the wire and returns unchanged."
+    directions = "Call `records::mixed::echo_mixed_record` through the generated binding and assert a MixedRecord composed from strings, records, enums, options, and vectors crosses the wire and returns unchanged.",
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not support enums yet"
+    )
 )]
 pub fn echo_mixed_record(record: MixedRecord) -> MixedRecord {
     record
@@ -56,7 +61,12 @@ pub fn echo_mixed_record(record: MixedRecord) -> MixedRecord {
 #[demo_bench_macros::demo_case(
     "records.mixed.should_make_from_composed_parts",
     justification = "Ensure make_mixed_record constructs a MixedRecord from nested records, data enums, repr-int enums, options, and vectors.",
-    directions = "Call `records::mixed::make_mixed_record` through the generated binding and assert make_mixed_record constructs a MixedRecord from nested records, data enums, repr-int enums, options, and vectors."
+    directions = "Call `records::mixed::make_mixed_record` through the generated binding and assert make_mixed_record constructs a MixedRecord from nested records, data enums, repr-int enums, options, and vectors.",
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not support enums yet"
+    )
 )]
 pub fn make_mixed_record(
     name: String,

@@ -21,7 +21,12 @@ impl Length {
     #[demo_bench_macros::demo_case(
         "custom_types.length.should_construct_in_meters",
         justification = "A record constructor must encode its private uom field through the custom conversion",
-        directions = "Construct Length with 2.5 meters and assert its numeric representation is 2.5"
+        directions = "Construct Length with 2.5 meters and assert its numeric representation is 2.5",
+        exclude(
+            ruby,
+            reason = ExclusionReason::ImplementationGap,
+            details = "the Ruby target does not bind record methods or initializers yet"
+        )
     )]
     pub fn new(meters: f64) -> Self {
         Self {
@@ -32,7 +37,12 @@ impl Length {
     #[demo_bench_macros::demo_case(
         "custom_types.length.should_convert_to_centimeters",
         justification = "A record method must reconstruct the private uom field before calling Rust",
-        directions = "Call centimeters on a 2.5 meter Length and assert 250"
+        directions = "Call centimeters on a 2.5 meter Length and assert 250",
+        exclude(
+            ruby,
+            reason = ExclusionReason::ImplementationGap,
+            details = "the Ruby target does not bind record methods or initializers yet"
+        )
     )]
     pub fn centimeters(&self) -> f64 {
         self.value.get::<centimeter>()
@@ -41,7 +51,12 @@ impl Length {
     #[demo_bench_macros::demo_case(
         "custom_types.length.should_write_back_in_meters",
         justification = "A mutable record method must convert its updated uom field back to meters",
-        directions = "Set a Length to 75 centimeters and assert its numeric representation is 0.75 and centimeters returns 75"
+        directions = "Set a Length to 75 centimeters and assert its numeric representation is 0.75 and centimeters returns 75",
+        exclude(
+            ruby,
+            reason = ExclusionReason::ImplementationGap,
+            details = "the Ruby target does not bind record methods or initializers yet"
+        )
     )]
     pub fn set_centimeters(&mut self, centimeters: f64) {
         self.value = f64::Length::new::<centimeter>(centimeters);

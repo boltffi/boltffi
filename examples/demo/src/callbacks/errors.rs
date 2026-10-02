@@ -34,6 +34,11 @@ pub async fn invoke_async_message_worker(worker: impl AsyncMessageWorker) -> Res
         c,
         reason = ExclusionReason::ImplementationGap,
         details = "C callbacks expose raw result payloads and do not throw host exceptions"
+    ),
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not support Result values yet"
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -44,6 +49,11 @@ pub async fn invoke_async_message_worker(worker: impl AsyncMessageWorker) -> Res
         c,
         reason = ExclusionReason::ImplementationGap,
         details = "C callbacks expose raw result payloads and do not throw host exceptions"
+    ),
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not support Result values yet"
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -54,6 +64,11 @@ pub async fn invoke_async_message_worker(worker: impl AsyncMessageWorker) -> Res
         c,
         reason = ExclusionReason::ImplementationGap,
         details = "C callbacks expose raw result payloads and do not throw host exceptions"
+    ),
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not support Result values yet"
     )
 )]
 #[export]
@@ -69,6 +84,11 @@ pub fn invoke_unit_worker(worker: impl FallibleWorker, mode: i32) -> Result<(), 
         c,
         reason = ExclusionReason::ImplementationGap,
         details = "C callbacks expose raw result payloads and do not throw host exceptions"
+    ),
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not support Result values yet"
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -79,6 +99,11 @@ pub fn invoke_unit_worker(worker: impl FallibleWorker, mode: i32) -> Result<(), 
         c,
         reason = ExclusionReason::ImplementationGap,
         details = "C callbacks expose raw result payloads and do not throw host exceptions"
+    ),
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not support Result values yet"
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -89,6 +114,11 @@ pub fn invoke_unit_worker(worker: impl FallibleWorker, mode: i32) -> Result<(), 
         c,
         reason = ExclusionReason::ImplementationGap,
         details = "C callbacks expose raw result payloads and do not throw host exceptions"
+    ),
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not support Result values yet"
     )
 )]
 #[export]
@@ -104,6 +134,11 @@ pub fn invoke_value_worker(worker: impl FallibleWorker, mode: i32) -> Result<i32
         c,
         reason = ExclusionReason::ImplementationGap,
         details = "C callbacks expose raw result payloads and do not throw host exceptions"
+    ),
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not support async functions yet"
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -114,6 +149,11 @@ pub fn invoke_value_worker(worker: impl FallibleWorker, mode: i32) -> Result<i32
         c,
         reason = ExclusionReason::ImplementationGap,
         details = "C callbacks expose raw result payloads and do not throw host exceptions"
+    ),
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not support async functions yet"
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -124,6 +164,11 @@ pub fn invoke_value_worker(worker: impl FallibleWorker, mode: i32) -> Result<i32
         c,
         reason = ExclusionReason::ImplementationGap,
         details = "C callbacks expose raw result payloads and do not throw host exceptions"
+    ),
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not support async functions yet"
     )
 )]
 #[export]
@@ -142,6 +187,11 @@ pub async fn invoke_async_unit_worker(
         c,
         reason = ExclusionReason::ImplementationGap,
         details = "C callbacks expose raw result payloads and do not throw host exceptions"
+    ),
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not support async functions yet"
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -152,6 +202,11 @@ pub async fn invoke_async_unit_worker(
         c,
         reason = ExclusionReason::ImplementationGap,
         details = "C callbacks expose raw result payloads and do not throw host exceptions"
+    ),
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not support async functions yet"
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -162,6 +217,11 @@ pub async fn invoke_async_unit_worker(
         c,
         reason = ExclusionReason::ImplementationGap,
         details = "C callbacks expose raw result payloads and do not throw host exceptions"
+    ),
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not support async functions yet"
     )
 )]
 #[export]

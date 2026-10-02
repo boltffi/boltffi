@@ -29,7 +29,12 @@ pub struct RequestConfig {
 #[demo_bench_macros::demo_case(
     "records.default_values.custom_type.should_apply_default",
     justification = "Ensure a generated record constructor applies a custom-type default through its record representation.",
-    directions = "Construct `records::default_values::RequestConfig` without a timeout, pass it to `records::default_values::request_timeout_seconds`, and assert the default is 1.5 seconds."
+    directions = "Construct `records::default_values::RequestConfig` without a timeout, pass it to `records::default_values::request_timeout_seconds`, and assert the default is 1.5 seconds.",
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not support custom types yet"
+    )
 )]
 #[export]
 pub fn request_timeout_seconds(config: RequestConfig) -> f64 {
@@ -55,7 +60,12 @@ impl ServiceConfig {
     #[demo_bench_macros::demo_case(
         "records.default_values.service_config.from_owned_name.should_return_config",
         justification = "Ensure a non-blittable record constructor accepts an owned String and returns the encoded record.",
-        directions = "Call `records::default_values::ServiceConfig::from_owned_name` through the generated binding and assert it returns a ServiceConfig using the provided name."
+        directions = "Call `records::default_values::ServiceConfig::from_owned_name` through the generated binding and assert it returns a ServiceConfig using the provided name.",
+        exclude(
+            ruby,
+            reason = ExclusionReason::ImplementationGap,
+            details = "the Ruby target does not bind record methods or initializers yet"
+        )
     )]
     pub fn from_owned_name(name: String) -> Self {
         Self {
@@ -70,7 +80,12 @@ impl ServiceConfig {
     #[demo_bench_macros::demo_case(
         "records.default_values.service_config.from_borrowed_name.should_return_config",
         justification = "Ensure a non-blittable record constructor accepts a borrowed string and returns the encoded record.",
-        directions = "Call `records::default_values::ServiceConfig::from_borrowed_name` through the generated binding and assert it returns a ServiceConfig using the provided name."
+        directions = "Call `records::default_values::ServiceConfig::from_borrowed_name` through the generated binding and assert it returns a ServiceConfig using the provided name.",
+        exclude(
+            ruby,
+            reason = ExclusionReason::ImplementationGap,
+            details = "the Ruby target does not bind record methods or initializers yet"
+        )
     )]
     pub fn from_borrowed_name(name: &str) -> Self {
         Self {
@@ -85,7 +100,12 @@ impl ServiceConfig {
     #[demo_bench_macros::demo_case(
         "records.default_values.service_config.from_string_ref_name.should_return_config",
         justification = "Ensure a non-blittable record constructor accepts a borrowed String reference and returns the encoded record.",
-        directions = "Call `records::default_values::ServiceConfig::from_string_ref_name` through the generated binding and assert it returns a ServiceConfig using the provided name."
+        directions = "Call `records::default_values::ServiceConfig::from_string_ref_name` through the generated binding and assert it returns a ServiceConfig using the provided name.",
+        exclude(
+            ruby,
+            reason = ExclusionReason::ImplementationGap,
+            details = "the Ruby target does not bind record methods or initializers yet"
+        )
     )]
     #[allow(clippy::ptr_arg)]
     pub fn from_string_ref_name(name: &String) -> Self {
@@ -101,12 +121,22 @@ impl ServiceConfig {
     #[demo_bench_macros::demo_case(
         "records.default_values.service_config.from_non_empty_name.should_return_config_for_non_empty_values",
         justification = "Ensure ServiceConfig::from_non_empty_name returns a config for non-empty borrowed name and region values.",
-        directions = "Call `records::default_values::ServiceConfig::from_non_empty_name` through the generated binding with non-empty borrowed name and region values and assert it returns the expected ServiceConfig."
+        directions = "Call `records::default_values::ServiceConfig::from_non_empty_name` through the generated binding with non-empty borrowed name and region values and assert it returns the expected ServiceConfig.",
+        exclude(
+            ruby,
+            reason = ExclusionReason::ImplementationGap,
+            details = "the Ruby target does not bind record methods or initializers yet"
+        )
     )]
     #[demo_bench_macros::demo_case(
         "records.default_values.service_config.from_non_empty_name.should_return_none_for_empty_values",
         justification = "Ensure ServiceConfig::from_non_empty_name returns None when either borrowed input is empty.",
-        directions = "Call `records::default_values::ServiceConfig::from_non_empty_name` through the generated binding with an empty borrowed name or region and assert it returns None."
+        directions = "Call `records::default_values::ServiceConfig::from_non_empty_name` through the generated binding with an empty borrowed name or region and assert it returns None.",
+        exclude(
+            ruby,
+            reason = ExclusionReason::ImplementationGap,
+            details = "the Ruby target does not bind record methods or initializers yet"
+        )
     )]
     pub fn from_non_empty_name(name: &str, region: &str) -> Option<Self> {
         (!name.is_empty() && !region.is_empty()).then(|| Self {
@@ -121,7 +151,12 @@ impl ServiceConfig {
     #[demo_bench_macros::demo_case(
         "records.default_values.service_config.should_describe_values",
         justification = "Ensure ServiceConfig::describe formats defaulted and explicit fields into a stable string.",
-        directions = "Call `records::default_values::ServiceConfig::describe` through the generated binding and assert ServiceConfig::describe formats defaulted and explicit fields into a stable string."
+        directions = "Call `records::default_values::ServiceConfig::describe` through the generated binding and assert ServiceConfig::describe formats defaulted and explicit fields into a stable string.",
+        exclude(
+            ruby,
+            reason = ExclusionReason::ImplementationGap,
+            details = "the Ruby target does not bind record methods or initializers yet"
+        )
     )]
     pub fn describe(&self) -> String {
         let endpoint = self.endpoint.as_deref().unwrap_or("none");
@@ -135,7 +170,12 @@ impl ServiceConfig {
     #[demo_bench_macros::demo_case(
         "records.default_values.service_config.should_describe_with_prefix",
         justification = "Ensure ServiceConfig::describe_with_prefix prepends a caller-provided string to the description.",
-        directions = "Call `records::default_values::ServiceConfig::describe_with_prefix` through the generated binding and assert ServiceConfig::describe_with_prefix prepends a caller-provided string to the description."
+        directions = "Call `records::default_values::ServiceConfig::describe_with_prefix` through the generated binding and assert ServiceConfig::describe_with_prefix prepends a caller-provided string to the description.",
+        exclude(
+            ruby,
+            reason = ExclusionReason::ImplementationGap,
+            details = "the Ruby target does not bind record methods or initializers yet"
+        )
     )]
     pub fn describe_with_prefix(&self, prefix: String) -> String {
         format!("{}:{}", prefix, self.describe())
@@ -154,6 +194,11 @@ impl ServiceConfig {
             java,
             reason = ExclusionReason::CoverageGap,
             details = "This C# regression case is not asserted by the Java demo suite yet. Add it when Java demo coverage expands for fallible non-blittable record constructors."
+        ),
+        exclude(
+            ruby,
+            reason = ExclusionReason::ImplementationGap,
+            details = "the Ruby target does not bind record methods or initializers yet"
         )
     )]
     #[demo_bench_macros::demo_case(
@@ -169,6 +214,11 @@ impl ServiceConfig {
             java,
             reason = ExclusionReason::CoverageGap,
             details = "This C# regression case is not asserted by the Java demo suite yet. Add it when Java demo coverage expands for fallible non-blittable record constructors."
+        ),
+        exclude(
+            ruby,
+            reason = ExclusionReason::ImplementationGap,
+            details = "the Ruby target does not bind record methods or initializers yet"
         )
     )]
     pub fn try_with_retries(retries: i32) -> Result<Self, String> {
@@ -198,6 +248,11 @@ impl ServiceConfig {
             java,
             reason = ExclusionReason::CoverageGap,
             details = "This C# regression case is not asserted by the Java demo suite yet. Add it when Java demo coverage expands for optional non-blittable record constructors."
+        ),
+        exclude(
+            ruby,
+            reason = ExclusionReason::ImplementationGap,
+            details = "the Ruby target does not bind record methods or initializers yet"
         )
     )]
     #[demo_bench_macros::demo_case(
@@ -213,6 +268,11 @@ impl ServiceConfig {
             java,
             reason = ExclusionReason::CoverageGap,
             details = "This C# regression case is not asserted by the Java demo suite yet. Add it when Java demo coverage expands for optional non-blittable record constructors."
+        ),
+        exclude(
+            ruby,
+            reason = ExclusionReason::ImplementationGap,
+            details = "the Ruby target does not bind record methods or initializers yet"
         )
     )]
     pub fn maybe_with_retries(retries: i32) -> Option<Self> {
@@ -233,7 +293,12 @@ impl ServiceConfig {
 #[demo_bench_macros::demo_case(
     "records.default_values.service_config.should_roundtrip_value",
     justification = "Ensure a ServiceConfig record with defaulted and explicit fields crosses the wire and returns unchanged.",
-    directions = "Call `records::default_values::echo_service_config` through the generated binding and assert a ServiceConfig record with defaulted and explicit fields crosses the wire and returns unchanged."
+    directions = "Call `records::default_values::echo_service_config` through the generated binding and assert a ServiceConfig record with defaulted and explicit fields crosses the wire and returns unchanged.",
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not move options or collections yet"
+    )
 )]
 #[export]
 pub fn echo_service_config(config: ServiceConfig) -> ServiceConfig {
