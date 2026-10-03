@@ -1,4 +1,6 @@
-use boltffi_binding::{Bindings, Decl, DeclarationRef, Surface};
+use std::collections::BTreeSet;
+
+use boltffi_binding::{Bindings, Decl, DeclarationRef, EnumDecl, EnumId, Surface};
 
 use crate::core::capabilities::BindingCapabilityAnalysis;
 use crate::core::{
@@ -144,6 +146,9 @@ where
         let context = RenderContext::new(bindings, self.host.name(), mode)
             .with_custom_type_mappings(self.host.custom_type_mappings(bindings)?)
             .with_capability_analysis(capability_analysis);
+        let pruned_transparent_enums =
+            self.pruned_transparent_enums(bindings, &contract, &context, &host_capabilities, mode);
+        let context = context.with_pruned_transparent_enums(pruned_transparent_enums);
         let preflight_coverage = self
             .host
             .preflight_coverage(bindings, &contract, &context)?;
@@ -169,6 +174,61 @@ where
             .with_coverage(coverage);
         output.append(host_emitted);
         Ok(output)
+    }
+
+    /// The transparent data enums a partial render leaves out.
+    ///
+    /// A payload record carries the enum as a supertype, and Kotlin bakes
+    /// that into the record's own declaration while the CPython extension
+    /// builds the payload type from bases the package passes in — so both
+    /// need the answer before the coverage fold reaches the enum. Rendering
+    /// is pure and only enums with transparent variants are asked, so the
+    /// trial render below settles it up front.
+    fn pruned_transparent_enums(
+        &self,
+        bindings: &Bindings<S::Surface>,
+        bridge: &S::Contract,
+        context: &RenderContext<S::Surface>,
+        host_capabilities: &HostCapabilities,
+        mode: CoverageMode,
+    ) -> BTreeSet<EnumId> {
+        // A complete render emits every declaration or fails outright.
+        if matches!(mode, CoverageMode::Complete) {
+            return BTreeSet::new();
+        }
+        bindings
+            .decls()
+            .iter()
+            .filter_map(|decl| match DeclarationRef::from(decl) {
+                DeclarationRef::Enum(EnumDecl::Data(enumeration))
+                    if enumeration.has_transparent_variants() =>
+                {
+                    Some((decl, enumeration.id()))
+                }
+                _ => None,
+            })
+            .filter(|(decl, _)| {
+                !self.renderable_in_partial(decl, context, host_capabilities)
+                    || self.render_declaration(decl, bridge, context).is_err()
+            })
+            .map(|(_, id)| id)
+            .collect()
+    }
+
+    /// Whether the capability gate lets the declaration through in partial
+    /// mode; mirrors the per-capability check in the coverage fold.
+    fn renderable_in_partial(
+        &self,
+        decl: &Decl<S::Surface>,
+        context: &RenderContext<S::Surface>,
+        host_capabilities: &HostCapabilities,
+    ) -> bool {
+        context
+            .capability_requirements(decl.id())
+            .expect("render context must analyze every binding declaration")
+            .iter()
+            .map(|capability| host_capabilities.status(capability))
+            .all(|status| status.is_stable() || status.renderable_in_partial())
     }
 
     fn render_declaration_with_coverage<'decl>(

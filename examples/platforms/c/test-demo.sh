@@ -9,9 +9,9 @@ build_dir="$script_dir/build"
 (
     cd "$demo_dir"
     cargo run --quiet --manifest-path "$repo_root/Cargo.toml" -p boltffi_cli -- \
-        --cargo-arg=--features --cargo-arg=c-demo pack c --experimental
+        --cargo-arg=--features --cargo-arg=c-demo,transparent-demo pack c --experimental
     cargo run --quiet --manifest-path "$repo_root/Cargo.toml" -p boltffi_cli -- \
-        --cargo-arg=--features --cargo-arg=c-demo pack c --experimental --no-build
+        --cargo-arg=--features --cargo-arg=c-demo,transparent-demo pack c --experimental --no-build
 )
 
 package_dir="$build_dir/relocated package"
