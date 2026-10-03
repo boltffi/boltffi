@@ -2261,10 +2261,13 @@ impl<'module> Module<'module> {
                     _ => unreachable!(),
                 };
                 let type_name = Name::new(name).pascal()?;
-                if type_name == self.class_name {
+                if type_name.as_str().to_lowercase() == self.class_name.as_str().to_lowercase() {
                     return Err(Error::CSharpModuleClassCollision {
-                        name: type_name.to_string(),
-                        declaration: format!("exported type `{}`", name.as_path_string()),
+                        name: self.class_name.to_string(),
+                        declaration: format!(
+                            "output file `{type_name}.cs` for exported type `{}`",
+                            name.as_path_string()
+                        ),
                     });
                 }
                 files.push(GeneratedFile::new(
@@ -2310,6 +2313,28 @@ impl<'module> Module<'module> {
         }
 
         let native_functions = native_functions.into_values().collect::<Vec<_>>();
+        for (source, names) in [
+            (StatusTemplate.render()?, &["FfiStatus"][..]),
+            (
+                WireTemplate.render()?,
+                &["FfiBuf", "WireReader", "WireWriter", "BoltException"][..],
+            ),
+            (AsyncRuntimeTemplate.render()?, &["BoltFFIAsync"][..]),
+            (
+                CallbackRuntimeTemplate.render()?,
+                &["BoltFFICallbackHandle"][..],
+            ),
+            (OwnedClosureTemplate.render()?, &["BoltFFIOwnedClosure"][..]),
+        ] {
+            if support.contains_key(&source)
+                && names.contains(&self.class_name.as_str().trim_start_matches('@'))
+            {
+                return Err(Error::CSharpModuleClassCollision {
+                    name: self.class_name.to_string(),
+                    declaration: "a generated runtime type".to_owned(),
+                });
+            }
+        }
         let support = support.into_values().collect::<Vec<_>>();
         let source = ModuleTemplate {
             namespace: self.namespace,

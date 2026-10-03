@@ -94,6 +94,17 @@ impl Stream {
         })
     }
 
+    pub(in crate::target::csharp) fn namespace_type_names(&self) -> Result<Vec<Identifier>> {
+        let mut names = vec![self.runtime.clone()];
+        match self.mode {
+            StreamMode::Batch => names.push(self.subscription.clone()),
+            StreamMode::Callback => names.push(self.cancellable.clone()),
+            StreamMode::Async => {}
+            _ => return super::super::unsupported("unknown stream mode"),
+        }
+        Ok(names)
+    }
+
     pub(in crate::target::csharp) fn render(&self) -> Result<Emitted> {
         let primary = self.primary()?;
         let mut emitted = Emitted::primary(primary)

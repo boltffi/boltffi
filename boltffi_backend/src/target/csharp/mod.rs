@@ -90,6 +90,32 @@ impl CSharpHost {
             .clone()
             .unwrap_or_else(|| Name::new(bindings.package().name()).snake())
     }
+
+    fn module_class_for(&self, bindings: &Bindings<Native>) -> Result<Identifier> {
+        self.module_class
+            .clone()
+            .map(Ok)
+            .unwrap_or_else(|| Name::new(bindings.package().name()).pascal())
+    }
+
+    fn validate_module_class(
+        &self,
+        bindings: &Bindings<Native>,
+        names: Vec<Identifier>,
+    ) -> Result<()> {
+        let module_class = self.module_class_for(bindings)?;
+        for name in names {
+            if name.as_str().trim_start_matches('@')
+                == module_class.as_str().trim_start_matches('@')
+            {
+                return Err(Error::CSharpModuleClassCollision {
+                    name: module_class.to_string(),
+                    declaration: format!("generated type `{name}`"),
+                });
+            }
+        }
+        Ok(())
+    }
 }
 
 impl host::HostBackend for CSharpHost {
@@ -136,13 +162,14 @@ impl host::HostBackend for CSharpHost {
         bridge: &Self::Bridge,
         context: &RenderContext<Self::Surface>,
     ) -> Result<Emitted> {
-        render::Record::from_declaration(
+        let record = render::Record::from_declaration(
             decl,
             self.namespace_for(context.bindings())?,
             bridge,
             context,
-        )?
-        .render()
+        )?;
+        self.validate_module_class(context.bindings(), record.namespace_type_names()?)?;
+        record.render()
     }
 
     fn enumeration(
@@ -151,13 +178,14 @@ impl host::HostBackend for CSharpHost {
         bridge: &Self::Bridge,
         context: &RenderContext<Self::Surface>,
     ) -> Result<Emitted> {
-        render::Enumeration::from_declaration(
+        let enumeration = render::Enumeration::from_declaration(
             decl,
             self.namespace_for(context.bindings())?,
             bridge,
             context,
-        )?
-        .render()
+        )?;
+        self.validate_module_class(context.bindings(), enumeration.namespace_type_names()?)?;
+        enumeration.render()
     }
 
     fn function(
@@ -191,13 +219,14 @@ impl host::HostBackend for CSharpHost {
         bridge: &Self::Bridge,
         context: &RenderContext<Self::Surface>,
     ) -> Result<Emitted> {
-        render::Callback::from_declaration(
+        let callback = render::Callback::from_declaration(
             decl,
             self.namespace_for(context.bindings())?,
             bridge,
             context,
-        )?
-        .render()
+        )?;
+        self.validate_module_class(context.bindings(), callback.namespace_type_names()?)?;
+        callback.render()
     }
 
     fn stream(
@@ -206,7 +235,9 @@ impl host::HostBackend for CSharpHost {
         bridge: &Self::Bridge,
         context: &RenderContext<Self::Surface>,
     ) -> Result<Emitted> {
-        render::Stream::from_declaration(decl, bridge, context)?.render()
+        let stream = render::Stream::from_declaration(decl, bridge, context)?;
+        self.validate_module_class(context.bindings(), stream.namespace_type_names()?)?;
+        stream.render()
     }
 
     fn constant(
@@ -246,10 +277,7 @@ impl host::HostBackend for CSharpHost {
         let namespace = self.namespace_for(bindings)?;
         render::Module::new(
             &namespace,
-            self.module_class
-                .clone()
-                .map(Ok)
-                .unwrap_or_else(|| Name::new(bindings.package().name()).pascal())?,
+            self.module_class_for(bindings)?,
             Literal::string(&self.library_for(bindings)),
             Literal::string(bridge.support().buffer_from_bytes()?.name()),
         )

@@ -144,6 +144,14 @@ impl Callback {
         })
     }
 
+    pub(in crate::target::csharp) fn namespace_type_names(&self) -> Result<Vec<Identifier>> {
+        Ok(vec![
+            self.name.clone(),
+            self.proxy_name.clone(),
+            self.bridge_name.clone(),
+        ])
+    }
+
     pub(in crate::target::csharp) fn render(&self) -> Result<Emitted> {
         let mut emitted = Emitted::primary(CallbackTemplate { callback: self }.render()?).with_aux(
             AuxChunk::ForwardDecl(CallbackRuntimeTemplate.render()?.into()),

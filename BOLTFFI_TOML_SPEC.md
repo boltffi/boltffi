@@ -474,7 +474,8 @@ Controls npm package generation in `boltffi pack wasm`.
   - Must be dot-separated C# identifiers, for example `CounterApp.Shared`.
 - `module_class` (string, optional): C# class containing generated free functions and constants.
   - Default: PascalCase of the Rust crate name, preserving the existing API.
-  - Must be a C# identifier and must not conflict with an exported type or `NativeMethods`.
+  - Must be a C# identifier and must not conflict with an exported type, generated companion/runtime type, or `NativeMethods`.
+  - Its output filename must not differ from an exported type's filename only by case, so generation is safe on case-insensitive filesystems.
   - For a crate named `demo` exporting a `Demo` record, set `module_class = "DemoApi"` to generate `DemoApi.MakeDemo()` alongside the `Demo` record.
 - `package_id` (string, optional): NuGet package ID.
   - Default: `{package.name}`

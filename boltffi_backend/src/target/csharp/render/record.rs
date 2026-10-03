@@ -318,6 +318,14 @@ impl Record {
         })
     }
 
+    pub(in crate::target::csharp) fn namespace_type_names(&self) -> Result<Vec<Identifier>> {
+        let mut names = vec![self.name.clone()];
+        if self.error_payload {
+            names.push(Identifier::parse(format!("{}Exception", self.name))?);
+        }
+        Ok(names)
+    }
+
     pub(in crate::target::csharp) fn render(&self) -> Result<Emitted> {
         let constants = self.constants.members()?;
         let emitted = Emitted::primary(

@@ -327,6 +327,22 @@ impl Enumeration {
         })
     }
 
+    pub(in crate::target::csharp) fn namespace_type_names(&self) -> Result<Vec<Identifier>> {
+        let mut names = vec![self.name.clone()];
+        if self.c_style {
+            if !self.constants.members()?.is_empty() {
+                names.push(Identifier::parse(format!("{}Constants", self.name))?);
+            }
+            if !self.methods.is_empty() {
+                names.push(Identifier::parse(format!("{}Methods", self.name))?);
+            }
+        }
+        if self.error_payload {
+            names.push(Identifier::parse(format!("{}Exception", self.name))?);
+        }
+        Ok(names)
+    }
+
     pub(in crate::target::csharp) fn render(&self) -> Result<Emitted> {
         let constants = self.constants.members()?;
         let emitted = Emitted::primary(
