@@ -18,6 +18,7 @@ use crate::commands::{run_build, run_check, run_doctor, run_init, run_pack, run_
 use crate::config::{Config, ConfigError};
 use crate::pack::PackError;
 use crate::reporter;
+use crate::target::Architecture;
 use crate::toolchain::AndroidToolchainError;
 
 #[derive(Parser)]
@@ -264,7 +265,7 @@ pub(crate) enum PackTargetArg {
 
     #[command(
         about = "Build + package Android artifacts",
-        long_about = "Build + package Android artifacts.\n\nOutputs:\n  - Kotlin/JNI:             {targets.android.kotlin.output}\n  - jniLibs:                {targets.android.pack.output}\n  - Kotlin desktop natives: {targets.android.output}/desktopJniLibs when targets.android.kotlin.desktop_pack.enabled is true and targets.android.kotlin.desktop_loader is bundled\n"
+        long_about = "Build + package Android artifacts.\n\nOutputs:\n  - Kotlin/JNI:             {targets.android.kotlin.output}\n  - jniLibs:                {targets.android.pack.output}, unless --desktop-only; with --architecture only the selected ABIs are relinked and the other configured ones are kept\n  - Kotlin desktop natives: {targets.android.output}/desktopJniLibs when targets.android.kotlin.desktop_pack.enabled is true and targets.android.kotlin.desktop_loader is bundled, unless --skip-desktop\n  - Debug symbols:          {targets.android.debug_symbols.output}/<crate>.android.symbols.zip, or one <crate>.android.<abi>.symbols.zip per ABI when --architecture packs only some of the configured ABIs\n"
     )]
     Android {
         #[arg(long)]
@@ -272,6 +273,27 @@ pub(crate) enum PackTargetArg {
 
         #[arg(long)]
         no_build: bool,
+
+        #[arg(
+            long = "architecture",
+            value_name = "ARCH",
+            help = "Build only this architecture, repeatable; defaults to every configured one"
+        )]
+        architectures: Vec<Architecture>,
+
+        #[arg(
+            long,
+            conflicts_with = "desktop_only",
+            help = "Skip the Kotlin desktop natives, whatever the configuration says"
+        )]
+        skip_desktop: bool,
+
+        #[arg(
+            long,
+            conflicts_with = "architectures",
+            help = "Build only the Kotlin desktop natives, leaving the Android architectures alone"
+        )]
+        desktop_only: bool,
 
         #[arg(long, help = "Enable experimental targets/features")]
         experimental: bool,
@@ -575,6 +597,9 @@ pub(crate) fn execute_command(
                 PackTargetArg::Android {
                     release,
                     no_build,
+                    architectures,
+                    skip_desktop,
+                    desktop_only,
                     experimental: _,
                 } => PackCommand::Android(PackAndroidOptions {
                     execution: pack_execution_options(
@@ -584,6 +609,9 @@ pub(crate) fn execute_command(
                         deny_skipped,
                         cargo_args.clone(),
                     ),
+                    architectures,
+                    skip_desktop,
+                    desktop_only,
                 }),
                 PackTargetArg::Kmp {
                     release,
@@ -945,6 +973,9 @@ fn release_pack_commands(
                         false,
                         cargo_args.to_vec(),
                     ),
+                    architectures: Vec::new(),
+                    skip_desktop: false,
+                    desktop_only: false,
                 }));
             }
         }
@@ -1000,6 +1031,9 @@ fn release_pack_commands(
                         false,
                         cargo_args.to_vec(),
                     ),
+                    architectures: Vec::new(),
+                    skip_desktop: false,
+                    desktop_only: false,
                 }));
             }
             if config.should_process(Target::KotlinMultiplatform, false) {
@@ -1099,7 +1133,7 @@ mod tests {
     };
     use crate::commands::doctor::ConfigSummary;
     use crate::commands::pack::PackCommand;
-    use crate::target::RustTarget;
+    use crate::target::{Architecture, Platform, RustTarget};
     use crate::{cli::CliError, config::Config};
     use clap::Parser;
     use std::path::PathBuf;
@@ -1533,6 +1567,106 @@ enabled = true
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn cli_parses_pack_android_architecture_selection() {
+        let cli = Cli::try_parse_from([
+            "boltffi",
+            "pack",
+            "android",
+            "--architecture",
+            "arm64",
+            "--architecture",
+            "x86_64",
+            "--architecture",
+            "x86-64",
+            "--skip-desktop",
+        ])
+        .expect("cli parse should succeed");
+
+        let Commands::Pack {
+            target:
+                PackTargetArg::Android {
+                    architectures,
+                    skip_desktop,
+                    desktop_only,
+                    ..
+                },
+            ..
+        } = cli.command
+        else {
+            panic!("expected pack android");
+        };
+        assert_eq!(
+            architectures,
+            vec![
+                Architecture::Arm64,
+                Architecture::X86_64,
+                Architecture::X86_64
+            ]
+        );
+        assert!(skip_desktop);
+        assert!(!desktop_only);
+    }
+
+    #[test]
+    fn cli_rejects_desktop_only_combined_with_an_android_slice() {
+        for conflicting in ["--skip-desktop", "--architecture=arm64"] {
+            let error =
+                Cli::try_parse_from(["boltffi", "pack", "android", "--desktop-only", conflicting])
+                    .err()
+                    .unwrap_or_else(|| panic!("--desktop-only {conflicting} should be rejected"));
+            assert_eq!(error.kind(), clap::error::ErrorKind::ArgumentConflict);
+        }
+    }
+
+    /// `--architecture` takes the spelling `targets.android.architectures` uses,
+    /// so a value copied out of the configuration always parses.
+    #[test]
+    fn cli_architecture_values_match_the_configuration_spelling() {
+        use clap::ValueEnum;
+
+        for architecture in Platform::Android.architectures() {
+            let configured = toml::Value::try_from(architecture)
+                .expect("serialize architecture")
+                .as_str()
+                .expect("architecture serializes as a string")
+                .to_string();
+            assert_eq!(
+                Architecture::from_str(&configured, false),
+                Ok(*architecture),
+                "`--architecture {configured}` should parse"
+            );
+        }
+    }
+
+    /// `Architecture` is shared by every platform, so a variant added for another
+    /// one has to be skipped explicitly or it shows up under `--architecture`.
+    #[test]
+    fn cli_architecture_values_are_exactly_the_android_architectures() {
+        use clap::ValueEnum;
+        use std::collections::HashSet;
+
+        assert_eq!(
+            Architecture::value_variants()
+                .iter()
+                .copied()
+                .collect::<HashSet<_>>(),
+            Platform::Android
+                .architectures()
+                .iter()
+                .copied()
+                .collect::<HashSet<_>>()
+        );
+    }
+
+    #[test]
+    fn cli_rejects_non_android_architecture() {
+        assert!(
+            Cli::try_parse_from(["boltffi", "pack", "android", "--architecture", "wasm32"])
+                .is_err()
+        );
     }
 
     #[test]
