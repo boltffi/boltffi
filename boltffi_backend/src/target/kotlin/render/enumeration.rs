@@ -16,6 +16,7 @@ use crate::{
         primitive::KotlinPrimitive,
         render::{
             AssociatedConstants, Documentation,
+            equality::StructuralEquality,
             field::EncodedField,
             function::{ExportedCall, ExportedCallRenderer, ReceiverCarrier, ReceiverMutation},
             signature::validate_exception_fields,
@@ -130,6 +131,7 @@ pub struct DataVariant {
     read: Expression,
     size: Expression,
     tag_write: Statement,
+    equality: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -671,6 +673,10 @@ impl DataVariant {
         self.fields.is_empty()
     }
 
+    pub fn equality(&self) -> Option<&str> {
+        self.equality.as_deref()
+    }
+
     fn from_declaration(
         variant: &DataVariantDecl,
         host: &KotlinHost,
@@ -691,6 +697,14 @@ impl DataVariant {
             Identifier::parse("writeU32")?,
             [tag.clone()].into_iter().collect::<ArgumentList>(),
         ));
+        let equality = StructuralEquality::new(
+            TypeName::new(name.to_string()),
+            fields
+                .iter()
+                .map(|field| (field.name(), field.comparison())),
+        )?
+        .map(|equality| equality.render("        "))
+        .transpose()?;
         Ok(Self {
             name,
             documentation: Documentation::new(variant.meta().doc()),
@@ -700,6 +714,7 @@ impl DataVariant {
             read,
             size,
             tag_write,
+            equality,
         })
     }
 

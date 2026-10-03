@@ -98,6 +98,14 @@ sealed class PrimitiveValue {
             writer.writeU32(5.toUInt())
             writer.writeDoubleArray(this.field0)
         }
+
+        override fun equals(other: kotlin.Any?): kotlin.Boolean {
+            if (this === other) return true
+            if (other !is Doubles) return false
+            return this.field0.contentEquals(other.field0)
+        }
+
+        override fun hashCode(): kotlin.Int = this.field0.contentHashCode()
     }
 
     companion object {
