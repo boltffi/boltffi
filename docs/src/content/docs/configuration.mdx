@@ -740,6 +740,25 @@ This changes the generated package directory and the import path.
 import demo_runtime
 ```
 
+### Package Metadata
+
+The generated `setup.py` declares `python_requires=">=3.10"` by default. Raise it when your package needs a newer Python. The value is written verbatim as a PEP 440 version specifier; pip validates it when the package is built or installed.
+
+```toml
+[targets.python]
+enabled = true
+python_requires = ">=3.12"
+```
+
+Declare console scripts under `[targets.python.scripts]`. Each key is the command name, made of ASCII letters, digits, `.`, `_` and `-`. Each value is an entry point in `module:function` form; both sides may be dotted, as in `demo_runtime.cli:App.main`.
+
+```toml
+[targets.python.scripts]
+demo-runtime = "demo_runtime.cli:main"
+```
+
+The wheel includes every regular package under the module directory, so subpackages you add next to the generated sources, such as `demo_runtime/cli/__init__.py`, ship with it together with their `.pyi` stubs and `py.typed` markers.
+
 ### Wheel Output
 
 Python packaging writes wheels into `dist/python/wheelhouse` by default. Override that under `[targets.python.wheel]`.

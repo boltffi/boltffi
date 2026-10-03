@@ -44,6 +44,8 @@ pub struct Generation {
     python_distribution_name: Option<String>,
     python_package_version: Option<String>,
     python_native_library: Option<String>,
+    python_requires: Option<String>,
+    python_scripts: Vec<(String, String)>,
     csharp_namespace: Option<String>,
     csharp_native_library: Option<String>,
     dart_package: Option<String>,
@@ -97,6 +99,8 @@ impl Generation {
             python_distribution_name: None,
             python_package_version: None,
             python_native_library: None,
+            python_requires: None,
+            python_scripts: Vec::new(),
             csharp_namespace: None,
             csharp_native_library: None,
             dart_package: None,
@@ -200,6 +204,18 @@ impl Generation {
     /// Sets the native library artifact name loaded by the Python package.
     pub fn python_native_library(mut self, native_library: impl Into<String>) -> Self {
         self.python_native_library = Some(native_library.into());
+        self
+    }
+
+    /// Sets the Python version specifier declared by the generated package.
+    pub fn python_requires(mut self, python_requires: Option<String>) -> Self {
+        self.python_requires = python_requires;
+        self
+    }
+
+    /// Adds a console script entry point to the generated Python package.
+    pub fn python_script(mut self, name: impl Into<String>, target: impl Into<String>) -> Self {
+        self.python_scripts.push((name.into(), target.into()));
         self
     }
 
@@ -707,6 +723,15 @@ impl Generation {
             .python_native_library
             .iter()
             .fold(host, |host, library| host.native_library(library.clone()));
+        let host = self.python_requires.iter().fold(host, |host, requires| {
+            host.python_requires(requires.clone())
+        });
+        let host = self
+            .python_scripts
+            .iter()
+            .fold(host, |host, (name, target)| {
+                host.console_script(name.clone(), target.clone())
+            });
         Ok(host.version(self.python_package_version.clone()))
     }
 

@@ -343,6 +343,7 @@ mod tests {
                         ]),
                     },
                     enabled: true,
+                    ..PythonConfig::default()
                 },
                 ..TargetsConfig::default()
             },
