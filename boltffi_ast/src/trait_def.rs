@@ -22,12 +22,16 @@ pub struct TraitDef {
     /// Methods that an implementer must provide.
     pub methods: Vec<MethodDef>,
     /// User attributes preserved from the trait declaration.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub user_attrs: Vec<UserAttr>,
     /// Documentation attached to the trait.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub doc: Option<DocComment>,
     /// Deprecation metadata attached to the trait.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub deprecated: Option<DeprecationInfo>,
     /// Visibility and source location for diagnostics.
+    #[serde(default, skip_serializing_if = "Source::is_exported")]
     pub source: Source,
     /// Span available during macro expansion.
     #[serde(default, skip_serializing, skip_deserializing)]

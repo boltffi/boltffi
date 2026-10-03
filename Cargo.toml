@@ -5,6 +5,7 @@ exclude = [
   "benchmarks/adapters/uniffi",
   "examples/demo",
   "boltffi_cli/tests/fixtures/wasm_wake_link",
+  "boltffi_cli/tests/fixtures/wasm_cfg_records",
 ]
 
 [workspace.package]
@@ -35,7 +36,7 @@ rustc_lexer = "0.1"
 walkdir = "2.4"
 rstest = "0.27"
 tokio = "1"
-object = "0.40"
+object = { version = "0.40", features = ["wasm"] }
 insta = "1.46"
 
 [workspace.lints.rust]

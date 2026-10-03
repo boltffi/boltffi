@@ -9,7 +9,7 @@ pub(super) mod interned_string_pool;
 pub(super) mod record;
 pub(super) mod stream;
 
-mod impl_methods;
+pub(crate) mod impl_methods;
 mod signature;
 
 pub(super) fn misplaced_stream_marker(

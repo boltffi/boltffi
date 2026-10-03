@@ -1,10 +1,16 @@
 mod index;
 mod pair;
 
-use boltffi_ast::{ClassDef, ConstantDef, EnumDef, FunctionDef, RecordDef, StreamDef, TraitDef};
+use std::collections::HashSet;
+
+use boltffi_ast::{
+    ClassDef, ConstantDef, DeclarationId as SourceDeclarationId, EnumDef, FunctionDef, RecordDef,
+    SourceContract, StreamDef, TraitDef,
+};
 use boltffi_binding::{
-    Bindings, CallbackDecl, CallbackId, ClassDecl, ConstantDecl, CustomTypeDecl, CustomTypeId,
-    EnumDecl, FunctionDecl, LoweredBindings, RecordDecl, StreamDecl, Surface,
+    CallbackDecl, CallbackId, ClassDecl, ConstantDecl, CustomTypeDecl, CustomTypeId, Decl,
+    DeclarationId, DeclarationMap, EnumDecl, FunctionDecl, LoweredInvocation, RecordDecl,
+    StreamDecl, Surface,
 };
 
 use self::index::ExpansionIndex;
@@ -14,38 +20,75 @@ use super::error::Error;
 pub use self::pair::DeclarationPair;
 
 pub struct Expansion<'lowered, S: Surface> {
-    lowered: &'lowered LoweredBindings<S>,
+    decls: &'lowered [Decl<S>],
+    declarations: &'lowered DeclarationMap,
     index: ExpansionIndex,
+    local_callbacks: HashSet<CallbackId>,
 }
 
 impl<'lowered, S: Surface> Expansion<'lowered, S> {
-    pub fn new(lowered: &'lowered LoweredBindings<S>) -> Self {
+    #[cfg(test)]
+    pub fn new(lowered: &'lowered boltffi_binding::LoweredBindings<S>) -> Self {
+        Self::from_decls(lowered.bindings().decls(), lowered.declarations())
+    }
+
+    pub fn invocation(lowered: &'lowered LoweredInvocation<S>) -> Self {
+        Self::from_decls(lowered.decls(), lowered.declarations())
+    }
+
+    fn from_decls(decls: &'lowered [Decl<S>], declarations: &'lowered DeclarationMap) -> Self {
+        let local_callbacks = decls
+            .iter()
+            .filter_map(|decl| match decl {
+                Decl::Callback(callback) if callback.local_protocol().is_some() => {
+                    Some(callback.id())
+                }
+                _ => None,
+            })
+            .collect();
         Self {
-            lowered,
-            index: ExpansionIndex::new(lowered),
+            decls,
+            declarations,
+            index: ExpansionIndex::new(decls),
+            local_callbacks,
         }
     }
 
-    pub fn bindings(&self) -> &'lowered Bindings<S> {
-        self.lowered.bindings()
+    /// Also answers local-protocol questions for lookup-only callback traits in `source`.
+    pub fn with_lookup_traits(mut self, source: &SourceContract) -> Self {
+        let declarations = self.declarations;
+        self.local_callbacks.extend(
+            source
+                .traits
+                .iter()
+                .filter(|source| boltffi_binding::has_local_protocol(source))
+                .filter_map(|source| {
+                    match declarations.get(&SourceDeclarationId::Trait(source.id.clone())) {
+                        Some(DeclarationId::Callback(id)) => Some(id),
+                        _ => None,
+                    }
+                }),
+        );
+        self
+    }
+
+    pub fn has_local_callback(&self, id: CallbackId) -> bool {
+        self.local_callbacks.contains(&id)
     }
 
     pub fn custom_type(&self, id: CustomTypeId) -> Result<&'lowered CustomTypeDecl, Error> {
-        self.index.custom_type(self.lowered, id)
-    }
-
-    pub fn callback(&self, id: CallbackId) -> Result<&'lowered CallbackDecl<S>, Error> {
-        self.index.callback(self.lowered, id)
+        self.index.custom_type(self.decls, id)
     }
 
     pub fn callback_trait(
         &self,
         source: &'lowered TraitDef,
     ) -> Result<DeclarationPair<'lowered, TraitDef, CallbackDecl<S>>, Error> {
-        match self
-            .index
-            .paired(self.lowered, SourceDeclaration::Callback(source))?
-        {
+        match self.index.paired(
+            self.decls,
+            self.declarations,
+            SourceDeclaration::Callback(source),
+        )? {
             PairedDeclaration::Callback(pair) => Ok(pair),
             _ => Err(Error::WrongDeclaration),
         }
@@ -55,10 +98,11 @@ impl<'lowered, S: Surface> Expansion<'lowered, S> {
         &self,
         source: &'lowered RecordDef,
     ) -> Result<DeclarationPair<'lowered, RecordDef, RecordDecl<S>>, Error> {
-        match self
-            .index
-            .paired(self.lowered, SourceDeclaration::Record(source))?
-        {
+        match self.index.paired(
+            self.decls,
+            self.declarations,
+            SourceDeclaration::Record(source),
+        )? {
             PairedDeclaration::Record(pair) => Ok(pair),
             _ => Err(Error::WrongDeclaration),
         }
@@ -68,10 +112,11 @@ impl<'lowered, S: Surface> Expansion<'lowered, S> {
         &self,
         source: &'lowered EnumDef,
     ) -> Result<DeclarationPair<'lowered, EnumDef, EnumDecl<S>>, Error> {
-        match self
-            .index
-            .paired(self.lowered, SourceDeclaration::Enum(source))?
-        {
+        match self.index.paired(
+            self.decls,
+            self.declarations,
+            SourceDeclaration::Enum(source),
+        )? {
             PairedDeclaration::Enum(pair) => Ok(pair),
             _ => Err(Error::WrongDeclaration),
         }
@@ -81,10 +126,11 @@ impl<'lowered, S: Surface> Expansion<'lowered, S> {
         &self,
         source: &'lowered ClassDef,
     ) -> Result<DeclarationPair<'lowered, ClassDef, ClassDecl<S>>, Error> {
-        match self
-            .index
-            .paired(self.lowered, SourceDeclaration::Class(source))?
-        {
+        match self.index.paired(
+            self.decls,
+            self.declarations,
+            SourceDeclaration::Class(source),
+        )? {
             PairedDeclaration::Class(pair) => Ok(pair),
             _ => Err(Error::WrongDeclaration),
         }
@@ -94,10 +140,11 @@ impl<'lowered, S: Surface> Expansion<'lowered, S> {
         &self,
         source: &'lowered StreamDef,
     ) -> Result<DeclarationPair<'lowered, StreamDef, StreamDecl<S>>, Error> {
-        match self
-            .index
-            .paired(self.lowered, SourceDeclaration::Stream(source))?
-        {
+        match self.index.paired(
+            self.decls,
+            self.declarations,
+            SourceDeclaration::Stream(source),
+        )? {
             PairedDeclaration::Stream(pair) => Ok(pair),
             _ => Err(Error::WrongDeclaration),
         }
@@ -107,10 +154,11 @@ impl<'lowered, S: Surface> Expansion<'lowered, S> {
         &self,
         source: &'lowered ConstantDef,
     ) -> Result<DeclarationPair<'lowered, ConstantDef, ConstantDecl<S>>, Error> {
-        match self
-            .index
-            .paired(self.lowered, SourceDeclaration::Constant(source))?
-        {
+        match self.index.paired(
+            self.decls,
+            self.declarations,
+            SourceDeclaration::Constant(source),
+        )? {
             PairedDeclaration::Constant(pair) => Ok(pair),
             _ => Err(Error::WrongDeclaration),
         }
@@ -120,10 +168,11 @@ impl<'lowered, S: Surface> Expansion<'lowered, S> {
         &self,
         source: &'lowered FunctionDef,
     ) -> Result<DeclarationPair<'lowered, FunctionDef, FunctionDecl<S>>, Error> {
-        match self
-            .index
-            .paired(self.lowered, SourceDeclaration::Function(source))?
-        {
+        match self.index.paired(
+            self.decls,
+            self.declarations,
+            SourceDeclaration::Function(source),
+        )? {
             PairedDeclaration::Function(pair) => Ok(pair),
             _ => Err(Error::WrongDeclaration),
         }
@@ -262,13 +311,13 @@ mod tests {
 
     fn assert_generated_crate_checks(name: &str, code: TokenStream) {
         let generated_crate = GeneratedCrate::create(name);
-        generated_crate.write(code);
+        generated_crate.write(crate::capture::with_trait_identities(code));
         generated_crate.check();
     }
 
     fn assert_generated_crate_checks_target(name: &str, target_triple: &str, code: TokenStream) {
         let generated_crate = GeneratedCrate::create(name);
-        generated_crate.write(code);
+        generated_crate.write(crate::capture::with_trait_identities(code));
         generated_crate.check_target(target_triple);
     }
 
@@ -2550,7 +2599,7 @@ mod tests {
                 #[cfg(not(target_arch = "wasm32"))]
                 #[unsafe(no_mangle)]
                 pub extern "C" fn boltffi_function_demo_answer() -> u32 {
-                    answer()
+                    self::answer()
                 }
             }
             .to_string()
@@ -2580,7 +2629,7 @@ mod tests {
                 #[cfg(not(target_arch = "wasm32"))]
                 #[unsafe(no_mangle)]
                 pub extern "C" fn boltffi_function_demo_http_request() -> u32 {
-                    HTTPRequest()
+                    self::HTTPRequest()
                 }
             }
             .to_string()
@@ -2612,7 +2661,7 @@ mod tests {
                 pub unsafe extern "C" fn boltffi_function_demo_syntax_payload(
                     HTTPCode: u32
                 ) -> u32 {
-                    syntax_payload(HTTPCode)
+                    self::syntax_payload(HTTPCode)
                 }
             }
             .to_string()
@@ -2642,7 +2691,7 @@ mod tests {
                 #[cfg(not(target_arch = "wasm32"))]
                 #[unsafe(no_mangle)]
                 extern "C" fn boltffi_function_demo_answer() -> u32 {
-                    answer()
+                    self::answer()
                 }
             }
             .to_string()
@@ -2707,7 +2756,7 @@ mod tests {
                             }
                         }
                     };
-                    year(when)
+                    self::year(when)
                 }
             }
             .to_string()
@@ -4125,7 +4174,7 @@ mod tests {
                 #[cfg(not(target_arch = "wasm32"))]
                 #[unsafe(no_mangle)]
                 pub extern "C" fn boltffi_function_demo_stamp() -> ::boltffi::__private::FfiBuf {
-                    let __boltffi_result = stamp();
+                    let __boltffi_result = self::stamp();
                     {
                         let __boltffi_wire = (timestamp_into_ffi)(&__boltffi_result);
                         ::boltffi::__private::FfiBuf::wire_encode(&__boltffi_wire)
@@ -4179,7 +4228,7 @@ mod tests {
             expand_function(&expansion, &source.functions[0], syntax).expect("expanded function");
         let rendered = tokens.to_string();
 
-        assert!(rendered.contains("let __boltffi_result = timeline () ;"));
+        assert!(rendered.contains("let __boltffi_result = self :: timeline () ;"));
         assert!(rendered.contains(". into_iter () . map (| value | value . map (| value | (timestamp_into_ffi) (& value))) . collect :: < Vec < _ >> ()"));
         assert!(
             rendered
@@ -4301,7 +4350,7 @@ mod tests {
                 #[cfg(not(target_arch = "wasm32"))]
                 #[unsafe(no_mangle)]
                 pub(in crate) extern "C" fn boltffi_function_demo_answer() -> u32 {
-                    answer()
+                    self::answer()
                 }
             }
             .to_string()
@@ -4331,7 +4380,7 @@ mod tests {
                 #[cfg(target_arch = "wasm32")]
                 #[unsafe(no_mangle)]
                 pub extern "C" fn boltffi_function_demo_answer() -> u32 {
-                    answer()
+                    self::answer()
                 }
             }
             .to_string()
@@ -4381,12 +4430,12 @@ mod tests {
                 #[cfg(not(target_arch = "wasm32"))]
                 #[unsafe(no_mangle)]
                 pub extern "C" fn boltffi_function_demo_answer() -> u32 {
-                    answer()
+                    self::answer()
                 }
                 #[cfg(target_arch = "wasm32")]
                 #[unsafe(no_mangle)]
                 pub extern "C" fn boltffi_function_demo_answer() -> u32 {
-                    answer()
+                    self::answer()
                 }
             }
             .to_string()
@@ -4448,7 +4497,7 @@ mod tests {
                 #[unsafe(no_mangle)]
                 pub extern "C" fn boltffi_function_demo_answer() -> ::boltffi::__private::RustFutureHandle {
                     ::boltffi::__private::rustfuture::rust_future_new(async move {
-                        answer().await
+                        self::answer().await
                     })
                 }
                 #[cfg(not(target_arch = "wasm32"))]
@@ -4548,7 +4597,7 @@ mod tests {
                 #[unsafe(no_mangle)]
                 pub extern "C" fn boltffi_function_demo_greet() -> ::boltffi::__private::RustFutureHandle {
                     ::boltffi::__private::rustfuture::rust_future_new(async move {
-                        greet().await
+                        self::greet().await
                     })
                 }
                 #[cfg(not(target_arch = "wasm32"))]
@@ -4649,7 +4698,7 @@ mod tests {
                 #[unsafe(no_mangle)]
                 pub extern "C" fn boltffi_function_demo_try_count() -> ::boltffi::__private::RustFutureHandle {
                     ::boltffi::__private::rustfuture::rust_future_new(async move {
-                        try_count().await
+                        self::try_count().await
                     })
                 }
                 #[cfg(not(target_arch = "wasm32"))]
@@ -4762,7 +4811,7 @@ mod tests {
                 #[unsafe(no_mangle)]
                 pub extern "C" fn boltffi_function_demo_ping() -> ::boltffi::__private::RustFutureHandle {
                     ::boltffi::__private::rustfuture::rust_future_new(async move {
-                        ping().await
+                        self::ping().await
                     })
                 }
                 #[cfg(target_arch = "wasm32")]
@@ -4880,7 +4929,7 @@ mod tests {
                         }
                     };
                     ::boltffi::__private::rustfuture::rust_future_new(async move {
-                        name_len(name).await
+                        self::name_len(name).await
                     })
                 }
                 #[cfg(not(target_arch = "wasm32"))]
@@ -5000,7 +5049,7 @@ mod tests {
                         return ::boltffi::__private::rustfuture::rust_future_invalid_arg::<u32>();
                     }
                     let engine = match unsafe {
-                        __BoltffiEngineHandle::retain(engine as usize as *mut __BoltffiEngineHandle)
+                        <Engine as ::boltffi::__private::ClassHandle>::Handle::retain(engine as usize as *mut <Engine as ::boltffi::__private::ClassHandle>::Handle)
                     } {
                         Some(handle) => handle,
                         None => {
@@ -5009,7 +5058,7 @@ mod tests {
                         }
                     };
                     ::boltffi::__private::rustfuture::rust_future_new(async move {
-                        engine_id(engine.shared()).await
+                        self::engine_id(engine.shared()).await
                     })
                 }
             }
@@ -5133,7 +5182,7 @@ mod tests {
                 #[cfg(not(target_arch = "wasm32"))]
                 #[unsafe(no_mangle)]
                 pub extern "C" fn boltffi_function_demo_ping() {
-                    ping();
+                    self::ping();
                 }
             }
             .to_string()
@@ -5168,7 +5217,7 @@ mod tests {
                     let point: Point = unsafe {
                         <Point as ::boltffi::__private::Passable>::unpack(point)
                     };
-                    norm(point)
+                    self::norm(point)
                 }
             }
             .to_string()
@@ -5211,7 +5260,7 @@ mod tests {
                             );
                         <Point as ::boltffi::__private::Passable>::unpack(__boltffi_value)
                     };
-                    norm(point)
+                    self::norm(point)
                 }
             }
             .to_string()
@@ -5250,7 +5299,7 @@ mod tests {
                         return <f64 as ::core::default::Default>::default();
                     }
                     let point: &mut Point = unsafe { &mut *(point as *mut Point) };
-                    shift(point)
+                    self::shift(point)
                 }
             }
             .to_string()
@@ -5296,7 +5345,7 @@ mod tests {
                             );
                         <Point as ::boltffi::__private::Passable>::unpack(__boltffi_value)
                     };
-                    let __boltffi_result = shift(&mut point);
+                    let __boltffi_result = self::shift(&mut point);
                     unsafe {
                         ::core::ptr::write_unaligned(
                             __boltffi_point_out as *mut <Point as ::boltffi::__private::Passable>::In,
@@ -5336,7 +5385,7 @@ mod tests {
                     count: i32
                 ) -> ::boltffi::__private::FfiStatus {
                     let mut count = count;
-                    bump(&mut count);
+                    self::bump(&mut count);
                     ::boltffi::__private::FfiStatus::OK
                 }
             }
@@ -5393,7 +5442,7 @@ mod tests {
                             }
                         }
                     };
-                    name_len(name)
+                    self::name_len(name)
                 }
             }
             .to_string()
@@ -5450,7 +5499,7 @@ mod tests {
                         }
                     };
                     let name = __boltffi_name_storage.as_str();
-                    name_len(name)
+                    self::name_len(name)
                 }
             }
             .to_string()
@@ -5512,7 +5561,7 @@ mod tests {
                         ::boltffi::__private::set_last_error(concat!(stringify!(__boltffi_name_out), ": writeback pointer is null"));
                         return <u32 as ::core::default::Default>::default();
                     }
-                    let __boltffi_result = rewrite(name);
+                    let __boltffi_result = self::rewrite(name);
                     unsafe {
                         ::core::ptr::write(
                             __boltffi_name_out,
@@ -5577,7 +5626,7 @@ mod tests {
                             }
                         }
                     };
-                    bytes_len(bytes)
+                    self::bytes_len(bytes)
                 }
             }
             .to_string()
@@ -5633,7 +5682,7 @@ mod tests {
                             }
                         }
                     };
-                    bytes_sum(bytes)
+                    self::bytes_sum(bytes)
                 }
             }
             .to_string()
@@ -5723,7 +5772,7 @@ mod tests {
                             )
                         }
                     };
-                    fill(bytes)
+                    self::fill(bytes)
                 }
             }
             .to_string()
@@ -5768,7 +5817,7 @@ mod tests {
                             }
                         }
                     };
-                    set_count(count);
+                    self::set_count(count);
                     ::boltffi::__private::FfiStatus::OK
                 }
             }
@@ -5825,7 +5874,7 @@ mod tests {
                             }
                         }
                     };
-                    name_score(profile)
+                    self::name_score(profile)
                 }
             }
             .to_string()
@@ -5887,7 +5936,7 @@ mod tests {
                         ::boltffi::__private::set_last_error(concat!(stringify!(__boltffi_profile_out), ": writeback pointer is null"));
                         return <u32 as ::core::default::Default>::default();
                     }
-                    let __boltffi_result = rename(profile);
+                    let __boltffi_result = self::rename(profile);
                     unsafe {
                         ::core::ptr::write(
                             __boltffi_profile_out,
@@ -5929,7 +5978,7 @@ mod tests {
                     engine: u64
                 ) -> u64 {
                     let __boltffi_engine_storage = unsafe {
-                        __BoltffiEngineHandle::take(engine as usize as *mut __BoltffiEngineHandle)
+                        <Engine as ::boltffi::__private::ClassHandle>::Handle::take(engine as usize as *mut <Engine as ::boltffi::__private::ClassHandle>::Handle)
                     };
                     if engine == 0 {
                         ::boltffi::__private::set_last_error(concat!(stringify!(engine), ": null class handle"));
@@ -5942,10 +5991,10 @@ mod tests {
                             return 0;
                         }
                     };
-                    let __boltffi_result: Option<Engine> = open(engine);
+                    let __boltffi_result: Option<Engine> = self::open(engine);
                     match __boltffi_result {
                         Some(__boltffi_value) => {
-                            __BoltffiEngineHandle::new(__boltffi_value) as usize as u64
+                            <Engine as ::boltffi::__private::ClassHandle>::Handle::new(__boltffi_value) as usize as u64
                         }
                         None => 0,
                     }
@@ -6674,7 +6723,7 @@ mod tests {
         assert!(rendered.contains("fn boltffi_method_class_demo_engine_clone_engine"));
         assert!(rendered.contains("let __boltffi_result : Engine ="));
         assert!(!rendered.contains("let __boltffi_result : Self"));
-        assert!(rendered.contains("__BoltffiEngineHandle :: new (__boltffi_result)"));
+        assert!(rendered.contains("< Engine as :: boltffi :: __private :: ClassHandle > :: Handle :: new (__boltffi_result)"));
     }
 
     #[test]
@@ -7055,7 +7104,7 @@ mod tests {
         assert!(rendered.contains("__boltffi_return_out : * mut u64"));
         assert!(rendered.contains("Engine :: try_new ()"));
         assert!(rendered.contains(
-            ":: core :: ptr :: write (__boltffi_return_out , __BoltffiEngineHandle :: new"
+            ":: core :: ptr :: write (__boltffi_return_out , < Engine as :: boltffi :: __private :: ClassHandle > :: Handle :: new"
         ));
     }
 
@@ -7120,11 +7169,9 @@ mod tests {
                         return ::boltffi::__private::FfiStatus::INVALID_ARG;
                     }
                     let listener: Box<dyn Listener> = unsafe {
-                        <ForeignListener as ::boltffi::__private::BoxFromCallbackHandle>::box_from_callback_handle(
-                            __boltffi_listener_handle
-                        )
+                        ::boltffi::__private::callback_box(Listener, __boltffi_listener_handle) as _
                     };
-                    listen(listener);
+                    self::listen(listener);
                     ::boltffi::__private::FfiStatus::OK
                 }
             }
@@ -7150,7 +7197,7 @@ mod tests {
         let rendered = function_tokens.to_string();
 
         assert!(rendered.contains("let listener : Box < dyn Listener + Send > = unsafe"));
-        assert!(rendered.contains("< ForeignListener as :: boltffi :: __private :: BoxFromCallbackHandle > :: box_from_callback_handle"));
+        assert!(rendered.contains(":: boltffi :: __private :: callback_box (Listener ,"));
         assert_generated_crate_checks(
             "native_bounded_callback_param",
             quote! {
@@ -7180,8 +7227,8 @@ mod tests {
         let rendered = function_tokens.to_string();
 
         assert!(rendered.contains("listener : :: boltffi :: __private :: CallbackHandle"));
-        assert!(rendered.contains("let listener : ForeignListener = unsafe"));
-        assert!(rendered.contains("< ForeignListener as :: boltffi :: __private :: BoxFromCallbackHandle > :: box_from_callback_handle"));
+        assert!(rendered.contains("let listener : _ = unsafe"));
+        assert!(rendered.contains(":: boltffi :: __private :: callback_box (Listener ,"));
         assert!(rendered.contains("listen (listener)"));
         assert_generated_crate_checks(
             "native_impl_trait_callback_param",
@@ -7215,8 +7262,8 @@ mod tests {
 
         assert!(rendered.contains("listener : u32"));
         assert!(rendered.contains(":: boltffi :: __private :: CallbackHandle :: from_wasm_handle"));
-        assert!(rendered.contains("let listener : ForeignListener = unsafe"));
-        assert!(rendered.contains("< ForeignListener as :: boltffi :: __private :: BoxFromCallbackHandle > :: box_from_callback_handle"));
+        assert!(rendered.contains("let listener : _ = unsafe"));
+        assert!(rendered.contains(":: boltffi :: __private :: callback_box (Listener ,"));
         assert_generated_crate_checks(
             "wasm_impl_trait_callback_param",
             quote! {
@@ -7248,7 +7295,7 @@ mod tests {
         let rendered = function_tokens.to_string();
 
         assert!(rendered.contains("listener : :: boltffi :: __private :: CallbackHandle"));
-        assert!(rendered.contains("let listener : ForeignListener = unsafe"));
+        assert!(rendered.contains("let listener : _ = unsafe"));
         assert!(
             rendered
                 .contains(":: boltffi :: __private :: rustfuture :: rust_future_new (async move")
@@ -7286,7 +7333,7 @@ mod tests {
 
         assert!(rendered.contains("listener : u32"));
         assert!(rendered.contains(":: boltffi :: __private :: CallbackHandle :: from_wasm_handle"));
-        assert!(rendered.contains("let listener : ForeignListener = unsafe"));
+        assert!(rendered.contains("let listener : _ = unsafe"));
         assert!(
             rendered
                 .contains(":: boltffi :: __private :: rustfuture :: rust_future_new (async move")
@@ -7631,7 +7678,7 @@ mod tests {
         ));
         assert!(rendered.contains("wire :: decode :: < u32 >"));
         assert!(rendered.contains("CallbackHandle :: from_wasm_handle"));
-        assert!(rendered.contains("< ForeignListener as :: boltffi :: __private :: BoxFromCallbackHandle > :: box_from_callback_handle"));
+        assert!(rendered.contains(":: boltffi :: __private :: callback_box (Listener ,"));
     }
 
     #[test]
@@ -7885,10 +7932,10 @@ mod tests {
         ));
         assert!(rendered.contains("BoxFromCallbackHandle"));
         assert!(rendered.contains(
-            "box_from_callback_handle (unsafe { __boltffi_success_out . assume_init () })"
+            "callback_box (Listener , unsafe { __boltffi_success_out . assume_init () })"
         ));
         assert!(rendered.contains(
-            "* __boltffi_success_out = __boltffi_local_demo_listener_handle (:: std :: sync :: Arc :: from (__boltffi_success))"
+            "* __boltffi_success_out = < dyn Listener as :: boltffi :: __private :: CallbackLocalHandle > :: local_callback_handle (:: std :: sync :: Arc :: from (__boltffi_success))"
         ));
         assert!(!rendered.contains("boltffi_create_callback_demo_listener (__boltffi_success)"));
     }
@@ -7925,12 +7972,10 @@ mod tests {
                             None
                         } else {
                             Some(unsafe {
-                                <ForeignListener as ::boltffi::__private::ArcFromCallbackHandle>::arc_from_callback_handle(
-                                    __boltffi_listener_handle
-                                )
+                                ::boltffi::__private::callback_arc(Listener, __boltffi_listener_handle) as _
                             })
                         };
-                    maybe(listener)
+                    self::maybe(listener)
                 }
             }
             .to_string()
@@ -7962,8 +8007,8 @@ mod tests {
                 pub extern "C" fn boltffi_function_demo_make_listener()
                     -> ::boltffi::__private::CallbackHandle
                 {
-                    let __boltffi_result: Box<dyn Listener> = make_listener();
-                    __boltffi_local_demo_listener_handle(::std::sync::Arc::from(__boltffi_result))
+                    let __boltffi_result: Box<dyn Listener> = self::make_listener();
+                    <dyn Listener as ::boltffi::__private::CallbackLocalHandle>::local_callback_handle(::std::sync::Arc::from(__boltffi_result))
                 }
             }
             .to_string()
@@ -7995,8 +8040,8 @@ mod tests {
                 pub extern "C" fn boltffi_function_demo_shared_listener()
                     -> ::boltffi::__private::CallbackHandle
                 {
-                    let __boltffi_result: ::std::sync::Arc<dyn Listener> = shared_listener();
-                    __boltffi_local_demo_listener_handle(__boltffi_result)
+                    let __boltffi_result: ::std::sync::Arc<dyn Listener> = self::shared_listener();
+                    <dyn Listener as ::boltffi::__private::CallbackLocalHandle>::local_callback_handle(__boltffi_result)
                 }
             }
             .to_string()
@@ -8027,10 +8072,10 @@ mod tests {
                 #[unsafe(no_mangle)]
                 pub extern "C" fn boltffi_function_demo_maybe_listener() -> u32 {
                     let __boltffi_result: Option<::std::sync::Arc<dyn Listener> > =
-                        maybe_listener();
+                        self::maybe_listener();
                     __boltffi_result
                         .map(|__boltffi_callback|
-                            __boltffi_local_demo_listener_handle(__boltffi_callback).handle() as u32
+                            <dyn Listener as ::boltffi::__private::CallbackLocalHandle>::local_callback_handle(__boltffi_callback).handle() as u32
                         )
                         .unwrap_or(0)
                 }
@@ -8062,10 +8107,10 @@ mod tests {
                 #[cfg(target_arch = "wasm32")]
                 #[unsafe(no_mangle)]
                 pub extern "C" fn boltffi_function_demo_maybe_boxed_listener() -> u32 {
-                    let __boltffi_result: Option<Box<dyn Listener> > = maybe_boxed_listener();
+                    let __boltffi_result: Option<Box<dyn Listener> > = self::maybe_boxed_listener();
                     __boltffi_result
                         .map(|__boltffi_callback| {
-                            __boltffi_local_demo_listener_handle(
+                            <dyn Listener as ::boltffi::__private::CallbackLocalHandle>::local_callback_handle(
                                 ::std::sync::Arc::from(__boltffi_callback)
                             ).handle() as u32
                         })
@@ -8101,13 +8146,13 @@ mod tests {
                 pub unsafe extern "C" fn boltffi_function_demo_try_make_listener(
                     __boltffi_return_out: *mut ::boltffi::__private::CallbackHandle
                 ) -> ::boltffi::__private::FfiBuf {
-                    match try_make_listener() {
+                    match self::try_make_listener() {
                         Ok(__boltffi_success) => {
                             if !__boltffi_return_out.is_null() {
                                 unsafe {
                                     ::core::ptr::write(
                                         __boltffi_return_out,
-                                        __boltffi_local_demo_listener_handle(
+                                        <dyn Listener as ::boltffi::__private::CallbackLocalHandle>::local_callback_handle(
                                             ::std::sync::Arc::from(__boltffi_success)
                                         )
                                     );
@@ -8165,7 +8210,7 @@ mod tests {
                             )
                         }
                     };
-                    apply(callback)
+                    self::apply(callback)
                 }
             }
             .to_string()
@@ -8221,7 +8266,7 @@ mod tests {
                             )
                         }
                     };
-                    apply(callback)
+                    self::apply(callback)
                 }
             }
             .to_string()
@@ -9057,9 +9102,9 @@ mod tests {
                         return <u32 as ::core::default::Default>::default();
                     }
                     let engine: &Engine = unsafe {
-                        __BoltffiEngineHandle::shared(engine as usize as *mut __BoltffiEngineHandle)
+                        <Engine as ::boltffi::__private::ClassHandle>::Handle::shared(engine as usize as *mut <Engine as ::boltffi::__private::ClassHandle>::Handle)
                     };
-                    engine_id(engine)
+                    self::engine_id(engine)
                 }
             }
             .to_string()
@@ -9091,13 +9136,13 @@ mod tests {
                 pub unsafe extern "C" fn boltffi_function_demo_try_open(
                     __boltffi_return_out: *mut u64
                 ) -> ::boltffi::__private::FfiBuf {
-                    match try_open() {
+                    match self::try_open() {
                         Ok(__boltffi_success) => {
                             if !__boltffi_return_out.is_null() {
                                 unsafe {
                                     ::core::ptr::write(
                                         __boltffi_return_out,
-                                        __BoltffiEngineHandle::new(__boltffi_success) as usize as u64
+                                        <Engine as ::boltffi::__private::ClassHandle>::Handle::new(__boltffi_success) as usize as u64
                                     );
                                 }
                             }
@@ -9139,7 +9184,7 @@ mod tests {
                     } else {
                         Some(count as _)
                     };
-                    set_count(count);
+                    self::set_count(count);
                     ::boltffi::__private::FfiStatus::OK
                 }
             }
@@ -9183,7 +9228,7 @@ mod tests {
                             )
                         }.to_vec()
                     };
-                    sum(values)
+                    self::sum(values)
                 }
             }
             .to_string()
@@ -9239,7 +9284,7 @@ mod tests {
                             return <u32 as ::core::default::Default>::default();
                         }
                     };
-                    count_points(points)
+                    self::count_points(points)
                 }
             }
             .to_string()
@@ -9269,7 +9314,7 @@ mod tests {
                 #[cfg(not(target_arch = "wasm32"))]
                 #[unsafe(no_mangle)]
                 pub extern "C" fn boltffi_function_demo_origin() -> <Point as ::boltffi::__private::Passable>::Out {
-                    <Point as ::boltffi::__private::Passable>::pack(origin())
+                    <Point as ::boltffi::__private::Passable>::pack(self::origin())
                 }
             }
             .to_string()
@@ -9301,7 +9346,7 @@ mod tests {
                 pub unsafe extern "C" fn boltffi_function_demo_origin(
                     __boltffi_return_out: *mut <Point as ::boltffi::__private::Passable>::Out
                 ) {
-                    let __boltffi_result: Point = origin();
+                    let __boltffi_result: Point = self::origin();
                     if !__boltffi_return_out.is_null() {
                         unsafe {
                             ::core::ptr::write(
@@ -9341,7 +9386,7 @@ mod tests {
                 pub unsafe extern "C" fn boltffi_function_demo_try_count(
                     __boltffi_return_out: *mut i32
                 ) -> ::boltffi::__private::FfiBuf {
-                    match try_count() {
+                    match self::try_count() {
                         Ok(__boltffi_success) => {
                             if !__boltffi_return_out.is_null() {
                                 unsafe {
@@ -9386,7 +9431,7 @@ mod tests {
                 #[cfg(target_arch = "wasm32")]
                 #[unsafe(no_mangle)]
                 pub extern "C" fn boltffi_function_demo_try_ping() -> u64 {
-                    match try_ping() {
+                    match self::try_ping() {
                         Ok(()) => {
                             ::boltffi::__private::FfiBuf::EMPTY_PACKED
                         }
@@ -9425,7 +9470,7 @@ mod tests {
                 pub unsafe extern "C" fn boltffi_function_demo_try_greet(
                     __boltffi_return_out: *mut u64
                 ) -> u64 {
-                    match try_greet() {
+                    match self::try_greet() {
                         Ok(__boltffi_success) => {
                             if !__boltffi_return_out.is_null() {
                                 unsafe {
@@ -9472,7 +9517,7 @@ mod tests {
                 #[cfg(not(target_arch = "wasm32"))]
                 #[unsafe(no_mangle)]
                 pub extern "C" fn boltffi_function_demo_maybe_count() -> ::boltffi::__private::FfiBuf {
-                    let __boltffi_result: Option<i32> = maybe_count();
+                    let __boltffi_result: Option<i32> = self::maybe_count();
                     ::boltffi::__private::FfiBuf::wire_encode(&__boltffi_result)
                 }
             }
@@ -9524,7 +9569,7 @@ mod tests {
                 #[cfg(target_arch = "wasm32")]
                 #[unsafe(no_mangle)]
                 pub extern "C" fn boltffi_function_demo_maybe_count() -> f64 {
-                    let __boltffi_result: Option<i32> = maybe_count();
+                    let __boltffi_result: Option<i32> = self::maybe_count();
                     match __boltffi_result {
                         Some(__boltffi_value) => __boltffi_value as f64,
                         None => f64::NAN,
@@ -9579,7 +9624,7 @@ mod tests {
                 #[cfg(not(target_arch = "wasm32"))]
                 #[unsafe(no_mangle)]
                 pub extern "C" fn boltffi_function_demo_numbers() -> ::boltffi::__private::FfiBuf {
-                    let __boltffi_result = numbers();
+                    let __boltffi_result = self::numbers();
                     <i32 as ::boltffi::__private::VecTransport>::pack_vec(__boltffi_result)
                 }
             }
@@ -9610,7 +9655,7 @@ mod tests {
                 #[cfg(target_arch = "wasm32")]
                 #[unsafe(no_mangle)]
                 pub extern "C" fn boltffi_function_demo_numbers() {
-                    let __boltffi_result = numbers();
+                    let __boltffi_result = self::numbers();
                     let __boltffi_buf =
                         <i32 as ::boltffi::__private::VecTransport>::pack_vec(__boltffi_result);
                     ::boltffi::__private::write_return_slot(
@@ -9649,7 +9694,7 @@ mod tests {
                 #[cfg(not(target_arch = "wasm32"))]
                 #[unsafe(no_mangle)]
                 pub extern "C" fn boltffi_function_demo_greet() -> ::boltffi::__private::FfiBuf {
-                    let __boltffi_result: String = greet();
+                    let __boltffi_result: String = self::greet();
                     ::boltffi::__private::FfiBuf::wire_encode_owned_string(__boltffi_result)
                 }
             }
@@ -9680,7 +9725,7 @@ mod tests {
                 #[cfg(target_arch = "wasm32")]
                 #[unsafe(no_mangle)]
                 pub extern "C" fn boltffi_function_demo_greet() -> u64 {
-                    let __boltffi_result: String = greet();
+                    let __boltffi_result: String = self::greet();
                     ::boltffi::__private::FfiBuf::from_vec(__boltffi_result.into_bytes()).into_packed()
                 }
             }
@@ -9711,7 +9756,7 @@ mod tests {
                 #[cfg(not(target_arch = "wasm32"))]
                 #[unsafe(no_mangle)]
                 pub extern "C" fn boltffi_function_demo_payload() -> ::boltffi::__private::FfiBuf {
-                    let __boltffi_result: Vec<u8> = payload();
+                    let __boltffi_result: Vec<u8> = self::payload();
                     ::boltffi::__private::FfiBuf::wire_encode_owned_bytes(__boltffi_result)
                 }
             }
@@ -9742,7 +9787,7 @@ mod tests {
                 #[cfg(target_arch = "wasm32")]
                 #[unsafe(no_mangle)]
                 pub extern "C" fn boltffi_function_demo_payload() -> u64 {
-                    let __boltffi_result: Vec<u8> = payload();
+                    let __boltffi_result: Vec<u8> = self::payload();
                     ::boltffi::__private::FfiBuf::from_vec(__boltffi_result).into_packed()
                 }
             }

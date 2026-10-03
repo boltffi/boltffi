@@ -6,6 +6,7 @@ use boltffi::*;
 
 use crate::callbacks::sync_traits::ValueCallback;
 use crate::custom_types::Email;
+use crate::records::default_values::Timeout;
 
 #[demo_bench_macros::demo_case(
     "primitives.default_arguments.should_apply_omitted_scalar_and_string_defaults",
@@ -284,7 +285,7 @@ pub fn default_limit(#[boltffi::default(None)] limit: DefaultLimit) -> Option<u3
     exclude(c, reason = ExclusionReason::ImplementationGap, details = "C has no default arguments.")
 )]
 #[export]
-pub fn default_timeout_seconds(#[boltffi::default(1.5)] timeout: chrono::TimeDelta) -> f64 {
+pub fn default_timeout_seconds(#[boltffi::default(1.5)] timeout: Timeout) -> f64 {
     timeout.num_milliseconds() as f64 / 1_000.0
 }
 

@@ -17,6 +17,15 @@ pub(super) fn class_methods(
     scan(item, parent, scope, declared_types, StreamMethods::Separate)
 }
 
+pub(crate) fn scan_value_methods(
+    item: &syn::ItemImpl,
+    parent: &str,
+    scope: &ModuleScope,
+    declared_types: &DeclaredTypes,
+) -> Result<Vec<MethodDef>, ScanError> {
+    value_methods(item, parent, scope, declared_types)
+}
+
 pub(super) fn value_methods(
     item: &syn::ItemImpl,
     parent: &str,
