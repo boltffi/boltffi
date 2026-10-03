@@ -66,6 +66,7 @@ pub(crate) enum Kind {
     Data,
     Error,
     Export,
+    ExportMethods,
     DataImpl,
     CustomFfi,
     CustomType,
@@ -78,6 +79,7 @@ impl Kind {
             Self::Data => "data",
             Self::Error => "error",
             Self::Export => "export",
+            Self::ExportMethods => "export_methods",
             Self::DataImpl => "data_impl",
             Self::CustomFfi => "custom_ffi",
             Self::CustomType => "custom_type",
@@ -90,6 +92,7 @@ impl Kind {
             Self::Data,
             Self::Error,
             Self::Export,
+            Self::ExportMethods,
             Self::DataImpl,
             Self::CustomFfi,
             Self::CustomType,
@@ -102,6 +105,7 @@ impl Kind {
     fn impl_capture(self, attribute: &TokenStream) -> ImplCapture {
         match self {
             Self::DataImpl => ImplCapture::Methods,
+            Self::ExportMethods => ImplCapture::ClassMethods,
             _ => ImplCapture::Class(attribute.clone()),
         }
     }
@@ -170,6 +174,8 @@ const fn chains_before_lane(kind: Kind) -> bool {
     matches!(kind, Kind::CustomType | Kind::CustomFfi)
 }
 
+/// The lane a declaration defines before its chain runs. A class's streams and constants
+/// stay out, since only the blocks that declare them expand them.
 fn immediate_lane(
     kind: Kind,
     fragments: &Fragments,
@@ -185,6 +191,12 @@ fn immediate_lane(
     let krate = crate_name()?;
     let entries = fragments
         .iter()
+        .filter(|(fragment, _)| {
+            !matches!(
+                fragment,
+                SourceFragment::Stream(_) | SourceFragment::Constant(_)
+            )
+        })
         .map(|(fragment, _)| {
             Ok(Entry {
                 module: krate.clone(),
@@ -349,6 +361,7 @@ fn finish(
         .map(|path| path.to_string())
         .collect::<Vec<_>>();
     let krate = crate_name()?;
+    check_methods_target(kind, &fragments, &paths, &lanes)?;
     let own = fragments
         .iter()
         .map(|(fragment, slots)| {
@@ -391,7 +404,19 @@ fn finish(
                 let index = paths.iter().position(|candidate| *candidate == path)?;
                 Some(lanes[index].id.clone())
             })?;
-            Some((id, matches!(fragment, SourceFragment::Methods { .. })))
+            Some((id, fragment))
+        })
+        .flat_map(|(id, fragment)| {
+            let streams = match fragment {
+                SourceFragment::Methods { streams, .. } => streams.as_slice(),
+                _ => &[],
+            };
+            let streams = streams
+                .iter()
+                .map(|stream| (format!("{id}::{}", stream.name.spelling()), false))
+                .collect::<Vec<_>>();
+            let methods = matches!(fragment, SourceFragment::Methods { .. });
+            std::iter::once((id, methods)).chain(streams)
         })
         .collect::<Vec<_>>();
     let selected = selections
@@ -431,6 +456,39 @@ fn finish(
         #lane
         #repr_tag
     })
+}
+
+/// Refuses a methods block written with the marker of the other kind of declaration.
+fn check_methods_target(
+    kind: Kind,
+    fragments: &Fragments,
+    paths: &[String],
+    lanes: &[Lane],
+) -> Result<(), String> {
+    let Some((SourceFragment::Methods { spelling, .. }, slots)) = fragments.first() else {
+        return Ok(());
+    };
+    let target = slots
+        .first()
+        .map(|slot| lane_path(slot).to_string())
+        .and_then(|path| paths.iter().position(|candidate| *candidate == path))
+        .and_then(|index| lanes[index].entries.first())
+        .ok_or("lane continuation lost a methods target")?;
+    let class = matches!(
+        serde_json::from_str::<SourceFragment>(target.json.get()),
+        Ok(SourceFragment::Class(_))
+    );
+    match (kind, class) {
+        (Kind::ExportMethods, false) => Err(format!(
+            "`#[export(methods)]` extends a class declared by an `#[export] impl` block, and \
+             `{spelling}` is not one; use `#[data(impl)]` on a `#[data]` type"
+        )),
+        (Kind::DataImpl, true) => Err(format!(
+            "`#[data(impl)]` extends a `#[data]` type, and `{spelling}` is an exported class; \
+             use `#[export(methods)]`"
+        )),
+        _ => Ok(()),
+    }
 }
 
 /// Names the tag a custom's representation converts under, when that representation is
@@ -619,7 +677,7 @@ fn invocation_module(kind: Kind, item: &syn::Item) -> Option<syn::Ident> {
         (Kind::Export, syn::Item::Fn(item)) => ("fn", item.sig.ident.to_string()),
         (Kind::Export, syn::Item::Const(item)) => ("const", item.ident.to_string()),
         (Kind::Export, syn::Item::Trait(item)) => ("trait", item.ident.to_string()),
-        (Kind::Export | Kind::DataImpl, syn::Item::Impl(item)) => {
+        (Kind::Export | Kind::ExportMethods | Kind::DataImpl, syn::Item::Impl(item)) => {
             let syn::Type::Path(path) = &*item.self_ty else {
                 return None;
             };
@@ -634,7 +692,7 @@ fn invocation_module(kind: Kind, item: &syn::Item) -> Option<syn::Ident> {
     };
     let name = name.trim_start_matches("r#");
     Some(match kind {
-        Kind::DataImpl => format_ident!(
+        Kind::DataImpl | Kind::ExportMethods => format_ident!(
             "__boltffi_{family}_{name}_{}",
             LANES.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
         ),
@@ -645,7 +703,7 @@ fn invocation_module(kind: Kind, item: &syn::Item) -> Option<syn::Ident> {
 /// Brings a method block's target into its wrapper module under its declared name,
 /// through the path the block wrote, since the wrappers name the type bare.
 fn methods_target_import(kind: Kind, item: &syn::Item, target: &str) -> Option<TokenStream> {
-    let (Kind::DataImpl, syn::Item::Impl(item)) = (kind, item) else {
+    let (Kind::DataImpl | Kind::ExportMethods, syn::Item::Impl(item)) = (kind, item) else {
         return None;
     };
     let syn::Type::Path(path) = &*item.self_ty else {
@@ -724,6 +782,10 @@ where
         lower_invocation::<S>(contract, &selection, shallow).map_err(|error| error.to_string())?;
     let expansion = Expansion::invocation(&lowered).with_lookup_traits(contract);
     let expander = Expander::invocation(contract, selected.iter().cloned());
+    let expander = match kind {
+        Kind::ExportMethods => expander.extending_classes(),
+        _ => expander,
+    };
     match kind {
         Kind::Data | Kind::Error => selected
             .iter()
@@ -740,7 +802,7 @@ where
                 runtime.map_err(|error| error.to_string())
             })
             .collect(),
-        Kind::Export | Kind::DataImpl => expander
+        Kind::Export | Kind::ExportMethods | Kind::DataImpl => expander
             .surface(&expansion)
             .map_err(|error| error.to_string()),
         Kind::CustomFfi | Kind::CustomType | Kind::Pool => Ok(TokenStream::new()),
@@ -893,7 +955,7 @@ fn lane_target(
         (Kind::Pool, _) => syn::parse2::<crate::interned_string::PoolSpec>(tokens.clone())
             .ok()
             .map(|spec| (spec.visibility, spec.name)),
-        (Kind::DataImpl, _) => None,
+        (Kind::DataImpl | Kind::ExportMethods, _) => None,
         (_, Some(syn::Item::Struct(item))) => Some((item.vis.clone(), item.ident.clone())),
         (_, Some(syn::Item::Enum(item))) => Some((item.vis.clone(), item.ident.clone())),
         (_, Some(syn::Item::Trait(item))) => Some((item.vis.clone(), item.ident.clone())),

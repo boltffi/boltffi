@@ -15,11 +15,13 @@ use crate::expansion::{contract::Expansion, error::Error, rust_api, wrapper};
 pub struct Expander<'lowered> {
     source: &'lowered SourceContract,
     selected: Option<HashSet<String>>,
+    extends_classes: bool,
 }
 
 struct SurfaceExpander<'expansion, 'lowered> {
     source: &'lowered SourceContract,
     selected: Option<&'expansion HashSet<String>>,
+    extends_classes: bool,
     expansion: ExpansionSurface<'expansion, 'lowered>,
 }
 
@@ -42,6 +44,7 @@ impl<'expansion, 'lowered> SurfaceExpander<'expansion, 'lowered> {
         Self {
             source,
             selected: None,
+            extends_classes: false,
             expansion: ExpansionSurface::Native(expansion),
         }
     }
@@ -53,12 +56,18 @@ impl<'expansion, 'lowered> SurfaceExpander<'expansion, 'lowered> {
         Self {
             source,
             selected: None,
+            extends_classes: false,
             expansion: ExpansionSurface::Wasm32(expansion),
         }
     }
 
     const fn selecting(mut self, selected: Option<&'expansion HashSet<String>>) -> Self {
         self.selected = selected;
+        self
+    }
+
+    const fn extending_classes(mut self, extends_classes: bool) -> Self {
+        self.extends_classes = extends_classes;
         self
     }
 
@@ -188,6 +197,7 @@ impl<'lowered> Expander<'lowered> {
         Self {
             source,
             selected: None,
+            extends_classes: false,
         }
     }
 
@@ -200,12 +210,21 @@ impl<'lowered> Expander<'lowered> {
         Self {
             source: contract,
             selected: Some(selected.into_iter().collect()),
+            extends_classes: false,
         }
+    }
+
+    /// Renders selected classes as `#[export(methods)]` does: members only, since the
+    /// class's own `#[export] impl` renders the handle and release.
+    pub fn extending_classes(mut self) -> Self {
+        self.extends_classes = true;
+        self
     }
 
     pub fn native(&self, expansion: &Expansion<'lowered, Native>) -> Result<TokenStream, Error> {
         let wrappers = SurfaceExpander::native(self.source, expansion)
             .selecting(self.selected.as_ref())
+            .extending_classes(self.extends_classes)
             .expand()?;
         Ok(wrappers)
     }
@@ -213,6 +232,7 @@ impl<'lowered> Expander<'lowered> {
     pub fn wasm32(&self, expansion: &Expansion<'lowered, Wasm32>) -> Result<TokenStream, Error> {
         let wrappers = SurfaceExpander::wasm32(self.source, expansion)
             .selecting(self.selected.as_ref())
+            .extending_classes(self.extends_classes)
             .expand()?;
         Ok(wrappers)
     }
@@ -382,10 +402,14 @@ impl<'expansion, 'lowered> SurfaceExpander<'expansion, 'lowered> {
             .filter(|source| self.selected(source.id.as_str()))
             .map(|source| match self.expansion {
                 ExpansionSurface::Native(expansion) => {
-                    wrapper::class::Class::new(expansion.class(source)?, expansion).render()
+                    wrapper::class::Class::new(expansion.class(source)?, expansion)
+                        .extending(self.extends_classes)
+                        .render()
                 }
                 ExpansionSurface::Wasm32(expansion) => {
-                    wrapper::class::Class::new(expansion.class(source)?, expansion).render()
+                    wrapper::class::Class::new(expansion.class(source)?, expansion)
+                        .extending(self.extends_classes)
+                        .render()
                 }
             })
             .collect()
@@ -583,6 +607,36 @@ mod tests {
                 ))
             ));
         });
+    }
+
+    #[test]
+    fn a_class_extension_renders_members_through_the_declared_handle() {
+        let mut source = SourceContract::new(PackageInfo::new("demo", None));
+        let mut engine = engine_class();
+        engine.methods.push(MethodDef::new(
+            MethodId::new("demo::Engine::start"),
+            CanonicalName::single("start"),
+            Receiver::Shared,
+        ));
+        source.classes.push(engine);
+        let lowered = lower_with_declarations::<Native>(&source).expect("contract lowers");
+        let expansion = Expansion::new(&lowered);
+
+        let rendered = expander::Expander::new(&source)
+            .extending_classes()
+            .native(&expansion)
+            .expect("contract expands")
+            .to_string();
+
+        assert!(rendered.contains("fn boltffi_method_class_demo_engine_start"));
+        assert!(
+            rendered.contains(
+                "< Engine as :: boltffi :: __private :: ClassHandle > :: Handle :: shared"
+            )
+        );
+        assert!(!rendered.contains("struct __BoltffiEngineHandle"));
+        assert!(!rendered.contains("boltffi_release_class_demo_engine"));
+        assert!(!rendered.contains("BoltFFIThreadSafe"));
     }
 
     #[test]

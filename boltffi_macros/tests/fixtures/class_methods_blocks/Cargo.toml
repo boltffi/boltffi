@@ -1,0 +1,15 @@
+[workspace]
+
+[package]
+name = "class_methods_blocks"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[features]
+undeclared = []
+methods_on_data = []
+data_impl_on_class = []
+
+[dependencies]
+boltffi = { path = "../../../../boltffi" }

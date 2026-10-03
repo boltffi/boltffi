@@ -36,7 +36,9 @@ bool test_class_handles(void) {
     CHECK(!reset.ok && reset.data.error.len == sizeof(reset_error) - 1 && memcmp(reset.data.error.ptr, reset_error, sizeof(reset_error) - 1) == 0,
           "a result with unit success preserves its string error");
     demo_counter_try_reset_if_positive_result_free(&reset);
-    demo_counter_add(&counter, 7);
+    demo_counter_add(&counter, 8);
+    demo_counter_decrement(&counter);
+    CHECK(demo_counter_get(&counter) == 7, "case:classes.methods.counter.decrement.should_call_a_method_declared_in_a_methods_block");
     DemoPoint counter_point = demo_counter_as_point(&counter);
     CHECK(counter_point.x == 7.0 && counter_point.y == 0.0, "class methods return direct records by value");
     demo_counter_free(&counter);

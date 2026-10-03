@@ -16,6 +16,7 @@ pub enum Marker {
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct ExportMarker {
     class_thread_safety: Option<ClassThreadSafety>,
+    methods: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -126,12 +127,25 @@ impl ExportMarker {
     }
 
     pub fn requires_class_impl(self) -> bool {
-        self.class_thread_safety.is_some()
+        self.class_thread_safety.is_some() || self.methods
+    }
+
+    /// Whether the block extends a class that another `#[export] impl` declares.
+    pub fn adds_methods(self) -> bool {
+        self.methods
     }
 
     fn single_threaded() -> Self {
         Self {
             class_thread_safety: Some(ClassThreadSafety::UnsafeSingleThreaded),
+            methods: false,
+        }
+    }
+
+    fn methods() -> Self {
+        Self {
+            class_thread_safety: None,
+            methods: true,
         }
     }
 }
@@ -143,6 +157,9 @@ fn parse_data_impl(input: syn::parse::ParseStream<'_>) -> syn::Result<()> {
 
 fn parse_export_args(input: syn::parse::ParseStream<'_>) -> syn::Result<ExportMarker> {
     let args = syn::punctuated::Punctuated::<syn::Ident, syn::Token![,]>::parse_terminated(input)?;
+    if args.len() == 1 && args[0] == "methods" {
+        return Ok(ExportMarker::methods());
+    }
     if !args.is_empty()
         && args
             .iter()
@@ -349,6 +366,25 @@ mod tests {
         assert_eq!(
             Marker::detect(&impl_attrs("#[boltffi::export(thread_unsafe)] impl S {}")),
             Ok(Some(Marker::Export(ExportMarker::single_threaded())))
+        );
+    }
+
+    #[test]
+    fn detects_export_with_the_methods_marker() {
+        assert_eq!(
+            Marker::detect(&impl_attrs("#[export(methods)] impl S {}")),
+            Ok(Some(Marker::Export(ExportMarker::methods())))
+        );
+        assert!(
+            ExportMarker::methods().requires_class_impl(),
+            "a methods block only makes sense on an impl"
+        );
+        assert!(
+            matches!(
+                Marker::detect(&impl_attrs("#[export(methods, single_threaded)] impl S {}")),
+                Err(ScanError::InvalidMarker { .. })
+            ),
+            "thread safety belongs to the block that declares the class"
         );
     }
 

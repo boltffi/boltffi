@@ -2735,6 +2735,12 @@ public final class DemoTest {
     private static void testResultClassMethods() {
         System.out.println("Testing result class methods...");
 
+        demoCase("case:classes.methods.counter.decrement.should_call_a_method_declared_in_a_methods_block");
+        try (Counter counter = new Counter(5)) {
+            counter.decrement();
+            assert counter.get() == 4 : "Counter.decrement from a methods block";
+        }
+
         try (Counter counter = new Counter(0)) {
             counter.increment();
             counter.increment();

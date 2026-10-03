@@ -221,6 +221,7 @@ only then.
 | D6 | Types named `Duration`, `SystemTime`, `Uuid` or `Url` are rejected at the declaration | Signatures spelling those names cross as the builtin |
 | D7 | Capture is always on; bindgen reads records only | A fallback is a second pipeline to keep equivalent |
 | D8 | A class's `#[export] impl` sits in the struct's module, and names the class | The class lane is defined beside the impl and must resolve wherever the struct does. The impl is all the macro sees, so `impl Motor` for a renamed `struct Engine` binds `Motor` |
+| D8a | One `#[export] impl` declares a class; further blocks are `#[export(methods)]` | Invocations are independent, so no block can tell it is the first. The declaring block owns the lane, handle and thread safety, and a methods block reaches them as `#[data(impl)]` reaches a record |
 | D9 | Lanes carry one level: the type's own fragment, with its references unresolved | Lowering never reads past a named type's own shape, so this is exact, lets types refer to each other, and keeps each use linear |
 | D10 | Bindings cover the root crate and its path dependencies in full; registry and git crates only where they are reached | Matches what `main` binds, and extends it to registry types a signature uses. Two crates binding the same name are refused |
 | D11 | `generate` checks every symbol the bindings call against the built library | A dependency's wrappers live in that crate, so a crate the library never uses is not linked. The error lists the symbols and names the fix, `use <crate> as _;` |
