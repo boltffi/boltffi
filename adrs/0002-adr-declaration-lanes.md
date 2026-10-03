@@ -267,8 +267,9 @@ walks one crate through every expansion.
   `196a06b9` and the branch at `d1426da7`, on an Apple M4 Pro with rustc 1.95.0.
 - **Dependencies.** A path dependency the library never uses is not linked, so `generate`
   fails until the root names it (D11).
-- **Binary size.** Records grow the demo's release dylib from 1.82 to 2.43 MB. Nothing reads
-  them at runtime; stripping them in `boltffi pack` is follow-up work.
+- **Binary size.** Records are `#[used]` statics that survive dead-stripping, and grew the
+  demo's release dylib from 1.82 to 2.43 MB. They are now emitted only in bindgen's own
+  build, which sets `BOLTFFI_SOURCE_RECORDS`, so a shipped binary carries none.
 - **Diagnostics.** Misuse surfaces as `cannot find macro`, and a missing
   `scaffolding!()` as ``cannot find type `__BoltffiTag` ``; both need friendlier errors.
 

@@ -46,12 +46,16 @@ pub struct ParameterDef {
     /// How the parameter was accepted by the Rust callable.
     pub passing: ParameterPassing,
     /// Documentation attached to the parameter when the source provides it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub doc: Option<DocComment>,
     /// Default value written for bindings that expose default arguments.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default: Option<DefaultValue>,
     /// User attributes preserved from the source parameter.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub user_attrs: Vec<UserAttr>,
     /// Visibility and source location for diagnostics.
+    #[serde(default, skip_serializing_if = "Source::is_exported")]
     pub source: Source,
 }
 
@@ -176,12 +180,16 @@ pub struct FunctionDef {
     /// Return type written by the Rust function.
     pub returns: ReturnDef,
     /// Documentation attached to the function.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub doc: Option<DocComment>,
     /// Deprecation metadata attached to the function.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub deprecated: Option<DeprecationInfo>,
     /// User attributes preserved from the function.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub user_attrs: Vec<UserAttr>,
     /// Visibility and source location for diagnostics.
+    #[serde(default, skip_serializing_if = "Source::is_exported")]
     pub source: Source,
     /// Span available during macro expansion.
     #[serde(default, skip_serializing, skip_deserializing)]
@@ -232,12 +240,16 @@ pub struct MethodDef {
     /// Return type written by the Rust method.
     pub returns: ReturnDef,
     /// Documentation attached to the method.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub doc: Option<DocComment>,
     /// Deprecation metadata attached to the method.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub deprecated: Option<DeprecationInfo>,
     /// User attributes preserved from the method.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub user_attrs: Vec<UserAttr>,
     /// Visibility and source location for diagnostics.
+    #[serde(default, skip_serializing_if = "Source::is_exported")]
     pub source: Source,
     /// Span available during macro expansion.
     #[serde(default, skip_serializing, skip_deserializing)]

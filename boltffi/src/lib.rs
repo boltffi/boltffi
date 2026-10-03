@@ -60,8 +60,25 @@ pub use boltffi_core::{
 /// ```
 pub use boltffi_core::interned_string_pool;
 
+/// Keeps a source record in bindgen's metadata build and drops it from every other build,
+/// so records never reach a shipped binary.
+#[cfg(boltffi_source_records)]
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __source_record {
+    ($($record:tt)*) => { $($record)* };
+}
+
+#[cfg(not(boltffi_source_records))]
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __source_record {
+    ($($record:tt)*) => {};
+}
+
 #[doc(hidden)]
 pub mod __private {
+    pub use crate::__source_record as source_record;
     pub use boltffi_core::capture;
     pub use boltffi_core::{
         ArcFromCallbackHandle, AsyncCallback, AsyncCallbackString, AsyncCallbackVoid,

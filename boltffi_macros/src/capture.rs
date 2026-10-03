@@ -257,7 +257,7 @@ fn record_tokens(fragment: &SourceFragment, slots: &[boltffi_scan::SlotSource]) 
         })
         .collect::<Vec<_>>();
 
-    quote! {
+    let record = quote! {
         const _: () = {
             #(#descs)*
             const MODULE: &[u8] = ::core::module_path!().as_bytes();
@@ -296,6 +296,9 @@ fn record_tokens(fragment: &SourceFragment, slots: &[boltffi_scan::SlotSource]) 
                 json: *#json,
             };
         };
+    };
+    quote! {
+        #facade::__private::source_record! { #record }
     }
 }
 

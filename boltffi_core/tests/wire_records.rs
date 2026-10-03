@@ -13,6 +13,11 @@ pub mod __private {
         RustFutureHandle, StreamContinuationCallback, StreamPollResult, SubscriptionHandle,
         VecTransport, WaitResult, WirePassable, rustfuture, wire,
     };
+
+    macro_rules! source_record {
+        ($($record:tt)*) => { $($record)* };
+    }
+    pub(crate) use source_record;
 }
 
 mod primitives {
