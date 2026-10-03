@@ -3,6 +3,9 @@ use std::path::{Path, PathBuf};
 use crate::cli::{CliError, Result};
 use crate::target::NativeHostPlatform;
 
+/// Name of the compiled CPython bridge extension inside the generated package.
+pub const NATIVE_EXTENSION_MODULE: &str = "_native";
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PythonPackageLayout {
     pub root_directory: PathBuf,
@@ -39,7 +42,8 @@ impl PythonPackageLayout {
             package_init_path: package_directory.join("__init__.py"),
             package_stub_path: package_directory.join("__init__.pyi"),
             typed_marker_path: package_directory.join("py.typed"),
-            native_bridge_source_path: package_directory.join("_native.c"),
+            native_bridge_source_path: package_directory
+                .join(format!("{NATIVE_EXTENSION_MODULE}.c")),
             root_directory,
             package_directory,
         }
@@ -103,7 +107,36 @@ impl PythonPackageLayout {
             });
         }
 
+        if let Some(setuptools_directory) = self.setuptools_state_directory_containing_wheels() {
+            return Err(CliError::CommandFailed {
+                command: format!(
+                    "targets.python.wheel.output '{}' must not be inside the setuptools build directory '{}', which is removed before each wheel build",
+                    self.wheel_directory.display(),
+                    setuptools_directory.display()
+                ),
+                status: None,
+            });
+        }
+
         Ok(())
+    }
+
+    /// The `build/` or `*.egg-info` directory of the source root that holds the
+    /// wheel directory, if any.
+    fn setuptools_state_directory_containing_wheels(&self) -> Option<PathBuf> {
+        let first_component = self
+            .wheel_directory
+            .strip_prefix(&self.root_directory)
+            .ok()?
+            .components()
+            .next()?;
+        let first_path = Path::new(first_component.as_os_str());
+        let is_setuptools_state = first_path == Path::new("build")
+            || first_path
+                .extension()
+                .is_some_and(|extension| extension == "egg-info");
+
+        is_setuptools_state.then(|| self.root_directory.join(first_path))
     }
 
     pub fn prepare_wheel_directory(&self) -> Result<()> {
@@ -126,6 +159,24 @@ impl PythonPackageLayout {
                 source,
             }
         })
+    }
+
+    /// Removes the setuptools `build/` directory and this distribution's
+    /// `.egg-info` from the source root. setuptools reuses them by mtime alone,
+    /// so a leftover tree can put a stale `_native` extension or stale files
+    /// into the next wheel.
+    pub fn remove_setuptools_build_state(&self, distribution_name: &str) -> Result<()> {
+        std::iter::once(self.root_directory.join("build"))
+            .chain(
+                setuptools_egg_info_names(distribution_name)
+                    .into_iter()
+                    .map(|name| self.root_directory.join(name)),
+            )
+            .try_for_each(|path| match std::fs::remove_dir_all(&path) {
+                Ok(()) => Ok(()),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                Err(source) => Err(CliError::WriteFailed { path, source }),
+            })
     }
 
     pub fn remove_packaged_native_libraries(&self) -> Result<()> {
@@ -158,13 +209,40 @@ impl PythonPackageLayout {
     }
 }
 
+/// The `.egg-info` directory names setuptools writes for `distribution_name`:
+/// `filename_component(safe_name(name))`. setuptools 69.1 stopped collapsing
+/// `-`/`_` in `safe_name`, so both spellings are returned when they differ.
+fn setuptools_egg_info_names(distribution_name: &str) -> Vec<String> {
+    let safe_name = |keeps: fn(char) -> bool| {
+        distribution_name
+            .split(|character: char| !keeps(character))
+            .filter(|segment| !segment.is_empty())
+            .collect::<Vec<_>>()
+            .join("-")
+    };
+    let filename_component =
+        |name: String| format!("{}.egg-info", name.replace('-', "_").trim_matches('_'));
+    let current = filename_component(safe_name(|character| {
+        character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '-')
+    }));
+    let legacy = filename_component(safe_name(|character| {
+        character.is_ascii_alphanumeric() || character == '.'
+    }));
+
+    if current == legacy {
+        vec![current]
+    } else {
+        vec![current, legacy]
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs;
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    use super::PythonPackageLayout;
+    use super::{PythonPackageLayout, setuptools_egg_info_names};
     use crate::cli::CliError;
     use crate::target::NativeHostPlatform;
 
@@ -291,5 +369,110 @@ mod tests {
         assert!(!layout.package_directory.join("demo.dll").exists());
 
         fs::remove_dir_all(root_directory).expect("cleanup generated package directory");
+    }
+
+    #[test]
+    fn removes_setuptools_build_state_without_touching_sources() {
+        let root_directory = tempfile::tempdir().expect("create generated python root");
+        let layout = PythonPackageLayout::new(root_directory.path(), "demo_lib");
+        let stale_object = root_directory
+            .path()
+            .join("build/temp.linux-x86_64-cpython-313/demo_lib/_native.o");
+
+        fs::create_dir_all(stale_object.parent().expect("object directory"))
+            .expect("create stale build tree");
+        fs::write(&stale_object, []).expect("write stale object");
+        fs::create_dir_all(root_directory.path().join("demo_lib.egg-info"))
+            .expect("create stale egg-info");
+        fs::create_dir_all(root_directory.path().join("other_project.egg-info"))
+            .expect("create unrelated egg-info");
+        fs::create_dir_all(&layout.package_directory).expect("create generated package directory");
+        fs::write(&layout.setup_script_path, []).expect("write setup script");
+        fs::write(&layout.native_bridge_source_path, []).expect("write native bridge source");
+
+        layout
+            .remove_setuptools_build_state("demo-lib")
+            .expect("remove setuptools build state");
+        layout
+            .remove_setuptools_build_state("demo-lib")
+            .expect("removing absent build state is a no-op");
+
+        assert!(!root_directory.path().join("build").exists());
+        assert!(!root_directory.path().join("demo_lib.egg-info").exists());
+        assert!(
+            root_directory
+                .path()
+                .join("other_project.egg-info")
+                .exists()
+        );
+        assert!(layout.setup_script_path.exists());
+        assert!(layout.native_bridge_source_path.exists());
+    }
+
+    #[test]
+    fn derives_setuptools_egg_info_names() {
+        [
+            ("demo", vec!["demo.egg-info"]),
+            ("demo-ffi", vec!["demo_ffi.egg-info"]),
+            ("demo_ffi", vec!["demo_ffi.egg-info"]),
+            ("_demo-", vec!["demo.egg-info"]),
+            ("Demo.Lib", vec!["Demo.Lib.egg-info"]),
+            ("my_-crate", vec!["my__crate.egg-info", "my_crate.egg-info"]),
+        ]
+        .into_iter()
+        .for_each(|(distribution_name, expected)| {
+            assert_eq!(
+                setuptools_egg_info_names(distribution_name),
+                expected,
+                "{distribution_name}"
+            );
+        });
+    }
+
+    #[test]
+    fn rejects_wheel_directory_inside_setuptools_build_state() {
+        [
+            "dist/python/build",
+            "dist/python/build/wheels",
+            "dist/python/demo_lib.egg-info/wheels",
+        ]
+        .into_iter()
+        .for_each(|wheel_directory| {
+            let layout = PythonPackageLayout::with_wheel_directory(
+                "dist/python",
+                wheel_directory,
+                "demo_lib",
+            );
+
+            let error = layout
+                .validate_wheel_directory_safety()
+                .expect_err("expected setuptools build wheel directory rejection");
+
+            assert!(
+                matches!(
+                    &error,
+                    CliError::CommandFailed { command, status: None }
+                        if command.contains("must not be inside the setuptools build directory")
+                ),
+                "{wheel_directory}: {error:?}"
+            );
+        });
+    }
+
+    #[test]
+    fn accepts_wheel_directory_next_to_setuptools_build_state() {
+        [
+            "dist/python/wheelhouse",
+            "dist/python/builds",
+            "dist/python/wheelhouse/build",
+            "dist/wheels",
+            "build",
+        ]
+        .into_iter()
+        .for_each(|wheel_directory| {
+            PythonPackageLayout::with_wheel_directory("dist/python", wheel_directory, "demo_lib")
+                .validate_wheel_directory_safety()
+                .unwrap_or_else(|error| panic!("{wheel_directory}: {error:?}"));
+        });
     }
 }
