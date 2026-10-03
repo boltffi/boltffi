@@ -1,7 +1,8 @@
 mod expansion;
 pub mod native_link;
 
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Read};
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::mpsc;
 use std::thread;
@@ -166,7 +167,66 @@ impl<'a> Builder<'a> {
     }
 
     pub fn build_targets(&self, targets: &[RustTarget]) -> Result<Vec<BuildResult>> {
-        let android_toolchain = targets
+        let android_toolchain = self.android_toolchain_for(targets)?;
+
+        targets
+            .iter()
+            .map(|target| {
+                let mut command =
+                    self.single_target_command(target, android_toolchain.as_ref(), None)?;
+                let success = run_command_streaming(&mut command, self.options.on_output.as_ref());
+                Ok(BuildResult {
+                    triple: target.triple().to_string(),
+                    success,
+                })
+            })
+            .collect()
+    }
+
+    /// Builds every one of `targets` at the same time, each in a cargo process
+    /// of its own that uses `target_directory(target)` as its target directory.
+    ///
+    /// Cargo locks the artifact directory for the whole of a build, and a cross
+    /// build also writes to the host one next to it, so builds sharing a target
+    /// directory run one after another however many cores sit idle. A target
+    /// directory per target lifts that, as long as the build directory follows
+    /// the target directory, which is cargo's default. A shared `build.build-dir`
+    /// queues the builds behind its lock again, and with `-Zfine-grain-locking`
+    /// two of them compiling the same build scripts can deadlock.
+    pub fn build_targets_concurrently(
+        &self,
+        targets: &[RustTarget],
+        target_directory: impl Fn(&RustTarget) -> PathBuf,
+    ) -> Result<Vec<BuildResult>> {
+        let android_toolchain = self.android_toolchain_for(targets)?;
+        let mut commands = targets
+            .iter()
+            .map(|target| {
+                self.single_target_command(
+                    target,
+                    android_toolchain.as_ref(),
+                    Some(&target_directory(target)),
+                )
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let successes = run_commands_streaming(&mut commands, self.options.on_output.as_ref());
+
+        Ok(targets
+            .iter()
+            .zip(successes)
+            .map(|(target, success)| BuildResult {
+                triple: target.triple().to_string(),
+                success,
+            })
+            .collect())
+    }
+
+    pub fn build_android(&self, targets: &[RustTarget]) -> Result<Vec<BuildResult>> {
+        self.build_targets(targets)
+    }
+
+    fn android_toolchain_for(&self, targets: &[RustTarget]) -> Result<Option<AndroidToolchain>> {
+        targets
             .iter()
             .any(|target| target.platform() == Platform::Android)
             .then(|| {
@@ -175,16 +235,7 @@ impl<'a> Builder<'a> {
                     self.config.android_ndk_version(),
                 )
             })
-            .transpose()?;
-
-        targets
-            .iter()
-            .map(|target| self.build_single_target(target, android_toolchain.as_ref()))
-            .collect()
-    }
-
-    pub fn build_android(&self, targets: &[RustTarget]) -> Result<Vec<BuildResult>> {
-        self.build_targets(targets)
+            .transpose()
     }
 
     pub fn build_host_with_native_link_metadata(&self) -> Result<native_link::NativeLinkMetadata> {
@@ -250,15 +301,19 @@ impl<'a> Builder<'a> {
         Ok(command)
     }
 
-    fn build_single_target(
+    fn single_target_command(
         &self,
         target: &RustTarget,
         android_toolchain: Option<&AndroidToolchain>,
-    ) -> Result<BuildResult> {
+        target_directory: Option<&Path>,
+    ) -> Result<Command> {
         let command_args = self.cargo_build_command_args();
         let mut cmd = Command::new("cargo");
         self.apply_cargo_build_prefix(&mut cmd, &command_args);
         cmd.arg("--target").arg(target.triple());
+        if let Some(target_directory) = target_directory {
+            cmd.arg("--target-dir").arg(target_directory);
+        }
 
         self.apply_common_build_args(&mut cmd);
         self.apply_env_for_target(&mut cmd, target);
@@ -271,12 +326,7 @@ impl<'a> Builder<'a> {
                 .and_then(|toolchain| toolchain.configure_cargo_for_target(&mut cmd, target))?;
         }
 
-        let success = run_command_streaming(&mut cmd, self.options.on_output.as_ref());
-
-        Ok(BuildResult {
-            triple: target.triple().to_string(),
-            success,
-        })
+        Ok(cmd)
     }
 
     fn package_spec(&self) -> &str {
@@ -360,41 +410,44 @@ impl<'a> Builder<'a> {
 }
 
 pub(crate) fn run_command_streaming(cmd: &mut Command, on_output: Option<&OutputCallback>) -> bool {
-    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+    run_commands_streaming(std::slice::from_mut(cmd), on_output)[0]
+}
 
-    let mut child = match cmd.spawn() {
-        Ok(c) => c,
-        Err(_) => return false,
-    };
-
-    let stdout = child.stdout.take();
-    let stderr = child.stderr.take();
-
+/// Runs all of `commands` at once, feeding every line they print to `on_output`
+/// as it arrives, and returns whether each of them succeeded, in order.
+pub(crate) fn run_commands_streaming(
+    commands: &mut [Command],
+    on_output: Option<&OutputCallback>,
+) -> Vec<bool> {
     let (tx, rx) = mpsc::channel();
-    let stdout_tx = tx.clone();
-    let stderr_tx = tx.clone();
-
-    let stdout_handle = stdout.map(|out| {
-        thread::spawn(move || {
-            for line in BufReader::new(out)
-                .lines()
-                .map_while(std::result::Result::ok)
-            {
-                let _ = stdout_tx.send(line);
+    let mut readers = Vec::new();
+    let children = commands
+        .iter_mut()
+        .map(|command| {
+            command.stdout(Stdio::piped()).stderr(Stdio::piped());
+            let mut child = command.spawn().ok()?;
+            let stdout = child
+                .stdout
+                .take()
+                .map(|out| Box::new(out) as Box<dyn Read + Send>);
+            let stderr = child
+                .stderr
+                .take()
+                .map(|err| Box::new(err) as Box<dyn Read + Send>);
+            for stream in stdout.into_iter().chain(stderr) {
+                let tx = tx.clone();
+                readers.push(thread::spawn(move || {
+                    for line in BufReader::new(stream)
+                        .lines()
+                        .map_while(std::result::Result::ok)
+                    {
+                        let _ = tx.send(line);
+                    }
+                }));
             }
+            Some(child)
         })
-    });
-
-    let stderr_handle = stderr.map(|err| {
-        thread::spawn(move || {
-            for line in BufReader::new(err)
-                .lines()
-                .map_while(std::result::Result::ok)
-            {
-                let _ = stderr_tx.send(line);
-            }
-        })
-    });
+        .collect::<Vec<_>>();
 
     drop(tx);
 
@@ -404,15 +457,18 @@ pub(crate) fn run_command_streaming(cmd: &mut Command, on_output: Option<&Output
         }
     }
 
-    if let Some(h) = stdout_handle {
-        let _ = h.join();
-    }
-    if let Some(h) = stderr_handle {
-        let _ = h.join();
+    for reader in readers {
+        let _ = reader.join();
     }
 
-    child.wait().map(|s| s.success()).unwrap_or(false)
+    children
+        .into_iter()
+        .map(|child| {
+            child.is_some_and(|mut child| child.wait().map(|s| s.success()).unwrap_or(false))
+        })
+        .collect()
 }
+
 pub fn count_successful(results: &[BuildResult]) -> usize {
     results.iter().filter(|r| r.success).count()
 }
@@ -433,13 +489,15 @@ pub fn failed_targets(results: &[BuildResult]) -> Vec<String> {
 mod tests {
     use super::{
         BindingExpansion, BuildOptions, BuildSelection, Builder, CargoBuildCommandArgs,
-        CargoBuildProfile, resolve_build_profile, run_command_streaming,
+        CargoBuildProfile, OutputCallback, resolve_build_profile, run_command_streaming,
+        run_commands_streaming,
     };
     use crate::config::Config;
     use crate::target::RustTarget;
     use std::ffi::OsStr;
+    use std::path::Path;
     use std::process::Command;
-    use std::sync::mpsc;
+    use std::sync::{Arc, Mutex, mpsc};
     use std::time::Duration;
 
     #[test]
@@ -549,6 +607,59 @@ name = "demo"
     }
 
     #[test]
+    fn concurrent_target_build_chooses_its_target_directory_before_the_rustc_args() {
+        let config: Config = toml::from_str(
+            r#"
+[package]
+name = "demo"
+"#,
+        )
+        .unwrap();
+        let expansion = BindingExpansion::fixture(
+            "/external/workspace/Cargo.toml",
+            "/external/workspace/demo/Cargo.toml",
+            [],
+        );
+        let builder = Builder::new(
+            &config,
+            BuildOptions {
+                release: true,
+                selection: BuildSelection::Expanded(Box::new(expansion)),
+                on_output: None,
+                extra_env: Vec::new(),
+            },
+        );
+
+        let command = builder
+            .single_target_command(
+                &RustTarget::MACOS_ARM64,
+                None,
+                Some(Path::new("/external/workspace/target/aarch64-apple-darwin")),
+            )
+            .unwrap();
+        let arguments = command
+            .get_args()
+            .map(|argument| argument.to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+
+        let target_directory = arguments
+            .windows(2)
+            .position(|arguments| {
+                arguments
+                    == [
+                        "--target-dir",
+                        "/external/workspace/target/aarch64-apple-darwin",
+                    ]
+            })
+            .expect("the build should choose its own target directory");
+        let rustc_args = arguments
+            .iter()
+            .position(|argument| argument == "--")
+            .expect("an expanded build passes rustc args");
+        assert!(target_directory < rustc_args);
+    }
+
+    #[test]
     fn strips_iphoneos_deployment_target_for_non_ios_targets() {
         let config: Config = toml::from_str(
             r#"
@@ -618,5 +729,43 @@ name = "demo"
             .recv_timeout(Duration::from_secs(5))
             .expect("run_command_streaming should finish once the child exits");
         assert!(result);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn streaming_commands_run_at_once_and_report_each_status() {
+        let marker = std::env::temp_dir().join(format!(
+            "boltffi-concurrent-commands-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&marker);
+        let shell = |script: String| {
+            let mut command = Command::new("sh");
+            command.args(["-c", &script]);
+            command
+        };
+        // the first command only finishes once the second has started, so run
+        // one after another they would time out instead
+        let mut commands = vec![
+            shell(format!(
+                "for _ in $(seq 500); do [ -f '{0}' ] && echo waited && exit 0; sleep 0.01; done; exit 1",
+                marker.display()
+            )),
+            shell(format!("touch '{}' && echo started", marker.display())),
+            shell("exit 3".to_string()),
+        ];
+        let lines = Arc::new(Mutex::new(Vec::new()));
+        let collected_lines = Arc::clone(&lines);
+        let on_output: OutputCallback = Box::new(move |line: &str| {
+            collected_lines.lock().unwrap().push(line.to_string());
+        });
+
+        let results = run_commands_streaming(&mut commands, Some(&on_output));
+        let _ = std::fs::remove_file(&marker);
+
+        assert_eq!(results, vec![true, true, false]);
+        let mut lines = lines.lock().unwrap().clone();
+        lines.sort();
+        assert_eq!(lines, vec!["started", "waited"]);
     }
 }

@@ -1,5 +1,7 @@
 mod link;
 
+use std::path::{Path, PathBuf};
+
 use crate::build::{
     BindingExpansion, BuildOptions, BuildSelection, Builder, OutputCallback, all_successful,
     failed_targets,
@@ -18,12 +20,9 @@ use crate::pack::symbols::{
     ensure_debug_symbols_profile_has_debuginfo, ensure_existing_debug_symbol_artifacts_are_usable,
 };
 use crate::reporter::Reporter;
-use crate::target::{BuiltLibrary, Platform};
+use crate::target::{BuiltLibrary, Platform, RustTarget};
 
-use super::{
-    discover_built_libraries_for_targets, missing_built_libraries, print_cargo_line,
-    resolve_build_cargo_args,
-};
+use super::{missing_built_libraries, print_cargo_line, resolve_build_cargo_args};
 
 pub(crate) use self::link::{AndroidPackageLayout, AndroidPackager};
 
@@ -109,17 +108,17 @@ pub(crate) fn pack_android(
     }
 
     let libraries = match binding_expansion.as_ref() {
-        Some(expansion) => BuiltLibrary::discover_for_targets(
-            expansion.target_directory(),
+        Some(expansion) => AndroidBuildDirectories::for_expansion(expansion).discover(
             expansion.artifact_name(),
             build_profile.output_directory_name(),
             &android_targets,
         ),
-        None => discover_built_libraries_for_targets(
+        None => discover_prebuilt_android_libraries(
+            &super::cargo_target_directory()?,
             &config.crate_artifact_name(),
             build_profile.output_directory_name(),
             &android_targets,
-        )?,
+        ),
     };
     let android_libraries: Vec<_> = libraries
         .into_iter()
@@ -240,7 +239,7 @@ fn android_kotlin_desktop_native_layout(config: &Config) -> Result<JvmNativePack
 
 pub(crate) fn build_android_targets(
     config: &Config,
-    targets: &[crate::target::RustTarget],
+    targets: &[RustTarget],
     release: bool,
     binding_expansion: &BindingExpansion,
     step: &crate::reporter::Step,
@@ -258,7 +257,13 @@ pub(crate) fn build_android_targets(
         extra_env: Vec::new(),
     };
     let builder = Builder::new(config, build_options);
-    let results = builder.build_android(targets)?;
+    let directories = AndroidBuildDirectories::for_expansion(binding_expansion);
+    let results = if directories.per_target {
+        builder
+            .build_targets_concurrently(targets, |target| directories.target_directory(target))?
+    } else {
+        builder.build_android(targets)?
+    };
 
     if all_successful(&results) {
         return Ok(());
@@ -268,13 +273,125 @@ pub(crate) fn build_android_targets(
     Err(PackError::BuildFailed { targets: failed }.into())
 }
 
+/// Where [`build_android_targets`] builds each Android target.
+///
+/// Every target gets a cargo target directory of its own under the crate's,
+/// so that their builds can run at the same time; see
+/// [`Builder::build_targets_concurrently`]. Cargo arguments that already choose
+/// a target directory keep it, and the targets then build one after another.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct AndroidBuildDirectories {
+    target_directory: PathBuf,
+    per_target: bool,
+}
+
+impl AndroidBuildDirectories {
+    pub(crate) fn for_expansion(binding_expansion: &BindingExpansion) -> Self {
+        Self::new(
+            binding_expansion.target_directory(),
+            binding_expansion.cargo_args().as_slice(),
+        )
+    }
+
+    fn new(target_directory: &Path, cargo_args: &[String]) -> Self {
+        let chooses_target_directory = cargo_args
+            .iter()
+            .any(|arg| arg == "--target-dir" || arg.starts_with("--target-dir="));
+        Self {
+            target_directory: target_directory.to_path_buf(),
+            per_target: !chooses_target_directory,
+        }
+    }
+
+    /// The cargo target directory `target` builds in.
+    pub(crate) fn target_directory(&self, target: &RustTarget) -> PathBuf {
+        if self.per_target {
+            per_target_directory(&self.target_directory, target)
+        } else {
+            self.target_directory.clone()
+        }
+    }
+
+    /// The libraries [`build_android_targets`] built for `targets`.
+    pub(crate) fn discover(
+        &self,
+        artifact_name: &str,
+        profile_directory_name: &str,
+        targets: &[RustTarget],
+    ) -> Vec<BuiltLibrary> {
+        targets
+            .iter()
+            .filter_map(|target| {
+                let path = target.library_path_for_profile(
+                    &self.target_directory(target),
+                    artifact_name,
+                    profile_directory_name,
+                );
+                path.exists().then_some(BuiltLibrary {
+                    target: *target,
+                    path,
+                })
+            })
+            .collect()
+    }
+}
+
+fn per_target_directory(target_directory: &Path, target: &RustTarget) -> PathBuf {
+    target_directory
+        .join("boltffi")
+        .join("android")
+        .join(target.triple())
+        .join("cargo")
+}
+
+/// The libraries a `--no-build` pack finds for `targets`: for each, the more
+/// recently built of what an earlier `pack android` left in its own target
+/// directory and what a plain cargo build left in the crate's.
+fn discover_prebuilt_android_libraries(
+    target_directory: &Path,
+    artifact_name: &str,
+    profile_directory_name: &str,
+    targets: &[RustTarget],
+) -> Vec<BuiltLibrary> {
+    targets
+        .iter()
+        .filter_map(|target| {
+            [
+                per_target_directory(target_directory, target),
+                target_directory.to_path_buf(),
+            ]
+            .into_iter()
+            .map(|directory| {
+                target.library_path_for_profile(&directory, artifact_name, profile_directory_name)
+            })
+            .filter_map(|path| {
+                let modified = path
+                    .metadata()
+                    .and_then(|metadata| metadata.modified())
+                    .ok()?;
+                Some((modified, path))
+            })
+            .max_by_key(|(modified, _)| *modified)
+            .map(|(_, path)| BuiltLibrary {
+                target: *target,
+                path,
+            })
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        android_kotlin_desktop_native_layout, should_package_android_kotlin_desktop_natives,
+        AndroidBuildDirectories, android_kotlin_desktop_native_layout,
+        discover_prebuilt_android_libraries, should_package_android_kotlin_desktop_natives,
     };
+    use crate::build::BindingExpansion;
     use crate::config::Config;
-    use std::path::PathBuf;
+    use crate::target::RustTarget;
+    use std::fs::File;
+    use std::path::{Path, PathBuf};
+    use std::time::{Duration, SystemTime};
 
     fn parse_config(input: &str) -> Config {
         let parsed: Config = toml::from_str(input).expect("toml parse failed");
@@ -354,5 +471,96 @@ enabled = true
         assert!(!should_package_android_kotlin_desktop_natives(
             &system_loader
         ));
+    }
+
+    #[test]
+    fn android_targets_build_in_a_target_directory_each() {
+        let expansion = BindingExpansion::fixture(
+            "/external/workspace/Cargo.toml",
+            "/external/workspace/demo/Cargo.toml",
+            [],
+        );
+        let directories = AndroidBuildDirectories::for_expansion(&expansion);
+
+        assert_eq!(
+            directories.target_directory(&RustTarget::ANDROID_ARM64),
+            PathBuf::from("/external/workspace/target/boltffi/android/aarch64-linux-android/cargo")
+        );
+        assert_ne!(
+            directories.target_directory(&RustTarget::ANDROID_ARM64),
+            directories.target_directory(&RustTarget::ANDROID_X86_64)
+        );
+    }
+
+    #[test]
+    fn android_targets_keep_a_target_directory_the_cargo_args_choose() {
+        let target_directory = Path::new("/external/workspace/target");
+
+        for cargo_args in [
+            vec!["--target-dir".to_string(), "/elsewhere".to_string()],
+            vec!["--target-dir=/elsewhere".to_string()],
+        ] {
+            let directories = AndroidBuildDirectories::new(target_directory, &cargo_args);
+
+            assert!(!directories.per_target);
+            assert_eq!(
+                directories.target_directory(&RustTarget::ANDROID_ARM64),
+                target_directory
+            );
+        }
+    }
+
+    #[test]
+    fn prebuilt_android_library_is_the_more_recently_built_one() {
+        let target_directory =
+            std::env::temp_dir().join(format!("boltffi-prebuilt-android-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&target_directory);
+        let build = |directory: &Path, target: RustTarget, age: u64| {
+            let path = target.library_path_for_profile(directory, "demo", "release");
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            File::create(&path)
+                .unwrap()
+                .set_modified(SystemTime::now() - Duration::from_secs(age))
+                .unwrap();
+            path
+        };
+        let per_target =
+            |target: RustTarget| super::per_target_directory(&target_directory, &target);
+        // arm64: `pack android` built it last; x86_64: a plain cargo build did
+        let arm64 = build(
+            &per_target(RustTarget::ANDROID_ARM64),
+            RustTarget::ANDROID_ARM64,
+            10,
+        );
+        build(&target_directory, RustTarget::ANDROID_ARM64, 60);
+        build(
+            &per_target(RustTarget::ANDROID_X86_64),
+            RustTarget::ANDROID_X86_64,
+            60,
+        );
+        let x86_64 = build(&target_directory, RustTarget::ANDROID_X86_64, 10);
+
+        let libraries = discover_prebuilt_android_libraries(
+            &target_directory,
+            "demo",
+            "release",
+            &[
+                RustTarget::ANDROID_ARM64,
+                RustTarget::ANDROID_X86_64,
+                RustTarget::ANDROID_ARMV7,
+            ],
+        );
+        let _ = std::fs::remove_dir_all(&target_directory);
+
+        assert_eq!(
+            libraries
+                .into_iter()
+                .map(|library| (library.target, library.path))
+                .collect::<Vec<_>>(),
+            vec![
+                (RustTarget::ANDROID_ARM64, arm64),
+                (RustTarget::ANDROID_X86_64, x86_64),
+            ]
+        );
     }
 }
