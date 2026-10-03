@@ -313,24 +313,16 @@ impl JavaHost {
                 DeclarationRef::Function(function) => Some(function),
                 _ => None,
             })
-            .map(|function| {
-                self.function_plan(function, bridge, context)
-                    .map(|call| call.signature().erased())
-            })
-            .collect::<Result<Vec<_>>>()?;
+            .try_fold(Vec::new(), |mut signatures, function| -> Result<_> {
+                signatures.extend(self.function_plan(function, bridge, context)?.signatures());
+                Ok(signatures)
+            })?;
         ErasedSignature::validate_owner(self.file(), &functions)?;
         bindings.decls().iter().try_for_each(|declaration| {
             match DeclarationRef::from(declaration) {
                 DeclarationRef::Record(declaration) => {
                     let record = self.record_plan(declaration, bridge, context)?;
-                    let signatures = record
-                        .initializers()
-                        .iter()
-                        .chain(record.static_methods())
-                        .chain(record.instance_methods())
-                        .map(Call::signature)
-                        .map(|signature| signature.erased())
-                        .collect::<Vec<_>>();
+                    let signatures = record.signatures();
                     ErasedSignature::validate_owner(
                         &Record::file_for(declaration, self.java_version)?,
                         &signatures,
@@ -338,12 +330,7 @@ impl JavaHost {
                 }
                 DeclarationRef::Enum(declaration) => {
                     let enumeration = self.enum_plan(declaration, bridge, context)?;
-                    let signatures = enumeration
-                        .calls()
-                        .iter()
-                        .map(Call::signature)
-                        .map(|signature| signature.erased())
-                        .collect::<Vec<_>>();
+                    let signatures = enumeration.signatures();
                     ErasedSignature::validate_owner(
                         &Enumeration::file_for(declaration, self.java_version)?,
                         &signatures,

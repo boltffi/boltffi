@@ -161,7 +161,7 @@ package {{ package }};
         return fromReader(new WireReader(bytes));
     }
 {% for call in enumeration.calls().initializers() %}
-{% include "target/java/call/initializer.java" %}
+{% include "target/java/call/static_method.java" %}
 {% endfor %}{% for call in enumeration.calls().static_methods() %}
 {% include "target/java/call/static_method.java" %}
 {% endfor %}{% for call in enumeration.calls().instance_methods() %}

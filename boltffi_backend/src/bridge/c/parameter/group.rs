@@ -107,6 +107,7 @@ impl ParameterGroup {
             ParameterRole::ClosureCall {
                 name,
                 signature,
+                presence,
                 parameters,
                 return_channel,
             } => ClosureParameter::from_params(
@@ -114,6 +115,7 @@ impl ParameterGroup {
                 index,
                 name,
                 signature,
+                *presence,
                 parameters,
                 *return_channel,
             )

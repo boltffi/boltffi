@@ -866,6 +866,7 @@ impl Signature {
         self.closure_param(
             name,
             closure.signature(),
+            closure.presence(),
             self.imported_params(invoke.params())?,
             invoke.returns().plan(),
             invoke.error(),
@@ -881,6 +882,7 @@ impl Signature {
         self.closure_param(
             name,
             closure.signature(),
+            closure.presence(),
             self.exported_params(invoke.params())?,
             invoke.returns().plan(),
             invoke.error(),
@@ -891,6 +893,7 @@ impl Signature {
         &self,
         name: &str,
         signature: &ClosureSignature,
+        presence: HandlePresence,
         params: Vec<Parameter>,
         returns: &ReturnPlan<Native, D>,
         error: &ErrorDecl<Native, D>,
@@ -911,6 +914,7 @@ impl Signature {
             Parameter::closure_call(
                 name,
                 signature,
+                presence,
                 Type::FunctionPointer {
                     returns: Box::new(self.callback_return_type(returns, error)?),
                     params: std::iter::once(Type::MutPointer(Box::new(Type::Void)))

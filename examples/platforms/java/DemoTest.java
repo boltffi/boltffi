@@ -41,6 +41,7 @@ public final class DemoTest {
             testPersonRecords();
             testUserProfileVecs();
             testRecordDefaultValues();
+            testParameterDefaults();
             testAssociatedConstants();
             testCStyleEnums();
             testDataEnums();
@@ -725,6 +726,147 @@ public final class DemoTest {
         demoCase("case:records.with_strings.person.should_roundtrip_value");
         Person echoedEmojiPerson = Demo.echoPerson(emojiPerson);
         assert echoedEmojiPerson.name().equals("🎉 Party") : "echoPerson(emoji)";
+        System.out.println("  PASS\n");
+    }
+
+    private static void testParameterDefaults() {
+        System.out.println("Testing parameter defaults...");
+        demoCase("case:primitives.default_arguments.should_apply_omitted_scalar_and_string_defaults");
+        assert Demo.repeatGreeting("ada").equals("hello ada, hello ada");
+        assert Demo.repeatGreeting("ada", "hi").equals("hi ada, hi ada");
+        assert Demo.repeatGreeting("ada", "hi", 1).equals("hi ada");
+        assert Demo.repeatGreeting("ada", "hello", 2, true).equals("HELLO ADA, HELLO ADA");
+
+        demoCase("case:primitives.default_arguments.should_apply_none_and_value_defaults_to_optionals");
+        assert Demo.describeLimit().equals("none:7");
+        assert Demo.describeLimit(Optional.of("jobs")).equals("jobs:7");
+        assert Demo.describeLimit(Optional.empty(), Optional.empty()).equals("none:unlimited");
+        assert Demo.describeLimit(Optional.of("jobs"), Optional.of((short) 2)).equals("jobs:2");
+
+        demoCase("case:primitives.default_arguments.should_default_an_optional_callback_to_none");
+        ValueCallback doubler = value -> value * 2;
+        assert Demo.applyOptionalCallback(5) == 5;
+        assert Demo.applyOptionalCallback(5, Optional.empty()) == 5;
+        assert Demo.applyOptionalCallback(5, Optional.of(doubler)) == 10;
+        assert Demo.applyOptionalClosure(5) == 5;
+        assert Demo.applyOptionalClosure(5, null) == 5;
+        assert Demo.applyOptionalClosure(5, value -> value * 2) == 10;
+
+        demoCase("case:primitives.default_arguments.defaulted_counter.should_apply_constructor_and_method_defaults");
+        try (DefaultedCounter counter = new DefaultedCounter()) {
+            assert counter.offset() == 11;
+            assert counter.offset(5) == 15;
+        }
+        try (DefaultedCounter counter = new DefaultedCounter(5)) {
+            assert counter.offset(3) == 8;
+        }
+        try (DefaultedCounter counter = DefaultedCounter.fromText()) {
+            assert counter.offset() == 41;
+        }
+        try (DefaultedCounter counter = DefaultedCounter.fromText("12")) {
+            assert counter.offset() == 13;
+        }
+        try (DefaultedCounter counter = DefaultedCounter.withOffset(3)) {
+            assert counter.offset() == 24;
+        }
+        try (DefaultedCounter counter = DefaultedCounter.withOffset(7, 3)) {
+            assert counter.offset() == 11;
+        }
+        try (DefaultedWideCounter counter = new DefaultedWideCounter()) {
+            assert counter.value() == 10L;
+            counter.close();
+            counter.close();
+            try {
+                counter.value();
+                throw new AssertionError("closed counter remained usable");
+            } catch (IllegalStateException expected) {
+                assert expected.getMessage().equals("DefaultedWideCounter is closed");
+            }
+        }
+        java.util.stream.LongStream.of(0L, 5L, Long.MIN_VALUE, Long.MAX_VALUE).forEach(value -> {
+            try (DefaultedWideCounter counter = new DefaultedWideCounter(value)) {
+                assert counter.value() == value;
+            }
+        });
+        try (DefaultedWideCounter original = new DefaultedWideCounter(20L);
+             DefaultedWideCounter adjusted = DefaultedWideCounter.withOffset(original)) {
+            assert adjusted.value() == 21L;
+            try {
+                original.value();
+                throw new AssertionError("transferred counter remained usable");
+            } catch (IllegalStateException expected) {
+                assert expected.getMessage().equals("DefaultedWideCounter is closed");
+            }
+        }
+        IntegerLimits limits = DefaultedCounter.integerLimits();
+        assert limits.lower() == Long.MIN_VALUE;
+        assert limits.upper() == -1L;
+        limits = DefaultedCounter.integerLimits(-5L);
+        assert limits.lower() == -5L;
+        assert limits.upper() == -1L;
+
+        demoCase("case:primitives.default_arguments.should_apply_float_and_enum_defaults");
+        assert Demo.scaleDefault() == 0.75;
+        assert Demo.scaleDefault(2.0f) == 3.0;
+        assert Demo.scaleDefault(2.0f, Optional.empty()) == 2.0;
+        assert Demo.scaleDefault(2.0f, Optional.of(4.0), DefaultMode.LOUD) == 16.0;
+        assert DefaultMode.QUIET.matches();
+        assert !DefaultMode.LOUD.matches();
+        assert Demo.defaultFloatBits() == Integer.MIN_VALUE;
+        assert Demo.defaultFloatBits(0.0f) == 0;
+        assert Demo.defaultDoubleBits() == Long.MIN_VALUE;
+        assert Demo.defaultDoubleBits(0.0) == 0L;
+        assert Demo.chooseDefault() == 0;
+        assert Demo.chooseDefault(new DefaultChoice.Value(7)) == 7;
+        assert Demo.chooseDefault(new DefaultChoice.Value(7), Optional.empty()) == 7;
+
+        demoCase("case:primitives.default_arguments.should_apply_async_defaults");
+        assert Demo.asyncDefault().join() == 9;
+        assert Demo.asyncDefault(12).join() == 12;
+        try (DefaultedCounter counter = new DefaultedCounter(4)) {
+            assert counter.asyncOffset().join() == 7;
+            assert counter.asyncOffset(2).join() == 6;
+        }
+        try (DefaultedCounter counter = DefaultedCounter.start().join()) {
+            assert counter.offset() == 31;
+        }
+        try (DefaultedCounter counter = DefaultedCounter.start(5).join()) {
+            assert counter.offset() == 6;
+        }
+        try (DefaultedCounter counter = DefaultedCounter.start(30, Optional.of(doubler)).join()) {
+            assert counter.offset() == 61;
+        }
+        try (DefaultedCounter counter = DefaultedCounter.start(30, Optional.empty(), Optional.of(doubler)).join()) {
+            assert counter.offset() == 61;
+        }
+        assert NamedAmount.load().join().value() == 6;
+        assert NamedAmount.load(9).join().value() == 9;
+        assert DefaultMode.load().join() == DefaultMode.QUIET;
+        assert DefaultMode.load(DefaultMode.LOUD).join() == DefaultMode.LOUD;
+
+        demoCase("case:primitives.default_arguments.should_apply_record_defaults");
+        DefaultAmount amount = new DefaultAmount();
+        assert amount.value() == 3;
+        assert amount.offset() == 5;
+        assert amount.offset(4) == 7;
+        assert new DefaultAmount(5).value() == 5;
+        assert DefaultAmount.withScaledValue().value() == 4;
+        assert DefaultAmount.withScaledValue(3).value() == 6;
+        assert DefaultAmount.tryScaledValue().get().value() == 4;
+        assert !DefaultAmount.tryScaledValue(-1).isPresent();
+        assert NamedAmount.withValue().value() == 5;
+        assert NamedAmount.withValue(8).value() == 8;
+
+        demoCase("case:primitives.default_arguments.should_apply_custom_type_defaults");
+        assert Demo.defaultTimeoutSeconds() == 1.5;
+        assert Demo.defaultTimeoutSeconds(new TimeoutFFI(2.5)) == 2.5;
+        assert !Demo.defaultLimit().isPresent();
+        assert Demo.defaultLimit(Optional.of(9)).get() == 9;
+        assert Demo.defaultEmail().equals("mailto:ada@example.com");
+        assert Demo.defaultEmail("ada@other.example").equals("ada@other.example");
+        assert Demo.defaultOptionalEmail().get().equals("mailto:ada@example.com");
+        assert !Demo.defaultOptionalEmail(Optional.empty()).isPresent();
+        assert Demo.defaultOptionalEmail(Optional.of("ada@other.example")).get().equals("ada@other.example");
         System.out.println("  PASS\n");
     }
 

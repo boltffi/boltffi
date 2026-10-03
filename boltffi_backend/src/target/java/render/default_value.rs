@@ -1,17 +1,21 @@
 use boltffi_binding::{
-    CustomTypeId, DefaultValue, FloatValue, Native, Primitive as BindingPrimitive, TypeRef,
+    BuiltinType, CustomTypeId, DefaultValue, FloatValue, HandlePresence, IntoRust, Native,
+    ParamDecl, Primitive as BindingPrimitive, TypeRef,
 };
 
 use crate::{
     core::{
         RenderContext, Result,
-        default_value::{Field as RepresentationField, Representation},
+        default_value::{
+            Field as RepresentationField, Record as RepresentationRecord, Representation,
+            UuidLiteral,
+        },
     },
     target::java::{
         JavaHost, JavaVersion,
         name_style::Name,
         primitive::Primitive,
-        render::{Enumeration, VariantInitialization},
+        render::{Enumeration, VariantInitialization, signature::ValueType},
         syntax::{Expression, Identifier, StringLiteral, TypeIdentifier, TypeName},
     },
 };
@@ -19,6 +23,38 @@ use crate::{
 pub struct DefaultExpression;
 
 impl DefaultExpression {
+    pub fn parameter(
+        parameter: &ParamDecl<Native, IntoRust>,
+        value: &DefaultValue,
+        java_type: &ValueType,
+        version: JavaVersion,
+        context: &RenderContext<Native>,
+    ) -> Result<Expression> {
+        match parameter
+            .payload()
+            .as_value()
+            .and_then(|plan| plan.value_type())
+        {
+            Some(TypeRef::Optional(inner)) if matches!(*inner, TypeRef::Class(_)) => match value {
+                DefaultValue::Null => {
+                    Ok(Expression::cast(java_type.type_name(), Expression::null()))
+                }
+                _ => Err(JavaHost::unsupported("class parameter default")),
+            },
+            Some(ty) => Self::render(&ty, value, version, context),
+            None => match (parameter.payload().as_closure(), value) {
+                (Some(closure), DefaultValue::Null)
+                    if closure.presence() == HandlePresence::Nullable =>
+                {
+                    Ok(Expression::cast(java_type.type_name(), Expression::null()))
+                }
+                _ => Err(JavaHost::unsupported(
+                    "parameter default without a value type",
+                )),
+            },
+        }
+    }
+
     pub fn render(
         ty: &TypeRef,
         value: &DefaultValue,
@@ -35,6 +71,38 @@ impl DefaultExpression {
         if let TypeRef::Custom(custom_type) = ty {
             return Self::custom(*custom_type, value, version, context);
         }
+        if let TypeRef::Record(record) = ty {
+            return Self::record(
+                Representation::record(*record, context)?,
+                value,
+                version,
+                context,
+            );
+        }
+        if let TypeRef::Builtin(BuiltinType::Uuid) = ty {
+            let DefaultValue::String(value) = value else {
+                return Err(JavaHost::unsupported(
+                    "UUID default requires a string literal",
+                ));
+            };
+            let uuid = UuidLiteral::parse(value)
+                .ok_or_else(|| JavaHost::unsupported("invalid UUID default"))?;
+            return Ok(Expression::construct(
+                TypeName::qualified(
+                    ["java", "util"]
+                        .into_iter()
+                        .map(Identifier::known)
+                        .collect(),
+                    TypeIdentifier::known("UUID", version),
+                ),
+                [
+                    Expression::hexadecimal_long(uuid.high_bits()),
+                    Expression::hexadecimal_long(uuid.low_bits()),
+                ]
+                .into_iter()
+                .collect(),
+            ));
+        }
         match value {
             DefaultValue::Bool(value) => match ty {
                 TypeRef::Primitive(BindingPrimitive::Bool) => Ok(Expression::boolean(*value)),
@@ -43,7 +111,19 @@ impl DefaultExpression {
             DefaultValue::Integer(value) => Self::integer(ty, value.get()),
             DefaultValue::Float(value) => Self::float(ty, *value),
             DefaultValue::String(value) => {
-                Ok(Expression::string(StringLiteral::new(value.clone())))
+                let literal = Expression::string(StringLiteral::new(value.clone()));
+                match ty {
+                    TypeRef::String => Ok(literal),
+                    TypeRef::Builtin(BuiltinType::Url) => Ok(Expression::static_call(
+                        TypeName::qualified(
+                            ["java", "net"].into_iter().map(Identifier::known).collect(),
+                            TypeIdentifier::known("URI", version),
+                        ),
+                        Identifier::known("create"),
+                        [literal].into_iter().collect(),
+                    )),
+                    _ => Err(JavaHost::unsupported("string default type")),
+                }
             }
             DefaultValue::EnumVariant { variant_name, .. } => match ty {
                 TypeRef::Enum(id) => Enumeration::unit_variant_expression(
@@ -70,24 +150,31 @@ impl DefaultExpression {
             Representation::Transparent(representation) => {
                 Self::render(representation, value, version, context)
             }
-            Representation::Record(record) => {
-                let value = match record.field() {
-                    RepresentationField::Direct(field) => Self::render(
-                        &TypeRef::Primitive(field.ty().primitive()),
-                        value,
-                        version,
-                        context,
-                    )?,
-                    RepresentationField::Encoded(field) => {
-                        Self::render(field.ty(), value, version, context)?
-                    }
-                };
-                Ok(Expression::construct(
-                    TypeName::named(Name::new(record.name()).type_name(version)?),
-                    [value].into_iter().collect(),
-                ))
-            }
+            Representation::Record(record) => Self::record(record, value, version, context),
         }
+    }
+
+    fn record(
+        record: RepresentationRecord<'_>,
+        value: &DefaultValue,
+        version: JavaVersion,
+        context: &RenderContext<Native>,
+    ) -> Result<Expression> {
+        let value = match record.field() {
+            RepresentationField::Direct(field) => Self::render(
+                &TypeRef::Primitive(field.ty().primitive()),
+                value,
+                version,
+                context,
+            )?,
+            RepresentationField::Encoded(field) => {
+                Self::render(field.ty(), value, version, context)?
+            }
+        };
+        Ok(Expression::construct(
+            TypeName::named(Name::new(record.name()).type_name(version)?),
+            [value].into_iter().collect(),
+        ))
     }
 
     fn integer(ty: &TypeRef, value: i128) -> Result<Expression> {

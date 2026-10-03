@@ -47,6 +47,17 @@ final class DefaultArgumentsTests: DemoTestCase {
         XCTAssertEqual(supplied.upper, 1)
     }
 
+    func testWideIntegerConstructorArguments() {
+        XCTAssertEqual(DefaultedWideCounter().value(), 10)
+        [0, 5, Int64.min, Int64.max].forEach { value in
+            XCTAssertEqual(DefaultedWideCounter(value: value).value(), value)
+        }
+        let counter = DefaultedWideCounter(value: 20)
+        XCTAssertEqual(DefaultedWideCounter(withOffset: counter).value(), 21)
+        let suppliedCounter = DefaultedWideCounter(value: 20)
+        XCTAssertEqual(DefaultedWideCounter(withOffset: suppliedCounter, step: 3).value(), 23)
+    }
+
     func testFloatAndEnumArguments() {
         demoCase("case:primitives.default_arguments.should_apply_float_and_enum_defaults")
         XCTAssertEqual(scaleDefault(), 0.75)

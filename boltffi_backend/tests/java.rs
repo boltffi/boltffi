@@ -226,6 +226,7 @@ const RECORD_DEFAULTS: &str = r#"
 "#;
 
 const CUSTOM_TYPE_DEFAULT: &str = include_str!("fixtures/source/records/custom_type_default.rs");
+const PARAMETER_DEFAULTS: &str = include_str!("fixtures/source/exports/parameter_defaults.rs");
 
 const ENUM_RECORD_DEFAULTS: &str = r#"
     #[repr(u8)]
@@ -1407,6 +1408,512 @@ fn java_target_renders_custom_type_defaults_through_representations() {
 }
 
 #[test]
+fn java_target_renders_parameter_defaults_as_forwarding_overloads() {
+    let output = render(PARAMETER_DEFAULTS, CoverageMode::Complete);
+    let module = java_source(&output, "com.boltffi.demo", "Demo");
+    let counter = java_source(&output, "com.boltffi.demo", "DefaultCounter");
+    let amount = java_source(&output, "com.boltffi.demo", "DefaultAmount");
+    let named_amount = java_source(&output, "com.boltffi.demo", "NamedAmount");
+
+    assert_eq!(module.matches("public static String greet(").count(), 9);
+    assert!(module.contains("public static String greet(String name)"));
+    assert!(module.contains("return greet(name, \"world\", 3, -1L, true, 0.5f, Mode.SLOW, java.util.Optional.empty(), java.util.Optional.of((short) (7)));"));
+    assert!(module.contains("return defaultAmount(new DefaultAmount(5));"));
+    assert!(module.contains(
+        "return defaultOptionalEmail(java.util.Optional.of(\"mailto:ada@example.com\"));"
+    ));
+    assert!(module.contains("return applyOptionalClosure(value, (ClosureI32ToI32) (null));"));
+    assert!(
+        module.contains(
+            "public static java.util.concurrent.CompletableFuture<Integer> asyncDefault()"
+        )
+    );
+    assert!(module.contains("return asyncDefault(9);"));
+    assert!(counter.contains("public DefaultCounter() {\n        this(10);"));
+    assert!(counter.contains("public static DefaultCounter fromText()"));
+    assert!(counter.contains("return fromText(\"40\");"));
+    assert!(counter.contains("public static DefaultCounter withOffset(int offset)"));
+    assert!(counter.contains("return withOffset(20, offset);"));
+    assert!(!counter.contains("public static DefaultCounter withOffset()"));
+    assert!(counter.contains("return offset(1);"));
+    assert!(counter.contains("return sum(1, 2);"));
+    assert!(counter.contains("return sum(left, 2);"));
+    assert!(!counter.contains("return sum(1, right);"));
+    assert!(amount.contains("public DefaultAmount() {\n        this(3);"));
+    assert!(amount.contains("return withScaledValue(2);"));
+    assert!(named_amount.contains("return withValue(5);"));
+    assert!(
+        named_amount
+            .contains("public static java.util.concurrent.CompletableFuture<NamedAmount> load()")
+    );
+    assert!(named_amount.contains("return load(6);"));
+}
+
+#[test]
+fn defaulted_long_class_constructors_compile_without_native_handle_collisions() {
+    let source = r#"
+        pub struct SignedCounter {
+            value: i64,
+        }
+
+        #[export]
+        impl SignedCounter {
+            pub fn new(#[boltffi::default(10)] value: i64) -> Self {
+                Self { value }
+            }
+        }
+
+        pub struct UnsignedCounter {
+            value: u64,
+        }
+
+        #[export]
+        impl UnsignedCounter {
+            pub fn new(#[boltffi::default(18446744073709551615)] value: u64) -> Self {
+                Self { value }
+            }
+        }
+
+        pub struct SteppedCounter {
+            value: i64,
+        }
+
+        #[export]
+        impl SteppedCounter {
+            pub fn new(value: i64, #[boltffi::default(1)] step: i32) -> Self {
+                Self { value: value + i64::from(step) }
+            }
+        }
+
+        pub struct ExplicitCounter {
+            value: i64,
+        }
+
+        #[export]
+        impl ExplicitCounter {
+            pub fn new(value: i64) -> Self {
+                Self { value }
+            }
+        }
+    "#;
+    [JavaVersion::JAVA_8, JavaVersion::JAVA_16]
+        .into_iter()
+        .for_each(|version| {
+            let output = render_with_host(
+                source,
+                CoverageMode::Complete,
+                JavaHost::for_version("com.boltffi.demo", "Demo", version)
+                    .expect("Java constructor defaults host"),
+            );
+            let signed = java_source(&output, "com.boltffi.demo", "SignedCounter");
+            let unsigned = java_source(&output, "com.boltffi.demo", "UnsignedCounter");
+            let stepped = java_source(&output, "com.boltffi.demo", "SteppedCounter");
+            assert!(signed.contains("public SignedCounter(long value)"));
+            assert!(signed.contains("public SignedCounter()"));
+            assert!(unsigned.contains("public UnsignedCounter(long value)"));
+            assert!(unsigned.contains("public UnsignedCounter()"));
+            assert!(stepped.contains("public SteppedCounter(long value, int step)"));
+            assert!(stepped.contains("public SteppedCounter(long value)"));
+            if let Some(compiler) = JavaCompiler::discover() {
+                compile_generated_java_with_release(
+                    &compiler,
+                    &output,
+                    "boltffi-java-long-constructor-defaults",
+                    &[(
+                        "com/boltffi/demo/LongConstructorCaller.java",
+                        r#"package com.boltffi.demo;
+                        final class LongConstructorCaller {
+                            static void call() {
+                                new SignedCounter();
+                                new SignedCounter(0L);
+                                new SignedCounter(Long.MIN_VALUE);
+                                new UnsignedCounter();
+                                new UnsignedCounter(-1L);
+                                new SteppedCounter(10L);
+                                new SteppedCounter(10L, 2);
+                                ExplicitCounter._new(10L);
+                            }
+                        }"#,
+                    )],
+                    Some(version.release().into()),
+                );
+            }
+        });
+}
+
+#[test]
+fn generated_class_handles_preserve_single_ownership() {
+    let Some(compiler) = JavaCompiler::discover() else {
+        return;
+    };
+    let output = render_with_host(
+        CLASSES,
+        CoverageMode::Complete,
+        JavaHost::new("com.boltffi.demo", "Demo").expect("Java class handle host"),
+    );
+    compile_and_run_generated_java(
+        &compiler,
+        &output,
+        "boltffi-java-class-handle-ownership",
+        &[(
+            "com/boltffi/demo/ClassHandleProbe.java",
+            r#"package com.boltffi.demo;
+            final class ClassHandleProbe {
+                public static void main(String[] arguments) {
+                    Counter counter = Counter.__boltffiFromHandle(42L);
+                    if (counter.rawHandle() != 42L) throw new AssertionError("handle changed");
+                    if (counter.__boltffiTakeHandle() != 42L) throw new AssertionError("handle was not transferred");
+                    counter.close();
+                    counter.close();
+                    try {
+                        counter.rawHandle();
+                        throw new AssertionError("transferred handle remained readable");
+                    } catch (IllegalStateException expected) {
+                        if (!expected.getMessage().equals("Counter is closed")) throw expected;
+                    }
+                    try {
+                        counter.__boltffiTakeHandle();
+                        throw new AssertionError("handle was transferred twice");
+                    } catch (IllegalStateException expected) {
+                        if (!expected.getMessage().equals("Counter is closed")) throw expected;
+                    }
+                    try {
+                        Counter.__boltffiFromHandle(0L);
+                        throw new AssertionError("null native handle was accepted");
+                    } catch (IllegalArgumentException expected) {
+                        if (!expected.getMessage().contains("must not be zero")) throw expected;
+                    }
+                    Counter concurrent = Counter.__boltffiFromHandle(-1L);
+                    long owners = java.util.Collections.nCopies(32, concurrent).parallelStream().filter(candidate -> {
+                        try {
+                            if (candidate.__boltffiTakeHandle() != -1L) throw new AssertionError("handle bits changed");
+                            return true;
+                        } catch (IllegalStateException expected) {
+                            if (!expected.getMessage().equals("Counter is closed")) throw expected;
+                            return false;
+                        }
+                    }).count();
+                    if (owners != 1) throw new AssertionError("handle had multiple owners");
+                    concurrent.close();
+                }
+            }"#,
+        )],
+        "com.boltffi.demo.ClassHandleProbe",
+    );
+}
+
+#[test]
+fn generated_parameter_defaults_compile_for_java_eight_and_sixteen_when_available() {
+    let Some(compiler) = JavaCompiler::discover() else {
+        return;
+    };
+    [JavaVersion::JAVA_8, JavaVersion::JAVA_16]
+        .into_iter()
+        .for_each(|version| {
+            let host = JavaHost::for_version("com.boltffi.demo", "Demo", version)
+                .expect("Java defaults host");
+            let output = render_with_host(PARAMETER_DEFAULTS, CoverageMode::Complete, host);
+            compile_generated_java_with_release(
+                &compiler,
+                &output,
+                "boltffi-java-parameter-defaults",
+                &[(
+                    "com/boltffi/demo/DefaultsCaller.java",
+                    r#"package com.boltffi.demo;
+                    final class DefaultsCaller {
+                        static void call() {
+                            Demo.greet("ada");
+                            Demo.greet("ada", "hi", 2);
+                            Demo.applyOptionalClosure(5);
+                            Demo.applyOptionalClosure(5, null);
+                            Demo.applyOptionalClosure(5, value -> value * 2);
+                            Demo.formatDefaults("ada");
+                            Demo.defaultOptionalEmail(java.util.Optional.empty());
+                            Demo.defaultAmount();
+                            DefaultAmount amount = new DefaultAmount();
+                            amount.offset();
+                            DefaultAmount.withScaledValue();
+                            DefaultAmount.tryScaledValue();
+                            NamedAmount.withValue();
+                            NamedAmount.load().join();
+                            DefaultMode.load().join();
+                            try (DefaultCounter counter = new DefaultCounter()) {
+                                counter.offset();
+                                counter.asyncOffset().join();
+                                DefaultCounter.sum();
+                                DefaultCounter.sum(3);
+                            }
+                            try (DefaultCounter counter = DefaultCounter.fromText()) {
+                                counter.offset();
+                            }
+                            try (DefaultCounter counter = DefaultCounter.withOffset(3)) {
+                                counter.offset();
+                            }
+                            try (Server server = Server.start((short) 8080).join()) {
+                                server.port();
+                            }
+                        }
+                    }"#,
+                )],
+                Some(version.release().into()),
+            );
+        });
+}
+
+#[test]
+fn generated_data_enum_defaults_compile_for_java_eight_and_seventeen_when_available() {
+    let Some(compiler) = JavaCompiler::discover() else {
+        return;
+    };
+    let source = ENUMS.replace(
+        "pub fn is_empty(&self) -> bool { matches!(self, Self::Empty) }",
+        r#"
+        pub fn is_empty(&self, #[boltffi::default(true)] expected: bool) -> bool {
+            matches!(self, Self::Empty) == expected
+        }
+        pub async fn async_is_empty(&self, #[boltffi::default(false)] expected: bool) -> bool {
+            matches!(self, Self::Empty) == expected
+        }
+        "#,
+    );
+    assert_ne!(source, ENUMS);
+    [JavaVersion::JAVA_8, JavaVersion::JAVA_17]
+        .into_iter()
+        .for_each(|version| {
+            let output = render_with_host(
+                &source,
+                CoverageMode::Complete,
+                JavaHost::for_version("com.boltffi.demo", "Demo", version)
+                    .expect("Java data enum defaults host"),
+            );
+            let shape = java_source(&output, "com.boltffi.demo", "Shape");
+            if version == JavaVersion::JAVA_17 {
+                assert!(shape.contains("public sealed interface Shape"));
+                assert!(shape.contains("default boolean isEmpty()"));
+            } else {
+                assert!(shape.contains("public abstract class Shape"));
+                assert!(shape.contains("public boolean isEmpty()"));
+            }
+            assert!(shape.contains("return isEmpty(true);"));
+            assert!(shape.contains("return asyncIsEmpty(false);"));
+            compile_generated_java_with_release(
+                &compiler,
+                &output,
+                "boltffi-java-data-enum-defaults",
+                &[(
+                    "com/boltffi/demo/DefaultsCaller.java",
+                    r#"package com.boltffi.demo;
+                    final class DefaultsCaller {
+                        static boolean call() {
+                            Shape shape = Shape.empty();
+                            return shape.isEmpty() && shape.isEmpty(false)
+                                && shape.asyncIsEmpty().join() && shape.asyncIsEmpty(true).join();
+                        }
+                    }"#,
+                )],
+                Some(version.release().into()),
+            );
+        });
+}
+
+#[test]
+fn java_target_rejects_default_overloads_that_collide_with_existing_methods() {
+    let bindings = bindings(
+        r#"
+        pub mod first {
+            #[export]
+            pub fn format_value(#[boltffi::default(1)] value: i32) -> i32 { value }
+        }
+        pub mod second {
+            #[export]
+            pub fn format_value() -> i32 { 2 }
+        }
+        "#,
+    );
+    assert!(matches!(
+        host().render_with_coverage(&bindings, CoverageMode::Complete),
+        Err(Error::JavaNameCollision { name, .. }) if name == "formatValue()"
+    ));
+}
+
+#[test]
+fn java_target_rejects_method_collisions_after_erasing_generic_parameters() {
+    let bindings = bindings(
+        r#"
+        pub mod first {
+            #[export]
+            pub fn select_value(value: Option<String>) -> Option<String> { value }
+        }
+        pub mod second {
+            #[export]
+            pub fn select_value(value: Option<i32>) -> Option<i32> { value }
+        }
+        "#,
+    );
+    assert!(matches!(
+        host().render_with_coverage(&bindings, CoverageMode::Complete),
+        Err(Error::JavaNameCollision { name, .. }) if name == "selectValue(java.util.Optional)"
+    ));
+}
+
+#[test]
+fn java_target_rejects_default_overloads_that_replace_record_accessors() {
+    let bindings = bindings(
+        r#"
+        #[data]
+        pub struct Amount { pub value: i32 }
+        #[data(impl)]
+        impl Amount {
+            pub fn value(&self, #[boltffi::default(1)] scale: i32) -> i32 {
+                self.value * scale
+            }
+        }
+        "#,
+    );
+    assert!(matches!(
+        host().render_with_coverage(&bindings, CoverageMode::Complete),
+        Err(Error::JavaNameCollision { name, .. }) if name == "value()"
+    ));
+}
+
+#[test]
+fn java_target_rejects_default_overloads_that_replace_enum_methods() {
+    let bindings = bindings(
+        r#"
+        #[repr(u8)]
+        #[data]
+        pub enum Mode { Quiet = 1, Loud = 2 }
+        #[data(impl)]
+        impl Mode {
+            pub fn values(#[boltffi::default(Mode::Quiet)] mode: Self) -> Self { mode }
+        }
+        "#,
+    );
+    assert!(matches!(
+        host().render_with_coverage(&bindings, CoverageMode::Complete),
+        Err(Error::JavaNameCollision { name, .. }) if name == "values()"
+    ));
+}
+
+#[test]
+fn java_target_rejects_default_overloads_that_replace_enum_decoders() {
+    let bindings = bindings(
+        r#"
+        #[data]
+        pub enum Choice { Empty, Value(i32) }
+        #[data(impl)]
+        impl Choice {
+            pub fn from_byte_array(
+                bytes: Vec<u8>,
+                #[boltffi::default(false)] fallback: bool,
+            ) -> Self { Self::Empty }
+        }
+        "#,
+    );
+    assert!(matches!(
+        host().render_with_coverage(&bindings, CoverageMode::Complete),
+        Err(Error::JavaNameCollision { name, .. }) if name == "fromByteArray(byte[])"
+    ));
+}
+
+#[test]
+fn generated_direct_custom_defaults_compile_for_java_eight_and_sixteen_when_available() {
+    let Some(compiler) = JavaCompiler::discover() else {
+        return;
+    };
+    let source = PARAMETER_DEFAULTS.replace(
+        "#[data]\npub struct DefaultAmount",
+        "#[repr(C)]\n#[data]\npub struct DefaultAmount",
+    );
+    assert_ne!(source, PARAMETER_DEFAULTS);
+    [JavaVersion::JAVA_8, JavaVersion::JAVA_16]
+        .into_iter()
+        .for_each(|version| {
+            let output = render_with_host(
+                &source,
+                CoverageMode::Complete,
+                JavaHost::for_version("com.boltffi.demo", "Demo", version)
+                    .expect("Java direct defaults host"),
+            );
+            let module = java_source(&output, "com.boltffi.demo", "Demo");
+            assert!(module.contains("return defaultAmount(new DefaultAmount(5));"));
+            compile_generated_java_for_release(
+                &compiler,
+                &output,
+                "boltffi-java-direct-defaults",
+                version.release().into(),
+            );
+        });
+}
+
+#[test]
+fn generated_builtin_defaults_and_overloaded_nullable_closures_compile_when_available() {
+    let source = r#"
+        #[export]
+        pub fn default_uuid(
+            #[boltffi::default("FEDCBA9876543210FFFFFFFFFFFFFFFF")] value: uuid::Uuid,
+        ) -> uuid::Uuid { value }
+
+        #[export]
+        pub fn default_optional_uuid(
+            #[boltffi::default("01234567-89ab-cdef-0123-456789abcdef")] value: Option<uuid::Uuid>,
+        ) -> Option<uuid::Uuid> { value }
+
+        #[export]
+        pub fn default_url(
+            #[boltffi::default("https://example.com/?name=ada&greeting=hello%20ada")] value: url::Url,
+        ) -> url::Url { value }
+
+        pub mod first {
+            #[export]
+            pub fn apply(#[boltffi::default(None)] callback: Option<Box<dyn Fn(i32) -> i32>>) -> i32 { 0 }
+        }
+        pub mod second {
+            #[export]
+            pub fn apply(callback: Option<Box<dyn Fn(i64) -> i64>>) -> i64 { 0 }
+        }
+    "#;
+    let output = render_with_host(
+        source,
+        CoverageMode::Complete,
+        JavaHost::new("com.boltffi.demo", "Demo").expect("Java builtins host"),
+    );
+    let module = java_source(&output, "com.boltffi.demo", "Demo");
+    assert!(module.contains(
+        "return defaultUuid(new java.util.UUID(0xFEDCBA9876543210L, 0xFFFFFFFFFFFFFFFFL));"
+    ));
+    assert!(module.contains("return defaultOptionalUuid(java.util.Optional.of(new java.util.UUID(0x0123456789ABCDEFL, 0x0123456789ABCDEFL)));"));
+    assert!(module.contains(
+        "return defaultUrl(java.net.URI.create(\"https://example.com/?name=ada&greeting=hello%20ada\"));"
+    ));
+    assert!(module.contains("return apply((ClosureI32ToI32) (null));"));
+    if let Some(compiler) = JavaCompiler::discover() {
+        compile_generated_java(&compiler, &output, "boltffi-java-builtin-defaults");
+    }
+}
+
+#[test]
+fn java_target_rejects_invalid_uuid_defaults_before_emitting_bindings() {
+    [
+        "invalid-uuid",
+        "+0000000000000000000000000000000",
+        "0000000000000000+000000000000000",
+        "+0000000-0000-0000-0000-000000000000",
+        "00000000-0000-0000-+000-000000000000",
+    ]
+    .into_iter()
+    .for_each(|value| {
+        let source = format!(
+            "#[export] pub fn identifier(#[boltffi::default(\"{value}\")] value: uuid::Uuid) -> uuid::Uuid {{ value }}"
+        );
+        assert_eq!(
+            host().render_with_coverage(&bindings(&source), CoverageMode::Complete).unwrap_err(),
+            Error::UnsupportedTarget { target: "java", shape: "invalid UUID default" },
+        );
+    });
+}
+
+#[test]
 fn java_target_renders_enum_record_defaults_and_accepts_parameter_defaults() {
     let java_eight = render(ENUM_RECORD_DEFAULTS, CoverageMode::Complete);
     let java_eight_defaults = java_source(&java_eight, "com.boltffi.demo", "EnumDefaults");
@@ -1587,22 +2094,19 @@ fn java_target_renders_class_ownership_and_handle_calls_from_binding_ir() {
     let module = java_source(&output, "com.boltffi.demo", "Demo");
 
     assert!(counter.contains("public final class Counter implements AutoCloseable"));
-    assert!(counter.contains("private final long handle;"));
-    assert!(counter.contains("private final AtomicBoolean closed = new AtomicBoolean(false);"));
+    assert!(counter.contains("private final java.util.concurrent.atomic.AtomicLong handle;"));
     assert!(counter.contains("public Counter(int value)"));
     assert!(counter.contains("private static long __boltffiCreateHandle0(int value)"));
     assert!(counter.contains("return Native.boltffi_init_class_demo_counter_new(value);"));
     assert!(counter.contains("public static Counter tryNew(int value)"));
-    assert!(
-        counter
-            .contains("return new Counter(Native.boltffi_init_class_demo_counter_try_new(value));")
-    );
+    assert!(counter.contains(
+        "return Counter.__boltffiFromHandle(Native.boltffi_init_class_demo_counter_try_new(value));"
+    ));
     assert!(counter.contains("throw new RuntimeException(\"Factory constructor failed\")"));
-    assert!(counter.contains("if (!closed.compareAndSet(false, true)) return;"));
-    assert!(counter.contains("Native.boltffi_release_class_demo_counter(this.handle);"));
+    assert!(counter.contains("if (__boltffi_handle == 0) return;"));
+    assert!(counter.contains("Native.boltffi_release_class_demo_counter(__boltffi_handle);"));
     assert!(
-        counter
-            .contains("if (closed.get()) throw new IllegalStateException(\"Counter is closed\");")
+        counter.contains("if (value == 0) throw new IllegalStateException(\"Counter is closed\");")
     );
     assert!(counter.contains("public int get()"));
     assert!(counter.contains("public void set(int value)"));
@@ -1617,17 +2121,16 @@ fn java_target_renders_class_ownership_and_handle_calls_from_binding_ir() {
     assert!(!fallible.contains("this(new FallibleOnly"));
 
     assert!(factory.contains("public static Counter make(int value)"));
-    assert!(
-        factory
-            .contains("return new Counter(Native.boltffi_method_class_demo_factory_make(value));")
-    );
+    assert!(factory.contains(
+        "return Counter.__boltffiFromHandle(Native.boltffi_method_class_demo_factory_make(value));"
+    ));
     assert!(factory.contains("public Counter maybe(int value)"));
     assert!(factory.contains(
         "long __boltffi_handle = Native.boltffi_method_class_demo_factory_maybe(this.rawHandle(), value);"
     ));
-    assert!(
-        factory.contains("return (__boltffi_handle == 0L ? null : new Counter(__boltffi_handle));")
-    );
+    assert!(factory.contains(
+        "return (__boltffi_handle == 0L ? null : Counter.__boltffiFromHandle(__boltffi_handle));"
+    ));
     assert!(factory.contains("public int read(Counter counter)"));
     assert!(factory.contains("counter.rawHandle()"));
 

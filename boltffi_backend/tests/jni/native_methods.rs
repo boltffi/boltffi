@@ -164,6 +164,16 @@ fn jni_bridge_renders_closure_parameters_from_contract_group() {
 }
 
 #[test]
+fn jni_bridge_passes_null_function_pointers_for_absent_optional_closures() {
+    let rendered = rendered_fixture("exports/parameter_defaults");
+
+    assert!(rendered.contains("(callback == 0 ? NULL : boltffi_jni____closure__i32_to_i32_call)"));
+    assert!(
+        rendered.contains("(callback == 0 ? NULL : boltffi_jni____closure__i32_to_i32_release)")
+    );
+}
+
+#[test]
 fn jni_bridge_cleans_up_failed_direct_record_closure_arguments() {
     let rendered = rendered_fixture("exports/closure_direct_record_parameter");
 

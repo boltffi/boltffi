@@ -2,7 +2,7 @@ use boltffi_binding::{BuiltinType, CustomTypeId, DefaultValue, EnumDecl, Native,
 
 use crate::core::{
     RenderContext, Result,
-    default_value::{Field as RepresentationField, Representation},
+    default_value::{Field as RepresentationField, Representation, UuidLiteral},
 };
 
 use super::{
@@ -127,25 +127,11 @@ impl DefaultExpression {
     }
 
     fn uuid(value: &str) -> Result<Literal> {
-        match value.len() {
-            32 => {}
-            36 if [8, 13, 18, 23]
-                .into_iter()
-                .all(|index| value.as_bytes()[index] == b'-') => {}
-            _ => return unsupported("invalid UUID default"),
-        }
-        let digits = value
-            .chars()
-            .filter(|character| *character != '-')
-            .collect::<String>();
-        if digits.len() != 32 || !digits.bytes().all(|digit| digit.is_ascii_hexdigit()) {
-            return unsupported("invalid UUID default");
-        }
-        let Ok(uuid_bits) = u128::from_str_radix(&digits, 16) else {
+        let Some(uuid) = UuidLiteral::parse(value) else {
             return unsupported("invalid UUID default");
         };
-        let high_bits = uuid_bits >> 64;
-        let low_bits = uuid_bits & u128::from(u64::MAX);
+        let high_bits = uuid.high_bits();
+        let low_bits = uuid.low_bits();
         Ok(Literal::new(format!(
             "const $$BoltUUIDValue(0x{high_bits:016x}, 0x{low_bits:016x})"
         )))

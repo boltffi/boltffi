@@ -17,6 +17,7 @@ use crate::{
             AssociatedConstants, Constant, ValueIdentity,
             call::{AssociatedCallContext, Call, ValueCalls, ValueReceiver},
             record::Field,
+            signature::{ErasedSignature, ValueType},
             type_name::JavaType,
         },
         syntax::{
@@ -136,6 +137,59 @@ impl Enumeration {
             Self::CStyle(enumeration) => enumeration.calls(),
             Self::Data(enumeration) => enumeration.calls(),
         }
+    }
+
+    pub fn signatures(&self) -> Vec<ErasedSignature> {
+        let reserved = match self {
+            Self::CStyle(_) => vec![
+                "values",
+                "name",
+                "ordinal",
+                "nativeValue",
+                "getDeclaringClass",
+            ],
+            Self::Data(enumeration) if enumeration.flat_error() => {
+                vec![
+                    "values",
+                    "name",
+                    "ordinal",
+                    "getDeclaringClass",
+                    "wireSize",
+                    "toByteArray",
+                ]
+            }
+            Self::Data(_) => vec!["wireSize", "toByteArray"],
+        };
+        let mut signatures = reserved
+            .into_iter()
+            .map(|name| ErasedSignature::new(Identifier::known(name), []))
+            .collect::<Vec<_>>();
+        if let Self::CStyle(enumeration) = self {
+            signatures.push(ErasedSignature::new(
+                Identifier::known("fromValue"),
+                [ValueType::Reference(enumeration.value_type().clone())],
+            ));
+        }
+        if matches!(self, Self::Data(_)) {
+            signatures.push(ErasedSignature::new(
+                Identifier::known("fromByteArray"),
+                [ValueType::Reference(TypeName::array(TypeName::primitive(
+                    Primitive::Byte,
+                )))],
+            ));
+        }
+        if matches!(self, Self::CStyle(_))
+            || matches!(self, Self::Data(enumeration) if enumeration.flat_error())
+        {
+            signatures.push(ErasedSignature::new(
+                Identifier::known("valueOf"),
+                [ValueType::Reference(TypeName::named(
+                    TypeIdentifier::known("String", JavaVersion::JAVA_8),
+                ))],
+            ));
+        }
+        signatures.extend(self.calls().iter().flat_map(Call::signatures));
+        signatures
     }
 
     pub fn file_for(declaration: &EnumDecl<Native>, version: JavaVersion) -> Result<JavaFile> {

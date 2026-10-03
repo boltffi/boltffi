@@ -25,7 +25,9 @@ use crate::{
             class::{ClassHandle, OwnedCallTemplate, OwnedClassArgument},
             native::Method,
             record::Record,
-            signature::{CallSignature, Parameter, ReturnType, ValueType},
+            signature::{
+                CallSignature, DefaultOverload, ErasedSignature, Parameter, ReturnType, ValueType,
+            },
             type_name::JavaType,
         },
         syntax::{
@@ -36,7 +38,7 @@ use crate::{
 };
 
 #[derive(AskamaTemplate)]
-#[template(path = "target/java/function.java", escape = "none")]
+#[template(path = "target/java/call/static_method.java", escape = "none")]
 struct FunctionTemplate<'call> {
     call: &'call Call,
 }
@@ -44,6 +46,7 @@ struct FunctionTemplate<'call> {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Call {
     signature: CallSignature,
+    overloads: Vec<DefaultOverload<ValueType>>,
     doc: Option<Javadoc>,
     execution: CallExecution,
     runtime: RuntimeRequirement,
@@ -56,6 +59,7 @@ enum CallExecution {
         body: Vec<Statement>,
     },
     Asynchronous(AsyncCall),
+    Forwarding(Vec<Statement>),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -324,6 +328,51 @@ impl Call {
         &self.signature
     }
 
+    pub fn signatures(&self) -> impl Iterator<Item = ErasedSignature> + '_ {
+        std::iter::once(self.signature.erased()).chain(
+            self.overloads
+                .iter()
+                .map(|overload| overload.erased_signature(self.name())),
+        )
+    }
+
+    pub fn overloads(&self) -> &[DefaultOverload<ValueType>] {
+        &self.overloads
+    }
+
+    pub fn without_default_overloads(mut self) -> Self {
+        self.overloads.clear();
+        self
+    }
+
+    pub fn forward(&self, overload: &DefaultOverload<ValueType>) -> Statement {
+        self.returns().forward(Expression::invoke(
+            self.name().clone(),
+            overload.arguments().clone(),
+        ))
+    }
+
+    pub fn constructor_factory(&self, name: Identifier, class: TypeIdentifier) -> Result<Self> {
+        let arguments = self
+            .parameters()
+            .iter()
+            .map(|parameter| Expression::identifier(parameter.name().clone()))
+            .collect();
+        Ok(Self {
+            signature: CallSignature::new(
+                name,
+                self.parameters().to_vec(),
+                ReturnType::Value(ValueType::Reference(TypeName::named(class.clone()))),
+            )?,
+            overloads: self.overloads.clone(),
+            doc: self.doc.clone(),
+            execution: CallExecution::Forwarding(vec![Statement::return_value(
+                Expression::construct(TypeName::named(class), arguments),
+            )]),
+            runtime: RuntimeRequirement::None,
+        })
+    }
+
     pub fn name(&self) -> &Identifier {
         self.signature.name()
     }
@@ -342,14 +391,14 @@ impl Call {
 
     pub fn body(&self) -> &[Statement] {
         match &self.execution {
-            CallExecution::Synchronous { body, .. } => body,
+            CallExecution::Synchronous { body, .. } | CallExecution::Forwarding(body) => body,
             CallExecution::Asynchronous(_) => &[],
         }
     }
 
     pub fn async_call(&self) -> Option<&AsyncCall> {
         match &self.execution {
-            CallExecution::Synchronous { .. } => None,
+            CallExecution::Synchronous { .. } | CallExecution::Forwarding(_) => None,
             CallExecution::Asynchronous(call) => Some(call),
         }
     }
@@ -372,7 +421,9 @@ impl Call {
         receiver_support: ReceiverSupport,
         scope: CallScope<'_, '_>,
     ) -> Result<Self> {
-        if declaration.callable().execution().uses_async_execution() {
+        if declaration.callable().execution().uses_async_execution()
+            && matches!(scope.return_context, ReturnContext::ClassInitializer(_))
+        {
             return Err(JavaHost::unsupported("asynchronous initializer"));
         }
         FunctionShape::classify_callable(declaration.callable(), receiver_support)
@@ -454,15 +505,17 @@ impl Call {
                 BoundArguments::new(receiver.as_ref(), &parameters, bindings),
                 scope,
             )?;
+            let signature = CallSignature::new(
+                name,
+                parameters
+                    .into_iter()
+                    .map(|parameter| parameter.signature)
+                    .collect(),
+                declared_return.ty.future(scope.version),
+            )?;
             return Ok(Self {
-                signature: CallSignature::new(
-                    name,
-                    parameters
-                        .into_iter()
-                        .map(|parameter| parameter.signature)
-                        .collect(),
-                    declared_return.ty.future(scope.version),
-                )?,
+                overloads: DefaultOverload::from_parameters(signature.parameters()),
+                signature,
                 doc,
                 execution: CallExecution::Asynchronous(asynchronous),
                 runtime,
@@ -574,15 +627,17 @@ impl Call {
             )
             .chain(protected)
             .collect();
+        let signature = CallSignature::new(
+            name,
+            parameters
+                .into_iter()
+                .map(|parameter| parameter.signature)
+                .collect(),
+            returns,
+        )?;
         Ok(Self {
-            signature: CallSignature::new(
-                name,
-                parameters
-                    .into_iter()
-                    .map(|parameter| parameter.signature)
-                    .collect(),
-                returns,
-            )?,
+            overloads: DefaultOverload::from_parameters(signature.parameters()),
+            signature,
             doc,
             execution: CallExecution::Synchronous { native, body },
             runtime,
@@ -595,6 +650,7 @@ impl CallExecution {
         let methods = match self {
             Self::Synchronous { native, .. } => std::slice::from_ref(native),
             Self::Asynchronous(call) => call.native_methods(),
+            Self::Forwarding(_) => &[],
         };
         methods
             .iter()

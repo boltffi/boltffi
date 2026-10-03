@@ -26,6 +26,10 @@ impl Expression {
         Self(format!("{ty}.{method}({arguments})"))
     }
 
+    pub fn invoke(method: Identifier, arguments: ArgumentList) -> Self {
+        Self(format!("{method}({arguments})"))
+    }
+
     pub fn static_member(ty: TypeName, member: Identifier) -> Self {
         Self(format!("{ty}.{member}"))
     }
@@ -132,8 +136,8 @@ impl Expression {
         Self(format!("({self} ? {then_value} : {else_value})"))
     }
 
-    pub fn cast(ty: crate::target::java::primitive::Primitive, value: Self) -> Self {
-        Self(format!("({ty}) ({value})"))
+    pub fn cast(ty: impl Into<TypeName>, value: Self) -> Self {
+        Self(format!("({}) ({value})", ty.into()))
     }
 }
 

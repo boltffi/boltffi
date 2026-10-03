@@ -1,3 +1,7 @@
+mod uuid;
+
+pub use uuid::UuidLiteral;
+
 use boltffi_binding::{
     CanonicalName, CustomTypeId, DirectFieldDecl, EncodedFieldDecl, FieldKey, RecordDecl, RecordId,
     Surface, TypeRef,
@@ -47,12 +51,15 @@ impl<'bindings> Representation<'bindings> {
             })?
             .representation()
         {
-            TypeRef::Record(record) => Self::record(*record, context),
+            TypeRef::Record(record) => Self::record(*record, context).map(Self::Record),
             representation => Ok(Self::Transparent(representation)),
         }
     }
 
-    fn record<S: Surface>(record: RecordId, context: &'bindings RenderContext<S>) -> Result<Self> {
+    pub fn record<S: Surface>(
+        record: RecordId,
+        context: &'bindings RenderContext<S>,
+    ) -> Result<Record<'bindings>> {
         let declaration = context.record(record).ok_or(Error::BrokenBridgeContract {
             bridge: context.target(),
             invariant: "missing custom type default representation",
@@ -68,13 +75,13 @@ impl<'bindings> Representation<'bindings> {
             },
             _ => return Self::unsupported_record(context),
         };
-        Ok(Self::Record(Record {
+        Ok(Record {
             name: declaration.name(),
             field,
-        }))
+        })
     }
 
-    fn unsupported_record<S: Surface>(context: &RenderContext<S>) -> Result<Self> {
+    fn unsupported_record<S: Surface>(context: &RenderContext<S>) -> Result<Record<'bindings>> {
         Err(Error::UnsupportedTarget {
             target: context.target(),
             shape: "custom type default with non-single-field representation",

@@ -62,6 +62,15 @@ impl TypeName {
         })
     }
 
+    pub fn erased(&self) -> Self {
+        match &self.0 {
+            TypeShape::Parameterized { raw, .. } => raw.erased(),
+            TypeShape::Array(element) => Self::array(element.erased()),
+            TypeShape::Nested { owner, name } => Self::nested(owner.erased(), name.clone()),
+            TypeShape::Named { .. } | TypeShape::Primitive(_) => self.clone(),
+        }
+    }
+
     pub fn boxed_primitive(primitive: Primitive, version: JavaVersion) -> Self {
         Self::named(TypeIdentifier::known(
             match primitive {
@@ -100,6 +109,12 @@ impl fmt::Display for TypeName {
                     .join(", ")
             ),
         }
+    }
+}
+
+impl From<Primitive> for TypeName {
+    fn from(primitive: Primitive) -> Self {
+        Self::primitive(primitive)
     }
 }
 

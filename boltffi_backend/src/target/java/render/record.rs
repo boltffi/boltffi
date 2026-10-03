@@ -17,7 +17,7 @@ use crate::{
             AssociatedConstants, Constant, ValueIdentity,
             call::{AssociatedCallContext, Call, ValueCalls, ValueReceiver},
             default_value::DefaultExpression,
-            signature::Parameter,
+            signature::{DefaultOverload, ErasedSignature, Parameter, ValueType},
             type_name::JavaType,
         },
         syntax::{
@@ -59,7 +59,7 @@ pub struct Record {
     error: bool,
     fields: Vec<Field>,
     constants: AssociatedConstants,
-    default_constructors: Vec<DefaultConstructor>,
+    default_constructors: Vec<DefaultOverload<TypeName>>,
     initializers: Vec<Call>,
     static_methods: Vec<Call>,
     instance_methods: Vec<Call>,
@@ -82,12 +82,6 @@ pub struct Field {
     doc: Option<Javadoc>,
     native_record_safe: bool,
     requires_identity: bool,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct DefaultConstructor {
-    parameters: Vec<Parameter<TypeName>>,
-    arguments: ArgumentList,
 }
 
 impl Record {
@@ -207,8 +201,44 @@ impl Record {
         &self.initializers
     }
 
-    pub fn default_constructors(&self) -> &[DefaultConstructor] {
+    pub fn default_constructors(&self) -> &[DefaultOverload<TypeName>] {
         &self.default_constructors
+    }
+
+    pub fn signatures(&self) -> Vec<ErasedSignature> {
+        self.fields
+            .iter()
+            .map(|field| ErasedSignature::new(field.name.clone(), []))
+            .chain(std::iter::once(ErasedSignature::new(
+                Identifier::known("toByteArray"),
+                [],
+            )))
+            .chain(
+                self.codec_payload()
+                    .then(|| ErasedSignature::new(Identifier::known("wireSize"), [])),
+            )
+            .chain(
+                self.direct()
+                    .then(|| ErasedSignature::new(Identifier::known("toDirectBuffer"), [])),
+            )
+            .chain(
+                self.error
+                    .then(|| ErasedSignature::new(Identifier::known("getError"), [])),
+            )
+            .chain(std::iter::once(ErasedSignature::new(
+                Identifier::known("fromByteArray"),
+                [ValueType::Reference(TypeName::array(TypeName::primitive(
+                    Primitive::Byte,
+                )))],
+            )))
+            .chain(
+                self.initializers
+                    .iter()
+                    .chain(&self.static_methods)
+                    .chain(&self.instance_methods)
+                    .flat_map(Call::signatures),
+            )
+            .collect()
     }
 
     pub fn static_methods(&self) -> &[Call] {
@@ -281,7 +311,7 @@ impl Record {
             AssociatedCallContext::local(bridge, native_owner, version, context),
         )?
         .into_parts();
-        let default_constructors = DefaultConstructor::from_fields(&fields);
+        let default_constructors = Self::default_constructors_from_fields(&fields);
         let error = record.is_error_payload();
         Ok(Self {
             name,
@@ -338,7 +368,7 @@ impl Record {
             AssociatedCallContext::local(bridge, native_owner, version, context),
         )?
         .into_parts();
-        let default_constructors = DefaultConstructor::from_fields(&fields);
+        let default_constructors = Self::default_constructors_from_fields(&fields);
         let error = record.is_error_payload();
         Ok(Self {
             name,
@@ -385,6 +415,17 @@ impl Record {
             .map(|field| field.wire_size.clone())
             .reduce(Expression::add)
             .unwrap_or_else(|| Expression::integer(0))
+    }
+
+    fn default_constructors_from_fields(fields: &[Field]) -> Vec<DefaultOverload<TypeName>> {
+        let parameters = fields
+            .iter()
+            .map(|field| {
+                Parameter::new(field.name.clone(), field.ty.clone())
+                    .with_default(field.default.clone())
+            })
+            .collect::<Vec<_>>();
+        DefaultOverload::from_parameters(&parameters)
     }
 
     fn error_message_field(fields: &[Field]) -> Option<Identifier> {
@@ -627,46 +668,5 @@ impl Field {
             native_record_safe: ty.native_record_safe(),
             requires_identity: ty.requires_identity(),
         })
-    }
-}
-
-impl DefaultConstructor {
-    pub fn parameters(&self) -> &[Parameter<TypeName>] {
-        &self.parameters
-    }
-
-    pub fn arguments(&self) -> &ArgumentList {
-        &self.arguments
-    }
-
-    fn from_fields(fields: &[Field]) -> Vec<Self> {
-        let trailing_defaults = fields
-            .iter()
-            .rev()
-            .take_while(|field| field.default.is_some())
-            .count();
-        (1..=trailing_defaults)
-            .map(|omitted| {
-                let included = fields.len() - omitted;
-                Self {
-                    parameters: fields
-                        .iter()
-                        .take(included)
-                        .map(|field| Parameter::new(field.name.clone(), field.ty.clone()))
-                        .collect(),
-                    arguments: fields
-                        .iter()
-                        .enumerate()
-                        .map(|(index, field)| match index < included {
-                            true => Expression::identifier(field.name.clone()),
-                            false => field
-                                .default
-                                .clone()
-                                .expect("omitted record fields have defaults"),
-                        })
-                        .collect(),
-                }
-            })
-            .collect()
     }
 }

@@ -8,6 +8,8 @@
 //! arguments. Native method rendering can pass the prepared argument list
 //! forward without knowing how closure handles are stored.
 
+use boltffi_binding::HandlePresence;
+
 use crate::{
     bridge::{
         c::{self, Expression, Identifier, TypeFragment},
@@ -23,8 +25,8 @@ const JNI_BRIDGE: &str = "jni";
 #[non_exhaustive]
 pub struct ClosureParameter {
     name: Identifier,
-    call: Identifier,
-    release: Identifier,
+    call: Expression,
+    release: Expression,
 }
 
 impl ClosureParameter {
@@ -41,12 +43,12 @@ impl ClosureParameter {
     /// Returns the C bridge arguments for this closure parameter.
     pub fn c_arguments(&self) -> Vec<Expression> {
         vec![
-            Expression::identifier(self.call.clone()),
+            self.call.clone(),
             Expression::cast(
                 TypeFragment::new("void *"),
                 Expression::identifier(self.name.clone()),
             ),
-            Expression::identifier(self.release.clone()),
+            self.release.clone(),
         ]
     }
 
@@ -62,10 +64,27 @@ impl ClosureParameter {
                 bridge: JNI_BRIDGE,
                 invariant: "closure parameter has no JNI closure registration",
             })?;
+        let name = Identifier::escape(group.name())?;
+        let (call, release) = match group.presence() {
+            HandlePresence::Required => (
+                Expression::identifier(registration.call().clone()),
+                Expression::identifier(registration.release().clone()),
+            ),
+            HandlePresence::Nullable => (
+                Expression::new(format!("({name} == 0 ? NULL : {})", registration.call())),
+                Expression::new(format!("({name} == 0 ? NULL : {})", registration.release())),
+            ),
+            _ => {
+                return Err(Error::UnsupportedTarget {
+                    target: JNI_BRIDGE,
+                    shape: "closure handle presence",
+                });
+            }
+        };
         Ok(Self {
-            name: Identifier::escape(group.name())?,
-            call: registration.call().clone(),
-            release: registration.release().clone(),
+            name,
+            call,
+            release,
         })
     }
 }

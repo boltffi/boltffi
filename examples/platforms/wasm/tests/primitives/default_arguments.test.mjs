@@ -53,6 +53,35 @@ export async function run() {
     textCounter.dispose();
   }
 
+  const wideCounter = demo.DefaultedWideCounter.new();
+  try {
+    assert.equal(wideCounter.value(), 10n);
+  } finally {
+    wideCounter.dispose();
+  }
+
+  [0n, 5n, -9223372036854775808n, 9223372036854775807n].forEach((value) => {
+    const suppliedCounter = demo.DefaultedWideCounter.new(value);
+    try {
+      assert.equal(suppliedCounter.value(), value);
+    } finally {
+      suppliedCounter.dispose();
+    }
+  });
+
+  const originalWideCounter = demo.DefaultedWideCounter.new(20n);
+  try {
+    const adjustedCounter = demo.DefaultedWideCounter.withOffset(originalWideCounter);
+    try {
+      assert.equal(adjustedCounter.value(), 21n);
+      assert.throws(() => originalWideCounter.value(), /disposed/);
+    } finally {
+      adjustedCounter.dispose();
+    }
+  } finally {
+    originalWideCounter.dispose();
+  }
+
   assert.deepEqual(
     demo.DefaultedCounter.integerLimits(),
     { lower: -9223372036854775808n, upper: 18446744073709551615n },

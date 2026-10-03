@@ -14,9 +14,9 @@ use crate::{
         primitive::Primitive,
         render::{
             ClosureHandle, DirectVector, Enumeration, callback::CallbackHandle, class::ClassHandle,
-            record::Record, type_name::JavaType,
+            default_value::DefaultExpression, record::Record, type_name::JavaType,
         },
-        syntax::{Identifier, TypeIdentifier, TypeName},
+        syntax::{ArgumentList, Expression, Identifier, Statement, TypeIdentifier, TypeName},
     },
     target::jvm::method::{Parameter as JvmParameter, Parameters as JvmParameters, SlotWidth},
 };
@@ -25,6 +25,13 @@ use crate::{
 pub struct Parameter<T> {
     name: Identifier,
     ty: T,
+    default: Option<Expression>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DefaultOverload<T> {
+    parameters: Vec<Parameter<T>>,
+    arguments: ArgumentList,
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -50,7 +57,7 @@ pub struct CallSignature {
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct ErasedSignature {
     name: Identifier,
-    parameters: Vec<ValueType>,
+    parameters: Vec<TypeName>,
 }
 
 struct ParameterRender<'context, 'bindings> {
@@ -62,7 +69,16 @@ struct ParameterRender<'context, 'bindings> {
 
 impl<T> Parameter<T> {
     pub fn new(name: Identifier, ty: T) -> Self {
-        Self { name, ty }
+        Self {
+            name,
+            ty,
+            default: None,
+        }
+    }
+
+    pub fn with_default(mut self, default: Option<Expression>) -> Self {
+        self.default = default;
+        self
     }
 
     pub fn name(&self) -> &Identifier {
@@ -95,7 +111,7 @@ impl Parameter<ValueType> {
         package: Option<&JavaPackage>,
     ) -> Result<Self> {
         let name = Name::new(parameter.name()).parameter(version)?;
-        match parameter.payload().as_value() {
+        let signature = match parameter.payload().as_value() {
             Some(plan) => plan.render_with(&mut ParameterRender {
                 name,
                 version,
@@ -112,7 +128,73 @@ impl Parameter<ValueType> {
             )
             .map(ValueType::Reference)
             .map(|ty| Parameter::new(name, ty)),
-        }
+        }?;
+        let default = parameter
+            .meta()
+            .default()
+            .map(|value| {
+                DefaultExpression::parameter(parameter, value, signature.ty(), version, context)
+            })
+            .transpose()?;
+        Ok(signature.with_default(default))
+    }
+}
+
+impl<T: Clone> DefaultOverload<T> {
+    pub fn from_parameters(parameters: &[Parameter<T>]) -> Vec<Self> {
+        let defaults = parameters
+            .iter()
+            .filter(|parameter| parameter.default.is_some())
+            .count();
+        (1..=defaults)
+            .map(|omitted| {
+                let mut supplied_defaults = defaults - omitted;
+                let (included_parameters, forwarded_arguments) = parameters.iter().fold(
+                    (
+                        Vec::with_capacity(parameters.len() - omitted),
+                        Vec::with_capacity(parameters.len()),
+                    ),
+                    |(mut included_parameters, mut forwarded_arguments), parameter| {
+                        match &parameter.default {
+                            Some(default) if supplied_defaults == 0 => {
+                                forwarded_arguments.push(default.clone());
+                            }
+                            default => {
+                                supplied_defaults -= usize::from(default.is_some());
+                                included_parameters.push(Parameter::new(
+                                    parameter.name.clone(),
+                                    parameter.ty.clone(),
+                                ));
+                                forwarded_arguments
+                                    .push(Expression::identifier(parameter.name.clone()));
+                            }
+                        }
+                        (included_parameters, forwarded_arguments)
+                    },
+                );
+                Self {
+                    parameters: included_parameters,
+                    arguments: forwarded_arguments.into_iter().collect(),
+                }
+            })
+            .collect()
+    }
+
+    pub fn parameters(&self) -> &[Parameter<T>] {
+        &self.parameters
+    }
+
+    pub fn arguments(&self) -> &ArgumentList {
+        &self.arguments
+    }
+}
+
+impl DefaultOverload<ValueType> {
+    pub fn erased_signature(&self, name: &Identifier) -> ErasedSignature {
+        ErasedSignature::new(
+            name.clone(),
+            self.parameters.iter().map(|parameter| parameter.ty.clone()),
+        )
     }
 }
 
@@ -161,7 +243,10 @@ impl ErasedSignature {
     pub fn new(name: Identifier, parameters: impl IntoIterator<Item = ValueType>) -> Self {
         Self {
             name,
-            parameters: parameters.into_iter().collect(),
+            parameters: parameters
+                .into_iter()
+                .map(|parameter| parameter.type_name().erased())
+                .collect(),
         }
     }
 
@@ -208,11 +293,12 @@ impl ErasedSignature {
                     | "toString"
                     | "wait"
             ),
-            [ValueType::Primitive(Primitive::Long)] => name == "wait",
-            [
-                ValueType::Primitive(Primitive::Long),
-                ValueType::Primitive(Primitive::Int),
-            ] => name == "wait",
+            [duration] => name == "wait" && *duration == TypeName::primitive(Primitive::Long),
+            [duration, nanos] => {
+                name == "wait"
+                    && *duration == TypeName::primitive(Primitive::Long)
+                    && *nanos == TypeName::primitive(Primitive::Int)
+            }
             _ => false,
         }
     }
@@ -234,6 +320,13 @@ impl fmt::Display for ErasedSignature {
 }
 
 impl ReturnType {
+    pub fn forward(&self, invocation: Expression) -> Statement {
+        match self {
+            Self::Void => Statement::expression(invocation),
+            Self::Value(_) => Statement::return_value(invocation),
+        }
+    }
+
     pub fn require_void(&self) -> Result<()> {
         match self {
             Self::Void => Ok(()),

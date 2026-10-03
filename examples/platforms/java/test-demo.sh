@@ -138,7 +138,7 @@ run_case() {
 
   set_min_version "$config_version"
 
-  (cd "$demo_dir" && cargo run -q --manifest-path "$manifest_path" -p boltffi_cli -- generate java --output "$output_dir")
+  (cd "$demo_dir" && cargo run -q --manifest-path "$manifest_path" -p boltffi_cli -- --cargo-arg=--features --cargo-arg=async-initializers generate java --output "$output_dir")
 
   local point_file="$output_dir/com/boltffi/demo/Point.java"
   if ! grep -q "$expected_point_declaration" "$point_file"; then

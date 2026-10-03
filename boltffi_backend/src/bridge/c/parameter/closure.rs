@@ -1,6 +1,6 @@
 use crate::core::{Error, Result};
 
-use boltffi_binding::ClosureSignature;
+use boltffi_binding::{ClosureSignature, HandlePresence};
 
 use super::super::{C_BRIDGE_CONTRACT, Identifier, ReturnChannel};
 use super::{Parameter, ParameterGroup, ParameterIndex};
@@ -11,6 +11,7 @@ use super::{Parameter, ParameterGroup, ParameterIndex};
 pub struct ClosureParameter {
     name: Identifier,
     signature: ClosureSignature,
+    presence: HandlePresence,
     call: ParameterIndex,
     context: ParameterIndex,
     release: ParameterIndex,
@@ -20,6 +21,10 @@ pub struct ClosureParameter {
 }
 
 impl ClosureParameter {
+    pub(crate) fn presence(&self) -> HandlePresence {
+        self.presence
+    }
+
     pub(crate) fn return_channel(&self) -> ReturnChannel {
         self.return_channel
     }
@@ -64,6 +69,7 @@ impl ClosureParameter {
         call: usize,
         name: &Identifier,
         signature: &ClosureSignature,
+        presence: HandlePresence,
         parameters: &[Parameter],
         return_channel: ReturnChannel,
     ) -> Result<Self> {
@@ -92,6 +98,7 @@ impl ClosureParameter {
         Ok(Self {
             name: name.clone(),
             signature: signature.clone(),
+            presence,
             call: ParameterIndex::new(call),
             context: ParameterIndex::new(context),
             release: ParameterIndex::new(release),

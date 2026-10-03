@@ -172,7 +172,7 @@ for selected_platform in "${selected_platforms[@]}"; do
             run_step "kotlin test" gradle -p "$kotlin_dir" test
             ;;
         java)
-            run_step "pack java" run_boltffi pack java
+            run_step "pack java" run_boltffi --cargo-arg=--features --cargo-arg=async-initializers pack java
             run_step "java demo" "$java_dir/test-demo.sh" --auto
             ;;
         csharp)

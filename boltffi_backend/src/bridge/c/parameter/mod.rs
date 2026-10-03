@@ -10,7 +10,7 @@ mod group;
 
 use crate::core::Result;
 
-use boltffi_binding::ClosureSignature;
+use boltffi_binding::{ClosureSignature, HandlePresence};
 
 use super::{Identifier, ReturnChannel, Type};
 
@@ -61,6 +61,7 @@ enum ParameterRole {
     ClosureCall {
         name: Identifier,
         signature: ClosureSignature,
+        presence: HandlePresence,
         parameters: Vec<Parameter>,
         return_channel: ReturnChannel,
     },
@@ -226,6 +227,7 @@ impl Parameter {
     pub fn closure_call(
         name: &str,
         signature: &ClosureSignature,
+        presence: HandlePresence,
         ty: Type,
         parameters: Vec<Parameter>,
         return_channel: ReturnChannel,
@@ -236,6 +238,7 @@ impl Parameter {
             ParameterRole::ClosureCall {
                 name: Identifier::escape(name)?,
                 signature: signature.clone(),
+                presence,
                 parameters,
                 return_channel,
             },

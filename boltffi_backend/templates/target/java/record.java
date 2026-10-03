@@ -58,7 +58,7 @@ package {{ package }};
 {% include "target/java/constant.java" %}
 {% endfor %}
 {% for call in record.initializers() %}
-{% include "target/java/call/initializer.java" %}
+{% include "target/java/call/static_method.java" %}
 {% endfor %}{% for call in record.static_methods() %}
 {% include "target/java/call/static_method.java" %}
 {% endfor %}{% for call in record.instance_methods() %}
