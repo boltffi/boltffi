@@ -79,9 +79,48 @@ jobs:
       # passing `--allow-undefined` on a wasm cdylib link between 1.95 and 1.97,
       # so a host import left undeclared resolves there and fails for everyone
       # building on current stable.
-      - run: cargo test -p boltffi_cli --test wasm_wake_link
+      - run: cargo test -p boltffi_cli --test wasm_wake_link --test wasm_getrandom
         env:
           RUSTUP_TOOLCHAIN: stable
+
+  typescript-runtime:
+    name: TypeScript runtime
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          # caching handled by Swatinem/rust-cache below
+          cache: false
+          target: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+          cache-bin: false
+          prefix-key: v1-rust
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: runtime/typescript/package-lock.json
+      # The Rust fixture the end-to-end test loads through the runtime. The CLI is
+      # built first so the backend `--cfg` reaches only the wasm build; it goes in
+      # RUSTFLAGS because setup-rust-toolchain sets that, which would override a
+      # cargo config.
+      - run: cargo build -p boltffi_cli
+      - run: ../../../../target/debug/boltffi build wasm
+        working-directory: boltffi_cli/tests/fixtures/wasm_getrandom
+        env:
+          CARGO_TARGET_DIR: ${{ github.workspace }}/target/fixtures
+          RUSTFLAGS: --cfg getrandom_backend="custom"
+      - run: npm ci
+        working-directory: runtime/typescript
+      - run: npx tsc --noEmit
+        working-directory: runtime/typescript
+      - run: npm test
+        working-directory: runtime/typescript
+        env:
+          BOLTFFI_GETRANDOM_FIXTURE_WASM: ${{ github.workspace }}/target/fixtures/wasm32-unknown-unknown/debug/wasm_getrandom_fixture.wasm
 
   build:
     name: Build

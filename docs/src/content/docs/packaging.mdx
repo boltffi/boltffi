@@ -694,6 +694,10 @@ boltffi passes the features explicitly instead, reading them from your own cargo
 build so anything you enable through `RUSTFLAGS`, `.cargo/config.toml` or a
 pinned toolchain is included. Stripping in release needs no extra configuration.
 
+### Randomness
+
+Crates that draw from `getrandom` (`rand`, `uuid`'s `v4`, …) need a backend on `wasm32-unknown-unknown`. [WebAssembly](/docs/wasm#randomness) has the setup.
+
 ### Using in a Bundler (Vite, webpack)
 
 Install the package and import directly:

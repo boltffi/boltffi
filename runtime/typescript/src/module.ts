@@ -1723,6 +1723,59 @@ export interface BoltFFIImports {
   bind?: (module: BoltFFIModule) => void;
 }
 
+/** `getRandomValues` fills at most this many bytes per call. */
+const RANDOM_FILL_CHUNK = 65536;
+
+/** What `env.__boltffi_getrandom` returns; `boltffi_core` uses the same codes. */
+export const RandomFillStatus = {
+  Filled: 0,
+  Unavailable: 1,
+  Failed: 2,
+} as const;
+
+/**
+ * Builds `env.__boltffi_getrandom(ptr, len)`, the entropy source behind
+ * `boltffi::wasm_getrandom_backend!`: it fills `len` bytes of wasm memory at
+ * `ptr` from `crypto.getRandomValues`. `memory` is read per call, since the
+ * import object exists before the instance does: a call from the module's
+ * start function, before instantiation finishes, returns `Unavailable`.
+ */
+export function createRandomFillImport(
+  memory: () => WebAssembly.Memory | undefined
+): (ptr: number, len: number) => number {
+  return (ptr, len) => {
+    const crypto = globalThis.crypto;
+    const buffer = memory()?.buffer;
+    if (typeof crypto?.getRandomValues !== "function" || buffer === undefined) {
+      return RandomFillStatus.Unavailable;
+    }
+    const start = ptr >>> 0;
+    const end = start + (len >>> 0);
+    if (end > buffer.byteLength) {
+      return RandomFillStatus.Failed;
+    }
+    // `getRandomValues` refuses views over shared memory, so a threaded
+    // module is filled through a scratch buffer instead.
+    const shared =
+      typeof SharedArrayBuffer !== "undefined" && buffer instanceof SharedArrayBuffer;
+    const scratch = shared ? new Uint8Array(Math.min(RANDOM_FILL_CHUNK, end - start)) : null;
+    try {
+      for (let offset = start; offset < end; offset += RANDOM_FILL_CHUNK) {
+        const length = Math.min(RANDOM_FILL_CHUNK, end - offset);
+        const target = new Uint8Array(buffer, offset, length);
+        if (scratch === null) {
+          crypto.getRandomValues(target);
+        } else {
+          target.set(crypto.getRandomValues(scratch.subarray(0, length)));
+        }
+      }
+    } catch {
+      return RandomFillStatus.Failed;
+    }
+    return RandomFillStatus.Filled;
+  };
+}
+
 export async function instantiateBoltFFI(
   source: BufferSource | Response | WebAssembly.Module,
   expectedVersion: number,
@@ -1732,11 +1785,13 @@ export async function instantiateBoltFFI(
   const asyncManager = new AsyncFutureManager();
   const streamManager = new StreamPollManager();
 
+  let memory: WebAssembly.Memory | undefined;
   const importObject: WebAssembly.Imports = {
     ...imports?.wasmBindgen?.imports,
     env: {
       __boltffi_wake: (handle: number) => asyncManager.wake(handle),
       __boltffi_stream_wake: (handle: number, result: number) => streamManager.wake(handle, result),
+      __boltffi_getrandom: createRandomFillImport(() => memory),
       ...(imports?.env ?? {}),
     },
   };
@@ -1749,6 +1804,7 @@ export async function instantiateBoltFFI(
       const wasmSource = source instanceof Response ? await source.arrayBuffer() : source;
       ({ instance } = await WebAssembly.instantiate(wasmSource, importObject));
     }
+    memory = instance.exports.memory as WebAssembly.Memory;
     const exports = instance.exports as BoltFFIExports;
     const actualVersion = exports.boltffi_wasm_abi_version();
     if (actualVersion !== expectedVersion) {
@@ -1775,11 +1831,13 @@ export function instantiateBoltFFISync(
   const asyncManager = new AsyncFutureManager();
   const streamManager = new StreamPollManager();
 
+  let memory: WebAssembly.Memory | undefined;
   const importObject: WebAssembly.Imports = {
     ...imports?.wasmBindgen?.imports,
     env: {
       __boltffi_wake: (handle: number) => asyncManager.wake(handle),
       __boltffi_stream_wake: (handle: number, result: number) => streamManager.wake(handle, result),
+      __boltffi_getrandom: createRandomFillImport(() => memory),
       ...(imports?.env ?? {}),
     },
   };
@@ -1787,6 +1845,7 @@ export function instantiateBoltFFISync(
   try {
     const wasmModule = new WebAssembly.Module(source);
     const instance = new WebAssembly.Instance(wasmModule, importObject);
+    memory = instance.exports.memory as WebAssembly.Memory;
     const exports = instance.exports as BoltFFIExports;
     const actualVersion = exports.boltffi_wasm_abi_version();
     if (actualVersion !== expectedVersion) {
