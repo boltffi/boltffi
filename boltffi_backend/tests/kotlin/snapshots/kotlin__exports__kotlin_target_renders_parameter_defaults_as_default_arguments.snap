@@ -59,6 +59,7 @@ private object Native {
     @JvmStatic external fun boltffi_async_function_demo_async_default_cancel(handle: Long): Unit
     @JvmStatic external fun boltffi_async_function_demo_async_default_free(handle: Long): Unit
     @JvmStatic external fun boltffi_async_function_demo_async_default_panic_message(handle: Long): ByteArray?
+    @JvmStatic external fun boltffi_function_demo_apply_optional_closure(value: Int, callback: Long): Int
     @JvmStatic external fun boltffi_function_demo_default_amount(amount: java.nio.ByteBuffer, __boltffi_amount_len: Int): ByteArray?
     @JvmStatic external fun boltffi_function_demo_span(start: Long, end: Long): Long
     @JvmStatic external fun boltffi_function_demo_throttle(limit: java.nio.ByteBuffer, __boltffi_limit_len: Int): ByteArray?
@@ -70,6 +71,32 @@ private object Native {
 
     @JvmStatic fun boltffiFutureContinuationCallback(handle: Long, pollResult: Byte) {
         BoltFfiAsync.resume(handle, pollResult)
+    }
+}
+
+fun interface ClosureI32ToI32 {
+    fun invoke(arg0: Int): Int
+}
+
+private object ClosureI32ToI32Callbacks {
+    private val map = java.util.concurrent.ConcurrentHashMap<Long, ClosureI32ToI32>()
+    private val counter = java.util.concurrent.atomic.AtomicLong(1L)
+
+    fun insert(value: ClosureI32ToI32): Long {
+        val handle = counter.getAndAdd(2L)
+        map[handle] = value
+        return handle
+    }
+
+    @JvmStatic
+    fun free(handle: Long) {
+        map.remove(handle)
+    }
+
+    @JvmStatic
+    fun call(handle: Long, arg0: Int): Int {
+        val impl = map[handle] ?: error("ClosureI32ToI32Callbacks: invalid handle $handle")
+        return impl.invoke(arg0)
     }
 }
 
@@ -701,6 +728,10 @@ suspend fun asyncDefault(value: UInt = 9.toUInt()): UInt {
         free = { future -> Native.boltffi_async_function_demo_async_default_free(future) },
         cancel = { future -> Native.boltffi_async_function_demo_async_default_cancel(future) },
     )
+}
+
+fun applyOptionalClosure(value: Int, callback: ClosureI32ToI32? = null): Int {
+    return Native.boltffi_function_demo_apply_optional_closure(value, callback?.let { __boltffi_closure -> ClosureI32ToI32Callbacks.insert(__boltffi_closure) } ?: 0L)
 }
 
 fun defaultAmount(amount: DefaultAmount = DefaultAmount(5)): DefaultAmount {

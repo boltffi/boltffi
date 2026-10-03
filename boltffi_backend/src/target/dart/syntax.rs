@@ -1,4 +1,4 @@
-use std::fmt;
+use std::fmt::{self, Write};
 
 use crate::core::{Error, LanguageSyntax, Result, syntax::sealed};
 
@@ -27,6 +27,7 @@ pub struct ArgumentList(Vec<Expression>);
 pub struct Parameter {
     name: Identifier,
     ty: TypeFragment,
+    default: Option<Literal>,
 }
 
 impl LanguageSyntax for Syntax {
@@ -203,10 +204,6 @@ impl TypeFragment {
         Self::new(format!("{self}?"))
     }
 
-    pub fn optional_function(self) -> Self {
-        Self::new(format!("({self})?"))
-    }
-
     pub fn future(self) -> Self {
         Self::new(format!("Future<{self}>"))
     }
@@ -225,6 +222,26 @@ impl Literal {
     pub fn new(fragment: impl Into<String>) -> Self {
         Self(fragment.into())
     }
+
+    pub fn string(value: &str) -> Self {
+        let mut source = String::with_capacity(value.len() + 2);
+        source.push('"');
+        value.chars().for_each(|character| match character {
+            '"' => source.push_str("\\\""),
+            '\\' => source.push_str("\\\\"),
+            '$' => source.push_str("\\$"),
+            '\n' => source.push_str("\\n"),
+            '\r' => source.push_str("\\r"),
+            '\t' => source.push_str("\\t"),
+            character if character.is_control() => {
+                write!(source, "\\u{{{:x}}}", u32::from(character))
+                    .expect("writing a string literal to a String cannot fail");
+            }
+            character => source.push(character),
+        });
+        source.push('"');
+        Self(source)
+    }
 }
 
 impl Expression {
@@ -239,7 +256,16 @@ impl Expression {
 
 impl Parameter {
     pub fn new(name: Identifier, ty: TypeFragment) -> Self {
-        Self { name, ty }
+        Self {
+            name,
+            ty,
+            default: None,
+        }
+    }
+
+    pub fn with_default(mut self, default: Literal) -> Self {
+        self.default = Some(default);
+        self
     }
 
     pub fn name(&self) -> &Identifier {
@@ -249,11 +275,19 @@ impl Parameter {
     pub fn ty(&self) -> &TypeFragment {
         &self.ty
     }
+
+    pub fn default(&self) -> Option<&Literal> {
+        self.default.as_ref()
+    }
 }
 
 impl fmt::Display for Parameter {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(formatter, "{} {}", self.ty, self.name)
+        write!(formatter, "{} {}", self.ty, self.name)?;
+        if let Some(default) = &self.default {
+            write!(formatter, " = {default}")?;
+        }
+        Ok(())
     }
 }
 

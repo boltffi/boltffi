@@ -12,7 +12,7 @@
   "dependencies": {
     "@astrojs/mdx": "^8.0.0",
     "@astrojs/prism": "^4.0.0",
-    "@astrojs/react": "^6.0.0",
+    "@astrojs/react": "^7.0.0",
     "@astrojs/sitemap": "^3.7.0",
     "@radix-ui/react-dropdown-menu": "^2.1.16",
     "@radix-ui/react-label": "^2.1.8",

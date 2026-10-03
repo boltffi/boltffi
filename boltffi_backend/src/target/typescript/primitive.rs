@@ -2,7 +2,7 @@ use boltffi_binding::Primitive;
 
 use crate::core::{Error, Result};
 
-use super::syntax::{Identifier, TypeName};
+use super::syntax::{Expression, Identifier, TypeName};
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct Scalar {
@@ -35,18 +35,26 @@ impl Scalar {
     pub fn ty(self) -> TypeName {
         match self.primitive {
             Primitive::Bool => TypeName::boolean(),
+            _ => self.carrier_type(),
+        }
+    }
+
+    pub fn carrier_type(self) -> TypeName {
+        match self.primitive {
             Primitive::I64 | Primitive::U64 => TypeName::bigint(),
-            Primitive::I8
-            | Primitive::U8
-            | Primitive::I16
-            | Primitive::U16
-            | Primitive::I32
-            | Primitive::U32
-            | Primitive::ISize
-            | Primitive::USize
-            | Primitive::F32
-            | Primitive::F64 => TypeName::number(),
-            _ => unreachable!(),
+            _ => TypeName::number(),
+        }
+    }
+
+    pub fn lift(self, value: Expression) -> Expression {
+        match self.primitive {
+            Primitive::Bool => value.not_zero(),
+            Primitive::U32 | Primitive::USize => value.unsigned_shift_right(0),
+            Primitive::U64 => Expression::invoke(
+                Identifier::known("__boltffiAsUintN"),
+                [Expression::integer(64), value].into_iter().collect(),
+            ),
+            _ => value,
         }
     }
 

@@ -1852,6 +1852,123 @@ Coordinates are plain `f64`.
     }
 
     #[test]
+    fn python_target_renders_parameter_defaults_from_the_shared_fixture() {
+        let output = target()
+            .render(&bindings(include_str!(
+                "../../../../tests/fixtures/source/exports/parameter_defaults.rs"
+            )))
+            .expect("Python parameter defaults should render");
+        let init = file(&output, "demo/__init__.py");
+        let stub = file(&output, "demo/__init__.pyi");
+        [
+            "greeting: str = \"world\"",
+            "times: int = 3",
+            "offset: int = -1",
+            "shout: bool = True",
+            "ratio: float = 0.5",
+            "suffix: str | None = None",
+            "limit: int | None = 7",
+            "def __init__(self, port: int = 8080)",
+            "def port(self, mapped: bool = False)",
+            "async def async_default(value: int = 9)",
+            "callback: Callable[..., object] | None = None",
+            "def span(start: int = -9223372036854775808, end: int = 18446744073709551615)",
+            "value: float = -0.0",
+            "email: str | None = \"mailto:ada@example.com\"",
+        ]
+        .into_iter()
+        .for_each(|signature| {
+            assert!(
+                init.contains(signature),
+                "missing runtime signature {signature}"
+            );
+            assert!(
+                stub.contains(signature),
+                "missing stub signature {signature}"
+            );
+        });
+        assert!(init.contains("if amount is ...:\n        amount = DefaultAmount(value=5)"));
+        assert!(init.contains("if mode is ...:\n            mode = DefaultMode.QUIET"));
+        assert!(stub.contains("amount: DefaultAmount = ..."));
+        assert!(
+            init.contains(
+                "def with_offset(cls, start: int = 20, offset: int | _EllipsisType = ...)"
+            )
+        );
+        assert!(stub.contains("def with_offset(cls, start: int, offset: int)"));
+        assert!(stub.contains("def with_offset(cls, *, start: int = 20, offset: int)"));
+    }
+
+    #[test]
+    fn python_uuid_defaults_construct_uuid_values_before_the_native_call() {
+        let output = target()
+            .render(&bindings(
+                r#"
+                #[export]
+                pub fn default_uuid(
+                    #[boltffi::default("01234567-89ab-cdef-0123-456789abcdef")] uuid: uuid::Uuid,
+                ) -> uuid::Uuid { uuid }
+                "#,
+            ))
+            .expect("UUID parameter default should render");
+        let init = file(&output, "demo/__init__.py");
+        let stub = file(&output, "demo/__init__.pyi");
+        assert!(init.contains("uuid: _UUID | _EllipsisType = ..."));
+        assert!(init.contains(
+            "if uuid is ...:\n        uuid = _UUID(\"01234567-89ab-cdef-0123-456789abcdef\")"
+        ));
+        assert!(stub.contains("def default_uuid(uuid: _UUID = ...) -> _UUID"));
+    }
+
+    #[test]
+    fn python_stubs_allow_omitting_interleaved_defaults_without_exponential_overloads() {
+        let defaults = (0..12)
+            .map(|index| format!("#[boltffi::default(3)] value{index}: i32"))
+            .chain(["required: i32".to_owned()])
+            .collect::<Vec<_>>()
+            .join(", ");
+        let output = target()
+            .render(&bindings(&format!(
+                "#[export] pub fn many_defaults({defaults}) -> i32 {{ required }}"
+            )))
+            .expect("interleaved parameter defaults should render");
+        let init = file(&output, "demo/__init__.py");
+        let stub = file(&output, "demo/__init__.pyi");
+        assert!(init.contains("required: int | _EllipsisType = ..."));
+        assert!(init.contains("raise TypeError(\"missing required argument 'required'\")"));
+        assert!(stub.contains("def many_defaults(*, value0: int = 3"));
+        assert!(stub.matches("def many_defaults(").count() <= 13);
+        assert!(!stub.contains("_EllipsisType"));
+    }
+
+    #[test]
+    fn python_nullable_closures_accept_none_without_changing_required_closures() {
+        let output = target()
+            .render(&bindings(
+                r#"
+                #[export]
+                pub fn optional(#[boltffi::default(None)] callback: Option<Box<dyn Fn(i32) -> i32>>) {}
+
+                #[export]
+                pub fn required(callback: Box<dyn Fn(i32) -> i32>) {}
+                "#,
+            ))
+            .expect("nullable and required closure parameters should render");
+        let extension = extension(&output);
+        assert_eq!(extension.matches("if (value == Py_None)").count(), 1);
+        assert_eq!(
+            extension.matches("if (!PyCallable_Check(value))").count(),
+            2
+        );
+        assert!(extension.contains(
+            "*out_call = NULL;\n        *out_context = NULL;\n        *out_release = NULL;"
+        ));
+        let stub = file(&output, "demo/__init__.pyi");
+        assert!(stub.contains("def optional(callback: Callable[..., object] | None = None)"));
+        assert!(stub.contains("def required(callback: Callable[..., object])"));
+    }
+
+    #[test]
     fn python_target_renders_record_field_defaults() {
         let output = target()
             .render(&bindings(
@@ -2031,12 +2148,12 @@ Coordinates are plain `f64`.
         let init = file(&output, "demo/__init__.py");
         let stub = file(&output, "demo/__init__.pyi");
 
-        assert!(init.contains("import uuid"));
-        assert!(init.contains("def _boltffi_wire_uuid(value: uuid.UUID | str) -> bytes:"));
-        assert!(init.contains("def echo(value: uuid.UUID) -> uuid.UUID:"));
-        assert!(init.contains("return uuid.UUID(bytes=high + low)"));
-        assert!(stub.contains("import uuid"));
-        assert!(stub.contains("def echo(value: uuid.UUID) -> uuid.UUID: ..."));
+        assert!(init.contains("from uuid import UUID as _UUID"));
+        assert!(init.contains("def _boltffi_wire_uuid(value: _UUID | str) -> bytes:"));
+        assert!(init.contains("def echo(value: _UUID) -> _UUID:"));
+        assert!(init.contains("return _UUID(bytes=high + low)"));
+        assert!(stub.contains("from uuid import UUID as _UUID"));
+        assert!(stub.contains("def echo(value: _UUID) -> _UUID: ..."));
     }
 
     #[test]

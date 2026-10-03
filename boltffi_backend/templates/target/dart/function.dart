@@ -1,3 +1,42 @@
-{{ function.documentation() }}{% if function.placement().factory() %}factory {{ function.placement().owner() }}{% match function.placement().constructor() %}{% when Some with (constructor) %}.{{ constructor }}{% when None %}{% endmatch %}({% for parameter in function.parameters() %}{{ parameter }}{% if !loop.last %}, {% endif %}{% endfor %}){% else %}{{ function.placement().static_keyword() }}{{ function.return_type() }} {{ function.placement().getter_keyword() }}{{ function.name() }}{% if !function.placement().getter() %}({% for parameter in function.parameters() %}{{ parameter }}{% if !loop.last %}, {% endif %}{% endfor %}{% if function.cancellable() %}{% if !function.parameters().is_empty() %}, {% endif %}{$$BoltCancellationToken? {{ function.cancellation_token() }}}{% endif %}){% endif %}{% endif %} {
+{{ function.documentation() -}}
+{%- if function.placement().factory() -%}
+factory {{ function.placement().owner() }}
+{%- match function.placement().constructor() -%}
+{%- when Some with (constructor) -%}
+.{{ constructor }}
+{%- when None -%}
+{%- endmatch -%}
+{%- else -%}
+{{ function.placement().static_keyword() }}{{ function.return_type() }} {{ function.placement().getter_keyword() }}{{ function.name() }}
+{%- endif -%}
+{%- if !function.placement().getter() -%}
+(
+{%- for parameter in function.positional_parameters() -%}
+{{ parameter }}
+{%- if !loop.last -%}
+{{ ", " }}
+{%- endif -%}
+{%- endfor -%}
+{%- if function.has_named_parameters() -%}
+{%- if !function.positional_parameters().is_empty() -%}
+{{ ", " }}
+{%- endif -%}
+{{ "{" }}
+{%- for parameter in function.named_parameters() -%}
+{%- if parameter.default().is_none() -%}
+{{ "required " }}
+{%- endif -%}
+{{ parameter }}
+{%- if !loop.last || function.cancellable() -%}
+{{ ", " }}
+{%- endif -%}
+{%- endfor -%}
+{%- if function.cancellable() -%}
+$$BoltCancellationToken? {{ function.cancellation_token() }}
+{%- endif -%}
+{{ "}" }}
+{%- endif -%}
+)
+{%- endif %} {
 {{ function.body() }}
 }

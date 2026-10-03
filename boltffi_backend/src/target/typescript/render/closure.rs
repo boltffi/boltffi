@@ -1,6 +1,6 @@
 use askama::Template as AskamaTemplate;
 use boltffi_binding::{
-    DirectValueType, OutgoingParam, ParamPlan, Primitive, ReturnPlan, TypeRef, Wasm32,
+    DirectValueType, EnumDecl, OutgoingParam, ParamPlan, Primitive, ReturnPlan, TypeRef, Wasm32,
     WasmIncomingClosure, wasm32,
 };
 
@@ -131,38 +131,42 @@ impl ClosureAdapter {
                 ),
                 ReturnPlan::DirectViaReturnSlot {
                     ty: DirectValueType::Primitive(primitive),
-                } => (
-                    Scalar::new(*primitive)?.ty(),
-                    Self::primitive_signature(*primitive)?.to_owned(),
-                    ImportedParameter::carrier_type(*primitive)?,
-                    false,
-                    false,
-                    Some(*primitive),
-                    Vec::new(),
-                ),
+                } => {
+                    let scalar = Scalar::new(*primitive)?;
+                    (
+                        scalar.ty(),
+                        Self::primitive_signature(*primitive)?.to_owned(),
+                        scalar.carrier_type(),
+                        false,
+                        false,
+                        Some(*primitive),
+                        Vec::new(),
+                    )
+                }
                 ReturnPlan::DirectViaReturnSlot {
                     ty: DirectValueType::Enum(id),
-                } => (
-                    context
-                        .enumeration(*id)
-                        .map(|enumeration| Name::new(enumeration.name()).type_name())
-                        .ok_or(Error::UnsupportedTarget {
+                } => {
+                    let enumeration = context.enumeration(*id).ok_or(Error::UnsupportedTarget {
+                        target: "typescript",
+                        shape: "closure enum without declaration",
+                    })?;
+                    let EnumDecl::CStyle(enumeration) = enumeration else {
+                        return Err(Error::UnsupportedTarget {
                             target: "typescript",
-                            shape: "closure enum without declaration",
-                        })?,
-                    context
-                        .enumeration(*id)
-                        .map(|enumeration| Name::new(enumeration.name()).type_name().to_string())
-                        .ok_or(Error::UnsupportedTarget {
-                            target: "typescript",
-                            shape: "closure enum without declaration",
-                        })?,
-                    TypeName::number(),
-                    false,
-                    false,
-                    None,
-                    Vec::new(),
-                ),
+                            shape: "direct data enum closure return",
+                        });
+                    };
+                    let name = Name::new(enumeration.name()).type_name();
+                    (
+                        name.clone(),
+                        name.to_string(),
+                        Scalar::new(enumeration.repr().primitive())?.carrier_type(),
+                        false,
+                        false,
+                        None,
+                        Vec::new(),
+                    )
+                }
                 ReturnPlan::DirectViaOutPointer {
                     ty: DirectValueType::Record(id),
                 } => {

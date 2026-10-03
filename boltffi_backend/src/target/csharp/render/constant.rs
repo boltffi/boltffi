@@ -34,8 +34,9 @@ impl Constant {
             ConstantValueDecl::Inline { ty, value, .. } => {
                 let name = Name::new(declaration.name()).pascal()?;
                 let rendered_type = type_name::type_ref_qualified(ty, namespace, context)?;
-                let value =
-                    DefaultExpression::render(ty, value, Some(namespace), context)?.to_string();
+                let value = DefaultExpression::render(ty, value, Some(namespace), context)?
+                    .into_expression()
+                    .to_string();
                 let modifier = if is_compile_time_constant(declaration.value(), context) {
                     "public const"
                 } else {

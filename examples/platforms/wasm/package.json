@@ -4,7 +4,8 @@
   "scripts": {
     "build:ts": "tsc",
     "build:browser": "vite build",
-    "test": "node test.mjs",
+    "test": "npm run test:types && node test.mjs",
+    "test:types": "tsc -p tsconfig.tests.json",
     "test:browser": "playwright test",
     "test:package": "node test-package.mjs"
   },

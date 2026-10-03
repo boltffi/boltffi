@@ -1,11 +1,12 @@
 use askama::Template;
 
 use boltffi_binding::{
-    CanonicalName, ClosureReturn, DirectValueType, DirectVectorElementType, Direction, DocComment,
-    EnumId, ErrorChannel, ErrorPlacement, ExecutionDecl, ExportedCallable, ExportedMethodDecl,
-    FunctionDecl, HandlePresence, HandleTarget, IncomingParam, InitializerDecl, InitializerId,
-    IntoRust, Native, NativeSymbol, OutOfRust, ParamDecl, ParamPlanRender, Primitive, ReadPlan,
-    Receive, RecordId, ReturnPlanRender, ReturnValueSlot, Surface, TypeRef, WritePlan, native,
+    CanonicalName, ClosureReturn, DefaultValue, DirectValueType, DirectVectorElementType,
+    Direction, DocComment, EnumId, ErrorChannel, ErrorPlacement, ExecutionDecl, ExportedCallable,
+    ExportedMethodDecl, FunctionDecl, HandlePresence, HandleTarget, IncomingParam, InitializerDecl,
+    InitializerId, IntoRust, Native, NativeSymbol, OutOfRust, ParamDecl, ParamPlanRender,
+    Primitive, ReadPlan, Receive, RecordId, ReturnPlanRender, ReturnValueSlot, Surface, TypeRef,
+    WritePlan, native,
 };
 
 use crate::{
@@ -2159,15 +2160,22 @@ impl Parameter {
         let default = decl
             .meta()
             .default()
-            .map(|default| {
-                let ty = decl
-                    .payload()
-                    .as_value()
-                    .and_then(|plan| plan.value_type())
-                    .ok_or_else(|| {
+            .map(|default| match decl.payload() {
+                IncomingParam::Value(plan) => {
+                    let ty = plan.value_type().ok_or_else(|| {
                         SwiftHost::unsupported("default value for this parameter type")
                     })?;
-                DefaultExpression::render(&ty, default, context)
+                    DefaultExpression::render(&ty, default, context)
+                }
+                IncomingParam::Closure(closure)
+                    if closure.presence() == HandlePresence::Nullable
+                        && matches!(default, DefaultValue::Null) =>
+                {
+                    Ok(Expression::nil())
+                }
+                IncomingParam::Closure(_) => {
+                    Err(SwiftHost::unsupported("non-null closure default"))
+                }
             })
             .transpose()?;
         let mut plan = ParameterPlan {

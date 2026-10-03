@@ -8,7 +8,7 @@ using static Demo.Demo;
 
 namespace BoltFFI.Demo.Tests;
 
-public static class DemoTest
+public static partial class DemoTest
 {
     private static string currentDemoCase;
 
@@ -37,6 +37,7 @@ public static class DemoTest
             TestBlittableRecords();
             TestRecordsWithStrings();
             TestRecordsWithDefaults();
+            await TestDefaultArguments();
             TestNestedRecords();
             TestAssociatedConstants();
             TestSingleElementTuple();

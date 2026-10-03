@@ -41,6 +41,13 @@ const packagePath = "/examples/platforms/wasm/dist";
         line: demo.echoLine(demo.makeLine(0, 0, 3, 4)),
         callback: demo.applyClosure((value) => demo.wasmJsClosure(value), 5),
         asyncSum: await demo.asyncAdd(3, 7),
+        defaults: {
+          greeting: demo.repeatGreeting("ada"),
+          limit: demo.describeLimit(),
+          nullLimit: demo.describeLimit(undefined, null),
+          timeout: demo.defaultTimeoutSeconds(),
+          asynchronous: await demo.asyncDefault(),
+        },
         count,
         largeRoundtrip,
       };
@@ -51,6 +58,10 @@ const packagePath = "/examples/platforms/wasm/dist";
       constants: [true, false],
       promise: "promises 🦀", line: { start: { x: 0, y: 0 }, end: { x: 3, y: 4 } },
       callback: 15, asyncSum: 10, count: 3, largeRoundtrip: true,
+      defaults: {
+        greeting: "hello ada, hello ada", limit: "none:7", nullLimit: "none:unlimited",
+        timeout: 1.5, asynchronous: 9,
+      },
     });
   });
 });

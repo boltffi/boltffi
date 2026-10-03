@@ -1,4 +1,4 @@
-use boltffi_binding::{CustomTypeId, DefaultValue, EnumDecl, Native, TypeRef};
+use boltffi_binding::{BuiltinType, CustomTypeId, DefaultValue, EnumDecl, Native, TypeRef};
 
 use crate::core::{
     RenderContext, Result,
@@ -36,6 +36,12 @@ impl DefaultExpression {
         if let TypeRef::Custom(custom_type) = ty {
             return Self::custom(*custom_type, value, context);
         }
+        if let TypeRef::Builtin(BuiltinType::Uuid) = ty {
+            return match value {
+                DefaultValue::String(value) => Self::uuid(value).map(Self::Constant),
+                _ => unsupported("UUID default other than a string"),
+            };
+        }
         if let (
             TypeRef::Enum(enumeration),
             DefaultValue::EnumVariant {
@@ -46,7 +52,7 @@ impl DefaultExpression {
             && matches!(context.enumeration(*enumeration), Some(EnumDecl::Data(_)))
         {
             return Ok(Self::Constant(Literal::new(format!(
-                "{}${}()",
+                "const {}${}()",
                 Name::new(enum_name).upper_camel()?,
                 Name::new(variant_name).upper_camel()?
             ))));
@@ -95,9 +101,17 @@ impl DefaultExpression {
     fn literal(value: &DefaultValue) -> Result<Literal> {
         let source = match value {
             DefaultValue::Bool(value) => value.to_string(),
+            DefaultValue::Integer(value) if value.get() > i128::from(i64::MAX) => {
+                format!("0x{:x}", value.get())
+            }
             DefaultValue::Integer(value) => value.get().to_string(),
-            DefaultValue::Float(value) => value.to_f64().to_string(),
-            DefaultValue::String(value) => format!("{value:?}"),
+            DefaultValue::Float(value) => match value.to_f64() {
+                value if value.is_nan() => "double.nan".to_owned(),
+                value if value == f64::INFINITY => "double.infinity".to_owned(),
+                value if value == f64::NEG_INFINITY => "double.negativeInfinity".to_owned(),
+                value => format!("{value:?}"),
+            },
+            DefaultValue::String(value) => return Ok(Literal::string(value)),
             DefaultValue::EnumVariant {
                 enum_name,
                 variant_name,
@@ -110,5 +124,30 @@ impl DefaultExpression {
             _ => return unsupported("unknown default value"),
         };
         Ok(Literal::new(source))
+    }
+
+    fn uuid(value: &str) -> Result<Literal> {
+        match value.len() {
+            32 => {}
+            36 if [8, 13, 18, 23]
+                .into_iter()
+                .all(|index| value.as_bytes()[index] == b'-') => {}
+            _ => return unsupported("invalid UUID default"),
+        }
+        let digits = value
+            .chars()
+            .filter(|character| *character != '-')
+            .collect::<String>();
+        if digits.len() != 32 || !digits.bytes().all(|digit| digit.is_ascii_hexdigit()) {
+            return unsupported("invalid UUID default");
+        }
+        let Ok(uuid_bits) = u128::from_str_radix(&digits, 16) else {
+            return unsupported("invalid UUID default");
+        };
+        let high_bits = uuid_bits >> 64;
+        let low_bits = uuid_bits & u128::from(u64::MAX);
+        Ok(Literal::new(format!(
+            "const $$BoltUUIDValue(0x{high_bits:016x}, 0x{low_bits:016x})"
+        )))
     }
 }

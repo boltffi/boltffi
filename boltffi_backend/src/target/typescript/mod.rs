@@ -195,6 +195,12 @@ mod tests {
                 pub fn echo_u64(value: u64) -> u64 { value }
 
                 #[export]
+                pub fn echo_u32(value: u32) -> u32 { value }
+
+                #[export]
+                pub fn echo_usize(value: usize) -> usize { value }
+
+                #[export]
                 pub fn echo_string(value: String) -> String { value }
 
                 #[export]
@@ -746,6 +752,29 @@ mod tests {
     }
 
     #[test]
+    fn renders_unsigned_returns_as_unsigned_javascript_values() {
+        let output = TypeScriptHost::new("demo")
+            .expect("TypeScript host")
+            .into_target()
+            .render(&bindings())
+            .expect("rendered module");
+        let module = output
+            .files()
+            .iter()
+            .find(|file| file.path().as_path().ends_with("demo.ts"))
+            .expect("browser module");
+
+        [
+            "return ((_exports.boltffi_function_demo_echo_u32 as Function)(value) >>> 0);",
+            "return ((_exports.boltffi_function_demo_echo_usize as Function)(value) >>> 0);",
+            "return __boltffiAsUintN(64, (_exports.boltffi_function_demo_echo_u64 as Function)(value));",
+            "return (_exports.boltffi_function_demo_add as Function)(left, right);",
+        ]
+        .into_iter()
+        .for_each(|expected| assert!(module.contents().contains(expected), "missing {expected}"));
+    }
+
+    #[test]
     fn renders_primitive_functions_through_the_wasm_surface() {
         let output = TypeScriptHost::new("demo")
             .expect("host constructs")
@@ -1029,11 +1058,7 @@ mod tests {
                 .contains("export const label: string = \"boltffi\";")
         );
         assert!(browser.contents().contains("export let bytes: Uint8Array;"));
-        assert!(
-            browser
-                .contents()
-                .contains("export const mode: Mode = Mode.Fast;")
-        );
+        assert!(browser.contents().contains("export const mode: Mode = 1;"));
         assert!(
             browser
                 .contents()
@@ -1598,6 +1623,56 @@ mod tests {
                 .contents()
                 .contains("export function keepTimestamp(value: Timestamp): Timestamp")
         );
+    }
+
+    #[test]
+    fn renders_callable_defaults_from_shared_fixture() {
+        let source = boltffi_scan::scan_file(
+            syn::parse_str(include_str!(
+                "../../../tests/fixtures/source/exports/parameter_defaults.rs"
+            ))
+            .expect("valid source"),
+            PackageInfo::new("demo", None),
+        )
+        .expect("source scans");
+        let bindings = lower::<Wasm32>(&source).expect("source lowers");
+        let output = TypeScriptHost::new("demo")
+            .expect("host constructs")
+            .into_target()
+            .render(&bindings)
+            .expect("target renders");
+        let browser = output
+            .files()
+            .iter()
+            .find(|file| file.path().as_path().ends_with("demo.ts"))
+            .expect("browser module");
+        let source = browser.contents();
+
+        [
+            "greet(name: string, greeting: string = \"world\", times: number = 3, offset: bigint = -1n, shout: boolean = true, ratio: number = 0.5, mode: Mode = 2, suffix: string | null = null, limit: number | null = 7)",
+            "static new(port: number = 8080)",
+            "port(mapped: boolean = false)",
+            "static async start(port: number, first: Handler | null = null, second: Handler | null = null, options?:",
+            "static withOffset(start: number = 20, offset: number)",
+            "async asyncOffset(step: number = 3, options?:",
+            "offset(self: DefaultAmount, step: number = 2)",
+            "withScaledValue(value: number = 2)",
+            "tryScaledValue(value: number = 2)",
+            "matches(self: DefaultMode, mode: DefaultMode = 1)",
+            "async load(mode: DefaultMode = 1, options?:",
+            "asyncDefault(value: number = 9, options?:",
+            "applyOptionalClosure(value: number, callback: ClosureI32ToI32 | null = null)",
+            "defaultAmount(amount: Amount = { value: 5 })",
+            "span(start: bigint = -9223372036854775808n, end: bigint = 18446744073709551615n)",
+            "throttle(limit: Limit = null)",
+            "defaultFloatBits(value: number = -0.0)",
+            "defaultDoubleBits(value: number = -0.0)",
+            "defaultEmail(email: Email = \"mailto:ada@example.com\")",
+            "defaultOptionalEmail(email: Email | null = \"mailto:ada@example.com\")",
+        ]
+        .into_iter()
+        .for_each(|signature| assert!(source.contains(signature), "missing {signature}"));
+        assert!(source.contains("callback === null ? 0 : registerClosureI32ToI32(callback)"));
     }
 
     #[test]

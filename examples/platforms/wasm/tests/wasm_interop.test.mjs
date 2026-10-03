@@ -3,6 +3,38 @@ import { assert, demo } from "./support/index.mjs";
 export async function run() {
   assert.equal(demo.wasmTrue, true);
   assert.equal(demo.wasmFalse, false);
+  [demo.WasmUnsigned32.HighBit, demo.WasmUnsigned32.Maximum].forEach((value) => {
+    assert.equal(demo.wasmUnsignedEnum32(value), value);
+  });
+  [demo.WasmUnsigned64.HighBit, demo.WasmUnsigned64.Maximum].forEach((value) => {
+    assert.equal(demo.wasmUnsignedEnum64(value), value);
+  });
+  const matchesUnsignedValues = (word, wide, size) => {
+    assert.equal(word, 0xffffffff);
+    assert.equal(wide, 0xffffffffffffffffn);
+    assert.equal(size, 0xffffffff);
+    return true;
+  };
+  const echoUnsignedEnums = (word, wide) => {
+    assert.equal(word, demo.WasmUnsigned32.Maximum);
+    assert.equal(wide, demo.WasmUnsigned64.Maximum);
+    return wide;
+  };
+  const unsignedCallback = {
+    matches: matchesUnsignedValues,
+    echoEnums: echoUnsignedEnums,
+  };
+  assert.equal(demo.wasmUnsignedCallback(unsignedCallback, 0xffffffff, 0xffffffffffffffffn, 0xffffffff), true);
+  assert.equal(demo.wasmUnsignedEnumCallback(unsignedCallback, demo.WasmUnsigned32.Maximum, demo.WasmUnsigned64.Maximum), demo.WasmUnsigned64.Maximum);
+  assert.equal(demo.wasmUnsignedClosure(matchesUnsignedValues, 0xffffffff, 0xffffffffffffffffn, 0xffffffff), true);
+  assert.equal(demo.wasmUnsignedEnumClosure(echoUnsignedEnums, demo.WasmUnsigned32.Maximum, demo.WasmUnsigned64.Maximum), demo.WasmUnsigned64.Maximum);
+  const unsignedValue = demo.WasmUnsignedValue.new(0xffffffffffffffffn);
+  try {
+    assert.equal(unsignedValue.value(), 0xffffffffffffffffn);
+    assert.equal(await unsignedValue.asyncValue(), 0xffffffffffffffffn);
+  } finally {
+    unsignedValue.dispose();
+  }
   const uuids = new Set(Array.from({ length: 10_000 }, () => demo.wasmUuidV4()));
   assert.equal(uuids.size, 10_000);
   uuids.forEach((uuid) => assert.match(uuid, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/));

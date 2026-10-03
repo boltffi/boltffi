@@ -15,7 +15,7 @@ use crate::{
 };
 
 use super::{
-    AssociatedCallable, ConstantStub, Documentation, NameScope, constant::DefaultExpression,
+    AssociatedCallable, ConstantStub, Documentation, NameScope, default_value::DefaultExpression,
     type_hint::TypeHint,
 };
 
@@ -143,7 +143,7 @@ impl RecordClass {
         })
     }
 
-    fn callables(&self) -> impl Iterator<Item = &AssociatedCallable> {
+    pub fn callables(&self) -> impl Iterator<Item = &AssociatedCallable> {
         self.constructors
             .iter()
             .chain(&self.static_methods)

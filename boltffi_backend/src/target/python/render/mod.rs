@@ -26,6 +26,7 @@ use crate::{
 mod callable;
 mod class;
 mod constant;
+mod default_value;
 mod documentation;
 mod enumeration;
 mod name_scope;
@@ -57,6 +58,7 @@ struct InitTemplate {
     unix_library: Literal,
     uses_sequence_annotations: bool,
     uses_callable_annotations: bool,
+    uses_omission_marker: bool,
     uses_wire_helpers: bool,
     uses_async_helpers: bool,
     has_data_enums: bool,
@@ -75,6 +77,7 @@ struct InitTemplate {
 struct StubTemplate {
     uses_sequence_annotations: bool,
     uses_callable_annotations: bool,
+    uses_overloads: bool,
     has_associated_constants: bool,
     has_data_enums: bool,
     records: Vec<RecordClass>,
@@ -169,7 +172,55 @@ impl<'bindings> Package<'bindings> {
             .iter()
             .map(|function| FunctionStub::from_declaration(function, &self))
             .collect::<Result<Vec<_>>>()?;
-        self.validate_names(&records, &enums, &classes, &constants, &stubs)?;
+        let (uses_omission_marker, uses_overloads) = stubs
+            .iter()
+            .map(|function| &function.parameters)
+            .chain(
+                records
+                    .iter()
+                    .flat_map(RecordClass::callables)
+                    .map(|callable| &callable.parameters),
+            )
+            .chain(
+                enums
+                    .iter()
+                    .flat_map(EnumClass::callables)
+                    .map(|callable| &callable.parameters),
+            )
+            .chain(
+                classes
+                    .iter()
+                    .flat_map(Class::callables)
+                    .map(|callable| &callable.parameters),
+            )
+            .fold(
+                (false, false),
+                |(uses_marker, uses_overloads), parameters| {
+                    (
+                        uses_marker || parameters.uses_omission_marker(),
+                        uses_overloads || parameters.has_stub_overloads(),
+                    )
+                },
+            );
+        let scope = NameScope::new("python module").insert("_UUID", "imported UUID type")?;
+        let scope = if enums.iter().any(EnumClass::is_int_enum) {
+            scope.insert("IntEnum", "imported enum base `IntEnum`")?
+        } else {
+            scope
+        };
+        let scope = scope.insert_all(
+            uses_omission_marker
+                .then_some((
+                    "_EllipsisType".to_owned(),
+                    "imported omission marker type".to_owned(),
+                ))
+                .into_iter()
+                .chain(uses_overloads.then_some((
+                    "_overload".to_owned(),
+                    "imported overload decorator".to_owned(),
+                ))),
+        )?;
+        self.validate_names(scope, &records, &enums, &classes, &constants, &stubs)?;
         let uses_sequence_annotations = records.iter().any(RecordClass::uses_sequence_annotations)
             || enums.iter().any(EnumClass::uses_sequence_annotations)
             || classes.iter().any(Class::uses_sequence_annotations)
@@ -232,6 +283,7 @@ impl<'bindings> Package<'bindings> {
                             unix_library: Self::literal(format!("lib{}.so", self.library)),
                             uses_sequence_annotations,
                             uses_callable_annotations,
+                            uses_omission_marker,
                             uses_wire_helpers,
                             uses_async_helpers,
                             has_data_enums: enums.iter().any(EnumClass::has_wire),
@@ -253,6 +305,7 @@ impl<'bindings> Package<'bindings> {
                         StubTemplate {
                             uses_sequence_annotations,
                             uses_callable_annotations,
+                            uses_overloads,
                             has_associated_constants,
                             has_data_enums: enums.iter().any(EnumClass::has_wire),
                             records,
@@ -613,18 +666,13 @@ impl<'bindings> Package<'bindings> {
 
     fn validate_names(
         &self,
+        scope: NameScope,
         records: &[RecordClass],
         enums: &[EnumClass],
         classes: &[Class],
         constants: &[ConstantStub],
         functions: &[FunctionStub],
     ) -> Result<()> {
-        let scope = match enums.iter().any(EnumClass::is_int_enum) {
-            true => {
-                NameScope::new("python module").insert("IntEnum", "imported enum base `IntEnum`")?
-            }
-            false => NameScope::new("python module"),
-        };
         scope
             .insert_all(records.iter().map(|record| record.top_level_name()))
             .and_then(|scope| {

@@ -18,6 +18,14 @@ public struct FfiError: Error {
     }
 }
 
+private final class BoltFFIClosureBox<Invoke> {
+    let invoke: Invoke
+
+    init(_ invoke: Invoke) {
+        self.invoke = invoke
+    }
+}
+
 public struct DefaultAmount: Hashable, Equatable, Sendable {
     public var value: Int32
 
@@ -517,6 +525,24 @@ public func asyncDefault(value: UInt32 = 9) async throws -> UInt32 {
         }
         return boltffiResult
     }
+}
+
+public func applyOptionalClosure(value: Int32, callback: ((Int32) -> Int32)? = nil) -> Int32 {
+    let boltffiCallbackBox = callback.map { implementation in BoltFFIClosureBox<(Int32) -> Int32>(implementation) }
+    let boltffiCallbackContext = boltffiCallbackBox.map { closureBox in Unmanaged.passRetained(closureBox).toOpaque() }
+    let boltffiCallbackCall: @convention(c) (UnsafeMutableRawPointer?, Int32) -> Int32 = { context, arg0 in
+        return Unmanaged<BoltFFIClosureBox<(Int32) -> Int32>>.fromOpaque(context!).takeUnretainedValue().invoke(arg0)
+    }
+    let boltffiCallbackRelease: @convention(c) (UnsafeMutableRawPointer?) -> Void = { context in
+        guard let context = context else { return }
+        Unmanaged<BoltFFIClosureBox<(Int32) -> Int32>>.fromOpaque(context).release()
+    }
+    return boltffi_function_demo_apply_optional_closure(
+        value,
+        boltffiCallbackContext != nil ? boltffiCallbackCall : nil,
+        boltffiCallbackContext,
+        boltffiCallbackContext != nil ? boltffiCallbackRelease : nil
+    )
 }
 
 public func defaultAmount(amount: Amount = DefaultAmount(value: 5)) -> Amount {

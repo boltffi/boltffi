@@ -13,7 +13,12 @@ use super::super::{
     type_name,
 };
 
-pub struct DefaultExpression;
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum DefaultExpression {
+    Constant(Expression),
+    Runtime(Expression),
+    RuntimeReference(Expression),
+}
 
 impl DefaultExpression {
     pub fn render(
@@ -21,10 +26,10 @@ impl DefaultExpression {
         value: &DefaultValue,
         namespace: Option<&Namespace>,
         context: &RenderContext<Native>,
-    ) -> Result<Expression> {
+    ) -> Result<Self> {
         if let TypeRef::Optional(inner) = ty {
             return match value {
-                DefaultValue::Null => Ok(Expression::new("null")),
+                DefaultValue::Null => Ok(Self::Constant(Expression::new("null"))),
                 _ => Self::render(inner, value, namespace, context),
             };
         }
@@ -32,16 +37,42 @@ impl DefaultExpression {
             return Self::custom(*custom_type, value, namespace, context);
         }
         match value {
-            DefaultValue::Bool(value) => Ok(Expression::new(value.to_string().to_lowercase())),
+            DefaultValue::Bool(value) => Ok(Self::Constant(Expression::new(value.to_string()))),
             DefaultValue::Integer(value) => Self::integer(ty, value.get()),
             DefaultValue::Float(value) => Self::float(ty, *value),
-            DefaultValue::String(value) => Ok(Expression::new(Literal::string(value).to_string())),
+            DefaultValue::String(value) => Ok(Self::Constant(Expression::new(
+                Literal::string(value).to_string(),
+            ))),
             DefaultValue::EnumVariant { variant_name, .. } => {
                 Self::enum_variant(ty, variant_name, namespace, context)
             }
-            DefaultValue::Null => Ok(Expression::new("null")),
+            DefaultValue::Null => Ok(Self::Constant(Expression::new("null"))),
             _ => super::super::unsupported("unknown default literal"),
         }
+    }
+
+    pub fn constant(&self) -> Option<&Expression> {
+        match self {
+            Self::Constant(value) => Some(value),
+            Self::Runtime(_) | Self::RuntimeReference(_) => None,
+        }
+    }
+
+    pub fn runtime(&self) -> Option<&Expression> {
+        match self {
+            Self::Runtime(value) | Self::RuntimeReference(value) => Some(value),
+            Self::Constant(_) => None,
+        }
+    }
+
+    pub fn into_expression(self) -> Expression {
+        match self {
+            Self::Constant(value) | Self::Runtime(value) | Self::RuntimeReference(value) => value,
+        }
+    }
+
+    pub fn constructs_reference(&self) -> bool {
+        matches!(self, Self::RuntimeReference(_))
     }
 
     fn custom(
@@ -49,7 +80,7 @@ impl DefaultExpression {
         value: &DefaultValue,
         namespace: Option<&Namespace>,
         context: &RenderContext<Native>,
-    ) -> Result<Expression> {
+    ) -> Result<Self> {
         match Representation::resolve(custom_type, context)? {
             Representation::Transparent(representation) => {
                 Self::render(representation, value, namespace, context)
@@ -71,7 +102,10 @@ impl DefaultExpression {
                     || name.to_string(),
                     |namespace| format!("global::{namespace}.{name}"),
                 );
-                Ok(Expression::new(format!("new {name}({value})")))
+                Ok(Self::Runtime(Expression::new(format!(
+                    "new {name}({})",
+                    value.into_expression()
+                ))))
             }
         }
     }
@@ -81,7 +115,7 @@ impl DefaultExpression {
         variant_name: &CanonicalName,
         namespace: Option<&Namespace>,
         context: &RenderContext<Native>,
-    ) -> Result<Expression> {
+    ) -> Result<Self> {
         let TypeRef::Enum(id) = ty else {
             return super::super::unsupported("enum default type");
         };
@@ -93,34 +127,53 @@ impl DefaultExpression {
             None => type_name::type_ref(ty, context)?,
         };
         let variant = Name::new(variant_name).pascal()?;
-        Ok(Expression::new(match enumeration {
-            EnumDecl::CStyle(_) => format!("{ty}.{variant}"),
-            EnumDecl::Data(_) => format!("new {ty}.{variant}()"),
-            _ => return super::super::unsupported("unknown enum default type"),
-        }))
+        match enumeration {
+            EnumDecl::CStyle(_) => Ok(Self::Constant(Expression::new(format!("{ty}.{variant}")))),
+            EnumDecl::Data(_) => Ok(Self::RuntimeReference(Expression::new(format!(
+                "new {ty}.{variant}()"
+            )))),
+            _ => super::super::unsupported("unknown enum default type"),
+        }
     }
 
-    fn integer(ty: &TypeRef, value: i128) -> Result<Expression> {
+    fn integer(ty: &TypeRef, value: i128) -> Result<Self> {
         let TypeRef::Primitive(primitive) = ty else {
             return super::super::unsupported("integer default type");
         };
-        Ok(Expression::new(match primitive {
+        match primitive {
+            Primitive::ISize if i32::try_from(value).is_err() => {
+                return Ok(Self::Runtime(Expression::new(format!(
+                    "unchecked((nint)({value}L))"
+                ))));
+            }
+            Primitive::USize if u32::try_from(value).is_err() => {
+                return Ok(Self::Runtime(Expression::new(format!(
+                    "unchecked((nuint)({value}UL))"
+                ))));
+            }
+            _ => {}
+        }
+        Ok(Self::Constant(Expression::new(match primitive {
+            Primitive::I8 => format!("(sbyte){value}"),
+            Primitive::U8 => format!("(byte){value}"),
+            Primitive::I16 => format!("(short){value}"),
+            Primitive::U16 => format!("(ushort){value}"),
             Primitive::U32 => format!("{value}U"),
             Primitive::I64 => format!("{value}L"),
             Primitive::U64 => format!("{value}UL"),
-            Primitive::ISize => format!("unchecked((nint){value}L)"),
-            Primitive::USize => format!("unchecked((nuint){value}UL)"),
+            Primitive::ISize => value.to_string(),
+            Primitive::USize => format!("{value}U"),
             _ => value.to_string(),
-        }))
+        })))
     }
 
-    fn float(ty: &TypeRef, value: FloatValue) -> Result<Expression> {
+    fn float(ty: &TypeRef, value: FloatValue) -> Result<Self> {
         let TypeRef::Primitive(primitive) = ty else {
             return super::super::unsupported("float default type");
         };
         let value = value.to_f64();
         if !value.is_finite() {
-            return Ok(Expression::new(
+            return Ok(Self::Constant(Expression::new(
                 match (primitive, value.is_nan(), value.is_sign_positive()) {
                     (Primitive::F32, true, _) => "float.NaN",
                     (Primitive::F32, false, true) => "float.PositiveInfinity",
@@ -130,9 +183,9 @@ impl DefaultExpression {
                     (Primitive::F64, false, false) => "double.NegativeInfinity",
                     _ => return super::super::unsupported("float default primitive"),
                 },
-            ));
+            )));
         }
-        Ok(Expression::new(match primitive {
+        Ok(Self::Constant(Expression::new(match primitive {
             Primitive::F32 => format!("{}F", value as f32),
             Primitive::F64 => {
                 let rendered = value.to_string();
@@ -143,6 +196,6 @@ impl DefaultExpression {
                 }
             }
             _ => return super::super::unsupported("float default primitive"),
-        }))
+        })))
     }
 }

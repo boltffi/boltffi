@@ -10,7 +10,7 @@ use crate::{
     },
 };
 
-use super::{future::NativeFutureMethods, return_value::ReturnedValue};
+use super::{future::NativeFutureMethods, parameter::Parameters, return_value::ReturnedValue};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CallableBody {
@@ -48,8 +48,8 @@ impl CallableBody {
         self.asynchronous
     }
 
-    pub fn into_lines(self) -> Vec<Statement> {
-        self.lines
+    pub fn into_lines(self, parameters: &Parameters) -> Vec<Statement> {
+        parameters.initializations().chain(self.lines).collect()
     }
 
     fn sync(

@@ -9,13 +9,17 @@ use crate::{
 };
 
 use super::super::{Documentation, Package};
-use super::{body::CallableBody, parameter::ParameterStub, return_value::ReturnStub};
+use super::{
+    body::CallableBody,
+    parameter::{ParameterStub, Parameters},
+    return_value::ReturnStub,
+};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FunctionStub {
     pub documentation: Documentation,
     pub python_name: Identifier,
-    pub parameters: Vec<ParameterStub>,
+    pub parameters: Parameters,
     pub return_annotation: TypeAnnotation,
     pub asynchronous: bool,
     pub body: Vec<Statement>,
@@ -25,12 +29,7 @@ pub struct FunctionStub {
 
 impl FunctionStub {
     pub fn from_declaration(function: &FunctionDecl<Native>, package: &Package) -> Result<Self> {
-        let parameters = function
-            .callable()
-            .params()
-            .iter()
-            .map(|parameter| ParameterStub::from_declaration(parameter, package))
-            .collect::<Result<Vec<_>>>()?;
+        let parameters = Parameters::from_declarations(function.callable().params(), package)?;
         let returned = ReturnStub::from_callable(function.callable(), package)?;
         let native_name = Name::new(function.name()).function()?;
         let native_call = Expression::call(parameters.iter().fold(
@@ -51,12 +50,12 @@ impl FunctionStub {
         Ok(Self {
             documentation: Documentation::new(function.meta().doc()),
             python_name: Name::new(function.name()).function()?,
-            parameters,
             return_annotation: returned.into_annotation(),
             asynchronous: body.is_async(),
             uses_async_helpers: body.uses_async_helpers(),
-            body: body.into_lines(),
+            body: body.into_lines(&parameters),
             uses_wire_helpers,
+            parameters,
         })
     }
 }
@@ -83,7 +82,8 @@ impl FunctionStub {
     }
 
     pub fn validate_names(&self) -> Result<()> {
-        ParameterStub::scope(format!("function `{}`", self.python_name), &self.parameters)
+        self.parameters
+            .scope(format!("function `{}`", self.python_name))
             .map(|_| ())
     }
 

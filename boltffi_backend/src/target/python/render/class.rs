@@ -127,7 +127,7 @@ impl Class {
         self.streams.iter().map(ClassStream::top_level_name)
     }
 
-    fn callables(&self) -> impl Iterator<Item = &AssociatedCallable> {
+    pub fn callables(&self) -> impl Iterator<Item = &AssociatedCallable> {
         self.init
             .iter()
             .chain(&self.constructors)

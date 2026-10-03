@@ -1,7 +1,7 @@
 use askama::Template as AskamaTemplate;
 use boltffi_binding::{
-    CallbackDecl, DirectValueType, DirectVectorElementType, ExecutionDecl, Primitive, ReturnPlan,
-    TypeRef, Wasm32, wasm32,
+    CallbackDecl, DirectValueType, DirectVectorElementType, EnumDecl, ExecutionDecl, Primitive,
+    ReturnPlan, TypeRef, Wasm32, wasm32,
 };
 
 use crate::core::{Emitted, Error, RenderContext, Result};
@@ -413,19 +413,24 @@ impl Method {
             ReturnPlan::Void => Ok(ReturnShape::void()),
             ReturnPlan::DirectViaReturnSlot {
                 ty: DirectValueType::Primitive(primitive),
-            } => Ok(ReturnShape::direct(
-                Scalar::new(*primitive)?.ty(),
-                Parameter::carrier_type(*primitive)?,
-            )),
+            } => {
+                let scalar = Scalar::new(*primitive)?;
+                Ok(ReturnShape::direct(scalar.ty(), scalar.carrier_type()))
+            }
             ReturnPlan::DirectViaReturnSlot {
                 ty: DirectValueType::Enum(id),
-            } => Ok(ReturnShape::direct(
-                context
+            } => {
+                let enumeration = context
                     .enumeration(*id)
-                    .map(|enumeration| Name::new(enumeration.name()).type_name())
-                    .ok_or_else(|| Self::unsupported("callback enum without declaration"))?,
-                TypeName::number(),
-            )),
+                    .ok_or_else(|| Self::unsupported("callback enum without declaration"))?;
+                let EnumDecl::CStyle(enumeration) = enumeration else {
+                    return Err(Self::unsupported("direct data enum callback return"));
+                };
+                Ok(ReturnShape::direct(
+                    Name::new(enumeration.name()).type_name(),
+                    Scalar::new(enumeration.repr().primitive())?.carrier_type(),
+                ))
+            }
             ReturnPlan::DirectViaOutPointer {
                 ty: DirectValueType::Record(id),
             } => ReturnShape::direct_record(*id, context),

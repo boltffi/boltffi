@@ -95,7 +95,7 @@ impl ClosureArgument {
             _ => return super::super::unsupported("unknown closure presence"),
         };
         let public_type = match presence {
-            HandlePresence::Nullable => closure_type.optional_function(),
+            HandlePresence::Nullable => closure_type.optional(),
             _ => closure_type,
         };
 

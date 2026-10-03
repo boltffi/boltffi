@@ -1,6 +1,4 @@
-use boltffi_binding::{
-    ExportedMethodDecl, InitializerDecl, IntoRust, Native, NativeSymbol, ParamDecl,
-};
+use boltffi_binding::{ExportedMethodDecl, InitializerDecl, Native, NativeSymbol};
 
 use crate::{
     core::Result,
@@ -14,7 +12,7 @@ use crate::{
 use super::{
     super::{Documentation, Package},
     body::CallableBody,
-    parameter::ParameterStub,
+    parameter::{ParameterStub, Parameters},
     return_value::{ReturnStub, ReturnedValue},
 };
 
@@ -24,7 +22,7 @@ pub struct AssociatedCallable {
     pub receiver: bool,
     pub python_name: Identifier,
     pub native_name: Identifier,
-    pub parameters: Vec<ParameterStub>,
+    pub parameters: Parameters,
     pub arguments: ArgumentList,
     pub return_annotation: TypeAnnotation,
     pub asynchronous: bool,
@@ -40,12 +38,7 @@ impl AssociatedCallable {
         package: &Package,
     ) -> Result<Self> {
         let documentation = Documentation::new(initializer.meta().doc());
-        let parameters = initializer
-            .callable()
-            .params()
-            .iter()
-            .map(|parameter| ParameterStub::from_declaration(parameter, package))
-            .collect::<Result<Vec<_>>>()?;
+        let parameters = Parameters::from_declarations(initializer.callable().params(), package)?;
         let arguments = Self::arguments(None, &parameters);
         let native_name = symbols.initializer(initializer.name())?;
         let native_call = Self::native_call(&native_name, None, &parameters)?;
@@ -63,7 +56,7 @@ impl AssociatedCallable {
             python_name: Name::new(initializer.name()).function()?,
             asynchronous: body.is_async(),
             uses_async_helpers: body.uses_async_helpers(),
-            body: body.into_lines(),
+            body: body.into_lines(&parameters),
             native_name,
             arguments,
             return_annotation: TypeAnnotation::identifier(symbols.class_name().clone()),
@@ -79,12 +72,7 @@ impl AssociatedCallable {
     ) -> Result<Self> {
         let documentation = Documentation::new(method.meta().doc());
         let receiver = method.callable().receiver().is_some();
-        let parameters = method
-            .callable()
-            .params()
-            .iter()
-            .map(|parameter| ParameterStub::from_declaration(parameter, package))
-            .collect::<Result<Vec<_>>>()?;
+        let parameters = Parameters::from_declarations(method.callable().params(), package)?;
         let returned = ReturnStub::from_callable(method.callable(), package)?;
         let receiver_argument = receiver.then(Self::self_receiver).transpose()?;
         let arguments = Self::arguments(receiver_argument.clone(), &parameters);
@@ -104,7 +92,7 @@ impl AssociatedCallable {
             python_name: Name::new(method.name()).function()?,
             asynchronous: body.is_async(),
             uses_async_helpers: body.uses_async_helpers(),
-            body: body.into_lines(),
+            body: body.into_lines(&parameters),
             native_name,
             arguments,
             parameters,
@@ -119,7 +107,7 @@ impl AssociatedCallable {
         package: &Package,
     ) -> Result<Self> {
         let documentation = Documentation::new(initializer.meta().doc());
-        let parameters = Self::parameters(initializer.callable().params(), package)?;
+        let parameters = Parameters::from_declarations(initializer.callable().params(), package)?;
         let returned = ReturnStub::from_callable(initializer.callable(), package)?;
         let arguments = Self::arguments(None, &parameters);
         let native_call = Self::native_call(&native_name, None, &parameters)?;
@@ -137,7 +125,7 @@ impl AssociatedCallable {
             python_name: Name::new(initializer.name()).function()?,
             asynchronous: body.is_async(),
             uses_async_helpers: body.uses_async_helpers(),
-            body: body.into_lines(),
+            body: body.into_lines(&parameters),
             native_name,
             arguments,
             return_annotation: returned.into_annotation(),
@@ -154,7 +142,7 @@ impl AssociatedCallable {
         package: &Package,
     ) -> Result<Self> {
         let documentation = Documentation::new(method.meta().doc());
-        let parameters = Self::parameters(method.callable().params(), package)?;
+        let parameters = Parameters::from_declarations(method.callable().params(), package)?;
         let returned = match mutated_receiver_type {
             Some(annotation) => ReturnStub::native(annotation),
             None => ReturnStub::from_callable(method.callable(), package)?,
@@ -175,7 +163,7 @@ impl AssociatedCallable {
             python_name: Name::new(method.name()).function()?,
             asynchronous: body.is_async(),
             uses_async_helpers: body.uses_async_helpers(),
-            body: body.into_lines(),
+            body: body.into_lines(&parameters),
             native_name,
             arguments,
             parameters,
@@ -211,11 +199,9 @@ impl AssociatedCallable {
     }
 
     pub fn validate_names(&self, owner: &Identifier) -> Result<()> {
-        ParameterStub::scope(
-            format!("method `{}.{}`", owner, self.python_name),
-            &self.parameters,
-        )
-        .map(|_| ())
+        self.parameters
+            .scope(format!("method `{}.{}`", owner, self.python_name))
+            .map(|_| ())
     }
 
     pub fn member_name(&self) -> (String, String) {
@@ -225,7 +211,7 @@ impl AssociatedCallable {
         )
     }
 
-    fn arguments(receiver: Option<Expression>, parameters: &[ParameterStub]) -> ArgumentList {
+    fn arguments(receiver: Option<Expression>, parameters: &Parameters) -> ArgumentList {
         ArgumentList::from_iter(
             receiver.into_iter().chain(
                 parameters
@@ -238,7 +224,7 @@ impl AssociatedCallable {
     fn native_call(
         native_name: &Identifier,
         receiver: Option<Expression>,
-        parameters: &[ParameterStub],
+        parameters: &Parameters,
     ) -> Result<Expression> {
         Ok(Expression::call(
             Self::argument_expressions(receiver, parameters)
@@ -255,7 +241,7 @@ impl AssociatedCallable {
 
     fn argument_expressions(
         receiver: Option<Expression>,
-        parameters: &[ParameterStub],
+        parameters: &Parameters,
     ) -> Vec<Expression> {
         receiver
             .into_iter()
@@ -269,15 +255,5 @@ impl AssociatedCallable {
 
     fn self_receiver() -> Result<Expression> {
         Identifier::parse("self").map(Expression::identifier)
-    }
-
-    fn parameters(
-        parameters: &[ParamDecl<Native, IntoRust>],
-        package: &Package,
-    ) -> Result<Vec<ParameterStub>> {
-        parameters
-            .iter()
-            .map(|parameter| ParameterStub::from_declaration(parameter, package))
-            .collect()
     }
 }

@@ -19,9 +19,12 @@ namespace {{ class.namespace }}
 {{ constant }}
 {% endfor %}
 {% for initializer in class.initializers %}{% if initializer.primary %}
-{{ initializer.documentation }}        public {{ class.name }}({% for parameter in initializer.function.parameters %}{{ parameter.ty }} {{ parameter.name }}{% if !loop.last %}, {% endif %}{% endfor %})
+{{ initializer.documentation }}        public {{ class.name }}({% for parameter in initializer.function.parameter_declarations() %}{{ parameter }}{% if !loop.last %}, {% endif %}{% endfor %})
             : this({{ initializer.function.name }}({% for parameter in initializer.function.parameters %}{{ parameter.name }}{% if !loop.last %}, {% endif %}{% endfor %}).TakeHandle()) { }
-{% endif %}
+{% for overload in initializer.function.overloads %}        [global::System.Runtime.CompilerServices.OverloadResolutionPriority(-1)]
+        public {{ class.name }}({% for parameter in overload.parameter_declarations() %}{{ parameter }}{% if !loop.last %}, {% endif %}{% endfor %})
+            : this({% for argument in overload.arguments %}{{ argument }}{% if !loop.last %}, {% endif %}{% endfor %}) { }
+{% endfor %}{% endif %}
 {% let function = initializer.function %}
 {% include "target/csharp/function.cs" %}
 {% endfor %}{% for function in class.methods %}

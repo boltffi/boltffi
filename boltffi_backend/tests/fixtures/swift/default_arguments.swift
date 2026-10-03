@@ -6,6 +6,9 @@ func checkDefaultArguments() async throws {
     _ = formatDefaults(name: "Ada")
     _ = formatDefaults(name: "Ada", enabled: false, weight: nil)
     _ = try await asyncDefault()
+    _ = applyOptionalClosure(value: 21)
+    _ = applyOptionalClosure(value: 21, callback: nil)
+    _ = applyOptionalClosure(value: 21, callback: { value in value * 2 })
 
     let counter = DefaultCounter()
     _ = DefaultCounter.fromText()
