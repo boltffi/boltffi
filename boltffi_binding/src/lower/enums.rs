@@ -74,6 +74,21 @@ fn lower_c_style<S: SurfaceLower>(
     initializers: Vec<InitializerDecl<S>>,
     enum_methods: Vec<ExportedMethodDecl<S, NativeSymbol>>,
 ) -> Result<CStyleEnumDecl<S>, LowerError> {
+    // Every variant of a C-style enum is a unit variant, so none of them can
+    // carry the payload record `#[boltffi::transparent]` renders as. The data
+    // lane rejects the same shape in `validate_transparent_variants`; without
+    // this the attribute would be dropped without a word.
+    if let Some(variant) = enumeration
+        .variants
+        .iter()
+        .find(|variant| variant.transparent)
+    {
+        return Err(LowerError::invalid_transparent_variant(
+            enumeration.name.spelling(),
+            variant.name.spelling(),
+            "must carry exactly one payload field",
+        ));
+    }
     Ok(CStyleEnumDecl::new(
         ids.enumeration(&enumeration.id)?,
         CanonicalName::from(&enumeration.name),
@@ -102,16 +117,18 @@ fn lower_data<S: SurfaceLower>(
     initializers: Vec<InitializerDecl<S>>,
     enum_methods: Vec<ExportedMethodDecl<S, NativeSymbol>>,
 ) -> Result<DataEnumDecl<S>, LowerError> {
+    let variants = enumeration
+        .variants
+        .iter()
+        .enumerate()
+        .map(|(variant_index, variant)| lower_variant(index, ids, variant_index, variant))
+        .collect::<Result<Vec<_>, LowerError>>()?;
+    validate_transparent_variants(enumeration, &variants)?;
     Ok(DataEnumDecl::new(
         ids.enumeration(&enumeration.id)?,
         CanonicalName::from(&enumeration.name),
         metadata::decl_meta(enumeration.doc.as_ref(), enumeration.deprecated.as_ref()),
-        enumeration
-            .variants
-            .iter()
-            .enumerate()
-            .map(|(variant_index, variant)| lower_variant(index, ids, variant_index, variant))
-            .collect::<Result<Vec<_>, LowerError>>()?,
+        variants,
         initializers,
         enum_methods,
         codecs::plan(
@@ -136,8 +153,52 @@ fn lower_variant(
         CanonicalName::from(&variant.name),
         VariantTag::from_index(variant_index).ok_or_else(LowerError::variant_tag_overflow)?,
         lower_payload(index, ids, &variant.payload)?,
+        variant.transparent,
         metadata::element_meta(variant.doc.as_ref(), None),
     ))
+}
+
+/// Rejects `#[boltffi::transparent]` on any variant shape the attribute
+/// cannot take.
+///
+/// A transparent variant renders as its payload record, so the payload must
+/// be exactly one record-typed field, and no other transparent variant of
+/// the same enum may carry the same record: the backends recover the variant
+/// tag from the payload's concrete type on encode, which two variants
+/// sharing one payload record would make ambiguous.
+fn validate_transparent_variants(
+    enumeration: &SourceEnum,
+    variants: &[DataVariantDecl],
+) -> Result<(), LowerError> {
+    let mut seen = std::collections::BTreeSet::new();
+    for variant in variants.iter().filter(|variant| variant.transparent()) {
+        let payload = match variant.payload().fields() {
+            [field] => field,
+            _ => {
+                return Err(LowerError::invalid_transparent_variant(
+                    enumeration.name.spelling(),
+                    variant.name().as_path_string(),
+                    "must carry exactly one payload field",
+                ));
+            }
+        };
+        let crate::TypeRef::Record(record) = payload.ty() else {
+            return Err(LowerError::invalid_transparent_variant(
+                enumeration.name.spelling(),
+                variant.name().as_path_string(),
+                "must carry a record payload",
+            ));
+        };
+        if !seen.insert(*record) {
+            return Err(LowerError::invalid_transparent_variant(
+                enumeration.name.spelling(),
+                variant.name().as_path_string(),
+                "carries a payload record another transparent variant of the \
+                 same enum already carries",
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn lower_payload(
@@ -258,6 +319,7 @@ mod tests {
             name: name(variant_name).into(),
             discriminant: None,
             payload,
+            transparent: false,
             doc: None,
             user_attrs: Vec::new(),
             source: Source::exported(),
@@ -1391,5 +1453,130 @@ mod tests {
             ExecutionDecl::Synchronous(_)
         ));
         assert!(matches!(callable.error(), ErrorDecl::None(_)));
+    }
+
+    fn transparent_variant(variant_name: &str, payload: VariantPayload) -> VariantDef {
+        let mut variant = variant(variant_name, payload);
+        variant.transparent = true;
+        variant
+    }
+
+    #[test]
+    fn transparent_variant_lowers_with_its_payload_record() {
+        let bindings = lower_contract::<Native>(
+            vec![point_record()],
+            vec![enumeration(
+                "demo::Shape",
+                "Shape",
+                vec![
+                    unit_variant("empty"),
+                    transparent_variant(
+                        "dot",
+                        VariantPayload::Tuple(vec![record_type("demo::Point", "Point")]),
+                    ),
+                ],
+            )],
+        );
+        let enumeration = data_enum(&bindings);
+
+        assert!(enumeration.has_transparent_variants());
+        assert!(!enumeration.variants()[0].transparent());
+        assert!(enumeration.variants()[1].transparent());
+        assert!(enumeration.variants()[1].transparent_payload().is_some());
+    }
+
+    /// An all-unit enum takes the C-style lane, which never reaches
+    /// `validate_transparent_variants`, so the attribute would otherwise be
+    /// dropped in silence.
+    #[test]
+    fn c_style_enum_rejects_transparent_variants() {
+        let mut fast = unit_variant("fast");
+        fast.transparent = true;
+        let error = lower_contract_result::<Native>(
+            Vec::new(),
+            vec![enumeration(
+                "demo::Mode",
+                "Mode",
+                vec![fast, unit_variant("slow")],
+            )],
+        )
+        .expect_err("a unit variant carries no payload record to render as");
+
+        assert!(matches!(
+            error.kind(),
+            LowerErrorKind::InvalidTransparentVariant { .. }
+        ));
+    }
+
+    #[test]
+    fn transparent_variant_rejects_non_record_payloads() {
+        let error = lower_contract_result::<Native>(
+            Vec::new(),
+            vec![enumeration(
+                "demo::Shape",
+                "Shape",
+                vec![transparent_variant(
+                    "count",
+                    VariantPayload::Tuple(vec![TypeExpr::Primitive(Primitive::U32)]),
+                )],
+            )],
+        )
+        .expect_err("non-record transparent payload should be rejected");
+
+        assert!(matches!(
+            error.kind(),
+            LowerErrorKind::InvalidTransparentVariant { .. }
+        ));
+    }
+
+    #[test]
+    fn transparent_variant_rejects_multi_field_payloads() {
+        let error = lower_contract_result::<Native>(
+            vec![point_record()],
+            vec![enumeration(
+                "demo::Shape",
+                "Shape",
+                vec![transparent_variant(
+                    "pair",
+                    VariantPayload::Tuple(vec![
+                        record_type("demo::Point", "Point"),
+                        record_type("demo::Point", "Point"),
+                    ]),
+                )],
+            )],
+        )
+        .expect_err("multi-field transparent payload should be rejected");
+
+        assert!(matches!(
+            error.kind(),
+            LowerErrorKind::InvalidTransparentVariant { .. }
+        ));
+    }
+
+    #[test]
+    fn transparent_variants_reject_a_shared_payload_record() {
+        let error = lower_contract_result::<Native>(
+            vec![point_record()],
+            vec![enumeration(
+                "demo::Shape",
+                "Shape",
+                vec![
+                    transparent_variant(
+                        "first",
+                        VariantPayload::Tuple(vec![record_type("demo::Point", "Point")]),
+                    ),
+                    transparent_variant(
+                        "second",
+                        VariantPayload::Tuple(vec![record_type("demo::Point", "Point")]),
+                    ),
+                ],
+            )],
+        )
+        .expect_err("two transparent variants sharing one payload record make encode ambiguous");
+
+        assert!(matches!(
+            error.kind(),
+            LowerErrorKind::InvalidTransparentVariant { .. }
+        ));
     }
 }
