@@ -334,7 +334,7 @@ impl<'lowered> Expander<'lowered> {
     ) -> Result<TokenStream, Error> {
         let native = Self::surface_module(
             format_ident!("__boltffi_native"),
-            quote! { #[cfg(not(target_arch = "wasm32"))] },
+            quote! { #[cfg(any(not(target_arch = "wasm32"), target_os = "wasi"))] },
             self.native(native)?,
         );
         let wasm32 = Self::surface_module(

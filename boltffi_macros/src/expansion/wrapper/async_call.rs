@@ -180,7 +180,7 @@ impl<'expansion, 'lowered> AsyncExports<'expansion, 'lowered, Native> {
     }
 
     fn tokens(self, protocol: NativeProtocol) -> Result<TokenStream, Error> {
-        let cfg = quote! { #[cfg(not(target_arch = "wasm32"))] };
+        let cfg = quote! { #[cfg(any(not(target_arch = "wasm32"), target_os = "wasi"))] };
         let visibility = &self.visibility;
         let start_ident = names::Symbol::new(self.symbol).ident();
         let rust_return_type = &self.rust_return_type;
@@ -407,7 +407,7 @@ struct NativeProtocol {
 
 impl NativeProtocol {
     fn poll(&self, visibility: &TokenStream, rust_return_type: &Type) -> TokenStream {
-        let cfg = quote! { #[cfg(not(target_arch = "wasm32"))] };
+        let cfg = quote! { #[cfg(any(not(target_arch = "wasm32"), target_os = "wasi"))] };
         let ident = names::Symbol::new(&self.poll).ident();
         quote! {
             #cfg
@@ -435,7 +435,7 @@ impl NativeProtocol {
         complete: Complete,
     ) -> TokenStream {
         complete.tokens(
-            quote! { #[cfg(not(target_arch = "wasm32"))] },
+            quote! { #[cfg(any(not(target_arch = "wasm32"), target_os = "wasi"))] },
             visibility,
             names::Symbol::new(&self.complete).ident(),
             rust_return_type,
@@ -444,21 +444,21 @@ impl NativeProtocol {
 
     fn panic_message(&self, visibility: &TokenStream, rust_return_type: &Type) -> TokenStream {
         FutureSupport::new(visibility, rust_return_type).panic_message(
-            quote! { #[cfg(not(target_arch = "wasm32"))] },
+            quote! { #[cfg(any(not(target_arch = "wasm32"), target_os = "wasi"))] },
             names::Symbol::new(&self.panic_message).ident(),
         )
     }
 
     fn cancel(&self, visibility: &TokenStream, rust_return_type: &Type) -> TokenStream {
         FutureSupport::new(visibility, rust_return_type).cancel(
-            quote! { #[cfg(not(target_arch = "wasm32"))] },
+            quote! { #[cfg(any(not(target_arch = "wasm32"), target_os = "wasi"))] },
             names::Symbol::new(&self.cancel).ident(),
         )
     }
 
     fn free(&self, visibility: &TokenStream, rust_return_type: &Type) -> TokenStream {
         FutureSupport::new(visibility, rust_return_type).free(
-            quote! { #[cfg(not(target_arch = "wasm32"))] },
+            quote! { #[cfg(any(not(target_arch = "wasm32"), target_os = "wasi"))] },
             names::Symbol::new(&self.free).ident(),
         )
     }

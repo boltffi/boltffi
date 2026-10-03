@@ -291,7 +291,7 @@ impl<'expansion, 'lowered> WriteInput<'expansion, 'lowered, Native> {
         let items = parameter_items
             .into_iter()
             .chain([quote! {
-                #[cfg(not(target_arch = "wasm32"))]
+                #[cfg(any(not(target_arch = "wasm32"), target_os = "wasi"))]
                 unsafe extern "C" fn #call(
                     __boltffi_context: *mut ::core::ffi::c_void,
                     #(#ffi_parameters),*
@@ -301,7 +301,7 @@ impl<'expansion, 'lowered> WriteInput<'expansion, 'lowered, Native> {
                     #call_body
                 }
 
-                #[cfg(not(target_arch = "wasm32"))]
+                #[cfg(any(not(target_arch = "wasm32"), target_os = "wasi"))]
                 unsafe extern "C" fn #release(__boltffi_context: *mut ::core::ffi::c_void) {
                     if !__boltffi_context.is_null() {
                         unsafe {
