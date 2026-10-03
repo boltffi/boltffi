@@ -17,7 +17,11 @@ static int {{ wire_encoder }}(PyObject *value, PyObject **out_wire, const uint8_
     if (!boltffi_python_expect_type_instance(value, {{ type_object }}, "{{ class_name }}")) {
         return 0;
     }
+{%- if transparent %}
+    wire = PyObject_CallMethod({{ type_object }}, "_boltffi_wire_value", "O", value);
+{%- else %}
     wire = PyObject_CallMethod(value, "_boltffi_wire", NULL);
+{%- endif %}
     if (wire == NULL) {
         return 0;
     }

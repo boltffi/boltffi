@@ -123,7 +123,7 @@ pub use decl::{
     DataVariantPayload, Decl, DeclarationRef, DeclarationRole, DirectFieldDecl, DirectRecordDecl,
     EncodedFieldDecl, EncodedRecordDecl, EnumDecl, ExportedMethodDecl, FieldKey, FunctionDecl,
     ImportedMethodDecl, InitializerDecl, MethodDecl, RecordDecl, StreamDecl, StreamItemPlan,
-    StreamItemPlanRender, StreamMode, StreamProtocol, VariantTag,
+    StreamItemPlanRender, StreamMode, StreamProtocol, TransparentPayload, VariantTag,
 };
 pub(crate) use decl::{ClassDeclParts, InvalidClassDecl, StreamDeclParts};
 pub use direction::{CallableScope, Direction, ForeignBody, IntoRust, OutOfRust, RustBody};
