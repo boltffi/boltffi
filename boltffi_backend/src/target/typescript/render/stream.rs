@@ -10,9 +10,9 @@ use super::super::{
     codec::{ReadKind, Reader},
     name_style::Name,
     primitive::Scalar,
-    syntax::{Expression, Identifier, MemberName, TypeName},
+    syntax::{Expression, Identifier, MemberName, Statement, TypeName},
 };
-use super::{Type, direct_vector::DirectVector};
+use super::{Type, direct_vector::DirectVector, function::error_exception};
 
 #[derive(AskamaTemplate)]
 #[template(path = "target/typescript/stream.ts", escape = "none")]
@@ -29,6 +29,15 @@ pub struct Stream {
     poll: Identifier,
     unsubscribe: Identifier,
     free: Identifier,
+    failure: Option<StreamFailure>,
+}
+
+/// How a fallible stream turns its packed `take_error` buffer into the error
+/// it ends with.
+struct StreamFailure {
+    take_error: Identifier,
+    setup: Vec<Statement>,
+    error: Expression,
 }
 
 struct Item {
@@ -77,6 +86,23 @@ impl Stream {
             poll: Identifier::parse(protocol.poll().name().as_str())?,
             unsubscribe: Identifier::parse(protocol.unsubscribe().name().as_str())?,
             free: Identifier::parse(protocol.free().name().as_str())?,
+            failure: match (protocol.take_error(), declaration.error()) {
+                (Some(take_error), Some(error)) => {
+                    let (setup, error) = error_exception(
+                        error.ty(),
+                        error.read(),
+                        Expression::identifier(Identifier::known("__boltffiError")),
+                        context,
+                    )?;
+                    Some(StreamFailure {
+                        take_error: Identifier::parse(take_error.name().as_str())?,
+                        setup,
+                        error,
+                    })
+                }
+                (None, None) => None,
+                _ => return Err(Self::unsupported("stream error plan without take_error")),
+            },
         })
     }
 

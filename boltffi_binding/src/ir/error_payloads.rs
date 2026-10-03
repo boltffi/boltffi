@@ -72,6 +72,10 @@ impl ErrorPayloadTypes {
             }
             DeclarationRef::Stream(stream) => {
                 stream.item().render_with(self);
+                if let Some(error) = stream.error() {
+                    self.insert_error_payload(error.ty());
+                    self.insert_read_plan(error.read());
+                }
             }
             DeclarationRef::Record(RecordDecl::Direct(_))
             | DeclarationRef::Enum(EnumDecl::CStyle(_))

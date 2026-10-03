@@ -14,7 +14,7 @@ use super::super::{
     syntax::{Identifier, Literal, TypeFragment},
     type_name,
 };
-use super::{Documentation, FreeBufferTemplate, direct_type};
+use super::{Documentation, FreeBufferTemplate, direct_type, error_exception};
 use askama::Template;
 
 pub(in crate::target::csharp) struct Stream {
@@ -33,6 +33,14 @@ pub(in crate::target::csharp) struct Stream {
     unsubscribe: String,
     free: String,
     free_buffer: Literal,
+    failure: Option<StreamFailure>,
+}
+
+/// How a fallible stream turns its `take_error` buffer into the exception it
+/// ends with.
+struct StreamFailure {
+    take_error: String,
+    throw: String,
 }
 
 struct StreamItem {
@@ -75,6 +83,28 @@ impl Stream {
             "NativeStreamPopBatch",
             &format!("Native{qualified}PopBatch"),
         );
+        let failure = match (protocol.take_error(), declaration.error()) {
+            (Some(take_error), Some(error)) => {
+                let decode = error
+                    .read()
+                    .render_with(&mut Reader::new(
+                        Identifier::parse("boltffiErrorReader")?,
+                        context,
+                    ))
+                    .map(ReadExpression::into_expression)?;
+                Some(StreamFailure {
+                    take_error: take_error.name().to_owned(),
+                    throw: error_exception(error.ty(), &decode, None, context)?.to_string(),
+                })
+            }
+            (None, None) => None,
+            _ => {
+                return Err(Error::BrokenBridgeContract {
+                    bridge: "c",
+                    invariant: "a stream error plan comes with a take_error function",
+                });
+            }
+        };
         Ok(Self {
             documentation: Documentation::summary(declaration.meta().doc(), "        "),
             runtime: Identifier::parse(format!("{qualified}StreamRuntime"))?,
@@ -91,6 +121,7 @@ impl Stream {
             unsubscribe: protocol.unsubscribe().name().to_owned(),
             free: protocol.free().name().to_owned(),
             free_buffer: Literal::string(bridge.support().buffer_free()?.name()),
+            failure,
         })
     }
 
@@ -105,7 +136,7 @@ impl Stream {
                 ))),
                 text: self.native_source().into(),
             });
-        if self.item.encoded {
+        if self.item.encoded || self.failure.is_some() {
             emitted = emitted
                 .with_aux(AuxChunk::ForwardDecl(super::WireTemplate.render()?.into()))
                 .with_aux(AuxChunk::Helper {
@@ -153,6 +184,14 @@ impl Stream {
                 self.runtime,
                 self.receiver_argument(),
             ),
+            StreamMode::Callback if self.failure.is_some() => format!(
+                "        public static {} {}({receiver}{separator}global::System.Action<{item}> callback, global::System.Action<global::System.Exception> onError)\n            => {}.Subscribe({}{}callback, onError);\n",
+                self.cancellable,
+                self.name,
+                self.runtime,
+                self.receiver_argument(),
+                if self.owner.is_some() { ", " } else { "" },
+            ),
             StreamMode::Callback => format!(
                 "        public static {} {}({receiver}{separator}global::System.Action<{item}> callback)\n            => {}.Subscribe({}, callback);\n",
                 self.cancellable,
@@ -198,30 +237,47 @@ impl Stream {
             )
         };
         let async_runtime = format!(
-            "    internal static class {}\n    {{\n        internal static async global::System.Collections.Generic.IAsyncEnumerable<{item}> ReadAll({read_all_receiver}[global::System.Runtime.CompilerServices.EnumeratorCancellation] global::System.Threading.CancellationToken cancellationToken = default)\n        {{\n{subscription_setup}            if (subscription == 0) yield break;\n            try\n            {{\n                while (true)\n                {{\n                    {item}[] items = ReadBatch(subscription, 16);\n                    foreach ({item} item in items) yield return item;\n                    if (items.Length != 0) continue;\n                    int wait = await global::System.Threading.Tasks.Task.Run(() => NativeMethods.{}(subscription, 100), cancellationToken).ConfigureAwait(false);\n                    if (wait < 0) yield break;\n                }}\n            }}\n            finally\n            {{\n                NativeMethods.{}(subscription);\n                NativeMethods.{}(subscription);\n            }}\n        }}\n\n        internal static {item}[] ReadBatch(ulong subscription, nuint maxCount)\n        {{\n{}\n        }}",
+            "    internal static class {}\n    {{\n        internal static async global::System.Collections.Generic.IAsyncEnumerable<{item}> ReadAll({read_all_receiver}[global::System.Runtime.CompilerServices.EnumeratorCancellation] global::System.Threading.CancellationToken cancellationToken = default)\n        {{\n{subscription_setup}            if (subscription == 0) yield break;\n            try\n            {{\n                while (true)\n                {{\n                    {item}[] items = ReadBatch(subscription, 16);\n                    foreach ({item} item in items) yield return item;\n                    if (items.Length != 0) continue;\n                    int wait = await global::System.Threading.Tasks.Task.Run(() => NativeMethods.{}(subscription, 100), cancellationToken).ConfigureAwait(false);\n                    if (wait < 0) {{end_of_stream}}\n                }}\n            }}\n            finally\n            {{\n                NativeMethods.{}(subscription);\n                NativeMethods.{}(subscription);\n            }}\n        }}\n\n        internal static {item}[] ReadBatch(ulong subscription, nuint maxCount)\n        {{\n{}\n        }}",
             self.runtime,
             self.wait_method(),
             self.unsubscribe_method(),
             self.free_method(),
             indent(&self.item.read_batch, 12),
         );
+        let async_runtime = async_runtime.replace(
+            "{end_of_stream}",
+            &match self.failure {
+                Some(_) => format!(
+                    "\n                    {{\n                        {item}[] rest;\n                        while ((rest = ReadBatch(subscription, 16)).Length != 0) foreach ({item} item in rest) yield return item;\n                        global::System.Exception? failure = TakeFailure(subscription);\n                        if (failure != null) throw failure;\n                        yield break;\n                    }}"
+                ),
+                None => "yield break;".to_owned(),
+            },
+        );
+        let async_runtime = match &self.failure {
+            Some(failure) => format!(
+                "{async_runtime}\n\n        internal static global::System.Exception? TakeFailure(ulong subscription)\n        {{\n            FfiBuf boltffiErrorBuffer = NativeMethods.{}(subscription);\n            if (boltffiErrorBuffer.ptr == 0) return null;\n            try\n            {{\n                WireReader boltffiErrorReader = new WireReader(boltffiErrorBuffer);\n                return {};\n            }}\n            finally\n            {{\n                NativeMethods.FreeBuf(boltffiErrorBuffer);\n            }}\n        }}",
+                self.take_error_method(),
+                failure.throw,
+            ),
+            None => async_runtime,
+        };
         let delivery = match self.mode {
             StreamMode::Async => String::new(),
             StreamMode::Batch => format!(
-                "\n\n        internal static {} Create({receiver_only}) => new {}({});\n    }}\n\n    public sealed class {} : global::System.IDisposable\n    {{\n        private ulong handle;\n        internal {}(ulong handle) => this.handle = handle;\n\n        public {item}[] PopBatch(nuint maxCount = 16) => handle == 0 ? global::System.Array.Empty<{item}>() : {}.ReadBatch(handle, maxCount);\n        public int Wait(uint timeoutMilliseconds) => handle == 0 ? -1 : NativeMethods.{}(handle, timeoutMilliseconds);\n        public void Unsubscribe() {{ if (handle != 0) NativeMethods.{}(handle); }}\n        public void Dispose()\n        {{\n            ulong released = global::System.Threading.Interlocked.Exchange(ref handle, 0);\n            if (released == 0) return;\n            NativeMethods.{}(released);\n            NativeMethods.{}(released);\n            global::System.GC.SuppressFinalize(this);\n        }}\n        ~{}() {{ if (handle != 0) NativeMethods.{}(handle); }}\n",
+                "\n\n        internal static {} Create({receiver_only}) => new {}({});\n    }}\n\n    public sealed class {} : global::System.IDisposable\n    {{\n        private ulong handle;\n        internal {}(ulong handle) => this.handle = handle;\n\n{{pop_batch}}        public int Wait(uint timeoutMilliseconds) => handle == 0 ? -1 : NativeMethods.{}(handle, timeoutMilliseconds);\n        public void Unsubscribe() {{ if (handle != 0) NativeMethods.{}(handle); }}\n        public void Dispose()\n        {{\n            ulong released = global::System.Threading.Interlocked.Exchange(ref handle, 0);\n            if (released == 0) return;\n            NativeMethods.{}(released);\n            NativeMethods.{}(released);\n            global::System.GC.SuppressFinalize(this);\n        }}\n        ~{}() {{ if (handle != 0) NativeMethods.{}(handle); }}\n",
                 self.subscription,
                 self.subscription,
                 self.subscribe_call(),
                 self.subscription,
                 self.subscription,
-                self.runtime,
                 self.wait_method(),
                 self.unsubscribe_method(),
                 self.unsubscribe_method(),
                 self.free_method(),
                 self.subscription,
                 self.free_method(),
-            ),
+            )
+            .replace("{pop_batch}", &self.batch_pop_source()),
             StreamMode::Callback => format!(
                 "\n\n        internal static {} Subscribe({receiver_only}{})\n        {{\n            ulong subscription = {};\n            var cancellation = new global::System.Threading.CancellationTokenSource();\n            _ = global::System.Threading.Tasks.Task.Run(async () =>\n            {{\n                try\n                {{\n                    await foreach (var item in ReadAll(subscription, cancellation.Token)) callback(item);\n                }}\n                catch (global::System.OperationCanceledException) {{ }}\n            }});\n            return new {}(cancellation);\n        }}\n    }}\n\n    public sealed class {} : global::System.IDisposable\n    {{\n        private global::System.Threading.CancellationTokenSource? cancellation;\n        internal {}(global::System.Threading.CancellationTokenSource cancellation) => this.cancellation = cancellation;\n        public void Cancel() => global::System.Threading.Interlocked.Exchange(ref cancellation, null)?.Cancel();\n        public void Dispose() {{ Cancel(); global::System.GC.SuppressFinalize(this); }}\n        ~{}() => Cancel();\n",
                 self.cancellable,
@@ -233,7 +289,23 @@ impl Stream {
                 self.cancellable,
             )
             .replace("global::System.Action<)", &format!("global::System.Action<{item}> callback)"))
-            .replace("global::System.Action<\n", &format!("global::System.Action<{item}> callback\n")),
+            .replace("global::System.Action<\n", &format!("global::System.Action<{item}> callback\n"))
+            .replace(
+                &format!("global::System.Action<{item}> callback)"),
+                &match self.failure {
+                    Some(_) => format!(
+                        "global::System.Action<{item}> callback, global::System.Action<global::System.Exception> onError)"
+                    ),
+                    None => format!("global::System.Action<{item}> callback)"),
+                },
+            )
+            .replace(
+                "catch (global::System.OperationCanceledException) { }",
+                match self.failure {
+                    Some(_) => "catch (global::System.OperationCanceledException) { }\n                catch (global::System.Exception error) { onError(error); }",
+                    None => "catch (global::System.OperationCanceledException) { }",
+                },
+            ),
             _ => return super::super::unsupported("unknown stream mode"),
         };
         Ok(match self.mode {
@@ -259,7 +331,17 @@ impl Stream {
             self.unsubscribe_method(),
             self.free,
             self.free_method(),
-        )
+        ) + &self
+            .failure
+            .as_ref()
+            .map(|failure| {
+                format!(
+                    "\n\n        [global::System.Runtime.InteropServices.DllImport(LibName, EntryPoint = \"{}\")]\n        internal static extern FfiBuf {}(ulong subscription);",
+                    failure.take_error,
+                    self.take_error_method(),
+                )
+            })
+            .unwrap_or_default()
     }
 
     fn subscribe_method(&self) -> String {
@@ -276,6 +358,26 @@ impl Stream {
     }
     fn free_method(&self) -> String {
         format!("Native{}Free", self.qualified)
+    }
+    fn take_error_method(&self) -> String {
+        format!("Native{}TakeError", self.qualified)
+    }
+
+    /// `PopBatch` of the batch subscription; a fallible stream throws its error
+    /// once drained.
+    fn batch_pop_source(&self) -> String {
+        let item = &self.item.ty;
+        match self.failure {
+            Some(_) => format!(
+                "        private global::System.Exception? failure;\n        public {item}[] PopBatch(nuint maxCount = 16)\n        {{\n            if (handle == 0) return global::System.Array.Empty<{item}>();\n            // closed before this pop, so nothing can arrive after it: an empty pop is final\n            bool ended = failure != null || NativeMethods.{wait}(handle, 0) < 0;\n            {item}[] items = {runtime}.ReadBatch(handle, maxCount);\n            if (items.Length == 0 && ended)\n            {{\n                failure ??= {runtime}.TakeFailure(handle);\n                if (failure != null) throw failure;\n            }}\n            return items;\n        }}\n",
+                runtime = self.runtime,
+                wait = self.wait_method(),
+            ),
+            None => format!(
+                "        public {item}[] PopBatch(nuint maxCount = 16) => handle == 0 ? global::System.Array.Empty<{item}>() : {}.ReadBatch(handle, maxCount);\n",
+                self.runtime,
+            ),
+        }
     }
 
     fn pop_native_source(&self) -> String {

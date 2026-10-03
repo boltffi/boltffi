@@ -86,6 +86,7 @@ impl<'expansion, 'lowered> Stream<'expansion, 'lowered, Native> {
         let locals = names::Locals::new(method.span());
         let receiver = locals.receiver();
         let item_type = StreamItemType::new(&self.stream.source().item_type).into_type()?;
+        let subscription_type = self.subscription_type(&item_type)?;
         let stream_handle = wrapper::handle::CarrierTokens::native(self.stream.binding().handle())?;
         let stream_handle_type = stream_handle.ty();
         let stream_handle_zero = stream_handle.zero();
@@ -98,6 +99,7 @@ impl<'expansion, 'lowered> Stream<'expansion, 'lowered, Native> {
         })?;
         let pop_batch = self.pop_batch(
             &item_type,
+            &subscription_type,
             stream_handle_type,
             stream_handle_zero,
             &locals.stream_items(),
@@ -107,6 +109,7 @@ impl<'expansion, 'lowered> Stream<'expansion, 'lowered, Native> {
         let poll = symbols.poll();
         let unsubscribe = symbols.unsubscribe();
         let free = symbols.free();
+        let take_error = self.take_error(&cfg, &subscription_type, &stream_handle)?;
         let poll_export = quote! {
                 #cfg
                 #[unsafe(no_mangle)]
@@ -120,7 +123,7 @@ impl<'expansion, 'lowered> Stream<'expansion, 'lowered, Native> {
                         return;
                     }
                     let subscription = unsafe {
-                        &*(subscription_handle as usize as *const ::boltffi::__private::EventSubscription<#item_type>)
+                        &*(subscription_handle as usize as *const #subscription_type)
                     };
                     subscription.poll(callback_data, callback);
                 }
@@ -145,7 +148,7 @@ impl<'expansion, 'lowered> Stream<'expansion, 'lowered, Native> {
                     return ::boltffi::__private::WaitResult::Unsubscribed as i32;
                 }
                 let subscription = unsafe {
-                    &*(subscription_handle as usize as *const ::boltffi::__private::EventSubscription<#item_type>)
+                    &*(subscription_handle as usize as *const #subscription_type)
                 };
                 subscription.wait_for_events(timeout_milliseconds) as i32
             }
@@ -161,7 +164,7 @@ impl<'expansion, 'lowered> Stream<'expansion, 'lowered, Native> {
                     return;
                 }
                 let subscription = unsafe {
-                    &*(subscription_handle as usize as *const ::boltffi::__private::EventSubscription<#item_type>)
+                    &*(subscription_handle as usize as *const #subscription_type)
                 };
                 subscription.unsubscribe();
             }
@@ -176,9 +179,72 @@ impl<'expansion, 'lowered> Stream<'expansion, 'lowered, Native> {
                 }
                 drop(unsafe {
                     ::std::sync::Arc::from_raw(
-                        subscription_handle as usize as *const ::boltffi::__private::EventSubscription<#item_type>
+                        subscription_handle as usize as *const #subscription_type
                     )
                 });
+            }
+
+            #take_error
+        })
+    }
+
+    /// `EventSubscription<T>`, or `EventSubscription<T, E>` for a fallible
+    /// stream: the type every handle cast must name.
+    fn subscription_type(&self, item_type: &Type) -> Result<TokenStream, Error> {
+        match &self.stream.source().error_type {
+            None => Ok(quote! { ::boltffi::__private::EventSubscription<#item_type> }),
+            Some(error) => {
+                let error_type = rust_api::TypeTokens::new(error)?.into_type();
+                Ok(quote! { ::boltffi::__private::EventSubscription<#item_type, #error_type> })
+            }
+        }
+    }
+
+    /// The `take_error` export of a fallible stream: the encoded error once it
+    /// failed, an empty buffer otherwise. Nothing for an infallible stream.
+    fn take_error(
+        &self,
+        cfg: &TokenStream,
+        subscription_type: &TokenStream,
+        handle: &wrapper::handle::CarrierTokens,
+    ) -> Result<TokenStream, Error> {
+        let (Some(symbol), Some(error)) = (
+            self.stream.binding().protocol().take_error(),
+            self.stream.binding().error(),
+        ) else {
+            return Ok(TokenStream::new());
+        };
+        let symbol = names::Symbol::new(symbol).ident();
+        let failure = quote::format_ident!("__boltffi_failure");
+        let empty = wrapper::returns::encoded::Empty::<Native>::new(error.shape()).render()?;
+        let encoded = wrapper::returns::encoded::Input::root(
+            error.read().root(),
+            error.shape(),
+            failure.clone(),
+            self.expansion,
+        )
+        .render()?;
+        let handle_type = handle.ty();
+        let handle_zero = handle.zero();
+        let return_type = empty.return_type();
+        let empty_value = empty.value();
+        let failure_value = encoded.value();
+        Ok(quote! {
+            #cfg
+            #[unsafe(no_mangle)]
+            pub unsafe extern "C" fn #symbol(
+                subscription_handle: #handle_type,
+            ) #return_type {
+                if subscription_handle == #handle_zero {
+                    return #empty_value;
+                }
+                let subscription = unsafe {
+                    &*(subscription_handle as usize as *const #subscription_type)
+                };
+                match subscription.take_failure() {
+                    Some(#failure) => #failure_value,
+                    None => #empty_value,
+                }
             }
         })
     }
@@ -254,6 +320,7 @@ impl<'expansion, 'lowered> Stream<'expansion, 'lowered, Native> {
     fn pop_batch(
         &self,
         item_type: &Type,
+        subscription_type: &TokenStream,
         stream_handle_type: &TokenStream,
         stream_handle_zero: &TokenStream,
         items: &Ident,
@@ -264,14 +331,15 @@ impl<'expansion, 'lowered> Stream<'expansion, 'lowered, Native> {
             StreamItemPlan::Direct { ty, .. } => {
                 let body = match ty {
                     DirectValueType::Primitive(_) | DirectValueType::Record(_) => quote! {
-                        fn __boltffi_pop_direct_stream_batch<StreamItem>(
-                            subscription: &::boltffi::__private::EventSubscription<StreamItem>,
+                        fn __boltffi_pop_direct_stream_batch<StreamItem, StreamError>(
+                            subscription: &::boltffi::__private::EventSubscription<StreamItem, StreamError>,
                             output_ptr: *mut <StreamItem as ::boltffi::__private::Passable>::Out,
                             output_capacity: usize,
                         ) -> usize
                         where
                             StreamItem:
                                 ::boltffi::__private::Passable<Out = StreamItem> + Send + 'static,
+                            StreamError: Send + 'static,
                         {
                             let #output_slots = unsafe {
                                 ::core::slice::from_raw_parts_mut(
@@ -282,7 +350,7 @@ impl<'expansion, 'lowered> Stream<'expansion, 'lowered, Native> {
                             subscription.pop_batch_into(#output_slots)
                         }
 
-                        __boltffi_pop_direct_stream_batch::<#item_type>(
+                        __boltffi_pop_direct_stream_batch::<#item_type, _>(
                             subscription,
                             output_ptr,
                             output_capacity,
@@ -318,7 +386,7 @@ impl<'expansion, 'lowered> Stream<'expansion, 'lowered, Native> {
                             return 0;
                         }
                         let subscription = unsafe {
-                            &*(subscription_handle as usize as *const ::boltffi::__private::EventSubscription<#item_type>)
+                            &*(subscription_handle as usize as *const #subscription_type)
                         };
                         #body
                     }
@@ -349,7 +417,7 @@ impl<'expansion, 'lowered> Stream<'expansion, 'lowered, Native> {
                             return #empty_value;
                         }
                         let subscription = unsafe {
-                            &*(subscription_handle as usize as *const ::boltffi::__private::EventSubscription<#item_type>)
+                            &*(subscription_handle as usize as *const #subscription_type)
                         };
                         let #items: Vec<#item_type> = ::core::iter::from_fn(|| subscription.pop_event())
                             .take(max_count)
@@ -377,6 +445,7 @@ impl<'expansion, 'lowered> Stream<'expansion, 'lowered, Wasm32> {
         let locals = names::Locals::new(method.span());
         let receiver = locals.receiver();
         let item_type = StreamItemType::new(&self.stream.source().item_type).into_type()?;
+        let subscription_type = self.subscription_type(&item_type)?;
         let stream_handle = wrapper::handle::CarrierTokens::wasm32(self.stream.binding().handle())?;
         let stream_handle_type = stream_handle.ty();
         let stream_handle_zero = stream_handle.zero();
@@ -389,6 +458,7 @@ impl<'expansion, 'lowered> Stream<'expansion, 'lowered, Wasm32> {
         })?;
         let pop_batch = self.pop_batch(
             &item_type,
+            &subscription_type,
             stream_handle_type,
             stream_handle_zero,
             &locals.stream_items(),
@@ -398,6 +468,7 @@ impl<'expansion, 'lowered> Stream<'expansion, 'lowered, Wasm32> {
         let poll = symbols.poll();
         let unsubscribe = symbols.unsubscribe();
         let free = symbols.free();
+        let take_error = self.take_error(&cfg, &subscription_type, &stream_handle)?;
         let poll_export = quote! {
             #cfg
             #[unsafe(no_mangle)]
@@ -408,7 +479,7 @@ impl<'expansion, 'lowered> Stream<'expansion, 'lowered, Wasm32> {
                     return;
                 }
                 let subscription = unsafe {
-                    &*(subscription_handle as usize as *const ::boltffi::__private::EventSubscription<#item_type>)
+                    &*(subscription_handle as usize as *const #subscription_type)
                 };
                 subscription.poll_wasm(subscription_handle);
             }
@@ -433,7 +504,7 @@ impl<'expansion, 'lowered> Stream<'expansion, 'lowered, Wasm32> {
                     return ::boltffi::__private::WaitResult::Unsubscribed as i32;
                 }
                 let subscription = unsafe {
-                    &*(subscription_handle as usize as *const ::boltffi::__private::EventSubscription<#item_type>)
+                    &*(subscription_handle as usize as *const #subscription_type)
                 };
                 subscription.wait_for_events(timeout_milliseconds) as i32
             }
@@ -449,7 +520,7 @@ impl<'expansion, 'lowered> Stream<'expansion, 'lowered, Wasm32> {
                     return;
                 }
                 let subscription = unsafe {
-                    &*(subscription_handle as usize as *const ::boltffi::__private::EventSubscription<#item_type>)
+                    &*(subscription_handle as usize as *const #subscription_type)
                 };
                 subscription.unsubscribe();
             }
@@ -464,9 +535,72 @@ impl<'expansion, 'lowered> Stream<'expansion, 'lowered, Wasm32> {
                 }
                 drop(unsafe {
                     ::std::sync::Arc::from_raw(
-                        subscription_handle as usize as *const ::boltffi::__private::EventSubscription<#item_type>
+                        subscription_handle as usize as *const #subscription_type
                     )
                 });
+            }
+
+            #take_error
+        })
+    }
+
+    /// `EventSubscription<T>`, or `EventSubscription<T, E>` for a fallible
+    /// stream: the type every handle cast must name.
+    fn subscription_type(&self, item_type: &Type) -> Result<TokenStream, Error> {
+        match &self.stream.source().error_type {
+            None => Ok(quote! { ::boltffi::__private::EventSubscription<#item_type> }),
+            Some(error) => {
+                let error_type = rust_api::TypeTokens::new(error)?.into_type();
+                Ok(quote! { ::boltffi::__private::EventSubscription<#item_type, #error_type> })
+            }
+        }
+    }
+
+    /// The `take_error` export of a fallible stream: the encoded error once it
+    /// failed, an empty buffer otherwise. Nothing for an infallible stream.
+    fn take_error(
+        &self,
+        cfg: &TokenStream,
+        subscription_type: &TokenStream,
+        handle: &wrapper::handle::CarrierTokens,
+    ) -> Result<TokenStream, Error> {
+        let (Some(symbol), Some(error)) = (
+            self.stream.binding().protocol().take_error(),
+            self.stream.binding().error(),
+        ) else {
+            return Ok(TokenStream::new());
+        };
+        let symbol = names::Symbol::new(symbol).ident();
+        let failure = quote::format_ident!("__boltffi_failure");
+        let empty = wrapper::returns::encoded::Empty::<Wasm32>::new(error.shape()).render()?;
+        let encoded = wrapper::returns::encoded::Input::root(
+            error.read().root(),
+            error.shape(),
+            failure.clone(),
+            self.expansion,
+        )
+        .render()?;
+        let handle_type = handle.ty();
+        let handle_zero = handle.zero();
+        let return_type = empty.return_type();
+        let empty_value = empty.value();
+        let failure_value = encoded.value();
+        Ok(quote! {
+            #cfg
+            #[unsafe(no_mangle)]
+            pub unsafe extern "C" fn #symbol(
+                subscription_handle: #handle_type,
+            ) #return_type {
+                if subscription_handle == #handle_zero {
+                    return #empty_value;
+                }
+                let subscription = unsafe {
+                    &*(subscription_handle as usize as *const #subscription_type)
+                };
+                match subscription.take_failure() {
+                    Some(#failure) => #failure_value,
+                    None => #empty_value,
+                }
             }
         })
     }
@@ -542,6 +676,7 @@ impl<'expansion, 'lowered> Stream<'expansion, 'lowered, Wasm32> {
     fn pop_batch(
         &self,
         item_type: &Type,
+        subscription_type: &TokenStream,
         stream_handle_type: &TokenStream,
         stream_handle_zero: &TokenStream,
         items: &Ident,
@@ -552,14 +687,15 @@ impl<'expansion, 'lowered> Stream<'expansion, 'lowered, Wasm32> {
             StreamItemPlan::Direct { ty, .. } => {
                 let body = match ty {
                     DirectValueType::Primitive(_) | DirectValueType::Record(_) => quote! {
-                        fn __boltffi_pop_direct_stream_batch<StreamItem>(
-                            subscription: &::boltffi::__private::EventSubscription<StreamItem>,
+                        fn __boltffi_pop_direct_stream_batch<StreamItem, StreamError>(
+                            subscription: &::boltffi::__private::EventSubscription<StreamItem, StreamError>,
                             output_ptr: *mut <StreamItem as ::boltffi::__private::Passable>::Out,
                             output_capacity: usize,
                         ) -> usize
                         where
                             StreamItem:
                                 ::boltffi::__private::Passable<Out = StreamItem> + Send + 'static,
+                            StreamError: Send + 'static,
                         {
                             let #output_slots = unsafe {
                                 ::core::slice::from_raw_parts_mut(
@@ -570,7 +706,7 @@ impl<'expansion, 'lowered> Stream<'expansion, 'lowered, Wasm32> {
                             subscription.pop_batch_into(#output_slots)
                         }
 
-                        __boltffi_pop_direct_stream_batch::<#item_type>(
+                        __boltffi_pop_direct_stream_batch::<#item_type, _>(
                             subscription,
                             output_ptr,
                             output_capacity,
@@ -606,7 +742,7 @@ impl<'expansion, 'lowered> Stream<'expansion, 'lowered, Wasm32> {
                             return 0;
                         }
                         let subscription = unsafe {
-                            &*(subscription_handle as usize as *const ::boltffi::__private::EventSubscription<#item_type>)
+                            &*(subscription_handle as usize as *const #subscription_type)
                         };
                         #body
                     }
@@ -637,7 +773,7 @@ impl<'expansion, 'lowered> Stream<'expansion, 'lowered, Wasm32> {
                             return #empty_value;
                         }
                         let subscription = unsafe {
-                            &*(subscription_handle as usize as *const ::boltffi::__private::EventSubscription<#item_type>)
+                            &*(subscription_handle as usize as *const #subscription_type)
                         };
                         let #items: Vec<#item_type> = ::core::iter::from_fn(|| subscription.pop_event())
                             .take(max_count)

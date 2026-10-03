@@ -96,3 +96,35 @@ impl LabelStream {
         self.producer.subscribe()
     }
 }
+
+pub struct JobStream {
+    subscription: Arc<EventSubscription<i32, String>>,
+}
+
+impl Default for JobStream {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[export]
+impl JobStream {
+    pub fn new() -> Self {
+        Self {
+            subscription: Arc::new(EventSubscription::fallible(8)),
+        }
+    }
+
+    pub fn emit(&self, value: i32) -> bool {
+        self.subscription.push_event(value)
+    }
+
+    pub fn fail(&self, reason: String) -> bool {
+        self.subscription.fail(reason)
+    }
+
+    #[ffi_stream(item = i32, error = String)]
+    pub fn subscribe(&self) -> Arc<EventSubscription<i32, String>> {
+        Arc::clone(&self.subscription)
+    }
+}

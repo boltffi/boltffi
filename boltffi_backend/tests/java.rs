@@ -630,6 +630,39 @@ const STREAMS: &str = r#"
     }
 "#;
 
+const FALLIBLE_STREAMS: &str = r#"
+    use std::sync::Arc;
+    use boltffi::EventSubscription;
+
+    #[error]
+    pub enum JobError {
+        Refused { code: u32 },
+        Lost,
+    }
+
+    #[error]
+    #[repr(u32)]
+    pub enum Halt {
+        Stopped = 1,
+    }
+
+    pub struct Jobs;
+
+    #[export(single_threaded)]
+    impl Jobs {
+        pub fn new() -> Self { Self }
+
+        #[ffi_stream(item = String, error = String)]
+        pub fn lines(&self) -> Arc<EventSubscription<String, String>> { todo!() }
+
+        #[ffi_stream(item = i32, error = JobError, mode = "batch")]
+        pub fn progress(&self) -> Arc<EventSubscription<i32, JobError>> { todo!() }
+
+        #[ffi_stream(item = i32, error = Halt, mode = "callback")]
+        pub fn ticks(&self) -> Arc<EventSubscription<i32, Halt>> { todo!() }
+    }
+"#;
+
 const STREAM_RUNTIME_PROBE: &str = r#"
     package com.boltffi.demo;
 
@@ -1860,6 +1893,42 @@ fn java_target_renders_streams_from_shared_protocols_and_item_plans() {
     assert!(module.contains("final class StreamSubscription<T> implements AutoCloseable"));
     assert!(!module.contains("synchronized"));
     assert!(output.coverage().unsupported().is_empty());
+}
+
+#[test]
+fn java_target_renders_fallible_streams_with_their_error_channel() {
+    let output = render(FALLIBLE_STREAMS, CoverageMode::Complete);
+    let jobs = java_source(&output, "com.boltffi.demo", "Jobs");
+    let module = java_source(&output, "com.boltffi.demo", "Demo");
+
+    assert!(jobs.contains(
+        "public StreamSubscription<String> lines(java.util.function.Consumer<String> callback, java.util.function.Consumer<RuntimeException> onError)"
+    ));
+    assert!(jobs.contains("public StreamSubscription<Integer> progress()"));
+    assert!(jobs.contains("Native.boltffi_stream_demo_jobs_lines_take_error(streamHandle)"));
+    assert!(jobs.contains("return new RuntimeException(__boltffi_error_reader.readString());"));
+    assert!(jobs.contains("new Halt.Exception("));
+    assert!(module.contains(
+        "static native byte[] boltffi_stream_demo_jobs_progress_take_error(long subscription)"
+    ));
+    assert!(output.coverage().unsupported().is_empty());
+}
+
+#[test]
+fn generated_fallible_stream_sources_compile_when_available() {
+    let Some(compiler) = JavaCompiler::discover() else {
+        return;
+    };
+
+    compile_generated_java(
+        &compiler,
+        &render_with_host(
+            FALLIBLE_STREAMS,
+            CoverageMode::Complete,
+            JavaHost::new("com.boltffi.demo", "Demo").expect("Java host"),
+        ),
+        "boltffi-java-fallible-streams",
+    );
 }
 
 #[test]

@@ -18,6 +18,10 @@ public final class {{ subscription }} {
     private let wait: (UInt64, UInt32) -> Int32
     private let unsubscribeCall: (UInt64) -> Void
     private let free: (UInt64) -> Void
+{%- if stream.fallible() %}
+    private let takeFailure: (UInt64) -> Swift.Error?
+    private var failure: Swift.Error?
+{%- endif %}
     private var closed = false
 
     @usableFromInline init(
@@ -25,13 +29,17 @@ public final class {{ subscription }} {
         readBatch: @escaping (UInt64, UInt) -> [{{ stream.item_type() }}],
         wait: @escaping (UInt64, UInt32) -> Int32,
         unsubscribe: @escaping (UInt64) -> Void,
-        free: @escaping (UInt64) -> Void
+        free: @escaping (UInt64) -> Void{% if stream.fallible() %},
+        takeFailure: @escaping (UInt64) -> Swift.Error?{% endif %}
     ) {
         self.handle = handle
         self.readBatch = readBatch
         self.wait = wait
         self.unsubscribeCall = unsubscribe
         self.free = free
+{%- if stream.fallible() %}
+        self.takeFailure = takeFailure
+{%- endif %}
     }
 
     deinit {
@@ -40,12 +48,28 @@ public final class {{ subscription }} {
         }
     }
 
-    public func popBatch(maxCount: UInt = 16) -> [{{ stream.item_type() }}] {
+{% if stream.fallible() %}    public func popBatch(maxCount: UInt = 16) throws -> [{{ stream.item_type() }}] {
+        if handle == 0 {
+            return []
+        }
+        // closed before this pop, so nothing can arrive after it: an empty pop is final
+        let ended = failure != nil || wait(handle, 0) < 0
+        let items = readBatch(handle, maxCount)
+        if items.isEmpty && ended {
+            if failure == nil {
+                failure = takeFailure(handle)
+            }
+            if let failure {
+                throw failure
+            }
+        }
+        return items
+    }{% else %}    public func popBatch(maxCount: UInt = 16) -> [{{ stream.item_type() }}] {
         if handle == 0 {
             return []
         }
         return readBatch(handle, maxCount)
-    }
+    }{% endif %}
 
     public func wait(timeout: UInt32) -> Int32 {
         if handle == 0 {
@@ -89,7 +113,7 @@ public final class {{ cancellable }} {
 {%- endif -%}
 {%- if section.body() -%}
 {%- if stream.async_delivery() -%}
-{{ indent }}_Concurrency.AsyncStream<{{ stream.item_type() }}>(bufferingPolicy: .unbounded) { continuation in
+{{ indent }}_Concurrency.Async{% if stream.fallible() %}Throwing{% endif %}Stream<{{ stream.item_type() }}{% if stream.fallible() %}, Swift.Error{% endif %}>(bufferingPolicy: .unbounded) { continuation in
 {{ inner_indent }}let {{ stream.subscription_binding() }} = {{ stream.subscribe_call() }}
 {{ inner_indent }}guard {{ stream.subscription_binding() }} != 0 else {
 {{ block_indent }}continuation.finish()
@@ -106,7 +130,9 @@ public final class {{ cancellable }} {
 {{ argument_indent }}free: {{ stream.free() }},
 {{ argument_indent }}atomicCompareExchange: boltffi_atomic_u8_cas,
 {{ argument_indent }}yieldItem: { {{ stream.yielded_item_binding() }} in _ = continuation.yield({{ stream.yielded_item_binding() }}) },
-{{ argument_indent }}finish: { continuation.finish() }
+{{ argument_indent }}finish: { continuation.finish() }{% if stream.fallible() %},
+{{ argument_indent }}fail: { failure in continuation.finish(throwing: failure) },
+{{ argument_indent }}takeFailure: {{ stream.take_failure(argument_indent) }}{% endif %}
 {{ inner_indent }})
 {{ inner_indent }}continuation.onTermination = { @Sendable _ in context.requestTermination() }
 {{ inner_indent }}context.start()
@@ -121,7 +147,8 @@ public final class {{ cancellable }} {
 {{ inner_indent }}},
 {{ inner_indent }}wait: {{ stream.wait() }},
 {{ inner_indent }}unsubscribe: {{ stream.unsubscribe() }},
-{{ inner_indent }}free: {{ stream.free() }}
+{{ inner_indent }}free: {{ stream.free() }}{% if stream.fallible() %},
+{{ inner_indent }}takeFailure: {{ stream.take_failure(inner_indent) }}{% endif %}
 {{ indent }})
 {%- endif -%}
 {%- if let Some(cancellable) = stream.callback_cancellable() -%}
@@ -140,7 +167,9 @@ public final class {{ cancellable }} {
 {{ inner_indent }}free: {{ stream.free() }},
 {{ inner_indent }}atomicCompareExchange: boltffi_atomic_u8_cas,
 {{ inner_indent }}yieldItem: callback,
-{{ inner_indent }}finish: {}
+{{ inner_indent }}finish: {}{% if stream.fallible() %},
+{{ inner_indent }}fail: onError,
+{{ inner_indent }}takeFailure: {{ stream.take_failure(inner_indent) }}{% endif %}
 {{ indent }})
 {{ indent }}context.start()
 {{ indent }}return {{ cancellable }} { context.requestTermination() }
@@ -224,6 +253,9 @@ private final class BoltFFIStreamContext<Item>: BoltFFIStreamPollContext, @unche
     private let atomicCompareExchange: (UnsafeMutablePointer<UInt8>?, UInt8, UInt8) -> Bool
     private let yieldItem: (Item) -> Void
     private let finish: () -> Void
+    private let fail: ((Swift.Error) -> Void)?
+    private let takeFailure: ((UInt64) -> Swift.Error?)?
+    private var failure: Swift.Error?
     private var lifecycle = UInt8(0)
     private var processing = UInt8(0)
 
@@ -236,7 +268,9 @@ private final class BoltFFIStreamContext<Item>: BoltFFIStreamPollContext, @unche
         free: @escaping (UInt64) -> Void,
         atomicCompareExchange: @escaping (UnsafeMutablePointer<UInt8>?, UInt8, UInt8) -> Bool,
         yieldItem: @escaping (Item) -> Void,
-        finish: @escaping () -> Void
+        finish: @escaping () -> Void,
+        fail: ((Swift.Error) -> Void)? = nil,
+        takeFailure: ((UInt64) -> Swift.Error?)? = nil
     ) {
         self.subscription = subscription
         self.batchSize = batchSize
@@ -247,6 +281,8 @@ private final class BoltFFIStreamContext<Item>: BoltFFIStreamPollContext, @unche
         self.atomicCompareExchange = atomicCompareExchange
         self.yieldItem = yieldItem
         self.finish = finish
+        self.fail = fail
+        self.takeFailure = takeFailure
     }
 
     func start() {
@@ -294,6 +330,8 @@ private final class BoltFFIStreamContext<Item>: BoltFFIStreamPollContext, @unche
         }
         drain()
         if result == BoltFFIStreamPollResult.closed.rawValue {
+            // still processing, so the handle cannot be freed under us
+            failure = takeFailure?(subscription)
             requestTermination()
             return false
         }
@@ -327,7 +365,11 @@ private final class BoltFFIStreamContext<Item>: BoltFFIStreamPollContext, @unche
             return
         }
         free(subscription)
-        finish()
+        if let failure, let fail {
+            fail(failure)
+        } else {
+            finish()
+        }
     }
 }
 {%- endif -%}

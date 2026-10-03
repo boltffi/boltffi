@@ -1376,47 +1376,7 @@ impl ErrorConversion {
                     codec_reader = codec_reader.package(package);
                 }
                 let decoded = codec.render_with(&mut codec_reader)?.into_expression();
-                let thrown =
-                    match ty {
-                        TypeRef::String => Expression::construct(
-                            TypeName::named(TypeIdentifier::known("RuntimeException", version)),
-                            [decoded].into_iter().collect(),
-                        ),
-                        TypeRef::Record(_) => decoded,
-                        TypeRef::Enum(id) => match context.enumeration(id).ok_or(
-                            JavaHost::broken_bridge_contract(
-                                "enum error type was not found in render context",
-                            ),
-                        )? {
-                            EnumDecl::CStyle(_) => Expression::construct(
-                                TypeName::nested(
-                                    TypeName::named(Enumeration::type_name_for(
-                                        id, context, version,
-                                    )?),
-                                    TypeIdentifier::known("Exception", version),
-                                ),
-                                [decoded].into_iter().collect(),
-                            ),
-                            EnumDecl::Data(enumeration)
-                                if enumeration.variants().iter().all(|variant| {
-                                    matches!(variant.payload(), DataVariantPayload::Unit)
-                                }) =>
-                            {
-                                Expression::construct(
-                                    TypeName::nested(
-                                        TypeName::named(Enumeration::type_name_for(
-                                            id, context, version,
-                                        )?),
-                                        TypeIdentifier::known("Exception", version),
-                                    ),
-                                    [decoded].into_iter().collect(),
-                                )
-                            }
-                            EnumDecl::Data(_) => decoded,
-                            _ => return Err(JavaHost::unsupported("unknown Java enum error type")),
-                        },
-                        _ => return Err(JavaHost::unsupported("Java throwable error type")),
-                    };
+                let thrown = error_throwable(&ty, decoded, version, context)?;
                 Ok(vec![Statement::try_catch(
                     success,
                     TypeName::named(TypeIdentifier::known(
@@ -1532,4 +1492,53 @@ impl Receiver {
             _ => Err(JavaHost::unsupported("mutable c-style enum receiver")),
         }
     }
+}
+
+/// What a decoded error of type `ty` is thrown as: the value itself when it
+/// already is a throwable, otherwise the exception that wraps it.
+pub(in crate::target::java) fn error_throwable(
+    ty: &TypeRef,
+    decoded: Expression,
+    version: JavaVersion,
+    context: &RenderContext<Native>,
+) -> Result<Expression> {
+    Ok(match ty {
+        TypeRef::String => Expression::construct(
+            TypeName::named(TypeIdentifier::known("RuntimeException", version)),
+            [decoded].into_iter().collect(),
+        ),
+        TypeRef::Record(_) => decoded,
+        TypeRef::Enum(id) => {
+            match context
+                .enumeration(*id)
+                .ok_or(JavaHost::broken_bridge_contract(
+                    "enum error type was not found in render context",
+                ))? {
+                EnumDecl::CStyle(_) => Expression::construct(
+                    TypeName::nested(
+                        TypeName::named(Enumeration::type_name_for(*id, context, version)?),
+                        TypeIdentifier::known("Exception", version),
+                    ),
+                    [decoded].into_iter().collect(),
+                ),
+                EnumDecl::Data(enumeration)
+                    if enumeration
+                        .variants()
+                        .iter()
+                        .all(|variant| matches!(variant.payload(), DataVariantPayload::Unit)) =>
+                {
+                    Expression::construct(
+                        TypeName::nested(
+                            TypeName::named(Enumeration::type_name_for(*id, context, version)?),
+                            TypeIdentifier::known("Exception", version),
+                        ),
+                        [decoded].into_iter().collect(),
+                    )
+                }
+                EnumDecl::Data(_) => decoded,
+                _ => return Err(JavaHost::unsupported("unknown Java enum error type")),
+            }
+        }
+        _ => return Err(JavaHost::unsupported("Java throwable error type")),
+    })
 }
