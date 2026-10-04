@@ -37,12 +37,12 @@ serde_json.workspace = true
 console = "0.16"
 indicatif = "0.18"
 object.workspace = true
-wasmparser = "0.244"
+wasmparser = "0.259"
 semver = { version = "1", features = ["serde"] }
-oxc_allocator = "0.120"
-oxc_ast = "0.120"
-oxc_parser = "0.120"
-oxc_span = "0.120"
+oxc_allocator = "0.152"
+oxc_ast = "0.152"
+oxc_parser = "0.152"
+oxc_span = "0.152"
 tempfile = "3.23.0"
 
 [dev-dependencies]
