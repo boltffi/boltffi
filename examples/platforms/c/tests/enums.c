@@ -172,3 +172,31 @@ bool test_filters(void) {
     demo_api_response_free(&response);
     return true;
 }
+
+bool test_transparent_enums(void) {
+    // C has no subtyping, so a transparent variant is an ordinary tagged union
+    // member here; what the cases pin is that each payload crosses unchanged
+    DemoWaypoint waypoint = demo_echo_waypoint((DemoWaypointView){.tag = DEMO_WAYPOINT_POINT, .data.point = {{1.5, -2.0}}});
+    CHECK(waypoint.tag == DEMO_WAYPOINT_POINT && waypoint.data.point.field_0.x == 1.5 && waypoint.data.point.field_0.y == -2.0, "case:enums.transparent.waypoint.should_roundtrip_a_blittable_payload");
+    demo_waypoint_free(&waypoint);
+    waypoint = demo_echo_waypoint((DemoWaypointView){.tag = DEMO_WAYPOINT_LABEL, .data.label = {{{"harbor", 6}}}});
+    CHECK(waypoint.tag == DEMO_WAYPOINT_LABEL && waypoint.data.label.field_0.text.len == 6 && memcmp(waypoint.data.label.field_0.text.ptr, "harbor", 6) == 0, "case:enums.transparent.waypoint.should_roundtrip_an_encoded_payload");
+    demo_waypoint_free(&waypoint);
+    waypoint = demo_echo_waypoint((DemoWaypointView){.tag = DEMO_WAYPOINT_NOTE, .data.note = {{"left at the pier", 16}}});
+    const bool note_matches = waypoint.tag == DEMO_WAYPOINT_NOTE && waypoint.data.note.field_0.len == 16 && memcmp(waypoint.data.note.field_0.ptr, "left at the pier", 16) == 0;
+    demo_waypoint_free(&waypoint);
+    waypoint = demo_echo_waypoint((DemoWaypointView){.tag = DEMO_WAYPOINT_UNSET});
+    CHECK(note_matches && waypoint.tag == DEMO_WAYPOINT_UNSET, "case:enums.transparent.waypoint.should_roundtrip_the_wrapped_and_unit_variants");
+    demo_waypoint_free(&waypoint);
+
+    const DemoPoint shared = {3.0, 4.0};
+    waypoint = demo_echo_waypoint((DemoWaypointView){.tag = DEMO_WAYPOINT_POINT, .data.point = {shared}});
+    const DemoAnchor anchor = demo_echo_anchor((DemoAnchor){.tag = DEMO_ANCHOR_POINT, .data.point = {shared}});
+    CHECK(waypoint.tag == DEMO_WAYPOINT_POINT && waypoint.data.point.field_0.x == shared.x && waypoint.data.point.field_0.y == shared.y && anchor.tag == DEMO_ANCHOR_POINT && anchor.data.point.field_0.x == shared.x && anchor.data.point.field_0.y == shared.y, "case:enums.transparent.anchor.should_carry_the_shared_payload_under_its_own_tag");
+    demo_waypoint_free(&waypoint);
+
+    const DemoCourse heading = demo_echo_course((DemoCourse){.tag = DEMO_COURSE_HEADING, .data.heading = {DEMO_HEADING_EAST}});
+    const DemoCourse bearing = demo_echo_course((DemoCourse){.tag = DEMO_COURSE_BEARING, .data.bearing = {DEMO_HEADING_SOUTH}});
+    CHECK(heading.tag == DEMO_COURSE_HEADING && heading.data.heading.field_0 == DEMO_HEADING_EAST && bearing.tag == DEMO_COURSE_BEARING && bearing.data.bearing.field_0 == DEMO_HEADING_SOUTH, "case:enums.transparent.course.should_roundtrip_a_c_style_enum_payload");
+    return true;
+}

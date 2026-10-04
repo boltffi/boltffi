@@ -96,6 +96,11 @@ pub fn default(_attribute: TokenStream, item: TokenStream) -> TokenStream {
     item
 }
 
+#[proc_macro_attribute]
+pub fn transparent(_attribute: TokenStream, item: TokenStream) -> TokenStream {
+    item
+}
+
 fn expand(item: TokenStream) -> TokenStream {
     match expansion::build::item() {
         expansion::build::Item::Preserve => strip_boltffi_attrs(item),
@@ -236,7 +241,10 @@ fn is_boltffi_helper_attr(attribute: &syn::Attribute) -> bool {
     }
     match path.segments.last().map(|segment| &segment.ident) {
         Some(identifier)
-            if identifier == "skip" || identifier == "name" || identifier == "ffi_stream" =>
+            if identifier == "skip"
+                || identifier == "name"
+                || identifier == "ffi_stream"
+                || identifier == "transparent" =>
         {
             true
         }

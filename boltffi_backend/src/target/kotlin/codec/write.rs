@@ -8,6 +8,7 @@ use crate::{
     target::kotlin::{
         KotlinHost,
         codec::{size::Sizer, value::ValueExpression},
+        name_style::KotlinPackage,
         name_style::Name,
         primitive::KotlinPrimitive,
         render::Enumeration,
@@ -35,6 +36,7 @@ pub struct Writer<'context> {
     current: Expression,
     host: &'context KotlinHost,
     context: &'context RenderContext<'context, Native>,
+    package: Option<KotlinPackage>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -172,11 +174,17 @@ impl<'context> Writer<'context> {
             current: Expression::identifier(Identifier::parse("value")?),
             host,
             context,
+            package: None,
         })
     }
 
     pub fn current(mut self, current: Expression) -> Self {
         self.current = current;
+        self
+    }
+
+    pub fn package(mut self, package: &KotlinPackage) -> Self {
+        self.package = Some(package.clone());
         self
     }
 
@@ -329,8 +337,14 @@ impl CodecWrite for Writer<'_> {
 
     fn data_enum(&mut self, id: EnumId, value: &ValueRef) -> Vec<Self::Stmt> {
         vec![self.value(value).and_then(|value| {
-            Enumeration::write_statement(id, value, self.writer.clone(), self.context)
-                .map(WriteStatement::new)
+            Enumeration::write_statement(
+                id,
+                value,
+                self.writer.clone(),
+                self.context,
+                self.package.as_ref(),
+            )
+            .map(WriteStatement::new)
         })]
     }
 

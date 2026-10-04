@@ -1,0 +1,210 @@
+---
+source: boltffi_backend/tests/kotlin/exports.rs
+expression: "rendered_fixture(\"enums/transparent_c_style\")"
+---
+===== com/boltffi/demo/Demo.kt =====
+@file:OptIn(kotlin.ExperimentalUnsignedTypes::class)
+
+package com.boltffi.demo
+@Suppress("FunctionName")
+private object Native {
+    @JvmStatic external fun boltffi_function_demo_echo_setting(setting: java.nio.ByteBuffer, __boltffi_setting_len: Int): ByteArray?
+}
+
+
+data class Ping(
+    val sequence: UInt
+) : Setting {
+    internal fun wireSize(): Int {
+        return 4
+    }
+
+    internal fun writeTo(writer: WireWriter) {
+        writer.writeU32(sequence)
+    }
+    internal fun toByteArray(): ByteArray {
+        val buffer = java.nio.ByteBuffer
+            .allocate(STRUCT_SIZE)
+            .order(java.nio.ByteOrder.nativeOrder())
+        writeTo(buffer, 0)
+        return buffer.array()
+    }
+
+    internal fun toDirectBuffer(): java.nio.ByteBuffer {
+        val buffer = java.nio.ByteBuffer
+            .allocateDirect(STRUCT_SIZE)
+            .order(java.nio.ByteOrder.nativeOrder())
+        writeTo(buffer, 0)
+        return buffer
+    }
+
+    internal fun writeTo(buffer: java.nio.ByteBuffer, offset: Int) {
+        buffer.putInt(offset, sequence.toInt())
+    }
+
+    companion object {
+        internal const val STRUCT_SIZE: Int = 4
+        internal fun fromReader(reader: WireReader): Ping {
+            return Ping(
+                reader.readU32()
+            )
+        }
+
+        internal fun fromByteArray(bytes: ByteArray): Ping {
+            require(bytes.size == STRUCT_SIZE)
+            val buffer = java.nio.ByteBuffer
+                .wrap(bytes)
+                .order(java.nio.ByteOrder.nativeOrder())
+            return fromBuffer(buffer, 0)
+        }
+
+        internal fun fromBuffer(buffer: java.nio.ByteBuffer, offset: Int): Ping {
+            return Ping(
+                buffer.getInt(offset).toUInt()
+            )
+        }
+    }
+}
+
+
+enum class Mode(val value: Int) : Setting, Reply {
+    FAST(0),
+    SLOW(1);
+
+    companion object {
+        fun fromValue(value: Int): Mode =
+            entries.first { it.value == value }
+    }
+}
+
+
+sealed interface Setting {
+
+    object Unset : Setting
+    data class Raw(
+        val field0: com.boltffi.demo.Mode
+    ) : Setting
+
+    companion object {
+        internal fun wireSize(value: Setting): Int {
+            return when (value) {
+                is Unset -> 4
+                is com.boltffi.demo.Mode -> 4 + 4
+                is com.boltffi.demo.Ping -> 4 + value.wireSize()
+                is Raw -> 4 + 4
+            }
+        }
+
+        internal fun writeTo(value: Setting, writer: WireWriter) {
+            when (value) {
+                is Unset -> {
+                    writer.writeU32(0.toUInt())
+                }
+                is com.boltffi.demo.Mode -> {
+                    writer.writeU32(1.toUInt())
+                    writer.writeI32(value.value)
+                }
+                is com.boltffi.demo.Ping -> {
+                    writer.writeU32(2.toUInt())
+                    value.writeTo(writer)
+                }
+                is Raw -> {
+                    writer.writeU32(3.toUInt())
+                    writer.writeI32(value.field0.value)
+                }
+            }
+        }
+
+        internal fun toByteArray(value: Setting): ByteArray {
+            val buffer = WireWriterPool.acquire(wireSize(value))
+            val writer = buffer.writer
+            try {
+                writeTo(value, writer)
+                return buffer.bytes()
+            } finally {
+                buffer.close()
+            }
+        }
+
+        internal fun fromReader(reader: WireReader): Setting {
+            val tag = reader.readU32()
+            return when (tag) {
+                0.toUInt() -> Unset
+                1.toUInt() -> com.boltffi.demo.Mode.fromValue(reader.readI32())
+                2.toUInt() -> com.boltffi.demo.Ping.fromReader(reader)
+                3.toUInt() -> Raw(com.boltffi.demo.Mode.fromValue(reader.readI32()))
+                else -> throw IllegalArgumentException("unknown Setting tag: $tag")
+            }
+        }
+
+        internal fun fromByteArray(bytes: ByteArray): Setting {
+            val reader = WireReader(bytes)
+            return fromReader(reader)
+        }
+    }
+}
+
+
+sealed interface Reply {
+
+    object Ack : Reply
+
+    companion object {
+        internal fun wireSize(value: Reply): Int {
+            return when (value) {
+                is com.boltffi.demo.Mode -> 4 + 4
+                is Ack -> 4
+            }
+        }
+
+        internal fun writeTo(value: Reply, writer: WireWriter) {
+            when (value) {
+                is com.boltffi.demo.Mode -> {
+                    writer.writeU32(0.toUInt())
+                    writer.writeI32(value.value)
+                }
+                is Ack -> {
+                    writer.writeU32(1.toUInt())
+                }
+            }
+        }
+
+        internal fun toByteArray(value: Reply): ByteArray {
+            val buffer = WireWriterPool.acquire(wireSize(value))
+            val writer = buffer.writer
+            try {
+                writeTo(value, writer)
+                return buffer.bytes()
+            } finally {
+                buffer.close()
+            }
+        }
+
+        internal fun fromReader(reader: WireReader): Reply {
+            val tag = reader.readU32()
+            return when (tag) {
+                0.toUInt() -> com.boltffi.demo.Mode.fromValue(reader.readI32())
+                1.toUInt() -> Ack
+                else -> throw IllegalArgumentException("unknown Reply tag: $tag")
+            }
+        }
+
+        internal fun fromByteArray(bytes: ByteArray): Reply {
+            val reader = WireReader(bytes)
+            return fromReader(reader)
+        }
+    }
+}
+
+fun echoSetting(setting: Setting): Setting {
+    val __boltffi_setting_wire = WireWriterPool.acquire(Setting.wireSize(setting))
+    val __boltffi_setting_writer = __boltffi_setting_wire.writer
+    Setting.writeTo(setting, __boltffi_setting_writer)
+    try {
+        val __boltffi_result = Native.boltffi_function_demo_echo_setting(__boltffi_setting_wire.directBuffer(), __boltffi_setting_wire.size()) ?: throw IllegalStateException("null buffer returned")
+        val __boltffi_reader = WireReader(__boltffi_result)
+        return Setting.fromReader(__boltffi_reader)
+    } finally {
+        __boltffi_setting_wire.close()
+    }
+}
