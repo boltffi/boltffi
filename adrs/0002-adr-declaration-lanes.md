@@ -227,11 +227,10 @@ only then.
 
 ## 5. Implementation Status
 
-The design is implemented in full on
-[`spike/per-invocation-lanes`](https://github.com/boltffi/boltffi/tree/spike/per-invocation-lanes),
-on top of the integration branch, to check that it holds before asking for this decision.
-[Per-invocation expansion](https://github.com/boltffi/boltffi/blob/spike/per-invocation-lanes/docs/contributors/per-invocation-expansion.md)
-walks one crate through every expansion there.
+The design is implemented in full, landed through
+[#944](https://github.com/boltffi/boltffi/pull/944) on the integration branch.
+[Per-invocation expansion](../docs/contributors/per-invocation-expansion.md)
+walks one crate through every expansion.
 
 - Every annotation expands per invocation. The macros read no source files, and bindgen
   reads records only.
@@ -267,10 +266,10 @@ walks one crate through every expansion there.
   lever. Measured with [`0002-bench.py`](0002-bench.py), median of 5 runs, on `main` at
   `196a06b9` and the branch at `d1426da7`, on an Apple M4 Pro with rustc 1.95.0.
 - **Dependencies.** A path dependency the library never uses is not linked, so `generate`
-  fails until the root names it (D11). `custom_type!` in a dependency does not compile
-  yet: its conversions are keyed to the declaring crate's tag. It fails on `main` too.
-- **Binary size.** Records grow the demo's release dylib from 1.82 to 2.43 MB. Nothing reads
-  them at runtime; stripping them in `boltffi pack` is follow-up work.
+  fails until the root names it (D11).
+- **Binary size.** Records are `#[used]` statics that survive dead-stripping, and grew the
+  demo's release dylib from 1.82 to 2.43 MB. They are now emitted only in bindgen's own
+  build, which sets `BOLTFFI_SOURCE_RECORDS`, so a shipped binary carries none.
 - **Diagnostics.** Misuse surfaces as `cannot find macro`, and a missing
   `scaffolding!()` as ``cannot find type `__BoltffiTag` ``; both need friendlier errors.
 

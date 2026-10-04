@@ -39,6 +39,7 @@ dependencies = [
  "quote",
  "rustc_lexer",
  "serde",
+ "serde_json",
  "syn",
  "toml",
 ]

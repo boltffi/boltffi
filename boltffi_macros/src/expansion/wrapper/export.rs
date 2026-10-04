@@ -38,7 +38,6 @@ enum RustCallTarget {
         constant: syn::Ident,
     },
     Function(syn::Ident),
-    FunctionPath(TokenStream),
     Associated {
         owner: TokenStream,
         method: syn::Ident,
@@ -305,13 +304,6 @@ impl RustCall {
         }
     }
 
-    pub fn function_path(owner: syn::Ident, path: TokenStream) -> Self {
-        Self {
-            owner,
-            target: RustCallTarget::FunctionPath(path),
-        }
-    }
-
     pub fn associated(owner: TokenStream, method: syn::Ident) -> Self {
         Self {
             owner: method.clone(),
@@ -359,8 +351,7 @@ impl RustCall {
                 debug_assert!(arguments.is_empty());
                 quote! { #owner::#constant }
             }
-            RustCallTarget::Function(function) => quote! { #function(#(#arguments),*) },
-            RustCallTarget::FunctionPath(path) => quote! { #path(#(#arguments),*) },
+            RustCallTarget::Function(function) => quote! { self::#function(#(#arguments),*) },
             RustCallTarget::Associated { owner, method } => {
                 quote! { #owner::#method(#(#arguments),*) }
             }

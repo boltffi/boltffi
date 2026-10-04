@@ -32,7 +32,7 @@ Java_com_boltffi_demo_CallbackClassHandleFaults_deliverMalformedPair(
     (void)environment;
     (void)declaring_class;
     CallbackDelivery delivery = {
-        .callback = boltffi_create_callback_demo_callbacks_class_handles_fallible_message_receiver((uint64_t)identity),
+        .callback = boltffi_create_callback_demo_fallible_message_receiver((uint64_t)identity),
         .first = (uint64_t)first,
         .second = (uint64_t)second,
         .failed = false
@@ -41,8 +41,8 @@ Java_com_boltffi_demo_CallbackClassHandleFaults_deliverMalformedPair(
     if (pthread_create(&worker, NULL, deliver_malformed_pair, &delivery) != 0) {
         const ___FallibleMessageReceiverVTable *vtable = delivery.callback.vtable;
         vtable->free(delivery.callback.handle);
-        boltffi_release_class_demo_classes_ownership_owned_message(delivery.first);
-        boltffi_release_class_demo_classes_ownership_owned_message(delivery.second);
+        boltffi_release_class_demo_owned_message(delivery.first);
+        boltffi_release_class_demo_owned_message(delivery.second);
         return JNI_FALSE;
     }
     if (pthread_join(worker, NULL) != 0) abort();

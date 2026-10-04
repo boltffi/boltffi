@@ -1,4 +1,6 @@
 use boltffi::*;
+
+scaffolding!();
 use std::sync::Mutex;
 
 pub use demo_multicrate_model::{
