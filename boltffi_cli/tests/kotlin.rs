@@ -30,7 +30,7 @@ struct KotlinRuntime {
 
 impl KotlinRuntime {
     fn new() -> Self {
-        let directory = tempfile::tempdir().expect("KMP runtime directory");
+        let directory = tempfile::tempdir().expect("Kotlin runtime directory");
         let java_home =
             PathBuf::from(env::var_os("JAVA_HOME").expect("JAVA_HOME must point to a JDK"));
         let manifest = Path::new(env!("CARGO_MANIFEST_DIR"))

@@ -58,8 +58,8 @@ jobs:
           prefix-key: v1-rust
       - run: cargo test --workspace --all-features
 
-  kotlin:
-    name: Kotlin bindings
+  kmp-defaults:
+    name: KMP defaults
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -81,8 +81,8 @@ jobs:
           curl --fail --location --retry 3 https://github.com/JetBrains/kotlin/releases/download/v2.4.20/kotlin-compiler-2.4.20.zip -o "$RUNNER_TEMP/kotlin.zip"
           unzip -q "$RUNNER_TEMP/kotlin.zip" -d "$RUNNER_TEMP/kotlin"
           echo "$RUNNER_TEMP/kotlin/kotlinc/bin" >> "$GITHUB_PATH"
+      - run: cargo test -p boltffi_cli --test kotlin -- --ignored
       - run: cargo test -p boltffi_backend --test kotlin
-      - run: cargo test -p boltffi_cli --test kotlin_runtime -- --ignored
 
   wasm-link-stable:
     name: WASM link (stable)
