@@ -31,6 +31,10 @@ struct DirectTemplate {
     object_struct: Identifier,
     prefix: Identifier,
     type_setup: Identifier,
+    /// Set when the record conforms to a transparent oneof base: the type is
+    /// then built from python by this factory, with the bases as its
+    /// argument, because the base classes do not exist at module init.
+    factory: Option<Identifier>,
     parser: Identifier,
     boxer: Identifier,
     fields: Vec<Field>,
@@ -77,12 +81,16 @@ impl Record {
             Shape::Direct {
                 fields,
                 module_name,
+                conforming,
                 ..
             } => {
                 let c_type = symbols.c_type()?.clone();
                 let object_struct = symbols.object_struct()?;
                 let prefix = symbols.prefix()?;
                 let type_setup = symbols.type_setup()?;
+                let factory = conforming
+                    .then(|| symbols.type_factory_wrapper())
+                    .transpose()?;
                 DirectTemplate {
                     module_name,
                     class_name: symbols.class_name,
@@ -91,6 +99,7 @@ impl Record {
                     object_struct,
                     prefix,
                     type_setup,
+                    factory,
                     parser: symbols.parser,
                     boxer: symbols.boxer,
                     fields,
@@ -133,7 +142,13 @@ impl Record {
 
     pub fn type_setup(&self) -> Result<Option<Identifier>> {
         match self.shape {
-            Shape::Direct { .. } => self.symbols.type_setup().map(Some),
+            // A conforming record's type needs its base classes, which the
+            // package module defines after importing this one, so it is
+            // created by the factory rather than at module init.
+            Shape::Direct { conforming, .. } => match conforming {
+                true => Ok(None),
+                false => self.symbols.type_setup().map(Some),
+            },
             Shape::Encoded { .. } => Ok(None),
         }
     }
@@ -239,14 +254,25 @@ impl Record {
             .collect::<Result<Vec<_>>>()?;
         let primitives = fields.iter().map(Field::primitive).collect();
         let callables = Self::direct_callables(record, &symbols, bridge, context)?;
+        let conforming = context.is_transparent_payload(record.id());
+        let method = conforming
+            .then(|| {
+                ExtensionMethod::new(
+                    MethodName::parse(symbols.type_factory.as_str())?,
+                    symbols.type_factory_wrapper()?,
+                    MethodFlags::OneObject,
+                )
+            })
+            .transpose()?;
         Ok(Self {
             symbols,
             shape: Shape::Direct {
                 primitives,
                 fields,
                 module_name: bridge.module().as_str().to_owned(),
+                conforming,
             },
-            method: None,
+            method,
             callables,
         })
     }
@@ -374,6 +400,7 @@ pub struct Symbols {
     type_object: Identifier,
     register_method: PythonIdentifier,
     register_wrapper: Identifier,
+    type_factory: PythonIdentifier,
     parser: Identifier,
     boxer: Identifier,
 }
@@ -434,6 +461,10 @@ impl Symbols {
         &self.register_method
     }
 
+    pub fn type_factory(&self) -> &PythonIdentifier {
+        &self.type_factory
+    }
+
     pub fn initializer(&self, name: &CanonicalName) -> Result<PythonIdentifier> {
         self.callable(name)
     }
@@ -451,6 +482,7 @@ impl Symbols {
             type_object: Identifier::parse(format!("boltffi_python_{stem}_type"))?,
             register_method: PythonIdentifier::parse(format!("_register_{stem}"))?,
             register_wrapper: Identifier::parse(format!("boltffi_python_wrapper_register_{stem}"))?,
+            type_factory: PythonIdentifier::parse(format!("_make_{stem}"))?,
             parser: Identifier::parse(format!("boltffi_python_parse_{stem}"))?,
             boxer: Identifier::parse(format!("boltffi_python_box_{stem}"))?,
         })
@@ -468,6 +500,10 @@ impl Symbols {
         Identifier::parse(format!("boltffi_python_setup_{}_type", self.stem))
     }
 
+    pub fn type_factory_wrapper(&self) -> Result<Identifier> {
+        Identifier::parse(format!("boltffi_python_make_{}_type", self.stem))
+    }
+
     pub fn from_encoded(record: &EncodedRecordDecl<Native>) -> Result<Self> {
         let stem = Identifier::escape(Name::new(record.name()).function_text()?)?.to_string();
         Ok(Self {
@@ -477,6 +513,7 @@ impl Symbols {
             type_object: Identifier::parse(format!("boltffi_python_{stem}_type"))?,
             register_method: PythonIdentifier::parse(format!("_register_{stem}"))?,
             register_wrapper: Identifier::parse(format!("boltffi_python_wrapper_register_{stem}"))?,
+            type_factory: PythonIdentifier::parse(format!("_make_{stem}"))?,
             parser: Identifier::parse(format!("boltffi_python_wire_{stem}"))?,
             boxer: Identifier::parse(format!("boltffi_python_decode_owned_{stem}"))?,
         })
@@ -496,6 +533,9 @@ enum Shape {
         fields: Vec<Field>,
         primitives: Vec<primitive::Runtime>,
         module_name: String,
+        /// Whether the record is a transparent oneof payload, and so is
+        /// created from python with its bases instead of at module init.
+        conforming: bool,
     },
     Encoded {
         codec: EncodedCodec,
