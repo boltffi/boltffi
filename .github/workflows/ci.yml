@@ -82,6 +82,7 @@ jobs:
           unzip -q "$RUNNER_TEMP/kotlin.zip" -d "$RUNNER_TEMP/kotlin"
           echo "$RUNNER_TEMP/kotlin/kotlinc/bin" >> "$GITHUB_PATH"
       - run: cargo test -p boltffi_cli --test kmp_default_arguments -- --ignored
+      - run: cargo test -p boltffi_backend --test kotlin
 
   wasm-link-stable:
     name: WASM link (stable)
