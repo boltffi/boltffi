@@ -264,7 +264,7 @@ pub(crate) enum PackTargetArg {
 
     #[command(
         about = "Build + package Android artifacts",
-        long_about = "Build + package Android artifacts.\n\nOutputs:\n  - Kotlin/JNI:             {targets.android.kotlin.output}\n  - jniLibs:                {targets.android.pack.output}\n  - Kotlin desktop natives: {targets.android.output}/desktopJniLibs when targets.android.kotlin.desktop_pack.enabled is true and targets.android.kotlin.desktop_loader is bundled\n"
+        long_about = "Build + package Android artifacts.\n\nOutputs:\n  - Kotlin/JNI:             {targets.android.kotlin.output}\n  - jniLibs:                {targets.android.pack.output}\n  - Kotlin desktop natives: {targets.android.kotlin.desktop_pack.output}, defaults to {targets.android.output}/desktopJniLibs\n\nDesktop JVM apps need desktop JNI libraries on their resource path. Enable targets.android.kotlin.desktop_pack.enabled with the bundled desktop loader, then set targets.android.kotlin.desktop_pack.output to the app's JVM resource directory or add desktopJniLibs to that resource path.\n"
     )]
     Android {
         #[arg(long)]

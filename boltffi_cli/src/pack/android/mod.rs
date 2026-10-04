@@ -330,6 +330,28 @@ enabled = true
     }
 
     #[test]
+    fn android_kotlin_desktop_natives_can_be_packaged_into_jvm_resources() {
+        let config = parse_config(
+            r#"
+[package]
+name = "journey-bindings"
+
+[targets.android.kotlin.desktop_pack]
+enabled = true
+output = "../resources/native"
+"#,
+        );
+        let layout = android_kotlin_desktop_native_layout(&config).unwrap();
+
+        assert_eq!(
+            layout.native_output_root,
+            PathBuf::from("../resources/native")
+        );
+        assert_eq!(layout.jni_library_name.as_str(), "journey_bindings_jni");
+        assert!(should_package_android_kotlin_desktop_natives(&config));
+    }
+
+    #[test]
     fn android_kotlin_desktop_packaging_is_gated_by_desktop_pack_and_bundled_loader() {
         let bundled_enabled = parse_config(
             r#"

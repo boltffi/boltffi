@@ -666,41 +666,37 @@ private object Native {
             return
         }
 
-        if (tryLoadOptionalDesktopLibrary(fallbackLibrary)) {
+        if (tryLoadDesktopLibrary(fallbackLibrary) == null) {
             preferredFailure = tryLoadDesktopLibrary(preferredLibrary)
             if (preferredFailure == null) {
                 return
             }
         }
 
-        throw preferredFailure
+        val resources = bundledLibraryResourceCandidates(System.mapLibraryName(preferredLibrary))
+        throw UnsatisfiedLinkError(
+            "Could not load native library '$preferredLibrary'\n" +
+                "Searched JVM resources ${resources.joinToString()} and java.library.path\n" +
+                "Desktop apps need desktop JNI libraries, enable targets.android.kotlin.desktop_pack.enabled " +
+                "and set targets.android.kotlin.desktop_pack.output to a JVM resource directory " +
+                "or add desktopJniLibs to the JVM resource path"
+        ).apply { initCause(preferredFailure) }
     }
 
     private fun tryLoadDesktopLibrary(libraryName: String): UnsatisfiedLinkError? {
-        try {
-            if (loadBundledLibraryIfPresent(libraryName) || loadExternalLibraryIfPresent(libraryName)) {
+        val bundledFailure = try {
+            if (loadBundledLibraryIfPresent(libraryName)) {
                 return null
             }
-            return UnsatisfiedLinkError("Could not load native library '$libraryName'")
+            null
         } catch (error: UnsatisfiedLinkError) {
-            return error
+            error
         }
-    }
-
-    private fun tryLoadOptionalDesktopLibrary(libraryName: String): Boolean {
-        return try {
-            loadBundledLibraryIfPresent(libraryName) || loadExternalLibraryIfPresent(libraryName)
-        } catch (_: UnsatisfiedLinkError) {
-            false
-        }
-    }
-
-    private fun loadExternalLibraryIfPresent(libraryName: String): Boolean {
         return try {
             System.loadLibrary(libraryName)
-            true
-        } catch (_: UnsatisfiedLinkError) {
-            false
+            null
+        } catch (error: UnsatisfiedLinkError) {
+            bundledFailure?.apply { addSuppressed(error) } ?: error
         }
     }
 

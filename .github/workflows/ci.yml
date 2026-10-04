@@ -67,6 +67,7 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@v2
         with:
           cache: false
+          target: aarch64-linux-android
       - uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: true
@@ -81,7 +82,8 @@ jobs:
           curl --fail --location --retry 3 https://github.com/JetBrains/kotlin/releases/download/v2.4.20/kotlin-compiler-2.4.20.zip -o "$RUNNER_TEMP/kotlin.zip"
           unzip -q "$RUNNER_TEMP/kotlin.zip" -d "$RUNNER_TEMP/kotlin"
           echo "$RUNNER_TEMP/kotlin/kotlinc/bin" >> "$GITHUB_PATH"
-      - run: cargo test -p boltffi_cli --test kmp_default_arguments -- --ignored
+      - run: cargo test -p boltffi_cli --test kotlin -- --ignored
+      - run: cargo test -p boltffi_backend --test kotlin
 
   wasm-link-stable:
     name: WASM link (stable)
