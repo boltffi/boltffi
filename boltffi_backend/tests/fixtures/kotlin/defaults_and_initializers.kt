@@ -52,6 +52,6 @@ suspend fun checkDefaultArguments() {
     defaultOptionalEmail()
     defaultFloatBits()
     defaultDoubleBits()
-    Ledger.new(Long.MIN_VALUE)
-    Tally.new(ULong.MAX_VALUE)
+    Ledger(balance = Long.MIN_VALUE)
+    Tally(count = ULong.MAX_VALUE)
 }
