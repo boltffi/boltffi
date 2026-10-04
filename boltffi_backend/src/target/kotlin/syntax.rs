@@ -379,6 +379,10 @@ impl Expression {
         Self(format!("{}uL", value.into()))
     }
 
+    pub fn unsigned(value: impl Into<u128>) -> Self {
+        Self(format!("{}u", value.into()))
+    }
+
     pub fn null() -> Self {
         Self("null".to_owned())
     }

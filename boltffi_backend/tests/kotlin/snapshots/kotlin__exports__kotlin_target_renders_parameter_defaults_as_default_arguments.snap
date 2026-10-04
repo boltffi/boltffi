@@ -576,7 +576,7 @@ class Server internal constructor(internal val handle: Long) : AutoCloseable {
         return handle
     }
 
-    constructor(port: UShort = 8080.toUShort()) : this(new(port).handle)
+    constructor(port: UShort = 8080u) : this(new(port).handle)
 
     companion object {
         private fun new(port: UShort): Server {
@@ -670,7 +670,7 @@ val floor: Long = Long.MIN_VALUE
 
 val ceiling: ULong = 18446744073709551615uL
 
-fun greet(name: String, greeting: String = "world", times: UInt = 3.toUInt(), offset: Long = -1, shout: Boolean = true, ratio: Float = 0.5f, mode: Mode = Mode.SLOW, suffix: String? = null, limit: UShort? = 7.toUShort()): String {
+fun greet(name: String, greeting: String = "world", times: UInt = 3u, offset: Long = -1, shout: Boolean = true, ratio: Float = 0.5f, mode: Mode = Mode.SLOW, suffix: String? = null, limit: UShort? = 7u): String {
     val __boltffi_name_wire = WireWriterPool.acquire(4 + Utf8Codec.maxBytes(name))
     val __boltffi_name_writer = __boltffi_name_wire.writer
     __boltffi_name_writer.writeString(name)
@@ -716,7 +716,7 @@ fun formatDefaults(name: String, greeting: String = "hello", enabled: Boolean = 
     }
 }
 
-suspend fun asyncDefault(value: UInt = 9.toUInt()): UInt {
+suspend fun asyncDefault(value: UInt = 9u): UInt {
     return boltffiCallAsync(
         createFuture = {
             Native.boltffi_function_demo_async_default(value.toInt())

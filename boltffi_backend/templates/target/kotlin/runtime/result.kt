@@ -2,9 +2,9 @@ private fun <T, E> WireReader.readResult(
     readOk: (WireReader) -> T,
     readErr: (WireReader) -> E,
 ): BoltFFIResult<T, E> {
-    return when (readU8()) {
-        0.toUByte() -> BoltFFIResult.Ok(readOk(this))
-        1.toUByte() -> BoltFFIResult.Err(readErr(this))
+    return when (readU8().toInt()) {
+        0 -> BoltFFIResult.Ok(readOk(this))
+        1 -> BoltFFIResult.Err(readErr(this))
         else -> throw IllegalArgumentException("invalid result wire tag")
     }
 }
@@ -16,11 +16,11 @@ private fun <T, E> WireWriter.writeResult(
 ) {
     when (value) {
         is BoltFFIResult.Ok -> {
-            writeU8(0.toUByte())
+            writeU8(0u)
             writeOk(this, value.value)
         }
         is BoltFFIResult.Err -> {
-            writeU8(1.toUByte())
+            writeU8(1u)
             writeErr(this, value.error)
         }
     }

@@ -156,7 +156,7 @@ sealed class ServiceError : Exception() {
         }
 
         internal override fun writeTo(writer: WireWriter) {
-            writer.writeU32(0.toUInt())
+            writer.writeU32(0u)
             writer.writeString(this.message)
         }
     }
@@ -168,7 +168,7 @@ sealed class ServiceError : Exception() {
         }
 
         internal override fun writeTo(writer: WireWriter) {
-            writer.writeU32(1.toUInt())
+            writer.writeU32(1u)
             writer.writeOptionalValue(this.message, { writer, __boltffi_value_0 -> writer.writeString(__boltffi_value_0) })
         }
     }
@@ -181,7 +181,7 @@ sealed class ServiceError : Exception() {
         }
 
         internal override fun writeTo(writer: WireWriter) {
-            writer.writeU32(2.toUInt())
+            writer.writeU32(2u)
             writer.writeU32(this.code)
             writer.writeString(this.message)
         }
@@ -192,7 +192,7 @@ sealed class ServiceError : Exception() {
         }
 
         internal override fun writeTo(writer: WireWriter) {
-            writer.writeU32(3.toUInt())
+            writer.writeU32(3u)
         }
     }
     data class Text(
@@ -203,7 +203,7 @@ sealed class ServiceError : Exception() {
         }
 
         internal override fun writeTo(writer: WireWriter) {
-            writer.writeU32(4.toUInt())
+            writer.writeU32(4u)
             writer.writeString(this.field0)
         }
     }
@@ -212,11 +212,11 @@ sealed class ServiceError : Exception() {
         internal fun fromReader(reader: WireReader): ServiceError {
             val tag = reader.readU32()
             return when (tag) {
-                0.toUInt() -> Failed(reader.readString())
-                1.toUInt() -> Optional(reader.readOptionalValue({ reader -> reader.readString() }))
-                2.toUInt() -> Detailed(reader.readU32(), reader.readString())
-                3.toUInt() -> Unknown
-                4.toUInt() -> Text(reader.readString())
+                0u -> Failed(reader.readString())
+                1u -> Optional(reader.readOptionalValue({ reader -> reader.readString() }))
+                2u -> Detailed(reader.readU32(), reader.readString())
+                3u -> Unknown
+                4u -> Text(reader.readString())
                 else -> throw IllegalArgumentException("unknown ServiceError tag: $tag")
             }
         }
@@ -254,7 +254,7 @@ sealed class ShadowedError : Exception() {
         }
 
         internal override fun writeTo(writer: WireWriter) {
-            writer.writeU32(0.toUInt())
+            writer.writeU32(0u)
             writer.writeString(this.message)
         }
     }
@@ -266,7 +266,7 @@ sealed class ShadowedError : Exception() {
         }
 
         internal override fun writeTo(writer: WireWriter) {
-            writer.writeU32(1.toUInt())
+            writer.writeU32(1u)
             writer.writeOptionalValue(this.message, { writer, __boltffi_value_0 -> writer.writeString(__boltffi_value_0) })
         }
     }
@@ -275,8 +275,8 @@ sealed class ShadowedError : Exception() {
         internal fun fromReader(reader: WireReader): ShadowedError {
             val tag = reader.readU32()
             return when (tag) {
-                0.toUInt() -> String(reader.readString())
-                1.toUInt() -> Optional(reader.readOptionalValue({ reader -> reader.readString() }))
+                0u -> String(reader.readString())
+                1u -> Optional(reader.readOptionalValue({ reader -> reader.readString() }))
                 else -> throw IllegalArgumentException("unknown ShadowedError tag: $tag")
             }
         }
@@ -315,7 +315,7 @@ sealed class Message {
         }
 
         internal override fun writeTo(writer: WireWriter) {
-            writer.writeU32(0.toUInt())
+            writer.writeU32(0u)
             writer.writeString(this.message)
             writer.writeString(this.cause)
         }
@@ -328,7 +328,7 @@ sealed class Message {
         }
 
         internal override fun writeTo(writer: WireWriter) {
-            writer.writeU32(1.toUInt())
+            writer.writeU32(1u)
             writer.writeU32(this.message)
         }
     }
@@ -337,8 +337,8 @@ sealed class Message {
         internal fun fromReader(reader: WireReader): Message {
             val tag = reader.readU32()
             return when (tag) {
-                0.toUInt() -> Plain(reader.readString(), reader.readString())
-                1.toUInt() -> Numeric(reader.readU32())
+                0u -> Plain(reader.readString(), reader.readString())
+                1u -> Numeric(reader.readU32())
                 else -> throw IllegalArgumentException("unknown Message tag: $tag")
             }
         }

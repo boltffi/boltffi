@@ -36,7 +36,7 @@ sealed class PrimitiveValue {
         }
 
         internal override fun writeTo(writer: WireWriter) {
-            writer.writeU32(0.toUInt())
+            writer.writeU32(0u)
         }
     }
     data class Bool(
@@ -47,7 +47,7 @@ sealed class PrimitiveValue {
         }
 
         internal override fun writeTo(writer: WireWriter) {
-            writer.writeU32(1.toUInt())
+            writer.writeU32(1u)
             writer.writeBool(this.field0)
         }
     }
@@ -59,7 +59,7 @@ sealed class PrimitiveValue {
         }
 
         internal override fun writeTo(writer: WireWriter) {
-            writer.writeU32(2.toUInt())
+            writer.writeU32(2u)
             writer.writeI64(this.field0)
         }
     }
@@ -71,7 +71,7 @@ sealed class PrimitiveValue {
         }
 
         internal override fun writeTo(writer: WireWriter) {
-            writer.writeU32(3.toUInt())
+            writer.writeU32(3u)
             writer.writeF64(this.field0)
         }
     }
@@ -83,7 +83,7 @@ sealed class PrimitiveValue {
         }
 
         internal override fun writeTo(writer: WireWriter) {
-            writer.writeU32(4.toUInt())
+            writer.writeU32(4u)
             writer.writeOptionalValue(this.field0, { writer, __boltffi_value_0 -> writer.writeF64(__boltffi_value_0) })
         }
     }
@@ -95,7 +95,7 @@ sealed class PrimitiveValue {
         }
 
         internal override fun writeTo(writer: WireWriter) {
-            writer.writeU32(5.toUInt())
+            writer.writeU32(5u)
             writer.writeDoubleArray(this.field0)
         }
     }
@@ -104,12 +104,12 @@ sealed class PrimitiveValue {
         internal fun fromReader(reader: WireReader): PrimitiveValue {
             val tag = reader.readU32()
             return when (tag) {
-                0.toUInt() -> Null
-                1.toUInt() -> Bool(reader.readBool())
-                2.toUInt() -> Int(reader.readI64())
-                3.toUInt() -> Double(reader.readF64())
-                4.toUInt() -> MaybeDouble(reader.readOptionalValue({ reader -> reader.readF64() }))
-                5.toUInt() -> Doubles(reader.readDoubleArray())
+                0u -> Null
+                1u -> Bool(reader.readBool())
+                2u -> Int(reader.readI64())
+                3u -> Double(reader.readF64())
+                4u -> MaybeDouble(reader.readOptionalValue({ reader -> reader.readF64() }))
+                5u -> Doubles(reader.readDoubleArray())
                 else -> throw IllegalArgumentException("unknown PrimitiveValue tag: $tag")
             }
         }
@@ -164,7 +164,7 @@ sealed class Int {
         }
 
         internal override fun writeTo(writer: WireWriter) {
-            writer.writeU32(0.toUInt())
+            writer.writeU32(0u)
             writer.writeI64(this.field0)
         }
     }
@@ -173,7 +173,7 @@ sealed class Int {
         internal fun fromReader(reader: WireReader): Int {
             val tag = reader.readU32()
             return when (tag) {
-                0.toUInt() -> Value(reader.readI64())
+                0u -> Value(reader.readI64())
                 else -> throw IllegalArgumentException("unknown Int tag: $tag")
             }
         }

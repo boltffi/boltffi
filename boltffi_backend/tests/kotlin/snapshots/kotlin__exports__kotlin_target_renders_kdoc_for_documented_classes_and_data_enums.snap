@@ -100,7 +100,7 @@ sealed class Outline {
         }
 
         internal override fun writeTo(writer: WireWriter) {
-            writer.writeU32(0.toUInt())
+            writer.writeU32(0u)
             writer.writeString(this.label)
         }
     }
@@ -113,7 +113,7 @@ sealed class Outline {
         }
 
         internal override fun writeTo(writer: WireWriter) {
-            writer.writeU32(1.toUInt())
+            writer.writeU32(1u)
         }
     }
 
@@ -121,8 +121,8 @@ sealed class Outline {
         internal fun fromReader(reader: WireReader): Outline {
             val tag = reader.readU32()
             return when (tag) {
-                0.toUInt() -> Named(reader.readString())
-                1.toUInt() -> Anonymous
+                0u -> Named(reader.readString())
+                1u -> Anonymous
                 else -> throw IllegalArgumentException("unknown Outline tag: $tag")
             }
         }
@@ -187,7 +187,7 @@ class Counter internal constructor(internal val handle: Long) : AutoCloseable {
 /**
  * The wire protocol revision.
  */
-val protocolRevision: UInt = 3.toUInt()
+val protocolRevision: UInt = 3u
 
 /**
  * Returns the profile unchanged.

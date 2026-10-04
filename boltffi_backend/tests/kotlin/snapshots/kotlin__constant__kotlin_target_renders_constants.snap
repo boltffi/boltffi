@@ -24,7 +24,7 @@ enum class Mode(val value: Byte) {
 
 val enabled: Boolean = true
 
-val limit: UInt = 1024.toUInt()
+val limit: UInt = 1024u
 
 val half: Double = 0.5
 

@@ -2,7 +2,7 @@ use askama::Template as AskamaTemplate;
 use boltffi_binding::{
     CStyleEnumDecl, CStyleVariantDecl, ConstantOwner, DataEnumDecl, DataVariantDecl,
     DataVariantPayload, EnumDecl, EnumId, ExportedMethodDecl, InitializerDecl, Native,
-    NativeSymbol, Primitive, Receive, VariantTag,
+    NativeSymbol, Primitive, Receive,
 };
 
 use crate::{
@@ -679,7 +679,7 @@ impl DataVariant {
         shadowed: &[String],
     ) -> Result<Self> {
         let name = Name::new(variant.name()).variant()?;
-        let tag = Self::tag_expression(variant.tag())?;
+        let tag = Expression::unsigned(variant.tag().get());
         let fields = Self::payload_fields(variant.payload(), host, context, package, shadowed)?;
         let read = Self::read_expression(name.clone(), &fields);
         let size = fields
@@ -758,9 +758,5 @@ impl DataVariant {
                     .collect::<ArgumentList>(),
             ),
         }
-    }
-
-    fn tag_expression(tag: VariantTag) -> Result<Expression> {
-        Ok(Expression::integer(tag.get()).convert(Identifier::parse("toUInt")?))
     }
 }
