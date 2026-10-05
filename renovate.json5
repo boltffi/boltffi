@@ -22,6 +22,20 @@
   minimumReleaseAge: "5 days",
   labels: ["dependencies"],
 
+  // Keep the platform-demo CI Python pin current with stable CPython releases.
+  customManagers: [
+    {
+      customType: "regex",
+      managerFilePatterns: ["/^\\.github\\/workflows\\/ci\\.yml$/"],
+      matchStrings: [
+        "DEMO_PYTHON_VERSION:\\s*'(?<currentValue>\\d+\\.\\d+\\.\\d+)'\\s+# renovate: datasource=python-version depName=python",
+      ],
+      datasourceTemplate: "python-version",
+      depNameTemplate: "python",
+      versioningTemplate: "python",
+    },
+  ],
+
   // No pinned crates at this time. All version strings in Cargo.toml files are
   // floating minimums (caret ranges), not pins. If a real pin is ever needed
   // (e.g., an upstream crate breaks us), add a packageRule below with
