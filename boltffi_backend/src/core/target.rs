@@ -246,19 +246,18 @@ where
     }
 
     fn coverage_error(target: &'static str, coverage: &CoverageReport) -> Error {
-        let reason = coverage
+        coverage
             .unsupported()
             .first()
             .map(|unsupported| {
-                format!(
-                    "{} {}: {}",
-                    unsupported.declaration().kind(),
-                    unsupported.declaration().name(),
-                    unsupported.reason()
-                )
+                unsupported
+                    .declaration()
+                    .coverage_error(target, unsupported.reason())
             })
-            .unwrap_or_else(|| "unknown unsupported declaration".to_owned());
-        Error::IncompleteCoverage { target, reason }
+            .unwrap_or_else(|| Error::IncompleteCoverage {
+                target,
+                reason: "unknown unsupported declaration".to_owned(),
+            })
     }
 
     fn render_declaration<'decl>(

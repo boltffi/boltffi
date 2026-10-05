@@ -114,4 +114,12 @@ impl DeclarationLabel {
     pub fn name(&self) -> &str {
         &self.name
     }
+
+    /// Constructs a complete-coverage error identifying this declaration.
+    pub(crate) fn coverage_error(&self, target: &'static str, reason: &str) -> crate::core::Error {
+        crate::core::Error::IncompleteCoverage {
+            target,
+            reason: format!("{} {}: {reason}", self.kind, self.name),
+        }
+    }
 }

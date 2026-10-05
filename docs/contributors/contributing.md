@@ -46,6 +46,14 @@ For example, backend changes usually start with:
 just test-crate boltffi_backend
 ```
 
+The C backend's native compile-and-run checks need `cc` and `c++`. They may skip
+locally when a compiler is unavailable. CI sets `BOLTFFI_REQUIRE_CC=1` so a missing
+compiler fails those checks instead. To require the same checks locally:
+
+```bash
+BOLTFFI_REQUIRE_CC=1 just test-crate boltffi_backend
+```
+
 Python target changes can be checked through the demo:
 
 ```bash

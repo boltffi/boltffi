@@ -171,14 +171,13 @@ impl host::HostBackend for CHost {
                 Ok(definition) => {
                     record_definitions.insert(record.id(), definition);
                 }
-                Err(Error::UnsupportedTarget { shape, .. })
-                    if matches!(context.coverage_mode(), CoverageMode::Partial) =>
-                {
+                Err(Error::UnsupportedTarget { shape, .. } | Error::UnsupportedCAbi { shape }) => {
+                    let label = DeclarationLabel::from_ref(declaration.declaration());
+                    if matches!(context.coverage_mode(), CoverageMode::Complete) {
+                        return Err(label.coverage_error("c", shape));
+                    }
                     rendered.remove(&declaration.declaration().id());
-                    coverage.push(UnsupportedDeclaration::new(
-                        DeclarationLabel::from_ref(declaration.declaration()),
-                        shape,
-                    ));
+                    coverage.push(UnsupportedDeclaration::new(label, shape));
                 }
                 Err(error) => return Err(error),
             }
@@ -201,13 +200,11 @@ impl host::HostBackend for CHost {
                         return Some(Ok(declaration));
                     }
                     let shape = "depends on a declaration without a C binding";
+                    let label = DeclarationLabel::from_ref(declaration.declaration());
                     if !matches!(context.coverage_mode(), CoverageMode::Partial) {
-                        return Some(Err(Error::UnsupportedTarget { target: "c", shape }));
+                        return Some(Err(label.coverage_error("c", shape)));
                     }
-                    coverage.push(UnsupportedDeclaration::new(
-                        DeclarationLabel::from_ref(declaration.declaration()),
-                        shape,
-                    ));
+                    coverage.push(UnsupportedDeclaration::new(label, shape));
                     rendered.remove(&declaration.declaration().id());
                     None
                 })
@@ -269,6 +266,83 @@ mod tests {
             .expect("boltffi.h")
             .contents()
             .to_owned()
+    }
+
+    fn compiler_available(tool: &str) -> bool {
+        if std::process::Command::new(tool)
+            .arg("--version")
+            .output()
+            .is_ok_and(|output| output.status.success())
+        {
+            return true;
+        }
+        assert!(
+            std::env::var_os("BOLTFFI_REQUIRE_CC").is_none(),
+            "BOLTFFI_REQUIRE_CC is set but `{tool}` is unavailable"
+        );
+        eprintln!("skipping: `{tool}` is unavailable");
+        false
+    }
+
+    #[test]
+    fn compiler_requirement_controls_missing_toolchain_failure() {
+        const CHILD_ENV: &str = "BOLTFFI_TEST_COMPILER_REQUIREMENT_CHILD";
+        if std::env::var_os(CHILD_ENV).is_some() {
+            assert!(!compiler_available("boltffi-missing-test-compiler"));
+            return;
+        }
+        let executable = std::env::current_exe().expect("test executable");
+        let test_name = concat!(
+            module_path!(),
+            "::compiler_requirement_controls_missing_toolchain_failure"
+        )
+        .split_once("::")
+        .expect("crate-qualified test name")
+        .1;
+        for required in [false, true] {
+            let mut command = std::process::Command::new(&executable);
+            command
+                .args(["--exact", test_name, "--nocapture"])
+                .env(CHILD_ENV, "1")
+                .env("PATH", "")
+                .env_remove("BOLTFFI_REQUIRE_CC");
+            if required {
+                command.env("BOLTFFI_REQUIRE_CC", "1");
+            }
+            let output = command.output().expect("run isolated compiler check");
+            assert_eq!(
+                output.status.success(),
+                !required,
+                "required={required}\nstdout:\n{}\nstderr:\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+    }
+
+    #[test]
+    fn complete_coverage_identifies_unrenderable_record() {
+        let bindings = bindings(
+            r#"
+            #[export]
+            pub trait Listener: Send + Sync {
+                fn on_value(&self, value: i32);
+            }
+            #[data]
+            pub struct CallbackRecord {
+                pub listener: std::sync::Arc<dyn Listener>,
+            }
+            "#,
+        );
+        let target = CHost::new().into_target(&bindings).expect("target");
+        let error = target
+            .render(&bindings)
+            .expect_err("unsupported record codec");
+        let crate::core::Error::IncompleteCoverage { target, reason } = error else {
+            panic!("expected a declaration-specific coverage error, got {error}");
+        };
+        assert_eq!(target, "c");
+        assert!(reason.contains("callback::record"), "{reason}");
     }
 
     fn empty_bindings() -> Bindings<Native> {
@@ -584,8 +658,7 @@ mod tests {
     #[test]
     fn emitted_header_compiles_with_cc() {
         use std::process::Command;
-        if Command::new("cc").arg("--version").output().is_err() {
-            eprintln!("skipping: no C toolchain");
+        if !compiler_available("cc") {
             return;
         }
         let bindings = bindings(
@@ -701,8 +774,7 @@ mod tests {
             String::from_utf8_lossy(&out.stderr)
         );
 
-        if Command::new("c++").arg("--version").output().is_err() {
-            eprintln!("skipping: no C++ toolchain");
+        if !compiler_available("c++") {
             return;
         }
         std::fs::write(
@@ -819,8 +891,7 @@ mod tests {
         ));
         assert!(header.contains("boltffi_function_demo_install(listener->raw, code, value)"));
 
-        if Command::new("cc").arg("--version").output().is_err() {
-            eprintln!("skipping: no C toolchain");
+        if !compiler_available("cc") {
             return;
         }
         let dir =
@@ -998,7 +1069,7 @@ int main(void) {
     #[test]
     fn encoded_record_facade_compiles_and_round_trips_at_runtime() {
         use std::process::Command;
-        if Command::new("cc").arg("--version").output().is_err() {
+        if !compiler_available("cc") {
             return;
         }
         let bindings = bindings(

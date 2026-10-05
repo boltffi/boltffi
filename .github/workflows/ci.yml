@@ -57,6 +57,8 @@ jobs:
           cache-bin: false
           prefix-key: v1-rust
       - run: cargo test --workspace --all-features
+        env:
+          BOLTFFI_REQUIRE_CC: "1"
 
   kmp-defaults:
     name: KMP defaults

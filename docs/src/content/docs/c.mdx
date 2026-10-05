@@ -9,6 +9,10 @@ C callers include a generated header, link the native library, and release retur
 
 Select C in the examples on each API's documentation page. C is experimental; its remaining gaps are listed under [Experimental features](/docs/experimental#c).
 
+Complete C rendering identifies the declaration when header assembly encounters
+an unsupported record codec or a missing dependency. Partial rendering reports
+skipped declarations and omits declarations that depend on them.
+
 ## Link a C program
 
 The `distance` function from Getting Started can be called from `main.c`:
