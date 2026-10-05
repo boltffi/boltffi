@@ -11,6 +11,7 @@ use crate::custom_types::Email;
     "primitives.default_arguments.should_keep_required_arguments_after_defaults",
     justification = "Defaulted parameters can appear before a required parameter without making it optional",
     directions = "Call add_default with only right, override negate while leaving left omitted where named arguments are available, then supply zero for left",
+    exclude(ruby, reason = ExclusionReason::ImplementationGap, details = "The Ruby target does not render parameter defaults yet."),
     exclude(c, reason = ExclusionReason::ImplementationGap, details = "C has no default arguments.")
 )]
 #[export]
@@ -27,6 +28,7 @@ pub fn add_default(
     "primitives.default_arguments.should_apply_omitted_scalar_and_string_defaults",
     justification = "A parameter's `#[boltffi::default(..)]` becomes a default argument, so a caller may leave trailing and named parameters out.",
     directions = "Call repeat_greeting with only a name and check the default greeting, count and case, then enable shout using named arguments or placeholders where available and explicit earlier values for positional APIs",
+    exclude(ruby, reason = ExclusionReason::ImplementationGap, details = "The Ruby target does not render parameter defaults yet."),
     exclude(c, reason = ExclusionReason::ImplementationGap, details = "C has no default arguments.")
 )]
 #[export]
@@ -44,6 +46,7 @@ pub fn repeat_greeting(
     "primitives.default_arguments.should_apply_none_and_value_defaults_to_optionals",
     justification = "`None` is the natural default of an optional parameter, and a present default of an `Option<T>` is spelled as the `T`.",
     directions = "Call `primitives::default_arguments::describe_limit` with no arguments and assert it reports no label and the default limit of 7; then pass a label and assert it is used.",
+    exclude(ruby, reason = ExclusionReason::ImplementationGap, details = "The Ruby target does not render parameter defaults yet."),
     exclude(c, reason = ExclusionReason::ImplementationGap, details = "C has no default arguments.")
 )]
 #[export]
@@ -62,6 +65,7 @@ pub fn describe_limit(
     "primitives.default_arguments.should_default_an_optional_callback_to_none",
     justification = "An optional callback defaulting to None lets callers omit a handler when they do not have one",
     directions = "Call apply_optional_callback with only a value and check it is returned unchanged, then supply a doubling callback and check it is applied",
+    exclude(ruby, reason = ExclusionReason::ImplementationGap, details = "The Ruby target does not render parameter defaults yet."),
     exclude(c, reason = ExclusionReason::ImplementationGap, details = "C has no default arguments.")
 )]
 #[export]
@@ -125,6 +129,7 @@ impl DefaultedCounter {
         "primitives.default_arguments.defaulted_counter.should_apply_constructor_and_method_defaults",
         justification = "Constructors and methods take parameter defaults the same way free functions do.",
         directions = "Construct `primitives::default_arguments::DefaultedCounter` without a start and call `offset` without a step; assert 10 + 1. Then construct with 5 and call `offset` with 3; assert 8.",
+        exclude(ruby, reason = ExclusionReason::ImplementationGap, details = "The Ruby target does not render parameter defaults yet."),
         exclude(c, reason = ExclusionReason::ImplementationGap, details = "C has no default arguments.")
     )]
     pub fn new(#[boltffi::default(10)] start: i32) -> Self {
@@ -207,6 +212,7 @@ impl DefaultMode {
     "primitives.default_arguments.should_apply_float_and_enum_defaults",
     justification = "Defaults retain floating point precision, optional values and enum identity across the native call",
     directions = "Call scale_default with omitted and explicit arguments, including a null weight, then check the default argument on DefaultMode::matches",
+    exclude(ruby, reason = ExclusionReason::ImplementationGap, details = "The Ruby target does not render parameter defaults yet."),
     exclude(c, reason = ExclusionReason::ImplementationGap, details = "C has no default arguments.")
 )]
 #[export]
@@ -232,6 +238,7 @@ pub fn default_double_bits(#[boltffi::default(-0.0)] value: f64) -> u64 {
     "primitives.default_arguments.should_apply_async_defaults",
     justification = "Async functions, methods and factories preserve parameter defaults",
     directions = "Call async_default and DefaultedCounter::async_offset with omitted and explicit values, then create a counter through start with omitted callbacks and with an explicit second callback",
+    exclude(ruby, reason = ExclusionReason::ImplementationGap, details = "The Ruby target does not render parameter defaults yet."),
     exclude(c, reason = ExclusionReason::ImplementationGap, details = "C has no default arguments.")
 )]
 #[export]
@@ -260,6 +267,7 @@ impl DefaultAmount {
         "primitives.default_arguments.should_apply_record_defaults",
         justification = "Record fields and exported record callables each preserve their own defaults",
         directions = "Construct DefaultAmount through its memberwise initializer and call offset with omitted and explicit values, then call NamedAmount::with_value with and without its value",
+        exclude(ruby, reason = ExclusionReason::ImplementationGap, details = "The Ruby target does not render parameter defaults yet."),
         exclude(c, reason = ExclusionReason::ImplementationGap, details = "C has no default arguments.")
     )]
     pub fn offset(&self, #[boltffi::default(2)] step: i32) -> i32 {
@@ -310,6 +318,7 @@ pub fn default_limit(#[boltffi::default(None)] limit: DefaultLimit) -> Option<u3
     "primitives.default_arguments.should_apply_custom_type_defaults",
     justification = "Parameter defaults follow custom types through record and optional representations",
     directions = "Call default_timeout_seconds without a timeout and with an explicit TimeoutFFI, then call default_limit without a limit and with a supplied value",
+    exclude(ruby, reason = ExclusionReason::ImplementationGap, details = "The Ruby target does not render parameter defaults yet."),
     exclude(c, reason = ExclusionReason::ImplementationGap, details = "C has no default arguments.")
 )]
 #[export]
