@@ -16,6 +16,7 @@ pub enum GenerateTarget {
     Header,
     Typescript,
     Dart,
+    DartWeb,
     Python,
     CSharp,
     C,
@@ -40,6 +41,7 @@ pub fn run_generate_with_output(config: &Config, options: GenerateOptions) -> Re
         GenerateTarget::Header => bindings::run_generation(config, &options),
         GenerateTarget::Typescript => bindings::run_generation(config, &options),
         GenerateTarget::Dart => bindings::run_generation(config, &options),
+        GenerateTarget::DartWeb => bindings::run_generation(config, &options),
         GenerateTarget::Python => bindings::run_generation(config, &options),
         GenerateTarget::CSharp => bindings::run_generation(config, &options),
         GenerateTarget::C => bindings::run_generation(config, &options),
@@ -114,6 +116,19 @@ pub fn run_generate_with_output(config: &Config, options: GenerateOptions) -> Re
                     config,
                     &GenerateOptions {
                         target: GenerateTarget::Dart,
+                        output: options.output.clone(),
+                        experimental: options.experimental,
+                        cargo_args: options.cargo_args.clone(),
+                        deny_skipped: options.deny_skipped,
+                    },
+                )?;
+            }
+
+            if config.should_process(Target::DartWeb, options.experimental) {
+                bindings::run_generation(
+                    config,
+                    &GenerateOptions {
+                        target: GenerateTarget::DartWeb,
                         output: options.output.clone(),
                         experimental: options.experimental,
                         cargo_args: options.cargo_args.clone(),

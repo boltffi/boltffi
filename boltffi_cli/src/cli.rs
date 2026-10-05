@@ -10,8 +10,8 @@ use crate::commands::generate::{GenerateOptions, GenerateTarget, run_generate_wi
 use crate::commands::init::InitOptions;
 use crate::commands::pack::{
     PackAllOptions, PackAndroidOptions, PackAppleOptions, PackCOptions, PackCSharpOptions,
-    PackCommand, PackDartOptions, PackExecutionOptions, PackJavaOptions, PackKmpOptions,
-    PackPythonOptions, PackWasmOptions, check_java_packaging_prereqs,
+    PackCommand, PackDartOptions, PackDartWebOptions, PackExecutionOptions, PackJavaOptions,
+    PackKmpOptions, PackPythonOptions, PackWasmOptions, check_java_packaging_prereqs,
 };
 use crate::commands::verify::VerifyOptions;
 use crate::commands::{run_build, run_check, run_doctor, run_init, run_pack, run_verify};
@@ -192,6 +192,11 @@ pub(crate) enum GenerateTargetArg {
     Typescript,
     #[value(help = "Generate experimental Dart bindings")]
     Dart,
+    #[value(
+        alias = "dart-web",
+        help = "Generate experimental Dart-for-web (dart:js_interop) bindings"
+    )]
+    DartWeb,
     #[value(help = "Generate Python bindings")]
     Python,
     #[value(help = "Generate C# bindings")]
@@ -356,6 +361,22 @@ pub(crate) enum PackTargetArg {
     },
 
     #[command(
+        name = "dart-web",
+        about = "Build + package experimental Dart-for-web (dart:js_interop) artifacts",
+        long_about = "Build + package experimental Dart-for-web (dart:js_interop) artifacts.\n\nWraps `pack wasm`'s output (target::typescript's generated JS + the compiled wasm binary) rather than a separate build. Requires \"web\" in targets.wasm.npm.targets.\n\nOutputs:\n  - Dart file + loader + vendored JS/wasm: {targets.dart_web.output}\n"
+    )]
+    DartWeb {
+        #[arg(long)]
+        release: bool,
+
+        #[arg(long)]
+        no_build: bool,
+
+        #[arg(long, help = "Enable experimental targets/features")]
+        experimental: bool,
+    },
+
+    #[command(
         about = "Build + package C# artifacts",
         long_about = "Build + package C# artifacts.\n\nOutputs:\n  - C# package project: {targets.csharp.output}\n  - NuGet package:      {targets.csharp.package_output}\n  - Native assets:      runtimes/<rid>/native inside the .nupkg\n"
     )]
@@ -493,6 +514,7 @@ pub(crate) fn execute_command(
                         GenerateTargetArg::Java => GenerateTarget::Java,
                         GenerateTargetArg::Typescript => GenerateTarget::Typescript,
                         GenerateTargetArg::Dart => GenerateTarget::Dart,
+                        GenerateTargetArg::DartWeb => GenerateTarget::DartWeb,
                         GenerateTargetArg::Python => GenerateTarget::Python,
                         GenerateTargetArg::Csharp => GenerateTarget::CSharp,
                         GenerateTargetArg::C => GenerateTarget::C,
@@ -607,6 +629,7 @@ pub(crate) fn execute_command(
                         deny_skipped,
                         cargo_args.clone(),
                     ),
+                    require_npm_metadata: true,
                 }),
                 PackTargetArg::Java { release, no_build } => PackCommand::Java(PackJavaOptions {
                     execution: pack_execution_options(
@@ -644,6 +667,20 @@ pub(crate) fn execute_command(
                         no_build,
                         deny_skipped,
                         cargo_args,
+                    ),
+                    experimental,
+                }),
+                PackTargetArg::DartWeb {
+                    release,
+                    no_build,
+                    experimental,
+                } => PackCommand::DartWeb(PackDartWebOptions {
+                    execution: pack_execution_options(
+                        release,
+                        regenerate,
+                        no_build,
+                        deny_skipped,
+                        cargo_args.clone(),
                     ),
                     experimental,
                 }),
@@ -700,6 +737,7 @@ fn pack_execution_options(
     cargo_args: Vec<String>,
 ) -> PackExecutionOptions {
     PackExecutionOptions {
+        wasm_prepared: false,
         release,
         regenerate,
         no_build,
@@ -958,6 +996,7 @@ fn release_pack_commands(
                         false,
                         cargo_args.to_vec(),
                     ),
+                    require_npm_metadata: true,
                 }));
             }
         }
@@ -1023,6 +1062,7 @@ fn release_pack_commands(
                         false,
                         cargo_args.to_vec(),
                     ),
+                    require_npm_metadata: true,
                 }));
             }
             if config.should_process(Target::Python, false) {
@@ -1063,6 +1103,26 @@ fn release_pack_commands(
                 }));
             }
 
+            // When `dart` is also enabled, `pack dart` already folds the web
+            // half in via `unify_native_and_web` -- packing it again
+            // standalone here would rebuild/repack the wasm module a second
+            // time and produce a redundant `dart_web.output` directory
+            // alongside the unified package.
+            if config.should_process(Target::DartWeb, false)
+                && !config.should_process(Target::Dart, false)
+            {
+                commands.push(PackCommand::DartWeb(PackDartWebOptions {
+                    execution: pack_execution_options(
+                        true,
+                        false,
+                        false,
+                        false,
+                        cargo_args.to_vec(),
+                    ),
+                    experimental: false,
+                }));
+            }
+
             if config.is_csharp_enabled() {
                 commands.push(PackCommand::CSharp(PackCSharpOptions {
                     execution: pack_execution_options(
@@ -1077,6 +1137,15 @@ fn release_pack_commands(
         }
     }
 
+    let mut wasm_prepared = false;
+    for command in &mut commands {
+        match command {
+            PackCommand::Wasm(_) => wasm_prepared = true,
+            PackCommand::Dart(options) => options.execution.wasm_prepared = wasm_prepared,
+            PackCommand::DartWeb(options) => options.execution.wasm_prepared = wasm_prepared,
+            _ => {}
+        }
+    }
     commands
 }
 
@@ -1337,6 +1406,75 @@ enabled = true
             &config,
             Some(BuildPlatformArg::All)
         ));
+    }
+
+    #[test]
+    fn release_dart_prepares_wasm_without_a_prior_wasm_pack() {
+        let config = parse_config(
+            "experimental = [\"dart\", \"dart_web\"]\n[package]\nname = \"mylib\"\n[targets.dart]\nenabled = true\n[targets.dart_web]\nenabled = true\n",
+        );
+        let commands = release_pack_commands(&config, Some(BuildPlatformArg::Dart), &[]);
+        assert!(
+            matches!(&commands[..], [PackCommand::Dart(options)] if !options.execution.wasm_prepared)
+        );
+    }
+
+    #[test]
+    fn release_all_does_not_pack_dart_web_standalone_when_dart_is_also_enabled() {
+        // `pack dart` already folds the web half in via
+        // `unify_native_and_web` when both targets are enabled -- a
+        // standalone `PackCommand::DartWeb` alongside it would rebuild and
+        // repack the wasm module a second time for no reason.
+        let config = parse_config(
+            r#"
+experimental = ["dart", "dart_web"]
+
+[package]
+name = "mylib"
+
+[targets.dart]
+enabled = true
+
+[targets.dart_web]
+enabled = true
+"#,
+        );
+
+        let commands = release_pack_commands(&config, Some(BuildPlatformArg::All), &[]);
+
+        assert!(
+            commands
+                .iter()
+                .any(|command| matches!(command, PackCommand::Dart(options) if options.execution.wasm_prepared))
+        );
+        assert!(
+            !commands
+                .iter()
+                .any(|command| matches!(command, PackCommand::DartWeb(_)))
+        );
+    }
+
+    #[test]
+    fn release_all_packs_dart_web_standalone_when_dart_is_not_enabled() {
+        let config = parse_config(
+            r#"
+experimental = ["dart_web"]
+
+[package]
+name = "mylib"
+
+[targets.dart_web]
+enabled = true
+"#,
+        );
+
+        let commands = release_pack_commands(&config, Some(BuildPlatformArg::All), &[]);
+
+        assert!(
+            commands
+                .iter()
+                .any(|command| matches!(command, PackCommand::DartWeb(options) if options.execution.wasm_prepared))
+        );
     }
 
     #[test]

@@ -248,7 +248,11 @@ mod tests {
         fn manifest(&self) -> String {
             format!(
                 "[package]\nname = \"generated_wrapper_check\"\nversion = \"0.0.0\"\nedition = \"2024\"\npublish = false\n\n[workspace]\n\n[dependencies]\nboltffi = {{ path = \"{}\" }}\n",
-                workspace_root().join("boltffi").display()
+                workspace_root()
+                    .join("boltffi")
+                    .display()
+                    .to_string()
+                    .replace('\\', "/")
             )
         }
     }

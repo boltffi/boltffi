@@ -1,0 +1,268 @@
+use boltffi_binding::{BuiltinType, EnumDecl, Primitive, TypeRef};
+
+use crate::core::{Error, RenderContext};
+use boltffi_binding::Wasm32;
+
+use super::name_style::Name;
+
+type Result<T> = crate::core::Result<T>;
+
+fn unsupported(shape: &'static str) -> Error {
+    Error::UnsupportedTarget {
+        target: "dart_web",
+        shape,
+    }
+}
+
+pub fn dart_type(ty: &TypeRef, context: &RenderContext<Wasm32>) -> Result<String> {
+    Ok(match ty {
+        TypeRef::Primitive(Primitive::Bool) => "bool".to_owned(),
+        TypeRef::Primitive(
+            Primitive::I8
+            | Primitive::U8
+            | Primitive::I16
+            | Primitive::U16
+            | Primitive::I32
+            | Primitive::U32
+            | Primitive::ISize
+            | Primitive::USize,
+        ) => "int".to_owned(),
+        TypeRef::Primitive(Primitive::I64 | Primitive::U64) => "int".to_owned(),
+        TypeRef::Primitive(Primitive::F32 | Primitive::F64) => "double".to_owned(),
+        TypeRef::String | TypeRef::InternedString { .. } => "String".to_owned(),
+        TypeRef::Bytes => "Uint8List".to_owned(),
+        TypeRef::Record(id) => context
+            .record(*id)
+            .map(|decl| Name::new(decl.name()).dart_type_name())
+            .ok_or_else(|| unsupported("record reference"))?,
+        TypeRef::Enum(id) => context
+            .enumeration(*id)
+            .map(|decl| Name::new(decl.name()).dart_type_name())
+            .ok_or_else(|| unsupported("enum reference"))?,
+        TypeRef::Class(id) => context
+            .class(*id)
+            .map(|decl| Name::new(decl.name()).dart_type_name())
+            .ok_or_else(|| unsupported("class reference"))?,
+        TypeRef::Callback(id) => context
+            .callback(*id)
+            .map(|decl| Name::new(decl.name()).dart_type_name())
+            .ok_or_else(|| unsupported("callback reference"))?,
+        TypeRef::Custom(id) => context
+            .custom_type(*id)
+            .map(|decl| Name::new(decl.name()).dart_type_name())
+            .ok_or_else(|| unsupported("custom type reference"))?,
+        TypeRef::Builtin(BuiltinType::Duration) => "Duration".to_owned(),
+        TypeRef::Builtin(BuiltinType::SystemTime) => "DateTime".to_owned(),
+        TypeRef::Builtin(BuiltinType::Uuid) => "$$BoltUUIDValue".to_owned(),
+        TypeRef::Builtin(BuiltinType::Url) => "Uri".to_owned(),
+        TypeRef::Optional(inner) => format!("{}?", dart_type(inner, context)?),
+        TypeRef::Sequence(inner)
+            if matches!(inner.as_ref(), TypeRef::Primitive(Primitive::Bool)) =>
+        {
+            "$$BoltBoolList".to_owned()
+        }
+        TypeRef::Sequence(inner) => match typed_array(inner) {
+            Some((dart, _)) => dart.to_owned(),
+            None => format!("List<{}>", dart_type(inner, context)?),
+        },
+        TypeRef::Map { key, value } => {
+            format!(
+                "Map<{}, {}>",
+                dart_type(key, context)?,
+                dart_type(value, context)?
+            )
+        }
+        TypeRef::Tuple(elements) => {
+            let parts = elements
+                .iter()
+                .map(|element| dart_type(element, context))
+                .collect::<Result<Vec<_>>>()?;
+            format!("({})", parts.join(", "))
+        }
+        _ => return Err(unsupported("dart_web type")),
+    })
+}
+
+pub fn to_js(expr: &str, ty: &TypeRef, context: &RenderContext<Wasm32>) -> Result<String> {
+    Ok(match ty {
+        TypeRef::Primitive(Primitive::Bool) => format!("({expr}).toJS"),
+        TypeRef::Primitive(
+            Primitive::I8
+            | Primitive::U8
+            | Primitive::I16
+            | Primitive::U16
+            | Primitive::I32
+            | Primitive::U32
+            | Primitive::ISize
+            | Primitive::USize,
+        ) => format!("({expr}).toJS"),
+        TypeRef::Primitive(Primitive::I64 | Primitive::U64) => {
+            format!("boltffiInt64ToJS({expr})")
+        }
+        TypeRef::Primitive(Primitive::F32 | Primitive::F64) => format!("({expr}).toJS"),
+        TypeRef::String | TypeRef::InternedString { .. } => format!("({expr}).toJS"),
+        TypeRef::Bytes => format!("({expr}).toJS"),
+        TypeRef::Record(_) | TypeRef::Enum(_) => format!("({expr}).toJS()"),
+        // Class has no conversion method; it just holds the JS instance.
+        TypeRef::Class(_) => format!("({expr}).js"),
+        TypeRef::Callback(id) => {
+            let callback = context
+                .callback(*id)
+                .ok_or_else(|| unsupported("callback"))?;
+            let name = Name::new(callback.name()).dart_type_name();
+            format!("boltffiCallbackToJS{name}({expr})")
+        }
+        // Custom is a bare typedef; convert through its representation.
+        TypeRef::Custom(id) => {
+            let custom = context
+                .custom_type(*id)
+                .ok_or_else(|| unsupported("custom type"))?;
+            to_js(expr, custom.representation(), context)?
+        }
+        TypeRef::Builtin(BuiltinType::Duration) => format!("boltffiDurationToJS({expr})"),
+        TypeRef::Builtin(BuiltinType::Uuid | BuiltinType::Url) => {
+            format!("({expr}).toString().toJS")
+        }
+        TypeRef::Builtin(BuiltinType::SystemTime) => {
+            format!("_BoltDate(({expr}).millisecondsSinceEpoch.toJS)")
+        }
+        TypeRef::Optional(inner) => {
+            // Evaluate nullable expressions only once.
+            let converted = to_js("__boltffiRaw!", inner, context)?;
+            format!(
+                "(() {{ final __boltffiRaw = {expr}; return __boltffiRaw == null ? null : {converted}; }})()"
+            )
+        }
+        TypeRef::Sequence(inner) => {
+            if matches!(inner.as_ref(), TypeRef::Primitive(Primitive::Bool)) {
+                return Ok(format!("boltffiBoolListToJS({expr})"));
+            }
+            if matches!(
+                inner.as_ref(),
+                TypeRef::Primitive(Primitive::I64 | Primitive::U64)
+            ) {
+                let constructor = if matches!(inner.as_ref(), TypeRef::Primitive(Primitive::I64)) {
+                    "_boltffiBigInt64Array"
+                } else {
+                    "_boltffiBigUint64Array"
+                };
+                return Ok(format!(
+                    "{constructor}(({expr}).map((value) => boltffiInt64ToJS(value)).toList().toJS)"
+                ));
+            }
+            if typed_array(inner).is_some() {
+                return Ok(format!("({expr}).toJS"));
+            }
+            let converted = to_js("__boltffiElement", inner, context)?;
+            format!("({expr}).map((__boltffiElement) => {converted}).toList().toJS")
+        }
+        _ => return Err(unsupported("dart_web to_js type")),
+    })
+}
+
+pub fn from_js(expr: &str, ty: &TypeRef, context: &RenderContext<Wasm32>) -> Result<String> {
+    Ok(match ty {
+        TypeRef::Primitive(Primitive::Bool) => format!("({expr} as JSBoolean).toDart"),
+        TypeRef::Primitive(
+            Primitive::I8
+            | Primitive::U8
+            | Primitive::I16
+            | Primitive::U16
+            | Primitive::I32
+            | Primitive::U32
+            | Primitive::ISize
+            | Primitive::USize,
+        ) => format!("({expr} as JSNumber).toDartInt"),
+        TypeRef::Primitive(Primitive::I64 | Primitive::U64) => {
+            format!("boltffiInt64FromJS({expr} as JSAny)")
+        }
+        TypeRef::Primitive(Primitive::F32 | Primitive::F64) => {
+            format!("({expr} as JSNumber).toDartDouble")
+        }
+        TypeRef::String | TypeRef::InternedString { .. } => {
+            format!("({expr} as JSString).toDart")
+        }
+        TypeRef::Bytes => format!("({expr} as JSUint8Array).toDart"),
+        TypeRef::Record(id) => {
+            let record = context.record(*id).ok_or_else(|| unsupported("record"))?;
+            let name = Name::new(record.name()).dart_type_name();
+            format!("{name}.fromJS({expr} as JSObject)")
+        }
+        TypeRef::Enum(id) => {
+            let enumeration = context
+                .enumeration(*id)
+                .ok_or_else(|| unsupported("enum"))?;
+            let name = Name::new(enumeration.name()).dart_type_name();
+            // C-style enums cross as a bare number; data enums cross as a
+            // tagged object.
+            let cast = match enumeration {
+                EnumDecl::CStyle(_) => "JSAny",
+                _ => "JSObject",
+            };
+            format!("{name}.fromJS({expr} as {cast})")
+        }
+        TypeRef::Class(id) => {
+            let class = context.class(*id).ok_or_else(|| unsupported("class"))?;
+            let name = Name::new(class.name()).dart_type_name();
+            format!("{name}.fromJS({expr} as JSObject)")
+        }
+        TypeRef::Custom(id) => {
+            let custom = context
+                .custom_type(*id)
+                .ok_or_else(|| unsupported("custom type"))?;
+            from_js(expr, custom.representation(), context)?
+        }
+        TypeRef::Builtin(BuiltinType::Duration) => {
+            format!("boltffiDurationFromJS({expr} as JSObject)")
+        }
+        TypeRef::Builtin(BuiltinType::Uuid) => {
+            format!("$$BoltUUIDValue.parse(({expr} as JSString).toDart)")
+        }
+        TypeRef::Builtin(BuiltinType::Url) => format!("Uri.parse(({expr} as JSString).toDart)"),
+        TypeRef::Builtin(BuiltinType::SystemTime) => format!(
+            "DateTime.fromMillisecondsSinceEpoch(_BoltDate._({expr} as JSObject).getTime().toDartInt, isUtc: true)"
+        ),
+        TypeRef::Optional(inner) => {
+            // Evaluate nullable expressions only once.
+            let converted = from_js("__boltffiRaw!", inner, context)?;
+            format!(
+                "(() {{ final __boltffiRaw = {expr}; return __boltffiRaw == null ? null : {converted}; }})()"
+            )
+        }
+        TypeRef::Sequence(inner) => {
+            if matches!(inner.as_ref(), TypeRef::Primitive(Primitive::Bool)) {
+                return Ok(format!(
+                    "boltffiBoolListFromJS({expr} as JSArray<JSBoolean>)"
+                ));
+            }
+            if matches!(
+                inner.as_ref(),
+                TypeRef::Primitive(Primitive::I64 | Primitive::U64)
+            ) {
+                return Ok(format!(
+                    "_boltffiArrayFrom({expr} as JSAny).toDart.map((value) => boltffiInt64FromJS(value!)).toList()"
+                ));
+            }
+            if let Some((_, js)) = typed_array(inner) {
+                return Ok(format!("({expr} as {js}).toDart"));
+            }
+            let converted = from_js("__boltffiElement", inner, context)?;
+            format!("({expr} as JSArray).toDart.map((__boltffiElement) => {converted}).toList()")
+        }
+        _ => return Err(unsupported("dart_web from_js type")),
+    })
+}
+
+fn typed_array(ty: &TypeRef) -> Option<(&'static str, &'static str)> {
+    Some(match ty {
+        TypeRef::Primitive(Primitive::I8) => ("Int8List", "JSInt8Array"),
+        TypeRef::Primitive(Primitive::U8) => ("Uint8List", "JSUint8Array"),
+        TypeRef::Primitive(Primitive::I16) => ("Int16List", "JSInt16Array"),
+        TypeRef::Primitive(Primitive::U16) => ("Uint16List", "JSUint16Array"),
+        TypeRef::Primitive(Primitive::I32 | Primitive::ISize) => ("Int32List", "JSInt32Array"),
+        TypeRef::Primitive(Primitive::U32 | Primitive::USize) => ("Uint32List", "JSUint32Array"),
+        TypeRef::Primitive(Primitive::F32) => ("Float32List", "JSFloat32Array"),
+        TypeRef::Primitive(Primitive::F64) => ("Float64List", "JSFloat64Array"),
+        _ => return None,
+    })
+}

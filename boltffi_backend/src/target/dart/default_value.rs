@@ -1,4 +1,4 @@
-use boltffi_binding::{BuiltinType, CustomTypeId, DefaultValue, EnumDecl, Native, TypeRef};
+use boltffi_binding::{BuiltinType, CustomTypeId, DefaultValue, EnumDecl, Surface, TypeRef};
 
 use crate::core::{
     RenderContext, Result,
@@ -19,10 +19,10 @@ pub enum DefaultExpression {
 }
 
 impl DefaultExpression {
-    pub fn render(
+    pub fn render<S: Surface>(
         ty: &TypeRef,
         value: &DefaultValue,
-        context: &RenderContext<Native>,
+        context: &RenderContext<S>,
     ) -> Result<Self> {
         if let TypeRef::Optional(inner) = ty {
             return match value {
@@ -35,6 +35,12 @@ impl DefaultExpression {
         }
         if let TypeRef::Custom(custom_type) = ty {
             return Self::custom(*custom_type, value, context);
+        }
+        if let (TypeRef::Builtin(BuiltinType::Url), DefaultValue::String(value)) = (ty, value) {
+            return Ok(Self::Runtime(Expression::new(format!(
+                "Uri.parse({})",
+                Literal::string(value)
+            ))));
         }
         if let TypeRef::Builtin(BuiltinType::Uuid) = ty {
             return match value {
@@ -67,10 +73,10 @@ impl DefaultExpression {
         }
     }
 
-    fn custom(
+    fn custom<S: Surface>(
         custom_type: CustomTypeId,
         value: &DefaultValue,
-        context: &RenderContext<Native>,
+        context: &RenderContext<S>,
     ) -> Result<Self> {
         match Representation::resolve(custom_type, context)? {
             Representation::Transparent(representation) => {
@@ -105,12 +111,7 @@ impl DefaultExpression {
                 format!("0x{:x}", value.get())
             }
             DefaultValue::Integer(value) => value.get().to_string(),
-            DefaultValue::Float(value) => match value.to_f64() {
-                value if value.is_nan() => "double.nan".to_owned(),
-                value if value == f64::INFINITY => "double.infinity".to_owned(),
-                value if value == f64::NEG_INFINITY => "double.negativeInfinity".to_owned(),
-                value => format!("{value:?}"),
-            },
+            DefaultValue::Float(value) => float_literal(value.to_f64()),
             DefaultValue::String(value) => return Ok(Literal::string(value)),
             DefaultValue::EnumVariant {
                 enum_name,
@@ -135,5 +136,17 @@ impl DefaultExpression {
         Ok(Literal::new(format!(
             "const $$BoltUUIDValue(0x{high_bits:016x}, 0x{low_bits:016x})"
         )))
+    }
+}
+
+pub(crate) fn float_literal(value: f64) -> String {
+    if value.is_nan() {
+        "double.nan".to_owned()
+    } else if value == f64::INFINITY {
+        "double.infinity".to_owned()
+    } else if value == f64::NEG_INFINITY {
+        "double.negativeInfinity".to_owned()
+    } else {
+        format!("{value:?}")
     }
 }

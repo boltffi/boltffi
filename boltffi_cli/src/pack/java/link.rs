@@ -1528,6 +1528,8 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     #[cfg(unix)]
+    use super::resolve_linux_strip_program;
+    #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
 
     use super::{
@@ -1540,11 +1542,11 @@ mod tests {
         handle_missing_linux_strip_program, link_search_path_flags, linux_strip_program_candidates,
         msvc_link_search_path_flags, msvc_native_static_library_flags, msvc_rustflag_linker_args,
         msvc_style_jni_linker_args, resolve_jni_include_directories_with_overrides,
-        resolve_jvm_native_link_input, resolve_linux_strip_program,
-        select_windows_static_library_filename, should_generate_apple_dsym_sidecars,
-        target_prefixed_binutils_prefix, target_prefixed_strip_tool_candidates,
-        target_specific_java_home_env_key, target_specific_java_include_env_key,
-        validate_desktop_jni_symbol_stripping, vendorless_linux_target_triple,
+        resolve_jvm_native_link_input, select_windows_static_library_filename,
+        should_generate_apple_dsym_sidecars, target_prefixed_binutils_prefix,
+        target_prefixed_strip_tool_candidates, target_specific_java_home_env_key,
+        target_specific_java_include_env_key, validate_desktop_jni_symbol_stripping,
+        vendorless_linux_target_triple,
     };
     use boltffi_bindgen::cargo::LibraryCargoArgs;
 
@@ -1620,7 +1622,11 @@ mod tests {
             command.get_args().collect::<Vec<_>>(),
             vec![
                 "--manifest-path",
-                "/tmp/workspace/Cargo.toml",
+                cargo_context
+                    .library
+                    .cargo_manifest_path()
+                    .to_str()
+                    .unwrap(),
                 "-p",
                 cargo_context.library.package_id(),
             ]
@@ -2063,6 +2069,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn resolves_linux_strip_program_from_sibling_target_prefixed_tool() {
         let temp_root = temporary_directory("boltffi-linux-strip-test");
         let bin_dir = temp_root.join("bin");
@@ -2091,6 +2098,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn resolves_linux_strip_program_from_sibling_versioned_llvm_strip_tool() {
         let temp_root = temporary_directory("boltffi-linux-llvm-strip-test");
         let bin_dir = temp_root.join("bin");

@@ -399,7 +399,9 @@ mod tests {
     use std::fs;
     #[cfg(unix)]
     use std::os::unix::ffi::{OsStrExt, OsStringExt};
-    use std::path::{Path, PathBuf};
+    use std::path::Path;
+    #[cfg(unix)]
+    use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn parse_config(input: &str) -> Config {
@@ -431,7 +433,7 @@ mod tests {
 name = "demo"
 
 [targets.android.pack]
-output = "{}"
+output = '{}'
 "#,
             pack_output.display()
         ));
@@ -484,7 +486,7 @@ output = "{}"
 name = "demo"
 
 [targets.android.kotlin]
-output = "{}"
+output = '{}'
 "#,
             kotlin_output.display()
         ));
@@ -511,11 +513,11 @@ experimental = ["kotlin_multiplatform"]
 name = "demo"
 
 [targets.android.pack]
-output = "{}"
+output = '{}'
 
 [targets.kotlin_multiplatform]
 enabled = true
-output = "{}"
+output = '{}'
 "#,
             pack_output.display(),
             kmp_output.display()
@@ -571,7 +573,7 @@ name = "demo"
 
 [targets.kotlin_multiplatform]
 enabled = true
-output = "{}"
+output = '{}'
 "#,
             kmp_output.display()
         ));
@@ -604,11 +606,11 @@ experimental = ["kotlin_multiplatform"]
 name = "demo"
 
 [targets.android.pack]
-output = "{}"
+output = '{}'
 
 [targets.kotlin_multiplatform]
 enabled = true
-output = "{}"
+output = '{}'
 "#,
             android_pack_output.display(),
             kmp_output.display()
@@ -652,7 +654,7 @@ name = "demo"
 
 [targets.kotlin_multiplatform]
 enabled = true
-output = "{}"
+output = '{}'
 "#,
             config_kmp_output.display()
         ));

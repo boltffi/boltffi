@@ -3,6 +3,7 @@ pub mod c;
 pub mod c_header;
 pub mod csharp;
 pub mod dart;
+pub mod dart_web;
 pub mod java;
 pub mod kmp;
 pub mod kotlin;
@@ -18,6 +19,7 @@ pub use csharp::CSharpConfig;
 #[cfg(test)]
 pub use csharp::CSharpNugetConfig;
 pub use dart::DartConfig;
+pub use dart_web::DartWebConfig;
 pub use java::JavaConfig;
 #[cfg(test)]
 pub use java::JavaJvmConfig;
@@ -61,6 +63,8 @@ pub struct TargetsConfig {
     pub java: JavaConfig,
     #[serde(default)]
     pub dart: DartConfig,
+    #[serde(default)]
+    pub dart_web: DartWebConfig,
     #[serde(default)]
     pub python: PythonConfig,
     #[serde(default)]

@@ -6,9 +6,9 @@ use crate::reporter::Reporter;
 
 use super::{
     PackAllOptions, PackAndroidOptions, PackAppleOptions, PackCOptions, PackCSharpOptions,
-    PackDartOptions, PackJavaOptions, PackKmpOptions, PackPythonOptions, PackWasmOptions,
-    pack_android, pack_apple, pack_c, pack_csharp, pack_dart, pack_kmp, pack_prepared_java,
-    pack_python, pack_wasm, prepare_java_pack,
+    PackDartOptions, PackDartWebOptions, PackJavaOptions, PackKmpOptions, PackPythonOptions,
+    PackWasmOptions, pack_android, pack_apple, pack_c, pack_csharp, pack_dart, pack_dart_web,
+    pack_kmp, pack_prepared_java, pack_python, pack_wasm, prepare_java_pack,
 };
 
 pub(super) fn pack_all(
@@ -42,6 +42,7 @@ pub(super) fn pack_all(
         .transpose()?;
 
     let mut packed_any = false;
+    let mut dart_execution = options.execution.clone();
 
     if config.is_apple_enabled() {
         pack_apple(
@@ -86,10 +87,12 @@ pub(super) fn pack_all(
             config,
             PackWasmOptions {
                 execution: options.execution.clone(),
+                require_npm_metadata: true,
             },
             reporter,
         )?;
         packed_any = true;
+        dart_execution.wasm_prepared = true;
     }
 
     if let Some(prepared_java_pack) = prepared_java_pack {
@@ -113,8 +116,37 @@ pub(super) fn pack_all(
         pack_dart(
             config,
             PackDartOptions {
-                execution: options.execution.clone(),
+                execution: dart_execution.clone(),
                 experimental: options.experimental,
+            },
+            reporter,
+        )?;
+        packed_any = true;
+    }
+
+    // When `dart` is also enabled, `pack_dart` above already folds the web
+    // half in via `unify_native_and_web` -- packing it again standalone
+    // here would rebuild/repack the wasm module a second time and produce
+    // a redundant `dart_web.output` directory alongside the unified package.
+    if config.should_process(Target::DartWeb, options.experimental)
+        && !config.should_process(Target::Dart, options.experimental)
+    {
+        pack_dart_web(
+            config,
+            PackDartWebOptions {
+                execution: dart_execution.clone(),
+                experimental: options.experimental,
+            },
+            reporter,
+        )?;
+        packed_any = true;
+    }
+
+    if config.is_csharp_enabled() {
+        pack_csharp(
+            config,
+            PackCSharpOptions {
+                execution: options.execution.clone(),
             },
             reporter,
         )?;
@@ -127,17 +159,6 @@ pub(super) fn pack_all(
             PackCOptions {
                 execution: options.execution.clone(),
                 experimental: options.experimental,
-            },
-            reporter,
-        )?;
-        packed_any = true;
-    }
-
-    if config.is_csharp_enabled() {
-        pack_csharp(
-            config,
-            PackCSharpOptions {
-                execution: options.execution,
             },
             reporter,
         )?;

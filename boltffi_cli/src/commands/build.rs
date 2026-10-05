@@ -5,8 +5,20 @@ use crate::build::{
     count_successful, failed_targets, resolve_build_profile,
 };
 use crate::cli::Result;
-use crate::config::{Config, TargetSection};
+use crate::config::{Config, TargetSection, WasmProfile};
 use crate::pack::{PackError, resolve_build_cargo_args};
+
+// Matches `pack_wasm`'s own `requested_wasm_profile` resolution: an explicit
+// `--release` always wins, otherwise the wasm artifact profile follows
+// `targets.wasm.profile` (which defaults to release), not this command's own
+// `release` flag. Building wasm off the raw `release` bool here would let
+// `boltffi build dart`/`build wasm` (debug by default) and a later `pack
+// dart --no-build`/`pack wasm --no-build` (release by default) disagree on
+// which profile directory holds the artifact, so `pack`'s `--no-build` step
+// would look for a wasm build that was never produced.
+fn wasm_build_is_release(config: &Config, release: bool) -> bool {
+    release || matches!(config.wasm_profile(), WasmProfile::Release)
+}
 
 pub enum BuildPlatform {
     Apple,
@@ -60,7 +72,7 @@ pub fn run_build(config: &Config, options: BuildCommandOptions) -> Result<Vec<Bu
             }
             let cargo_args = cargo_args(TargetSection::Wasm);
             println!("Building for wasm ({})...", profile_for(&cargo_args));
-            wasm_builder(config, release, cargo_args)?
+            wasm_builder(config, wasm_build_is_release(config, release), cargo_args)?
                 .build_wasm_with_triple(config.wasm_triple())?
         }
         BuildPlatform::Dart => {
@@ -69,7 +81,18 @@ pub fn run_build(config: &Config, options: BuildCommandOptions) -> Result<Vec<Bu
             }
             let cargo_args = cargo_args(TargetSection::Dart);
             println!("Building for dart ({})...", profile_for(&cargo_args));
-            build_dart(config, release, &cargo_args)?
+            let mut results = build_dart(config, release, &cargo_args)?;
+            if config.is_dart_web_enabled() {
+                results.extend(
+                    wasm_builder(
+                        config,
+                        wasm_build_is_release(config, release),
+                        resolve_build_cargo_args(config, TargetSection::Wasm, &cli_cargo_args),
+                    )?
+                    .build_wasm_with_triple(config.wasm_triple())?,
+                );
+            }
+            results
         }
         BuildPlatform::All => {
             println!("Building all targets...");
@@ -86,10 +109,16 @@ pub fn run_build(config: &Config, options: BuildCommandOptions) -> Result<Vec<Bu
                         .build_android(&config.android_targets())?,
                 );
             }
-            if config.is_wasm_enabled() {
+            if config.is_wasm_enabled()
+                || (config.is_dart_enabled() && config.is_dart_web_enabled())
+            {
                 all_results.extend(
-                    wasm_builder(config, release, cargo_args(TargetSection::Wasm))?
-                        .build_wasm_with_triple(config.wasm_triple())?,
+                    wasm_builder(
+                        config,
+                        wasm_build_is_release(config, release),
+                        cargo_args(TargetSection::Wasm),
+                    )?
+                    .build_wasm_with_triple(config.wasm_triple())?,
                 );
             }
             if config.is_dart_enabled() {
@@ -217,8 +246,8 @@ mod tests {
     use boltffi_binding::BindingMetadataSurface;
 
     use super::{
-        BindingExpansion, BuildSelection, expanded_build_options, expanded_builder, wasm_builder,
-        wasm_expansion,
+        BindingExpansion, BuildSelection, expanded_build_options, expanded_builder,
+        wasm_build_is_release, wasm_builder, wasm_expansion,
     };
     use crate::config::Config;
 
@@ -336,5 +365,28 @@ mod tests {
 
         std::fs::remove_dir_all(&crate_dir).expect("cleanup temp dir");
         assert!(builder.is_ok(), "{:?}", builder.err());
+    }
+
+    /// `targets.wasm.profile` defaults to release, so a `boltffi build
+    /// dart`/`build wasm` with no `--release` flag must still resolve the
+    /// wasm build as release -- otherwise it builds debug while `pack
+    /// dart --no-build`/`pack wasm --no-build` (which follows the same
+    /// config default) looks for a release artifact that was never
+    /// produced.
+    #[test]
+    fn wasm_build_follows_the_configured_default_profile_when_not_explicitly_released() {
+        let config = parse_config("[package]\nname = \"demo\"\n");
+
+        assert!(wasm_build_is_release(&config, false));
+        assert!(wasm_build_is_release(&config, true));
+    }
+
+    #[test]
+    fn wasm_build_respects_an_explicit_debug_profile_override() {
+        let config =
+            parse_config("[package]\nname = \"demo\"\n\n[targets.wasm]\nprofile = \"debug\"\n");
+
+        assert!(!wasm_build_is_release(&config, false));
+        assert!(wasm_build_is_release(&config, true));
     }
 }

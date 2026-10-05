@@ -9,6 +9,7 @@ use boltffi_backend::target::{
     c::CHost,
     csharp::CSharpHost,
     dart::DartHost,
+    dart_web::DartWebHost,
     java::{JavaDesktopLoader, JavaHost, JavaVersion},
     kmp::{DEFAULT_KMP_MODULE_NAME, DEFAULT_KMP_PACKAGE_NAME, KmpHost, KmpSupportMode},
     kotlin::{KotlinApiStyle, KotlinDesktopLoader, KotlinFactoryStyle, KotlinHost},
@@ -49,6 +50,7 @@ pub struct Generation {
     csharp_native_library: Option<String>,
     dart_package: Option<String>,
     dart_native_artifact: Option<String>,
+    dart_standalone_pubspec: bool,
     java_package: Option<String>,
     java_file: Option<String>,
     java_android_library: Option<String>,
@@ -81,6 +83,7 @@ pub struct Generation {
     kmp_support_mode: KmpSupportMode,
     typescript_module: Option<String>,
     typescript_runtime_package: Option<String>,
+    dart_web_module: Option<String>,
 }
 
 impl Generation {
@@ -103,6 +106,7 @@ impl Generation {
             csharp_native_library: None,
             dart_package: None,
             dart_native_artifact: None,
+            dart_standalone_pubspec: false,
             java_package: None,
             java_file: None,
             java_android_library: None,
@@ -135,6 +139,7 @@ impl Generation {
             kmp_support_mode: KmpSupportMode::Strict,
             typescript_module: None,
             typescript_runtime_package: None,
+            dart_web_module: None,
         }
     }
 
@@ -431,6 +436,19 @@ impl Generation {
         self
     }
 
+    /// Emits a pubspec without `resolution: workspace`, for packages consumed
+    /// through a bare path/git dependency outside any pub workspace.
+    pub fn dart_standalone_pubspec(mut self, standalone: bool) -> Self {
+        self.dart_standalone_pubspec = standalone;
+        self
+    }
+
+    #[allow(missing_docs)]
+    pub fn dart_web_module(mut self, module: impl Into<String>) -> Self {
+        self.dart_web_module = Some(module.into());
+        self
+    }
+
     /// Reads the embedded metadata, selects the target surface contract, and renders it.
     pub fn render(&self, target: Target) -> Result<GeneratedOutput, GenerationError> {
         match target {
@@ -445,6 +463,7 @@ impl Generation {
             }
             Target::Swift => self.render_swift(),
             Target::TypeScript => self.render_typescript(),
+            Target::DartWeb => self.render_dart_web(),
             Target::C => {
                 let bindings = self.bindings::<Native>()?;
                 self.render_native_bindings(target, &bindings)
@@ -485,7 +504,7 @@ impl Generation {
             Target::CSharp => self.render_csharp_bindings(bindings),
             Target::Dart => self.render_dart_bindings(bindings),
             Target::C => self.render_c_bindings(bindings),
-            Target::Swift | Target::TypeScript | Target::Header => {
+            Target::Swift | Target::TypeScript | Target::Header | Target::DartWeb => {
                 Err(GenerationError::UnsupportedTarget { target })
             }
         }
@@ -626,6 +645,9 @@ impl Generation {
         if let Some(artifact) = &self.dart_native_artifact {
             host = host.native_artifact(artifact.clone());
         }
+        if self.dart_standalone_pubspec {
+            host = host.standalone_pubspec();
+        }
         let target = host.into_target().map_err(GenerationError::Render)?;
         self.render_backend(&target, bindings)
     }
@@ -647,6 +669,20 @@ impl Generation {
                     .as_deref()
                     .unwrap_or("@boltffi/runtime"),
             );
+        self.render_backend(&host.into_target(), bindings)
+    }
+
+    fn render_dart_web(&self) -> Result<GeneratedOutput, GenerationError> {
+        let bindings = self.bindings::<Wasm32>()?;
+        self.render_dart_web_bindings(&bindings)
+    }
+
+    fn render_dart_web_bindings(
+        &self,
+        bindings: &Bindings<Wasm32>,
+    ) -> Result<GeneratedOutput, GenerationError> {
+        let module = self.dart_web_module.as_deref().unwrap_or("boltffi");
+        let host = DartWebHost::new(module).map_err(GenerationError::Render)?;
         self.render_backend(&host.into_target(), bindings)
     }
 
@@ -979,7 +1015,13 @@ mod tests {
         output
             .files()
             .iter()
-            .map(|file| file.path().as_path().display().to_string())
+            .map(|file| {
+                file.path()
+                    .as_path()
+                    .display()
+                    .to_string()
+                    .replace('\\', "/")
+            })
             .collect()
     }
 

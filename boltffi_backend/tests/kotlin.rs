@@ -73,7 +73,11 @@ pub fn files_with_host(source: &str, host: KotlinHost) -> Vec<(String, String)> 
         .iter()
         .map(|file| {
             (
-                file.path().as_path().display().to_string(),
+                file.path()
+                    .as_path()
+                    .display()
+                    .to_string()
+                    .replace('\\', "/"),
                 file.contents().to_owned(),
             )
         })

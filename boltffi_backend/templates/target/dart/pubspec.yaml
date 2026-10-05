@@ -2,9 +2,7 @@ name: {{ artifact_name }}
 
 environment:
   sdk: ^3.10.8
-
-resolution: workspace
-
+{{ resolution }}
 dependencies:
   path: ^1.9.0
   ffi: ^2.2.0

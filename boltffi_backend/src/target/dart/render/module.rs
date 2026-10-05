@@ -53,7 +53,16 @@ impl<'host, 'bridge, 'decl> Module<'host, 'bridge, 'decl> {
             .map(native::declaration)
             .collect::<Result<Vec<_>>>()?
             .join("\n");
-        let mut preamble = PRELUDE.trim_end().to_owned();
+        let mut preamble = PRELUDE
+            .trim_end()
+            .replace(
+                "{% include \"target/dart/shared_values.dart\" %}",
+                include_str!("../../../../templates/target/dart/shared_values.dart"),
+            )
+            .replace(
+                "{% include \"target/dart/shared_compare.dart\" %}",
+                include_str!("../../../../templates/target/dart/shared_compare.dart"),
+            );
         preamble.push_str("\n\n");
         preamble.push_str(&native_functions);
         preamble.push('\n');
@@ -64,10 +73,16 @@ impl<'host, 'bridge, 'decl> Module<'host, 'bridge, 'decl> {
             .with_file(FilePlan::all(source_path).with_preamble(preamble))
             .assemble_declarations(self.declarations)?;
         let artifact = self.host.artifact_for(bindings);
+        let resolution = match self.host.is_standalone_pubspec() {
+            true => "\n",
+            false => "\nresolution: workspace\n\n",
+        };
         let package_generated_files = vec![
             GeneratedFile::new(
                 FilePath::new(format!("{package}/pubspec.yaml"))?,
-                PUBSPEC.replace("{{ artifact_name }}", &package),
+                PUBSPEC
+                    .replace("{{ artifact_name }}", &package)
+                    .replace("{{ resolution }}", resolution),
             ),
             GeneratedFile::new(
                 FilePath::new(format!("{package}/hook/build.dart"))?,

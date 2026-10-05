@@ -584,3 +584,5 @@ remaining API restrictions.
   - Default: `dist/dart`
 - `native_targets` (array of strings, optional): Dart native build targets.
   - Default: `["android:arm64", "android:armv7", "android:x86_64", "ios:arm64", "ios_sim:arm64", "ios_sim:x86_64", "linux:arm64", "linux:x86_64", "macos:arm64", "macos:x86_64", "windows:x86_64", "windows:arm64"]`.
+- `standalone` (bool): Emit a pubspec without `resolution: workspace`, for consumers that depend on the package through a bare path/git dependency outside any pub workspace.
+  - Default: `false`
