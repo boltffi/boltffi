@@ -13,30 +13,32 @@ private object Native {
     @JvmStatic external fun boltffi_method_class_demo_gps_simulator_enabled(`receiver`: Long): Boolean
 }
 
-class GPSSimulator internal constructor(internal val handle: Long) : AutoCloseable {
-    private val __boltffi_closed = java.util.concurrent.atomic.AtomicBoolean(false)
+class GPSSimulator internal constructor(private val __boltffi_handle: java.util.concurrent.atomic.AtomicLong) : AutoCloseable {
 
     override fun close() {
-        if (__boltffi_closed.compareAndSet(false, true)) {
+        val handle = __boltffi_handle.getAndSet(0L)
+        if (handle != 0L) {
             Native.boltffi_release_class_demo_gps_simulator(handle)
         }
     }
 
     internal fun __boltffiTakeHandle(): Long {
-        check(__boltffi_closed.compareAndSet(false, true)) { "GPSSimulator is closed" }
+        val handle = __boltffi_handle.getAndSet(0L)
+        check(handle != 0L) { "GPSSimulator is closed" }
         return handle
     }
 
     internal fun boltffiHandle(): Long {
-        check(!__boltffi_closed.get()) { "GPSSimulator is closed" }
+        val handle = __boltffi_handle.get()
+        check(handle != 0L) { "GPSSimulator is closed" }
         return handle
     }
 
-    constructor(enabled: Boolean) : this(new(enabled).handle)
+    constructor(enabled: Boolean) : this(new(enabled).__boltffi_handle)
 
     companion object {
         private fun new(enabled: Boolean): GPSSimulator {
-            return GPSSimulator(Native.boltffi_init_class_demo_gps_simulator_new(enabled))
+            return GPSSimulator(java.util.concurrent.atomic.AtomicLong(Native.boltffi_init_class_demo_gps_simulator_new(enabled)))
         }
     }
 

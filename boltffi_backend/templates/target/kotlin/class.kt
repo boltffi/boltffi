@@ -1,25 +1,27 @@
-{{ class.documentation() }}class {{ class.name() }} internal constructor(internal val handle: Long) : AutoCloseable {
-    private val __boltffi_closed = java.util.concurrent.atomic.AtomicBoolean(false)
+{{ class.documentation() }}class {{ class.name() }} internal constructor(private val __boltffi_handle: java.util.concurrent.atomic.AtomicLong) : AutoCloseable {
 
     override fun close() {
-        if (__boltffi_closed.compareAndSet(false, true)) {
+        val handle = __boltffi_handle.getAndSet(0L)
+        if (handle != 0L) {
             Native.{{ class.release() }}(handle)
         }
     }
 
     internal fun __boltffiTakeHandle(): Long {
-        check(__boltffi_closed.compareAndSet(false, true)) { "{{ class.name() }} is closed" }
+        val handle = __boltffi_handle.getAndSet(0L)
+        check(handle != 0L) { "{{ class.name() }} is closed" }
         return handle
     }
 
     internal fun boltffiHandle(): Long {
-        check(!__boltffi_closed.get()) { "{{ class.name() }} is closed" }
+        val handle = __boltffi_handle.get()
+        check(handle != 0L) { "{{ class.name() }} is closed" }
         return handle
     }
 {%- for initializer in class.initializers() %}
 {%- if initializer.constructor() %}
 
-{{ initializer.call().documentation().indented("    ") }}    constructor({% for parameter in initializer.call().parameters() %}{{ parameter.declaration() }}{% if !loop.last %}, {% endif %}{% endfor %}) : this({{ initializer.call().name() }}({% for parameter in initializer.call().parameters() %}{{ parameter.name() }}{% if !loop.last %}, {% endif %}{% endfor %}).handle)
+{{ initializer.call().documentation().indented("    ") }}    constructor({% for parameter in initializer.call().parameters() %}{{ parameter.declaration() }}{% if !loop.last %}, {% endif %}{% endfor %}) : this({{ initializer.call().name() }}({% for parameter in initializer.call().parameters() %}{{ parameter.name() }}{% if !loop.last %}, {% endif %}{% endfor %}).__boltffi_handle)
 {%- endif %}
 {%- endfor %}
 {%- if !class.initializers().is_empty() || !class.static_methods().is_empty() || !constants.is_empty() %}
