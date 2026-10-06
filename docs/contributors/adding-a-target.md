@@ -26,7 +26,7 @@ target/<lang>/
 └── runtime/        (handwritten support code shipped with the generated source)
 ```
 
-Add `pub mod <lang>;` to `boltffi_backend/src/target/mod.rs` so the new folder is actually part of the crate. Right now that file is just `pub mod python;`, and a target that is not listed there does not exist as far as the rest of the backend is concerned.
+Register the target with `pub mod <lang>;` in `boltffi_backend/src/target/mod.rs`. The backend compiles a target folder only when `mod.rs` declares that target.
 
 The only required flow is `Bindings + BridgeContract -> templates -> Emitted`. `codec/` is where the language's primitive read and write live, the six codec leaves plus its op rendering, while the shared walkers handle composition. `runtime/` is the handwritten support code that ships alongside the generated source.
 
