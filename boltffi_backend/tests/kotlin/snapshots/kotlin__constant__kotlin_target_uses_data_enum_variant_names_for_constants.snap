@@ -30,7 +30,7 @@ sealed class State {
         }
 
         internal override fun writeTo(writer: WireWriter) {
-            writer.writeU32(0.toUInt())
+            writer.writeU32(0u)
         }
     }
     data class Busy(
@@ -41,7 +41,7 @@ sealed class State {
         }
 
         internal override fun writeTo(writer: WireWriter) {
-            writer.writeU32(1.toUInt())
+            writer.writeU32(1u)
             writer.writeU32(this.jobs)
         }
     }
@@ -50,8 +50,8 @@ sealed class State {
         internal fun fromReader(reader: WireReader): State {
             val tag = reader.readU32()
             return when (tag) {
-                0.toUInt() -> Idle
-                1.toUInt() -> Busy(reader.readU32())
+                0u -> Idle
+                1u -> Busy(reader.readU32())
                 else -> throw IllegalArgumentException("unknown State tag: $tag")
             }
         }

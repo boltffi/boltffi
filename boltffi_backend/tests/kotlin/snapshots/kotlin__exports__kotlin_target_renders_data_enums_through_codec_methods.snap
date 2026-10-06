@@ -80,7 +80,7 @@ sealed class Shape {
         }
 
         internal override fun writeTo(writer: WireWriter) {
-            writer.writeU32(0.toUInt())
+            writer.writeU32(0u)
             writer.writeString(this.field0)
         }
     }
@@ -89,7 +89,7 @@ sealed class Shape {
         internal fun fromReader(reader: WireReader): Shape {
             val tag = reader.readU32()
             return when (tag) {
-                0.toUInt() -> Label(reader.readString())
+                0u -> Label(reader.readString())
                 else -> throw IllegalArgumentException("unknown Shape tag: $tag")
             }
         }
@@ -125,7 +125,7 @@ sealed class Message {
         }
 
         internal override fun writeTo(writer: WireWriter) {
-            writer.writeU32(0.toUInt())
+            writer.writeU32(0u)
         }
     }
     data class Text(
@@ -136,7 +136,7 @@ sealed class Message {
         }
 
         internal override fun writeTo(writer: WireWriter) {
-            writer.writeU32(1.toUInt())
+            writer.writeU32(1u)
             writer.writeString(this.field0)
         }
     }
@@ -148,7 +148,7 @@ sealed class Message {
         }
 
         internal override fun writeTo(writer: WireWriter) {
-            writer.writeU32(2.toUInt())
+            writer.writeU32(2u)
             writer.writeString(this.name)
         }
     }
@@ -157,9 +157,9 @@ sealed class Message {
         internal fun fromReader(reader: WireReader): Message {
             val tag = reader.readU32()
             return when (tag) {
-                0.toUInt() -> Empty
-                1.toUInt() -> Text(reader.readString())
-                2.toUInt() -> Named(reader.readString())
+                0u -> Empty
+                1u -> Text(reader.readString())
+                2u -> Named(reader.readString())
                 else -> throw IllegalArgumentException("unknown Message tag: $tag")
             }
         }

@@ -30,7 +30,7 @@ sealed class StorageError {
         }
 
         internal override fun writeTo(writer: WireWriter) {
-            writer.writeU32(0.toUInt())
+            writer.writeU32(0u)
         }
     }
     data class Io(
@@ -41,7 +41,7 @@ sealed class StorageError {
         }
 
         internal override fun writeTo(writer: WireWriter) {
-            writer.writeU32(1.toUInt())
+            writer.writeU32(1u)
             writer.writeString(this.field0)
         }
     }
@@ -50,8 +50,8 @@ sealed class StorageError {
         internal fun fromReader(reader: WireReader): StorageError {
             val tag = reader.readU32()
             return when (tag) {
-                0.toUInt() -> InvalidPath
-                1.toUInt() -> Io(reader.readString())
+                0u -> InvalidPath
+                1u -> Io(reader.readString())
                 else -> throw IllegalArgumentException("unknown StorageError tag: $tag")
             }
         }
@@ -87,7 +87,7 @@ sealed class RecorderError {
         }
 
         internal override fun writeTo(writer: WireWriter) {
-            writer.writeU32(0.toUInt())
+            writer.writeU32(0u)
         }
     }
     data class StorageError(
@@ -98,7 +98,7 @@ sealed class RecorderError {
         }
 
         internal override fun writeTo(writer: WireWriter) {
-            writer.writeU32(1.toUInt())
+            writer.writeU32(1u)
             this.field0.writeTo(writer)
         }
     }
@@ -108,7 +108,7 @@ sealed class RecorderError {
         }
 
         internal override fun writeTo(writer: WireWriter) {
-            writer.writeU32(2.toUInt())
+            writer.writeU32(2u)
         }
     }
 
@@ -116,9 +116,9 @@ sealed class RecorderError {
         internal fun fromReader(reader: WireReader): RecorderError {
             val tag = reader.readU32()
             return when (tag) {
-                0.toUInt() -> InvalidConfig
-                1.toUInt() -> StorageError(com.boltffi.demo.StorageError.fromReader(reader))
-                2.toUInt() -> SessionNotStarted
+                0u -> InvalidConfig
+                1u -> StorageError(com.boltffi.demo.StorageError.fromReader(reader))
+                2u -> SessionNotStarted
                 else -> throw IllegalArgumentException("unknown RecorderError tag: $tag")
             }
         }

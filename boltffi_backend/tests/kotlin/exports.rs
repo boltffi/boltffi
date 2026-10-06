@@ -592,8 +592,8 @@ fn kotlin_target_uses_configured_c_header_in_jni_bridge() {
 fn kotlin_target_renders_parameter_defaults_as_default_arguments() {
     let rendered = rendered_fixture("exports/parameter_defaults");
 
-    assert!(rendered.contains("fun greet(name: String, greeting: String = \"world\", times: UInt = 3.toUInt(), offset: Long = -1, shout: Boolean = true, ratio: Float = 0.5f, mode: Mode = Mode.SLOW, suffix: String? = null, limit: UShort? = 7.toUShort()): String"));
-    assert!(rendered.contains("constructor(port: UShort = 8080.toUShort())"));
+    assert!(rendered.contains("fun greet(name: String, greeting: String = \"world\", times: UInt = 3u, offset: Long = -1, shout: Boolean = true, ratio: Float = 0.5f, mode: Mode = Mode.SLOW, suffix: String? = null, limit: UShort? = 7u): String"));
+    assert!(rendered.contains("constructor(port: UShort = 8080u)"));
     assert!(rendered.contains("private fun new(port: UShort): Server"));
     assert!(!rendered.contains("fun new(port: UShort ="));
     assert!(rendered.contains(
@@ -615,7 +615,7 @@ fn kotlin_companion_factory_style_preserves_parameter_defaults() {
         .factory_style(KotlinFactoryStyle::CompanionMethods);
     let rendered = rendered_fixture_with_host("exports/parameter_defaults", host);
 
-    assert!(rendered.contains("fun new(port: UShort = 8080.toUShort()): Server"));
+    assert!(rendered.contains("fun new(port: UShort = 8080u): Server"));
     assert!(!rendered.contains("constructor(port: UShort"));
     assert!(!rendered.contains("private fun new"));
 }
@@ -696,4 +696,38 @@ fn kotlin_generated_defaults_and_long_initializers_compile() {
             include_str!("../fixtures/kotlin/defaults_and_initializers.kt"),
         );
     });
+}
+
+#[test]
+fn kotlin_wire_tags_compile_and_preserve_optional_and_result_payloads() {
+    let source = SourceFixture::many([
+        "exports/result_values",
+        "enums/shape",
+        "records/unsigned_defaults",
+    ])
+    .read();
+    let files = files_with_host(
+        &source,
+        KotlinHost::new("com.boltffi.demo", "Demo").expect("Kotlin host"),
+    );
+    let kotlin = files
+        .iter()
+        .find(|(path, _)| path.ends_with(".kt"))
+        .map(|(_, contents)| contents)
+        .expect("generated Kotlin");
+    assert!(!kotlin.contains("0.toUByte()"));
+    assert!(!kotlin.contains("1.toUByte()"));
+    assert!(!kotlin.contains("0.toUInt()"));
+
+    let Some(compiler) = kotlin_compiler() else {
+        eprintln!("Kotlin compiler is unavailable");
+        return;
+    };
+    run_with_generated_kotlin(
+        &compiler,
+        "wire-tags",
+        files,
+        "WireTags.kt",
+        include_str!("../fixtures/kotlin/wire_tags.kt"),
+    );
 }

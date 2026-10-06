@@ -338,9 +338,9 @@ internal class WireReader(private val bytes: ByteArray) {
     }
 
     private inline fun <T> readOptional(read: (WireReader) -> T): T? {
-        return when (readU8()) {
-            0.toUByte() -> null
-            1.toUByte() -> read(this)
+        return when (readU8().toInt()) {
+            0 -> null
+            1 -> read(this)
             else -> throw IllegalArgumentException("invalid optional wire tag")
         }
     }
@@ -600,10 +600,10 @@ internal class WireWriter(initialCapacity: Int) {
 
     private inline fun <T> writeOptional(value: T?, write: (WireWriter, T) -> Unit) {
         if (value == null) {
-            writeU8(0.toUByte())
+            writeU8(0u)
             return
         }
-        writeU8(1.toUByte())
+        writeU8(1u)
         write(this, value)
     }
 }

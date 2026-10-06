@@ -103,7 +103,7 @@ sealed class Item {
         }
 
         internal override fun writeTo(writer: WireWriter) {
-            writer.writeU32(0.toUInt())
+            writer.writeU32(0u)
             this.field0.writeTo(writer)
         }
     }
@@ -113,7 +113,7 @@ sealed class Item {
         }
 
         internal override fun writeTo(writer: WireWriter) {
-            writer.writeU32(1.toUInt())
+            writer.writeU32(1u)
         }
     }
 
@@ -121,8 +121,8 @@ sealed class Item {
         internal fun fromReader(reader: WireReader): Item {
             val tag = reader.readU32()
             return when (tag) {
-                0.toUInt() -> Padded(com.boltffi.demo.Padded.fromReader(reader))
-                1.toUInt() -> Empty
+                0u -> Padded(com.boltffi.demo.Padded.fromReader(reader))
+                1u -> Empty
                 else -> throw IllegalArgumentException("unknown Item tag: $tag")
             }
         }

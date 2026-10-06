@@ -154,23 +154,29 @@ impl KotlinPrimitive {
 
     pub fn integer_literal(self, value: IntegerValue) -> Result<Expression> {
         let signed = value.get();
-        let value = Expression::integer(signed);
-        let converted = match signed < 0 {
-            true => value.clone().parenthesized(),
-            false => value.clone(),
-        };
         Ok(match self.primitive {
-            Primitive::I8 => converted.convert(Identifier::parse("toByte")?),
-            Primitive::U8 => converted.convert(Identifier::parse("toUByte")?),
-            Primitive::I16 => converted.convert(Identifier::parse("toShort")?),
-            Primitive::U16 => converted.convert(Identifier::parse("toUShort")?),
-            Primitive::U32 => converted.convert(Identifier::parse("toUInt")?),
-            Primitive::U64 | Primitive::USize if i64::try_from(signed).is_ok() => {
-                converted.convert(Identifier::parse("toULong")?)
+            Primitive::U8 | Primitive::U16 | Primitive::U32 | Primitive::U64 | Primitive::USize => {
+                let unsigned = u128::try_from(signed)
+                    .map_err(|_| KotlinHost::unsupported("unsigned default cannot be negative"))?;
+                match self.primitive {
+                    Primitive::U64 | Primitive::USize => Expression::unsigned_long(unsigned),
+                    _ => Expression::unsigned(unsigned),
+                }
             }
-            // past `Long.MAX_VALUE` there is no signed literal to convert
-            Primitive::U64 | Primitive::USize => Expression::unsigned_long(signed as u128),
-            Primitive::I32 | Primitive::I64 | Primitive::ISize => value,
+            Primitive::I8 | Primitive::I16 => {
+                let literal = Expression::integer(signed);
+                let literal = if signed < 0 {
+                    literal.parenthesized()
+                } else {
+                    literal
+                };
+                let conversion = match self.primitive {
+                    Primitive::I8 => "toByte",
+                    _ => "toShort",
+                };
+                literal.convert(Identifier::parse(conversion)?)
+            }
+            Primitive::I32 | Primitive::I64 | Primitive::ISize => Expression::integer(signed),
             _ => {
                 return Err(KotlinHost::unsupported("unknown primitive literal"));
             }
