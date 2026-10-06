@@ -42,6 +42,11 @@ use boltffi::*;
         python,
         reason = ExclusionReason::CoverageGap,
         details = "The Python demo suite does not assert exported constants yet. Add the marker when Python constant coverage lands."
+    ),
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not support enums yet"
     )
 )]
 #[export]
@@ -86,6 +91,11 @@ pub enum DemoMode {
         dart,
         reason = ExclusionReason::ImplementationGap,
         details = "The native Dart target doesn't emit an associated constant whose value is an enum-variant reference (DemoMode::PREFERRED, DemoState::INITIAL) at all -- only DemoMode::FALLBACK (accessor-backed) and DemoMode::VARIANT_COUNT (inline primitive) appear on the generated types, so this case can't be asserted as a whole."
+    ),
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not support constants yet"
     )
 )]
 #[data(impl)]
@@ -133,7 +143,12 @@ pub const DEMO_BUSY: DemoState = DemoState::Busy { jobs: 3 };
     exclude(kotlin, reason = ExclusionReason::ImplementationGap,
         details = "Kotlin bindings represent tuples as Pair or Triple. A one-element Rust tuple needs a generated wrapper or an explicit flattening policy, neither of which is implemented. Tracked in #942."),
     exclude(java, reason = ExclusionReason::ImplementationGap,
-        details = "Java bindings do not implement Rust tuple types. This constant needs a generated tuple representation and matching codec support before it can be tested.")
+        details = "Java bindings do not implement Rust tuple types. This constant needs a generated tuple representation and matching codec support before it can be tested."),
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not support constants yet"
+    )
 )]
 #[export]
 pub const DEMO_SINGLE: (u32,) = (17,);

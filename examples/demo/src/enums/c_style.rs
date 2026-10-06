@@ -14,7 +14,12 @@ pub enum Status {
 #[demo_bench_macros::demo_case(
     "enums.c_style.status.should_roundtrip_values",
     justification = "Ensure Status enum values cross the FFI boundary and return unchanged.",
-    directions = "Call `enums::c_style::echo_status` through the generated binding and assert Status enum values cross the FFI boundary and return unchanged."
+    directions = "Call `enums::c_style::echo_status` through the generated binding and assert Status enum values cross the FFI boundary and return unchanged.",
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not support enums yet"
+    )
 )]
 #[export]
 pub fn echo_status(s: Status) -> Status {
@@ -24,7 +29,12 @@ pub fn echo_status(s: Status) -> Status {
 #[demo_bench_macros::demo_case(
     "enums.c_style.status.should_render_labels",
     justification = "Ensure status_to_string maps Status enum values to their string labels.",
-    directions = "Call `enums::c_style::status_to_string` through the generated binding and assert status_to_string maps Status enum values to their string labels."
+    directions = "Call `enums::c_style::status_to_string` through the generated binding and assert status_to_string maps Status enum values to their string labels.",
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not support enums yet"
+    )
 )]
 #[export]
 pub fn status_to_string(s: Status) -> String {
@@ -38,7 +48,12 @@ pub fn status_to_string(s: Status) -> String {
 #[demo_bench_macros::demo_case(
     "enums.c_style.status.should_identify_active_values",
     justification = "Ensure is_active returns true only for the active Status variant.",
-    directions = "Call `enums::c_style::is_active` through the generated binding and assert is_active returns true only for the active Status variant."
+    directions = "Call `enums::c_style::is_active` through the generated binding and assert is_active returns true only for the active Status variant.",
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not support enums yet"
+    )
 )]
 #[export]
 pub fn is_active(s: Status) -> bool {
@@ -48,7 +63,12 @@ pub fn is_active(s: Status) -> bool {
 #[demo_bench_macros::demo_case(
     "enums.c_style.status.should_roundtrip_vectors",
     justification = "Ensure a vector of Status enum values preserves variant order and values.",
-    directions = "Call `enums::c_style::echo_vec_status` through the generated binding and assert a vector of Status enum values preserves variant order and values."
+    directions = "Call `enums::c_style::echo_vec_status` through the generated binding and assert a vector of Status enum values preserves variant order and values.",
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not support enums yet"
+    )
 )]
 #[export]
 pub fn echo_vec_status(values: Vec<Status>) -> Vec<Status> {
@@ -71,7 +91,12 @@ impl Direction {
     #[demo_bench_macros::demo_case(
         "enums.c_style.direction.should_construct_from_raw_value",
         justification = "Ensure Direction::new maps raw integer values to Direction variants.",
-        directions = "Call `enums::c_style::Direction::new` through the generated binding and assert Direction::new maps raw integer values to Direction variants."
+        directions = "Call `enums::c_style::Direction::new` through the generated binding and assert Direction::new maps raw integer values to Direction variants.",
+        exclude(
+            ruby,
+            reason = ExclusionReason::ImplementationGap,
+            details = "the Ruby target does not support enums yet"
+        )
     )]
     pub fn new(raw: i32) -> Self {
         match raw {
@@ -86,7 +111,12 @@ impl Direction {
     #[demo_bench_macros::demo_case(
         "enums.c_style.direction.should_return_cardinal_value",
         justification = "Ensure Direction::cardinal returns the North direction variant.",
-        directions = "Call `enums::c_style::Direction::cardinal` through the generated binding and assert Direction::cardinal returns the North direction variant."
+        directions = "Call `enums::c_style::Direction::cardinal` through the generated binding and assert Direction::cardinal returns the North direction variant.",
+        exclude(
+            ruby,
+            reason = ExclusionReason::ImplementationGap,
+            details = "the Ruby target does not support enums yet"
+        )
     )]
     pub fn cardinal() -> Self {
         Direction::North
@@ -95,7 +125,12 @@ impl Direction {
     #[demo_bench_macros::demo_case(
         "enums.c_style.direction.should_construct_from_degrees",
         justification = "Ensure Direction::from_degrees maps compass degrees to Direction variants.",
-        directions = "Call `enums::c_style::Direction::from_degrees` through the generated binding and assert Direction::from_degrees maps compass degrees to Direction variants."
+        directions = "Call `enums::c_style::Direction::from_degrees` through the generated binding and assert Direction::from_degrees maps compass degrees to Direction variants.",
+        exclude(
+            ruby,
+            reason = ExclusionReason::ImplementationGap,
+            details = "the Ruby target does not support enums yet"
+        )
     )]
     pub fn from_degrees(degrees: f64) -> Self {
         let normalized = ((degrees % 360.0) + 360.0) % 360.0;
@@ -113,7 +148,12 @@ impl Direction {
     #[demo_bench_macros::demo_case(
         "enums.c_style.direction.should_return_opposite_from_method",
         justification = "Ensure Direction::opposite returns the opposite compass direction.",
-        directions = "Call `enums::c_style::Direction::opposite` through the generated binding and assert Direction::opposite returns the opposite compass direction."
+        directions = "Call `enums::c_style::Direction::opposite` through the generated binding and assert Direction::opposite returns the opposite compass direction.",
+        exclude(
+            ruby,
+            reason = ExclusionReason::ImplementationGap,
+            details = "the Ruby target does not support enums yet"
+        )
     )]
     pub fn opposite(&self) -> Direction {
         match self {
@@ -127,7 +167,12 @@ impl Direction {
     #[demo_bench_macros::demo_case(
         "enums.c_style.direction.should_return_method_parameter_value",
         justification = "Ensure a Direction method accepts a Direction parameter and returns a Direction value.",
-        directions = "Call `enums::c_style::Direction::horizontal_or` through the generated binding and assert a Direction parameter and Direction return value cross the method boundary."
+        directions = "Call `enums::c_style::Direction::horizontal_or` through the generated binding and assert a Direction parameter and Direction return value cross the method boundary.",
+        exclude(
+            ruby,
+            reason = ExclusionReason::ImplementationGap,
+            details = "the Ruby target does not support enums yet"
+        )
     )]
     pub fn horizontal_or(&self, fallback: Direction) -> Direction {
         if self.is_horizontal() {
@@ -140,7 +185,12 @@ impl Direction {
     #[demo_bench_macros::demo_case(
         "enums.c_style.direction.should_identify_horizontal_values",
         justification = "Ensure Direction::is_horizontal returns true for East and West.",
-        directions = "Call `enums::c_style::Direction::is_horizontal` through the generated binding and assert Direction::is_horizontal returns true for East and West."
+        directions = "Call `enums::c_style::Direction::is_horizontal` through the generated binding and assert Direction::is_horizontal returns true for East and West.",
+        exclude(
+            ruby,
+            reason = ExclusionReason::ImplementationGap,
+            details = "the Ruby target does not support enums yet"
+        )
     )]
     pub fn is_horizontal(&self) -> bool {
         matches!(self, Direction::East | Direction::West)
@@ -149,7 +199,12 @@ impl Direction {
     #[demo_bench_macros::demo_case(
         "enums.c_style.direction.should_render_compass_label",
         justification = "Ensure Direction::label returns the single-letter compass label.",
-        directions = "Call `enums::c_style::Direction::label` through the generated binding and assert Direction::label returns the single-letter compass label."
+        directions = "Call `enums::c_style::Direction::label` through the generated binding and assert Direction::label returns the single-letter compass label.",
+        exclude(
+            ruby,
+            reason = ExclusionReason::ImplementationGap,
+            details = "the Ruby target does not support enums yet"
+        )
     )]
     pub fn label(&self) -> String {
         match self {
@@ -163,7 +218,12 @@ impl Direction {
     #[demo_bench_macros::demo_case(
         "enums.c_style.direction.should_report_variant_count",
         justification = "Ensure Direction::count returns the number of Direction variants.",
-        directions = "Call `enums::c_style::Direction::count` through the generated binding and assert Direction::count returns the number of Direction variants."
+        directions = "Call `enums::c_style::Direction::count` through the generated binding and assert Direction::count returns the number of Direction variants.",
+        exclude(
+            ruby,
+            reason = ExclusionReason::ImplementationGap,
+            details = "the Ruby target does not support enums yet"
+        )
     )]
     pub fn count() -> u32 {
         4
@@ -173,7 +233,12 @@ impl Direction {
 #[demo_bench_macros::demo_case(
     "enums.c_style.direction.should_roundtrip_value",
     justification = "Ensure a Direction enum value crosses the FFI boundary and returns unchanged.",
-    directions = "Call `enums::c_style::echo_direction` through the generated binding and assert a Direction enum value crosses the FFI boundary and returns unchanged."
+    directions = "Call `enums::c_style::echo_direction` through the generated binding and assert a Direction enum value crosses the FFI boundary and returns unchanged.",
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not support enums yet"
+    )
 )]
 #[export]
 #[benchmark_candidate(function, uniffi, wasm_bindgen)]
@@ -184,7 +249,12 @@ pub fn echo_direction(d: Direction) -> Direction {
 #[demo_bench_macros::demo_case(
     "enums.c_style.direction.should_return_opposite_from_free_function",
     justification = "Ensure opposite_direction returns the opposite compass direction for a Direction argument.",
-    directions = "Call `enums::c_style::opposite_direction` through the generated binding and assert opposite_direction returns the opposite compass direction for a Direction argument."
+    directions = "Call `enums::c_style::opposite_direction` through the generated binding and assert opposite_direction returns the opposite compass direction for a Direction argument.",
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not support enums yet"
+    )
 )]
 #[export]
 #[benchmark_candidate(function, uniffi, wasm_bindgen)]
@@ -200,7 +270,12 @@ pub fn opposite_direction(d: Direction) -> Direction {
 #[demo_bench_macros::demo_case(
     "enums.c_style.direction.should_return_degrees",
     justification = "Ensure direction_to_degrees maps Direction variants to compass degrees.",
-    directions = "Call `enums::c_style::direction_to_degrees` through the generated binding and assert direction_to_degrees maps Direction variants to compass degrees."
+    directions = "Call `enums::c_style::direction_to_degrees` through the generated binding and assert direction_to_degrees maps Direction variants to compass degrees.",
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not support enums yet"
+    )
 )]
 #[export]
 #[benchmark_candidate(function, uniffi, wasm_bindgen)]
@@ -216,7 +291,12 @@ pub fn direction_to_degrees(direction: Direction) -> i32 {
 #[demo_bench_macros::demo_case(
     "enums.c_style.direction.should_generate_sequence",
     justification = "Ensure generate_directions returns a cyclic sequence of Direction values.",
-    directions = "Call `enums::c_style::generate_directions` through the generated binding and assert generate_directions returns a cyclic sequence of Direction values."
+    directions = "Call `enums::c_style::generate_directions` through the generated binding and assert generate_directions returns a cyclic sequence of Direction values.",
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not support enums yet"
+    )
 )]
 #[export]
 #[benchmark_candidate(function, uniffi, wasm_bindgen)]
@@ -235,7 +315,12 @@ pub fn generate_directions(count: i32) -> Vec<Direction> {
 #[demo_bench_macros::demo_case(
     "enums.c_style.direction.should_count_north_values",
     justification = "Ensure count_north returns the number of North variants in a Direction vector.",
-    directions = "Call `enums::c_style::count_north` through the generated binding and assert count_north returns the number of North variants in a Direction vector."
+    directions = "Call `enums::c_style::count_north` through the generated binding and assert count_north returns the number of North variants in a Direction vector.",
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not support enums yet"
+    )
 )]
 #[export]
 #[benchmark_candidate(function, uniffi, wasm_bindgen)]
@@ -249,12 +334,22 @@ pub fn count_north(directions: Vec<Direction>) -> i32 {
 #[demo_bench_macros::demo_case(
     "enums.c_style.direction.find_direction.should_return_some_for_known_id",
     justification = "Ensure find_direction returns Some(Direction) for a known id.",
-    directions = "Call `enums::c_style::find_direction` through the generated binding and assert find_direction returns Some(Direction) for a known id."
+    directions = "Call `enums::c_style::find_direction` through the generated binding and assert find_direction returns Some(Direction) for a known id.",
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not support enums yet"
+    )
 )]
 #[demo_bench_macros::demo_case(
     "enums.c_style.direction.find_direction.should_return_none_for_unknown_id",
     justification = "Ensure find_direction returns None for an unknown id.",
-    directions = "Call `enums::c_style::find_direction` through the generated binding and assert find_direction returns None for an unknown id."
+    directions = "Call `enums::c_style::find_direction` through the generated binding and assert find_direction returns None for an unknown id.",
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not support enums yet"
+    )
 )]
 #[export]
 #[benchmark_candidate(function, uniffi, wasm_bindgen)]
@@ -271,12 +366,22 @@ pub fn find_direction(id: i32) -> Option<Direction> {
 #[demo_bench_macros::demo_case(
     "enums.c_style.direction.find_directions.should_return_sequence_for_positive_count",
     justification = "Ensure find_directions returns Some generated directions for a positive count.",
-    directions = "Call `enums::c_style::find_directions` through the generated binding and assert find_directions returns Some generated directions for a positive count."
+    directions = "Call `enums::c_style::find_directions` through the generated binding and assert find_directions returns Some generated directions for a positive count.",
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not support enums yet"
+    )
 )]
 #[demo_bench_macros::demo_case(
     "enums.c_style.direction.find_directions.should_return_none_for_non_positive_count",
     justification = "Ensure find_directions returns None for a non-positive count.",
-    directions = "Call `enums::c_style::find_directions` through the generated binding and assert find_directions returns None for a non-positive count."
+    directions = "Call `enums::c_style::find_directions` through the generated binding and assert find_directions returns None for a non-positive count.",
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "the Ruby target does not support enums yet"
+    )
 )]
 #[export]
 #[benchmark_candidate(function, uniffi)]

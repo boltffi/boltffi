@@ -781,6 +781,7 @@ impl Config {
             Target::Python => self.is_python_enabled(),
             Target::CSharp => self.is_csharp_enabled(),
             Target::C => self.is_c_enabled(),
+            Target::Ruby => false,
         }
     }
 
