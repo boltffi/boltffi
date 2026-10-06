@@ -225,15 +225,15 @@ jobs:
       - run: cargo run --manifest-path examples/demo/Cargo.toml --bin demo-tests -- audit
 
   demo-platforms:
-    name: Demo Platforms (${{ matrix.os }}, py${{ matrix.python-version }})
+    name: Demo Platforms (${{ matrix.os }}, latest Python)
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [macos-latest, ubuntu-latest, windows-latest]
-        python-version: ['3.11', '3.12', '3.13']
     env:
       BOLTFFI_CACHE_DIR: ${{ github.workspace }}/.cache/boltffi
+      DEMO_PYTHON_VERSION: '3.14.8' # renovate: datasource=python-version depName=python
     steps:
       - uses: actions/checkout@v7
       - uses: actions-rust-lang/setup-rust-toolchain@v2
@@ -242,45 +242,35 @@ jobs:
           cache: false
       - uses: actions/setup-python@v7
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: ${{ env.DEMO_PYTHON_VERSION }}
       - uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: true
           cache-bin: false
           prefix-key: v1-rust
-          key: demo-platforms-${{ matrix.os }}-${{ matrix.python-version }}
-      - if: matrix.python-version == '3.13'
-        uses: actions/setup-node@v7
+          key: demo-platforms-${{ matrix.os }}-py${{ env.DEMO_PYTHON_VERSION }}
+      - uses: actions/setup-node@v7
         with:
           node-version: '24'
-      - if: matrix.python-version == '3.13'
-        run: npm install -g typescript
-      - if: matrix.python-version == '3.13'
-        run: cargo generate-lockfile --manifest-path examples/demo/Cargo.toml
-      - if: matrix.python-version == '3.13'
-        uses: actions/cache@v6
+      - run: npm install -g typescript
+      - run: cargo generate-lockfile --manifest-path examples/demo/Cargo.toml
+      - uses: actions/cache@v6
         with:
           path: .cache/boltffi
           key: wasm-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('examples/demo/Cargo.lock') }}
-      - if: matrix.python-version == '3.13'
-        uses: Aandreba/setup-binaryen@v1.0.0
+      - uses: Aandreba/setup-binaryen@v1.0.0
         with:
           token: ${{ github.token }}
-      - if: matrix.python-version == '3.13'
-        uses: dart-lang/setup-dart@v1
+      - uses: dart-lang/setup-dart@v1
         with:
           sdk: 3.10.8
       - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '10.0.x'
       - run: python -m pip install --upgrade pip setuptools wheel
-      - if: matrix.python-version == '3.13' && runner.os != 'Windows'
+      - if: runner.os != 'Windows'
         run: python -m pip install meson ninja 'pkgconf>=3.0.7'
-      - if: matrix.python-version == '3.13'
-        run: ./examples/demo/verify-platform-demos.sh --host-defaults --python python
-        shell: bash
-      - if: matrix.python-version != '3.13'
-        run: ./examples/demo/verify-platform-demos.sh --platform python --python python
+      - run: ./examples/demo/verify-platform-demos.sh --host-defaults --python python
         shell: bash
 
   wasm-bindgen:
