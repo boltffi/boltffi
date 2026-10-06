@@ -60,6 +60,12 @@
       commitMessagePrefix: "chore(ci):",
     },
     {
+      description: "Allow Python version updates when the datasource omits release timestamps",
+      matchDatasources: ["python-version"],
+      matchPackageNames: ["python"],
+      minimumReleaseAgeBehaviour: "timestamp-optional",
+    },
+    {
       // Without this, Renovate only opens PRs when Cargo.toml needs to change.
       // Patch/minor updates resolved through existing caret ranges would sit in
       // Cargo.lock forever.
