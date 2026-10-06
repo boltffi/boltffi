@@ -87,7 +87,7 @@ impl<'expansion, 'lowered> Export<'expansion, 'lowered, boltffi_binding::Native>
             return Err(Error::UnsupportedExpansion("async exported callable"));
         }
 
-        let cfg = quote! { #[cfg(not(target_arch = "wasm32"))] };
+        let cfg = quote! { #[cfg(any(not(target_arch = "wasm32"), target_os = "wasi"))] };
         let failure = self.failure()?;
         let wrapper_arguments =
             wrapper::arguments::Input::new(self.callable, self.source, failure, self.expansion)

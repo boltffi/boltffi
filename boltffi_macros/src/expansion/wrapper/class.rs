@@ -102,7 +102,7 @@ impl<'expansion, 'lowered> Class<'expansion, 'lowered, Native> {
         let ty = carrier.ty();
         let zero = carrier.zero();
         Ok(quote! {
-            #[cfg(not(target_arch = "wasm32"))]
+            #[cfg(any(not(target_arch = "wasm32"), target_os = "wasi"))]
             #[unsafe(no_mangle)]
             pub unsafe extern "C" fn #symbol(handle: #ty) {
                 if handle != #zero {

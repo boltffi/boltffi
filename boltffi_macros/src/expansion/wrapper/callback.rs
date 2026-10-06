@@ -138,7 +138,7 @@ impl<'expansion, 'lowered> Trait<'expansion, 'lowered, Native> {
             &names.trait_ident,
             &dart_shim_methods,
         );
-        let cfg = quote! { #[cfg(not(target_arch = "wasm32"))] };
+        let cfg = quote! { #[cfg(any(not(target_arch = "wasm32"), target_os = "wasi"))] };
         let local_protocol_tokens = local_names
             .map(|local_names| {
                 let local_vtable_static = &local_names.vtable_static;
@@ -991,7 +991,7 @@ where
             vtable_field: quote! { #slot_ident: #function_ident },
             function: quote! {
                 #(#local_return_items)*
-                #[cfg(not(target_arch = "wasm32"))]
+                #[cfg(any(not(target_arch = "wasm32"), target_os = "wasi"))]
                 extern "C" fn #function_ident(
                     #receiver_handle: u64
                     #(, #return_parameters)*
