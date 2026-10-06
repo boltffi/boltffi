@@ -25,30 +25,32 @@ private object Native {
     }
 }
 
-class Client internal constructor(internal val handle: Long) : AutoCloseable {
-    private val __boltffi_closed = java.util.concurrent.atomic.AtomicBoolean(false)
+class Client internal constructor(private val __boltffi_handle: java.util.concurrent.atomic.AtomicLong) : AutoCloseable {
 
     override fun close() {
-        if (__boltffi_closed.compareAndSet(false, true)) {
+        val handle = __boltffi_handle.getAndSet(0L)
+        if (handle != 0L) {
             Native.boltffi_release_class_demo_client(handle)
         }
     }
 
     internal fun __boltffiTakeHandle(): Long {
-        check(__boltffi_closed.compareAndSet(false, true)) { "Client is closed" }
+        val handle = __boltffi_handle.getAndSet(0L)
+        check(handle != 0L) { "Client is closed" }
         return handle
     }
 
     internal fun boltffiHandle(): Long {
-        check(!__boltffi_closed.get()) { "Client is closed" }
+        val handle = __boltffi_handle.get()
+        check(handle != 0L) { "Client is closed" }
         return handle
     }
 
-    constructor() : this(new().handle)
+    constructor() : this(new().__boltffi_handle)
 
     companion object {
         private fun new(): Client {
-            return Client(Native.boltffi_init_class_demo_client_new())
+            return Client(java.util.concurrent.atomic.AtomicLong(Native.boltffi_init_class_demo_client_new()))
         }
         suspend fun connect(port: UInt): Client {
             return boltffiCallAsync(
@@ -57,7 +59,7 @@ class Client internal constructor(internal val handle: Long) : AutoCloseable {
                 },
                 poll = { future, contHandle -> Native.boltffi_async_init_class_demo_client_connect_poll(future, contHandle) },
                 complete = { future ->
-                    Client(Native.boltffi_async_init_class_demo_client_connect_complete(future))
+                    Client(java.util.concurrent.atomic.AtomicLong(Native.boltffi_async_init_class_demo_client_connect_complete(future)))
                 },
                 free = { future -> Native.boltffi_async_init_class_demo_client_connect_free(future) },
                 cancel = { future -> Native.boltffi_async_init_class_demo_client_connect_cancel(future) },
