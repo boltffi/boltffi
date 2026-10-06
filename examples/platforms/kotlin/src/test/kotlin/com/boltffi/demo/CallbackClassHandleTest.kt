@@ -122,7 +122,7 @@ class CallbackClassHandleTest {
             )
             deliver.isAccessible = true
             val failure = assertFailsWith<InvocationTargetException> {
-                deliver.invoke(null, Long.MAX_VALUE, drops.handle, true)
+                deliver.invoke(null, Long.MAX_VALUE, drops.boltffiHandle(), true)
             }
             assertIs<BoltFfiErrorBufferException>(failure.cause)
             assertEquals(3u, drops.count())

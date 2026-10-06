@@ -238,12 +238,8 @@ impl Initializer {
     }
 
     fn dedupe_constructors(initializers: Vec<Self>) -> Vec<Self> {
-        // The class's own `internal constructor(handle: Long)` takes the
-        // `(J)` JVM signature: an initializer erasing to it, a `ULong` one
-        // included, stays a companion factory rather than a clashing overload.
-        let reserved = BTreeSet::from([ConstructorSignature::handle()]);
         let (_, mut initializers) = initializers.into_iter().fold(
-            (reserved, Vec::new()),
+            (BTreeSet::new(), Vec::new()),
             |(mut signatures, mut initializers), mut initializer| {
                 if initializer.constructor {
                     initializer.constructor =
@@ -286,10 +282,6 @@ impl Initializer {
 }
 
 impl ConstructorSignature {
-    fn handle() -> Self {
-        Self(vec![TypeName::long().jvm_erasure().to_string()])
-    }
-
     fn from_call(call: &ExportedCall) -> Self {
         Self(
             call.parameters()
@@ -330,15 +322,21 @@ impl ClassHandle {
     }
 
     pub fn value_expression(&self, value: Expression) -> Result<Expression> {
+        let owned_handle = Expression::construct(
+            self.ty.clone(),
+            [Expression::construct(
+                TypeName::new("java.util.concurrent.atomic.AtomicLong"),
+                [value.clone()].into_iter().collect(),
+            )]
+            .into_iter()
+            .collect(),
+        );
         match self.presence {
-            HandlePresence::Required => Ok(Expression::construct(
-                self.ty.clone(),
-                [value].into_iter().collect(),
-            )),
+            HandlePresence::Required => Ok(owned_handle),
             HandlePresence::Nullable => Ok(Expression::conditional(
                 value.clone().equal(Expression::long(0)),
                 Expression::null(),
-                Expression::construct(self.ty.clone(), [value].into_iter().collect()),
+                owned_handle,
             )),
             _ => Err(KotlinHost::unsupported("unknown class handle presence")),
         }

@@ -24,30 +24,32 @@ private object Native {
     }
 }
 
-class Engine internal constructor(internal val handle: Long) : AutoCloseable {
-    private val __boltffi_closed = java.util.concurrent.atomic.AtomicBoolean(false)
+class Engine internal constructor(private val __boltffi_handle: java.util.concurrent.atomic.AtomicLong) : AutoCloseable {
 
     override fun close() {
-        if (__boltffi_closed.compareAndSet(false, true)) {
+        val handle = __boltffi_handle.getAndSet(0L)
+        if (handle != 0L) {
             Native.boltffi_release_class_demo_engine(handle)
         }
     }
 
     internal fun __boltffiTakeHandle(): Long {
-        check(__boltffi_closed.compareAndSet(false, true)) { "Engine is closed" }
+        val handle = __boltffi_handle.getAndSet(0L)
+        check(handle != 0L) { "Engine is closed" }
         return handle
     }
 
     internal fun boltffiHandle(): Long {
-        check(!__boltffi_closed.get()) { "Engine is closed" }
+        val handle = __boltffi_handle.get()
+        check(handle != 0L) { "Engine is closed" }
         return handle
     }
 
-    constructor() : this(new().handle)
+    constructor() : this(new().__boltffi_handle)
 
     companion object {
         private fun new(): Engine {
-            return Engine(Native.boltffi_init_class_demo_engine_new())
+            return Engine(java.util.concurrent.atomic.AtomicLong(Native.boltffi_init_class_demo_engine_new()))
         }
     }
 
