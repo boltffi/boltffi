@@ -3,6 +3,57 @@ use std::path::Path;
 use crate::cli::{CliError, Result};
 use crate::target::JavaHostTarget;
 
+use super::link::JvmNativePackageLayout;
+
+impl JvmNativePackageLayout {
+    pub fn remove_stale_host_artifacts(
+        &self,
+        requested_host_targets: &[JavaHostTarget],
+        rust_artifact_name: &str,
+    ) -> Result<()> {
+        [
+            JavaHostTarget::DarwinArm64,
+            JavaHostTarget::DarwinX86_64,
+            JavaHostTarget::LinuxX86_64,
+            JavaHostTarget::LinuxAarch64,
+            JavaHostTarget::WindowsX86_64,
+        ]
+        .into_iter()
+        .filter(|host_target| !requested_host_targets.contains(host_target))
+        .try_for_each(|host_target| {
+            let host_directory = self.native_output_root.join(host_target.canonical_name());
+            match std::fs::symlink_metadata(&host_directory) {
+                Ok(metadata) if metadata.is_dir() => {}
+                Ok(_) => return Ok(()),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+                Err(source) => {
+                    return Err(CliError::ReadFailed {
+                        path: host_directory,
+                        source,
+                    });
+                }
+            }
+
+            [self.jni_library_name.as_str(), rust_artifact_name]
+                .into_iter()
+                .try_for_each(|library_name| {
+                    let library_path =
+                        host_directory.join(host_target.shared_library_filename(library_name));
+                    remove_file_if_exists(&library_path)?;
+                    match host_target {
+                        JavaHostTarget::WindowsX86_64 => {
+                            remove_file_if_exists(&library_path.with_extension("pdb"))
+                        }
+                        JavaHostTarget::DarwinArm64 | JavaHostTarget::DarwinX86_64 => {
+                            remove_directory_if_exists(&library_path.with_added_extension("dSYM"))
+                        }
+                        _ => Ok(()),
+                    }
+                })
+        })
+    }
+}
+
 pub(crate) fn remove_file_if_exists(path: &Path) -> Result<()> {
     match std::fs::remove_file(path) {
         Ok(()) => Ok(()),
@@ -62,32 +113,6 @@ pub(crate) fn remove_stale_requested_jvm_shared_library_copies_after_success(
     Ok(())
 }
 
-pub(crate) fn remove_stale_structured_jvm_outputs(
-    native_output_root: &Path,
-    requested_host_targets: &[JavaHostTarget],
-) -> Result<()> {
-    let requested_host_directories = requested_host_targets
-        .iter()
-        .map(|host_target| host_target.canonical_name())
-        .collect::<std::collections::HashSet<_>>();
-
-    for host_target in [
-        JavaHostTarget::DarwinArm64,
-        JavaHostTarget::DarwinX86_64,
-        JavaHostTarget::LinuxX86_64,
-        JavaHostTarget::LinuxAarch64,
-        JavaHostTarget::WindowsX86_64,
-    ] {
-        if requested_host_directories.contains(host_target.canonical_name()) {
-            continue;
-        }
-
-        remove_directory_if_exists(&native_output_root.join(host_target.canonical_name()))?;
-    }
-
-    Ok(())
-}
-
 fn remove_directory_if_exists(path: &Path) -> Result<()> {
     match std::fs::remove_dir_all(path) {
         Ok(()) => Ok(()),
@@ -107,9 +132,9 @@ mod tests {
     use super::{
         remove_file_if_exists, remove_stale_flat_jvm_outputs_if_current_host_unrequested,
         remove_stale_requested_jvm_shared_library_copies_after_success,
-        remove_stale_structured_jvm_outputs,
     };
-    use crate::pack::java::link::JvmPackagedNativeOutput;
+    use crate::config::Config;
+    use crate::pack::java::link::{JvmNativePackageLayout, JvmPackagedNativeOutput};
     use crate::target::JavaHostTarget;
 
     fn temporary_directory(prefix: &str) -> std::path::PathBuf {
@@ -215,12 +240,27 @@ mod tests {
         let linux_dir = temp_root.join(JavaHostTarget::LinuxX86_64.canonical_name());
         fs::create_dir_all(&darwin_dir).expect("create darwin dir");
         fs::create_dir_all(&linux_dir).expect("create linux dir");
+        let requested_jni = darwin_dir.join("libdemo_jni.dylib");
+        let stale_jni = linux_dir.join("libdemo_jni.so");
+        fs::write(&requested_jni, b"requested native library").unwrap();
+        fs::write(&stale_jni, b"stale native library").unwrap();
 
-        remove_stale_structured_jvm_outputs(&temp_root, &[JavaHostTarget::DarwinArm64])
+        let config: Config = toml::from_str("[package]\nname = \"demo\"").unwrap();
+        let layout = JvmNativePackageLayout::kotlin_desktop(
+            &config,
+            temp_root.join("jni"),
+            "demo",
+            temp_root.clone(),
+        )
+        .unwrap();
+        layout
+            .remove_stale_host_artifacts(&[JavaHostTarget::DarwinArm64], "demo")
             .expect("cleanup stale structured outputs");
 
         assert!(darwin_dir.exists());
-        assert!(!linux_dir.exists());
+        assert!(linux_dir.exists());
+        assert!(requested_jni.is_file());
+        assert!(!stale_jni.exists());
 
         fs::remove_dir_all(&temp_root).expect("cleanup temp dir");
     }
@@ -233,16 +273,114 @@ mod tests {
         fs::create_dir_all(&darwin_dir).expect("create darwin dir");
         fs::create_dir_all(&linux_dir).expect("create linux dir");
 
-        remove_stale_structured_jvm_outputs(
-            &temp_root,
-            &[JavaHostTarget::DarwinArm64, JavaHostTarget::LinuxX86_64],
+        let config: Config = toml::from_str("[package]\nname = \"demo\"").unwrap();
+        let layout = JvmNativePackageLayout::kotlin_desktop(
+            &config,
+            temp_root.join("jni"),
+            "demo",
+            temp_root.clone(),
         )
-        .expect("preserve structured outputs");
+        .unwrap();
+        layout
+            .remove_stale_host_artifacts(
+                &[JavaHostTarget::DarwinArm64, JavaHostTarget::LinuxX86_64],
+                "demo",
+            )
+            .expect("preserve structured outputs");
 
         assert!(darwin_dir.exists());
         assert!(linux_dir.exists());
 
         fs::remove_dir_all(&temp_root).expect("cleanup temp dir");
+    }
+
+    #[test]
+    fn stale_host_cleanup_preserves_other_packages_and_application_resources() {
+        let directory = tempfile::tempdir().expect("application resource directory");
+        let windows = directory.path().join("windows-x86_64");
+        let darwin = directory.path().join("darwin-arm64");
+        fs::create_dir_all(windows.join("images")).expect("application resources");
+        fs::create_dir_all(&darwin).expect("requested host output");
+        let stale_jni = windows.join("journey_bindings_jni.dll");
+        let stale_rust = windows.join("journey_native.dll");
+        let stale_pdb = windows.join("journey_bindings_jni.pdb");
+        let other_package = windows.join("maps_jni.dll");
+        let other_pdb = windows.join("maps_jni.pdb");
+        let application_resource = windows.join("images/splash.png");
+        let requested_jni = darwin.join("libjourney_bindings_jni.dylib");
+        [
+            &stale_jni,
+            &stale_rust,
+            &stale_pdb,
+            &other_package,
+            &other_pdb,
+            &application_resource,
+            &requested_jni,
+        ]
+        .into_iter()
+        .for_each(|path| fs::write(path, b"resource content").expect("resource file"));
+        let stale_dsym = directory
+            .path()
+            .join("darwin-x86_64/libjourney_bindings_jni.dylib.dSYM");
+        let other_dsym = directory.path().join("darwin-x86_64/libmaps.dylib.dSYM");
+        [&stale_dsym, &other_dsym].into_iter().for_each(|path| {
+            fs::create_dir_all(path).unwrap();
+            fs::write(path.join("symbols"), b"debug symbols").unwrap();
+        });
+
+        let config: Config = toml::from_str("[package]\nname = \"journey-bindings\"").unwrap();
+        let layout = JvmNativePackageLayout::kotlin_desktop(
+            &config,
+            directory.path().join("jni"),
+            "journey_native",
+            directory.path().to_path_buf(),
+        )
+        .unwrap();
+        layout
+            .remove_stale_host_artifacts(&[JavaHostTarget::DarwinArm64], "journey_native")
+            .expect("clean stale package artifacts");
+
+        assert_eq!(fs::read(other_package).unwrap(), b"resource content");
+        assert_eq!(fs::read(other_pdb).unwrap(), b"resource content");
+        assert_eq!(
+            fs::read(other_dsym.join("symbols")).unwrap(),
+            b"debug symbols"
+        );
+        assert_eq!(fs::read(application_resource).unwrap(), b"resource content");
+        assert!(requested_jni.is_file());
+        assert!(!stale_jni.exists());
+        assert!(!stale_rust.exists());
+        assert!(!stale_pdb.exists());
+        assert!(!stale_dsym.exists());
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn stale_host_cleanup_preserves_symlinked_application_resources() {
+        let resources = tempfile::tempdir().expect("application resources");
+        let shared_directory = tempfile::tempdir().expect("shared native libraries");
+        let shared_library = shared_directory.path().join("demo_jni.dll");
+        fs::write(&shared_library, b"another application's native library").unwrap();
+        let linked_host = resources.path().join("windows-x86_64");
+        std::os::unix::fs::symlink(shared_directory.path(), &linked_host).unwrap();
+        let config: Config = toml::from_str("[package]\nname = \"demo\"").unwrap();
+        let layout = JvmNativePackageLayout::kotlin_desktop(
+            &config,
+            resources.path().join("jni"),
+            "demo",
+            resources.path().to_path_buf(),
+        )
+        .unwrap();
+
+        layout
+            .remove_stale_host_artifacts(&[JavaHostTarget::DarwinArm64], "demo")
+            .expect("preserve external resources");
+
+        assert!(linked_host.is_symlink());
+        assert_eq!(
+            fs::read(shared_library).unwrap(),
+            b"another application's native library"
+        );
     }
 
     #[test]

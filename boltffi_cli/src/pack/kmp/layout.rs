@@ -47,11 +47,6 @@ impl KmpPackageLayout {
         &self.android_jni_dir
     }
 
-    /// Returns the JVM native resources root used for packaged desktop libraries.
-    pub(crate) fn jvm_native_resource_root(&self) -> &PathBuf {
-        &self.jvm_native_resource_root
-    }
-
     /// Returns the generated KMP support metadata path.
     pub(crate) fn support_report_path(&self) -> &PathBuf {
         &self.support_report_path

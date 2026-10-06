@@ -31,6 +31,7 @@ pub struct KotlinConfig {
 pub struct KotlinDesktopPackConfig {
     #[serde(default)]
     pub enabled: bool,
+    pub output: Option<PathBuf>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq, Default)]

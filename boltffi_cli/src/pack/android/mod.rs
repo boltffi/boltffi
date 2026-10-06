@@ -12,7 +12,6 @@ use crate::pack::PackError;
 use crate::pack::java::link::{
     JvmNativePackageLayout, build_jvm_native_library, compile_jni_library_with_layout,
 };
-use crate::pack::java::outputs::remove_stale_structured_jvm_outputs;
 use crate::pack::java::prepare_android_kotlin_jvm_packaging;
 use crate::pack::symbols::{
     ensure_debug_symbols_profile_has_debuginfo, ensure_existing_debug_symbol_artifacts_are_usable,
@@ -235,9 +234,9 @@ fn package_android_kotlin_desktop_natives(
         step.finish_success();
     }
 
-    remove_stale_structured_jvm_outputs(
-        &config.android_kotlin_desktop_pack_output(),
+    layout.remove_stale_host_artifacts(
         &prepared_jvm_packaging.host_targets,
+        binding_expansion.artifact_name(),
     )?;
 
     Ok(())
@@ -327,6 +326,28 @@ enabled = true
         assert!(layout.flat_output_root.is_none());
         assert!(!layout.strip_symbols);
         assert!(!layout.debug_symbols_enabled);
+    }
+
+    #[test]
+    fn android_kotlin_desktop_natives_can_be_packaged_into_jvm_resources() {
+        let config = parse_config(
+            r#"
+[package]
+name = "journey-bindings"
+
+[targets.android.kotlin.desktop_pack]
+enabled = true
+output = "../resources/native"
+"#,
+        );
+        let layout = android_kotlin_desktop_native_layout(&config).unwrap();
+
+        assert_eq!(
+            layout.native_output_root,
+            PathBuf::from("../resources/native")
+        );
+        assert_eq!(layout.jni_library_name.as_str(), "journey_bindings_jni");
+        assert!(should_package_android_kotlin_desktop_natives(&config));
     }
 
     #[test]

@@ -93,7 +93,7 @@ impl KotlinRuntime {
             .expect("Android JNI library name")
             .desktop_fallback_library("boltffi")
             .expect("desktop JNI library name")
-            .desktop_loader(DesktopLoader::System)
+            .desktop_loader(DesktopLoader::Bundled)
             .into_target()
             .render(&selected_bindings)
             .expect("generate complete KMP bindings for the selected function");
@@ -146,7 +146,7 @@ impl KotlinRuntime {
         let platform_directory = self.directory.path().join(source_set);
         fs::create_dir_all(&platform_directory).expect("platform runtime directory");
         let native_library = platform_directory.join(format!(
-            "{}boltffi{}",
+            "{}demo_jni{}",
             env::consts::DLL_PREFIX,
             env::consts::DLL_SUFFIX,
         ));
@@ -192,6 +192,27 @@ impl KotlinRuntime {
                 .arg(&jar),
             "compile the caller as common Kotlin code",
         );
+        let missing = Command::new(self.java_home.join("bin/java"))
+            .arg(format!(
+                "-Djava.library.path={}",
+                platform_directory.join("missing-natives").display()
+            ))
+            .arg("-classpath")
+            .arg(&jar)
+            .arg("com.boltffi.defaults.DefaultConsumerKt")
+            .output()
+            .expect("run KMP consumer without native libraries");
+        assert!(
+            !missing.status.success(),
+            "KMP native libraries are required"
+        );
+        let failure = String::from_utf8_lossy(&missing.stderr);
+        assert!(failure.contains("demo_jni"), "{failure}");
+        assert!(
+            failure.contains("boltffi pack kmp --experimental"),
+            "{failure}"
+        );
+        assert!(failure.contains("src/jvmMain/resources"), "{failure}");
         self.execute(
             Command::new(self.java_home.join("bin/java"))
                 .arg(format!(
@@ -411,4 +432,196 @@ fn kotlin_long_constructors_reach_rust_and_preserve_handle_ownership() {
     [KotlinApiStyle::TopLevel, KotlinApiStyle::ModuleObject]
         .into_iter()
         .for_each(|style| runtime.run_constructors(style));
+}
+
+#[test]
+#[ignore = "requires Kotlin, a JDK, the Android NDK and the arm64 Android Rust target"]
+fn android_bindings_load_desktop_natives_from_application_resources() {
+    let workspace = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+    let fixture = tempfile::Builder::new()
+        .prefix(".kotlin-desktop-test-")
+        .tempdir_in(workspace)
+        .expect("Kotlin desktop fixture");
+    let source_directory = fixture.path().join("src");
+    fs::create_dir_all(&source_directory).unwrap();
+    let source = fs::read_to_string(
+        workspace.join("boltffi_backend/tests/fixtures/source/exports/long_initializer.rs"),
+    )
+    .expect("shared class fixture");
+    fs::write(
+        source_directory.join("lib.rs"),
+        format!("use boltffi::export;\n{source}"),
+    )
+    .unwrap();
+    let manifest = serde_json::json!({
+        "package": { "name": "journey-bindings", "version": "0.1.0", "edition": "2024" },
+        "lib": { "crate-type": ["staticlib", "cdylib", "rlib"] },
+        "dependencies": { "boltffi": { "path": workspace.join("boltffi") } },
+        "workspace": {}
+    });
+    fs::write(
+        fixture.path().join("Cargo.toml"),
+        toml::to_string(&manifest).unwrap(),
+    )
+    .unwrap();
+    fs::write(
+        fixture.path().join("boltffi.toml"),
+        r#"
+[package]
+name = "journey-bindings"
+
+[targets.apple]
+enabled = false
+
+[targets.android]
+output = "android"
+architectures = ["arm64"]
+
+[targets.android.kotlin]
+package = "com.boltffi.desktop"
+module_name = "Journey"
+api_style = "module_object"
+factory_style = "companion_methods"
+
+[targets.android.kotlin.desktop_pack]
+enabled = true
+output = "resources/native"
+"#,
+    )
+    .unwrap();
+    let cargo_target = fixture.path().join("rust");
+    execute(
+        Command::new(env!("CARGO_BIN_EXE_boltffi"))
+            .args(["generate", "kotlin"])
+            .current_dir(fixture.path())
+            .env("CARGO_TARGET_DIR", &cargo_target),
+    );
+    let compiler = which::which("kotlinc").unwrap().canonicalize().unwrap();
+    let kotlin_home = compiler.parent().and_then(Path::parent).unwrap();
+    let coroutines = ["lib", "libexec/lib"]
+        .into_iter()
+        .map(|path| {
+            kotlin_home
+                .join(path)
+                .join("kotlinx-coroutines-core-jvm.jar")
+        })
+        .find(|path| path.is_file())
+        .expect("Kotlin coroutines library");
+    let kotlin_sources = walkdir::WalkDir::new(fixture.path().join("android/kotlin"))
+        .into_iter()
+        .map(|entry| entry.unwrap().into_path())
+        .filter(|path| path.extension().is_some_and(|extension| extension == "kt"))
+        .collect::<Vec<_>>();
+    assert!(!kotlin_sources.is_empty(), "generated Kotlin bindings");
+    let consumer = fixture.path().join("DesktopConsumer.kt");
+    fs::write(
+        &consumer,
+        include_str!("fixtures/kotlin/DesktopConsumer.kt"),
+    )
+    .unwrap();
+    let jar = fixture.path().join("consumer.jar");
+    execute(
+        Command::new(&compiler)
+            .arg("-classpath")
+            .arg(&coroutines)
+            .args(&kotlin_sources)
+            .arg(&consumer)
+            .args(["-include-runtime", "-d"])
+            .arg(&jar),
+    );
+    let resources = fixture.path().join("resources");
+    let system_libraries = fixture.path().join("system-libraries");
+    fs::create_dir_all(&system_libraries).unwrap();
+    let java_home = PathBuf::from(env::var_os("JAVA_HOME").expect("JAVA_HOME must point to a JDK"));
+    let mut java = Command::new(java_home.join("bin/java"));
+    java.arg(format!(
+        "-Djava.library.path={}",
+        system_libraries.display()
+    ))
+    .arg("-classpath")
+    .arg(env::join_paths([&jar, &coroutines, &resources]).unwrap())
+    .arg("com.boltffi.desktop.DesktopConsumerKt");
+    let missing = java.output().unwrap();
+    assert!(
+        !missing.status.success(),
+        "desktop JNI libraries must be present"
+    );
+    let failure = String::from_utf8_lossy(&missing.stderr);
+    assert!(failure.contains("journey_bindings_jni"), "{failure}");
+    assert!(
+        failure.contains("targets.android.kotlin.desktop_pack.enabled"),
+        "{failure}"
+    );
+    assert!(
+        failure.contains("Caused by: java.lang.UnsatisfiedLinkError: no journey_bindings_jni"),
+        "{failure}"
+    );
+
+    let windows_resources = resources.join("native/windows-x86_64");
+    fs::create_dir_all(&windows_resources).unwrap();
+    let other_native = windows_resources.join("maps_jni.dll");
+    let application_resource = windows_resources.join("settings.json");
+    let stale_jni = windows_resources.join("journey_bindings_jni.dll");
+    let stale_rust = windows_resources.join("journey_bindings.dll");
+    [
+        &other_native,
+        &application_resource,
+        &stale_jni,
+        &stale_rust,
+    ]
+    .into_iter()
+    .for_each(|path| fs::write(path, b"application resource").unwrap());
+
+    execute(
+        Command::new(env!("CARGO_BIN_EXE_boltffi"))
+            .args(["pack", "android"])
+            .current_dir(fixture.path())
+            .env("CARGO_TARGET_DIR", &cargo_target),
+    );
+    assert_eq!(fs::read(other_native).unwrap(), b"application resource");
+    assert_eq!(
+        fs::read(application_resource).unwrap(),
+        b"application resource"
+    );
+    assert!(!stale_jni.exists());
+    assert!(!stale_rust.exists());
+    assert!(
+        fixture
+            .path()
+            .join("android/jniLibs/arm64-v8a/libjourney-bindings.so")
+            .is_file()
+    );
+    let packaged_jni = walkdir::WalkDir::new(resources.join("native"))
+        .into_iter()
+        .map(|entry| entry.unwrap().into_path())
+        .find(|path| {
+            path.file_name().is_some_and(|name| {
+                name == format!(
+                    "{}journey_bindings_jni{}",
+                    env::consts::DLL_PREFIX,
+                    env::consts::DLL_SUFFIX
+                )
+                .as_str()
+            })
+        })
+        .expect("desktop JNI must be written into application resources");
+    execute(&mut java);
+
+    fs::copy(
+        &packaged_jni,
+        system_libraries.join(packaged_jni.file_name().unwrap()),
+    )
+    .unwrap();
+    fs::write(&packaged_jni, b"invalid native library").unwrap();
+    execute(&mut java);
+}
+
+fn execute(command: &mut Command) {
+    let output = command.output().expect("run test command");
+    assert!(
+        output.status.success(),
+        "{command:?} failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
