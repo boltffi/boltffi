@@ -91,7 +91,7 @@ impl KmpRuntime {
             .expect("Android JNI library name")
             .desktop_fallback_library("boltffi")
             .expect("desktop JNI library name")
-            .desktop_loader(DesktopLoader::System)
+            .desktop_loader(DesktopLoader::Bundled)
             .into_target()
             .render(&bindings)
             .expect("generate complete KMP bindings for the selected function");
@@ -142,7 +142,7 @@ impl KmpRuntime {
         fs::create_dir_all(&platform_directory).expect("platform runtime directory");
         let rust_directory = self.rust_library.parent().expect("Rust library directory");
         let native_library = platform_directory.join(format!(
-            "{}boltffi{}",
+            "{}demo_jni{}",
             env::consts::DLL_PREFIX,
             env::consts::DLL_SUFFIX,
         ));
@@ -207,6 +207,27 @@ impl KmpRuntime {
                 .arg(&jar),
             "compile the caller as common Kotlin code",
         );
+        let missing = Command::new(self.java_home.join("bin/java"))
+            .arg(format!(
+                "-Djava.library.path={}",
+                platform_directory.join("missing-natives").display()
+            ))
+            .arg("-classpath")
+            .arg(&jar)
+            .arg("com.boltffi.defaults.DefaultConsumerKt")
+            .output()
+            .expect("run KMP consumer without native libraries");
+        assert!(
+            !missing.status.success(),
+            "KMP native libraries are required"
+        );
+        let failure = String::from_utf8_lossy(&missing.stderr);
+        assert!(failure.contains("demo_jni"), "{failure}");
+        assert!(
+            failure.contains("boltffi pack kmp --experimental"),
+            "{failure}"
+        );
+        assert!(failure.contains("src/jvmMain/resources"), "{failure}");
         self.execute(
             Command::new(self.java_home.join("bin/java"))
                 .arg(format!(
@@ -407,12 +428,34 @@ output = "resources/native"
         "{failure}"
     );
 
+    let windows_resources = resources.join("native/windows-x86_64");
+    fs::create_dir_all(&windows_resources).unwrap();
+    let other_native = windows_resources.join("maps_jni.dll");
+    let application_resource = windows_resources.join("settings.json");
+    let stale_jni = windows_resources.join("journey_bindings_jni.dll");
+    let stale_rust = windows_resources.join("journey_bindings.dll");
+    [
+        &other_native,
+        &application_resource,
+        &stale_jni,
+        &stale_rust,
+    ]
+    .into_iter()
+    .for_each(|path| fs::write(path, b"application resource").unwrap());
+
     execute(
         Command::new(env!("CARGO_BIN_EXE_boltffi"))
             .args(["pack", "android"])
             .current_dir(fixture.path())
             .env("CARGO_TARGET_DIR", &cargo_target),
     );
+    assert_eq!(fs::read(other_native).unwrap(), b"application resource");
+    assert_eq!(
+        fs::read(application_resource).unwrap(),
+        b"application resource"
+    );
+    assert!(!stale_jni.exists());
+    assert!(!stale_rust.exists());
     assert!(
         fixture
             .path()

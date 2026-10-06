@@ -843,9 +843,10 @@ private object Native {
         throw UnsatisfiedLinkError(
             "Could not load native library '$preferredLibrary'\n" +
                 "Searched JVM resources ${resources.joinToString()} and java.library.path\n" +
-                "Desktop apps need desktop JNI libraries, enable targets.android.kotlin.desktop_pack.enabled " +
-                "and set targets.android.kotlin.desktop_pack.output to a JVM resource directory " +
-                "or add desktopJniLibs to the JVM resource path"
+                "For Kotlin Multiplatform, run boltffi pack kmp --experimental and include src/jvmMain/resources\n" +
+                "For Android Kotlin bindings used on desktop, enable targets.android.kotlin.desktop_pack.enabled, " +
+                "run boltffi pack android and include desktopJniLibs in the JVM resource path " +
+                "or set targets.android.kotlin.desktop_pack.output to a JVM resource directory"
         ).apply { initCause(preferredFailure) }
     }
 

@@ -20,13 +20,12 @@ use crate::target::JavaHostTarget;
 use crate::toolchain::NativeHostToolchain;
 
 use super::link::{
-    build_jvm_native_library, compile_jni_library, resolve_jni_include_directories,
-    validate_desktop_jni_symbol_stripping_for,
+    JvmNativePackageLayout, build_jvm_native_library, compile_jni_library,
+    resolve_jni_include_directories, validate_desktop_jni_symbol_stripping_for,
 };
 use super::outputs::{
     remove_stale_flat_jvm_outputs_if_current_host_unrequested,
     remove_stale_requested_jvm_shared_library_copies_after_success,
-    remove_stale_structured_jvm_outputs,
 };
 
 #[derive(Debug, Clone)]
@@ -213,7 +212,8 @@ fn execute_java_pack(config: &Config, plan: JavaPackPlan, reporter: &Reporter) -
         &packaged_outputs,
         artifact_name,
     )?;
-    remove_stale_structured_jvm_outputs(&config.java_jvm_output().join("native"), &host_targets)?;
+    JvmNativePackageLayout::java(config, artifact_name)?
+        .remove_stale_host_artifacts(&host_targets, artifact_name)?;
     remove_stale_flat_jvm_outputs_if_current_host_unrequested(
         &config.java_jvm_output(),
         JavaHostTarget::current(),

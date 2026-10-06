@@ -12,7 +12,6 @@ use crate::pack::PackError;
 use crate::pack::java::link::{
     JvmNativePackageLayout, build_jvm_native_library, compile_jni_library_with_layout,
 };
-use crate::pack::java::outputs::remove_stale_structured_jvm_outputs;
 use crate::pack::java::prepare_android_kotlin_jvm_packaging;
 use crate::pack::symbols::{
     ensure_debug_symbols_profile_has_debuginfo, ensure_existing_debug_symbol_artifacts_are_usable,
@@ -235,9 +234,9 @@ fn package_android_kotlin_desktop_natives(
         step.finish_success();
     }
 
-    remove_stale_structured_jvm_outputs(
-        &config.android_kotlin_desktop_pack_output(),
+    layout.remove_stale_host_artifacts(
         &prepared_jvm_packaging.host_targets,
+        binding_expansion.artifact_name(),
     )?;
 
     Ok(())
