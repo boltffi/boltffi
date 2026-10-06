@@ -13,22 +13,24 @@ use boltffi_backend::{
     target::{
         jvm::DesktopLoader,
         kmp::{KMP_GENERATED_C_HEADER_DIR, KmpHost},
+        kotlin::{KotlinApiStyle, KotlinDesktopLoader, KotlinHost},
     },
 };
 use boltffi_bindgen::{generate::Generation, metadata::BindingMetadataBuild};
-use boltffi_binding::{Decl, SerializedBindings};
+use boltffi_binding::{Bindings, Decl, Native, SerializedBindings};
 use tempfile::TempDir;
 
-struct KmpRuntime {
+struct KotlinRuntime {
     directory: TempDir,
     java_home: PathBuf,
     rust_library: PathBuf,
+    bindings: Bindings<Native>,
     kotlin_sources: Vec<PathBuf>,
 }
 
-impl KmpRuntime {
+impl KotlinRuntime {
     fn new() -> Self {
-        let directory = tempfile::tempdir().expect("KMP runtime directory");
+        let directory = tempfile::tempdir().expect("Kotlin runtime directory");
         let java_home =
             PathBuf::from(env::var_os("JAVA_HOME").expect("JAVA_HOME must point to a JDK"));
         let manifest = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -81,7 +83,7 @@ impl KmpRuntime {
             1,
             "shared defaults function must be present"
         );
-        let bindings = bindings
+        let selected_bindings = bindings
             .dependency_closed(&selected)
             .expect("selected default function");
         let generated = KmpHost::new()
@@ -93,7 +95,7 @@ impl KmpRuntime {
             .expect("desktop JNI library name")
             .desktop_loader(DesktopLoader::System)
             .into_target()
-            .render(&bindings)
+            .render(&selected_bindings)
             .expect("generate complete KMP bindings for the selected function");
         let kotlin_sources = generated
             .files()
@@ -105,10 +107,12 @@ impl KmpRuntime {
         Generation::write_output(generated, directory.path()).expect("write KMP bindings");
         let header = CBridge::new(format!("include/{KMP_GENERATED_C_HEADER_DIR}/demo.h"))
             .expect("C header bridge");
-        let contract = header.build_contract(&bindings).expect("C header contract");
+        let contract = header
+            .build_contract(&selected_bindings)
+            .expect("C header contract");
         Generation::write_output(
             header
-                .render_bridge(&bindings, &contract)
+                .render_bridge(&selected_bindings, &contract)
                 .expect("C header"),
             directory.path(),
         )
@@ -133,6 +137,7 @@ impl KmpRuntime {
             directory,
             java_home,
             rust_library,
+            bindings,
             kotlin_sources,
         }
     }
@@ -140,38 +145,18 @@ impl KmpRuntime {
     fn run_source_set(&self, source_set: &str) {
         let platform_directory = self.directory.path().join(source_set);
         fs::create_dir_all(&platform_directory).expect("platform runtime directory");
-        let rust_directory = self.rust_library.parent().expect("Rust library directory");
         let native_library = platform_directory.join(format!(
             "{}boltffi{}",
             env::consts::DLL_PREFIX,
             env::consts::DLL_SUFFIX,
         ));
-        let jni_platform = if cfg!(target_os = "macos") {
-            "darwin"
-        } else {
-            "linux"
-        };
-        self.execute(
-            Command::new("cc")
-                .args(["-shared", "-fPIC"])
-                .arg("-I")
-                .arg(self.directory.path().join("include"))
-                .arg("-I")
-                .arg(self.java_home.join("include"))
-                .arg("-I")
-                .arg(self.java_home.join("include").join(jni_platform))
-                .arg(
-                    self.directory
-                        .path()
-                        .join(format!("src/{source_set}/c/jni_glue.c")),
-                )
-                .arg("-L")
-                .arg(rust_directory)
-                .arg("-ldemo")
-                .arg(format!("-Wl,-rpath,{}", rust_directory.display()))
-                .arg("-o")
-                .arg(&native_library),
-            "compile generated JNI against the Rust fixture",
+        self.compile_jni(
+            &self
+                .directory
+                .path()
+                .join(format!("src/{source_set}/c/jni_glue.c")),
+            &self.directory.path().join("include"),
+            &native_library,
         );
         let consumer = self.directory.path().join("DefaultConsumer.kt");
         let common_directory = self.directory.path().join("src/commonMain/kotlin");
@@ -261,6 +246,141 @@ impl KmpRuntime {
         );
     }
 
+    fn run_constructors(&self, style: KotlinApiStyle) {
+        let selected = self
+            .bindings
+            .decls()
+            .iter()
+            .filter(|declaration| {
+                matches!(declaration, Decl::Class(class)
+                    if class.name().source_spelling() == Some("DefaultedWideCounter"))
+            })
+            .map(Decl::id)
+            .collect::<BTreeSet<_>>();
+        assert_eq!(selected.len(), 1, "shared wide counter must be present");
+        let bindings = self
+            .bindings
+            .dependency_closed(&selected)
+            .expect("selected wide counter");
+        let generated = KotlinHost::new("com.boltffi.constructors", "Demo")
+            .expect("Kotlin host")
+            .api_style(style)
+            .desktop_loader(KotlinDesktopLoader::System)
+            .desktop_fallback_library("constructors")
+            .expect("JNI library name")
+            .c_header("jni/demo.h")
+            .into_target()
+            .expect("Kotlin target")
+            .render(&bindings)
+            .expect("generate wide counter bindings");
+        let generated_directory = self.directory.path().join(format!("{style:?}"));
+        let kotlin_sources = generated
+            .files()
+            .iter()
+            .map(|file| generated_directory.join(file.path().as_path()))
+            .filter(|path| path.extension().is_some_and(|extension| extension == "kt"))
+            .collect::<Vec<_>>();
+        Generation::write_output(generated, &generated_directory).expect("write Kotlin bindings");
+        let native_library = generated_directory.join(format!(
+            "{}constructors{}",
+            env::consts::DLL_PREFIX,
+            env::consts::DLL_SUFFIX,
+        ));
+        self.compile_jni(
+            &generated_directory.join("jni/jni_glue.c"),
+            &generated_directory.join("jni"),
+            &native_library,
+        );
+        let compiler = which::which("kotlinc")
+            .expect("Kotlin compiler")
+            .canonicalize()
+            .expect("Kotlin compiler path");
+        let kotlin_home = compiler
+            .parent()
+            .and_then(Path::parent)
+            .expect("Kotlin installation directory");
+        let coroutines = ["lib", "libexec/lib"]
+            .into_iter()
+            .map(|path| {
+                kotlin_home
+                    .join(path)
+                    .join("kotlinx-coroutines-core-jvm.jar")
+            })
+            .find(|path| path.is_file())
+            .expect("Kotlin coroutines library");
+        let bindings_jar = generated_directory.join("bindings.jar");
+        self.execute(
+            Command::new(&compiler)
+                .arg("-classpath")
+                .arg(&coroutines)
+                .args(&kotlin_sources)
+                .arg("-d")
+                .arg(&bindings_jar),
+            "compile the generated class bindings",
+        );
+        let caller = include_str!("fixtures/kotlin/ClassConsumer.kt");
+        let caller = match style {
+            KotlinApiStyle::TopLevel => caller.to_owned(),
+            KotlinApiStyle::ModuleObject => {
+                caller.replace("DefaultedWideCounter", "Demo.DefaultedWideCounter")
+            }
+            _ => unreachable!("selected Kotlin API styles"),
+        };
+        let consumer = generated_directory.join("ClassConsumer.kt");
+        fs::write(&consumer, caller).expect("write Kotlin caller");
+        let consumer_jar = generated_directory.join("consumer.jar");
+        self.execute(
+            Command::new(&compiler)
+                .arg("-classpath")
+                .arg(env::join_paths([&bindings_jar, &coroutines]).expect("Kotlin classpath"))
+                .arg(&consumer)
+                .args(["-include-runtime", "-d"])
+                .arg(&consumer_jar),
+            "compile a separate consumer of the generated classes",
+        );
+        self.execute(
+            Command::new(self.java_home.join("bin/java"))
+                .arg(format!(
+                    "-Djava.library.path={}",
+                    generated_directory.display()
+                ))
+                .arg("-classpath")
+                .arg(
+                    env::join_paths([&consumer_jar, &bindings_jar, &coroutines])
+                        .expect("Kotlin runtime classpath"),
+                )
+                .arg("com.boltffi.constructors.ClassConsumerKt"),
+            "run constructors and ownership checks through Rust",
+        );
+    }
+
+    fn compile_jni(&self, source: &Path, headers: &Path, library: &Path) {
+        let rust_directory = self.rust_library.parent().expect("Rust library directory");
+        let jni_platform = if cfg!(target_os = "macos") {
+            "darwin"
+        } else {
+            "linux"
+        };
+        self.execute(
+            Command::new("cc")
+                .args(["-shared", "-fPIC"])
+                .arg("-I")
+                .arg(headers)
+                .arg("-I")
+                .arg(self.java_home.join("include"))
+                .arg("-I")
+                .arg(self.java_home.join("include").join(jni_platform))
+                .arg(source)
+                .arg("-L")
+                .arg(rust_directory)
+                .arg("-ldemo")
+                .arg(format!("-Wl,-rpath,{}", rust_directory.display()))
+                .arg("-o")
+                .arg(library),
+            "compile generated JNI against the Rust fixture",
+        );
+    }
+
     fn execute(&self, command: &mut Command, operation: &str) {
         let output = command
             .current_dir(self.directory.path())
@@ -278,8 +398,17 @@ impl KmpRuntime {
 #[test]
 #[ignore = "requires Kotlin and a JDK"]
 fn kmp_defaults_reach_rust_from_common_and_platform_consumers() {
-    let runtime = KmpRuntime::new();
+    let runtime = KotlinRuntime::new();
     ["jvmMain", "androidMain"]
         .into_iter()
         .for_each(|source_set| runtime.run_source_set(source_set));
+}
+
+#[test]
+#[ignore = "requires Kotlin and a JDK"]
+fn kotlin_long_constructors_reach_rust_and_preserve_handle_ownership() {
+    let runtime = KotlinRuntime::new();
+    [KotlinApiStyle::TopLevel, KotlinApiStyle::ModuleObject]
+        .into_iter()
+        .for_each(|style| runtime.run_constructors(style));
 }

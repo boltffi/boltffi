@@ -557,30 +557,32 @@ object DefaultHandlerBridge {
     }
 }
 
-class Server internal constructor(internal val handle: Long) : AutoCloseable {
-    private val __boltffi_closed = java.util.concurrent.atomic.AtomicBoolean(false)
+class Server internal constructor(private val __boltffi_handle: java.util.concurrent.atomic.AtomicLong) : AutoCloseable {
 
     override fun close() {
-        if (__boltffi_closed.compareAndSet(false, true)) {
+        val handle = __boltffi_handle.getAndSet(0L)
+        if (handle != 0L) {
             Native.boltffi_release_class_demo_server(handle)
         }
     }
 
     internal fun __boltffiTakeHandle(): Long {
-        check(__boltffi_closed.compareAndSet(false, true)) { "Server is closed" }
+        val handle = __boltffi_handle.getAndSet(0L)
+        check(handle != 0L) { "Server is closed" }
         return handle
     }
 
     internal fun boltffiHandle(): Long {
-        check(!__boltffi_closed.get()) { "Server is closed" }
+        val handle = __boltffi_handle.get()
+        check(handle != 0L) { "Server is closed" }
         return handle
     }
 
-    constructor(port: UShort = 8080u) : this(new(port).handle)
+    constructor(port: UShort = 8080u) : this(new(port).__boltffi_handle)
 
     companion object {
         private fun new(port: UShort): Server {
-            return Server(Native.boltffi_init_class_demo_server_new(port.toShort()))
+            return Server(java.util.concurrent.atomic.AtomicLong(Native.boltffi_init_class_demo_server_new(port.toShort())))
         }
         suspend fun start(port: UShort, first: Handler? = null, second: Handler? = null): Server {
             return boltffiCallAsync(
@@ -589,7 +591,7 @@ class Server internal constructor(internal val handle: Long) : AutoCloseable {
                 },
                 poll = { future, contHandle -> Native.boltffi_async_init_class_demo_server_start_poll(future, contHandle) },
                 complete = { future ->
-                    Server(Native.boltffi_async_init_class_demo_server_start_complete(future))
+                    Server(java.util.concurrent.atomic.AtomicLong(Native.boltffi_async_init_class_demo_server_start_complete(future)))
                 },
                 free = { future -> Native.boltffi_async_init_class_demo_server_start_free(future) },
                 cancel = { future -> Native.boltffi_async_init_class_demo_server_start_cancel(future) },
@@ -602,28 +604,30 @@ class Server internal constructor(internal val handle: Long) : AutoCloseable {
     }
 }
 
-class DefaultCounter internal constructor(internal val handle: Long) : AutoCloseable {
-    private val __boltffi_closed = java.util.concurrent.atomic.AtomicBoolean(false)
+class DefaultCounter internal constructor(private val __boltffi_handle: java.util.concurrent.atomic.AtomicLong) : AutoCloseable {
 
     override fun close() {
-        if (__boltffi_closed.compareAndSet(false, true)) {
+        val handle = __boltffi_handle.getAndSet(0L)
+        if (handle != 0L) {
             Native.boltffi_release_class_demo_default_counter(handle)
         }
     }
 
     internal fun __boltffiTakeHandle(): Long {
-        check(__boltffi_closed.compareAndSet(false, true)) { "DefaultCounter is closed" }
+        val handle = __boltffi_handle.getAndSet(0L)
+        check(handle != 0L) { "DefaultCounter is closed" }
         return handle
     }
 
     internal fun boltffiHandle(): Long {
-        check(!__boltffi_closed.get()) { "DefaultCounter is closed" }
+        val handle = __boltffi_handle.get()
+        check(handle != 0L) { "DefaultCounter is closed" }
         return handle
     }
 
-    constructor(start: Int = 10) : this(new(start).handle)
+    constructor(start: Int = 10) : this(new(start).__boltffi_handle)
 
-    constructor(start: Int = 20, offset: Int) : this(withOffset(start, offset).handle)
+    constructor(start: Int = 20, offset: Int) : this(withOffset(start, offset).__boltffi_handle)
 
     companion object {
         fun fromText(value: String = "40"): DefaultCounter {
@@ -631,16 +635,16 @@ class DefaultCounter internal constructor(internal val handle: Long) : AutoClose
             val __boltffi_value_writer = __boltffi_value_wire.writer
             __boltffi_value_writer.writeString(value)
             try {
-                return DefaultCounter(Native.boltffi_init_class_demo_default_counter_from_text(__boltffi_value_wire.directBuffer(), __boltffi_value_wire.size()))
+                return DefaultCounter(java.util.concurrent.atomic.AtomicLong(Native.boltffi_init_class_demo_default_counter_from_text(__boltffi_value_wire.directBuffer(), __boltffi_value_wire.size())))
             } finally {
                 __boltffi_value_wire.close()
             }
         }
         private fun new(start: Int): DefaultCounter {
-            return DefaultCounter(Native.boltffi_init_class_demo_default_counter_new(start))
+            return DefaultCounter(java.util.concurrent.atomic.AtomicLong(Native.boltffi_init_class_demo_default_counter_new(start)))
         }
         private fun withOffset(start: Int, offset: Int): DefaultCounter {
-            return DefaultCounter(Native.boltffi_init_class_demo_default_counter_with_offset(start, offset))
+            return DefaultCounter(java.util.concurrent.atomic.AtomicLong(Native.boltffi_init_class_demo_default_counter_with_offset(start, offset)))
         }
         fun sum(left: Int = 1, right: Int = 2): Int {
             return Native.boltffi_method_class_demo_default_counter_sum(left, right)

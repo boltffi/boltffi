@@ -391,7 +391,7 @@ fn kotlin_target_renders_class_handles_and_associated_callables() {
     let rendered = rendered_fixture("exports/kotlin_class_handles");
 
     assert!(rendered.contains("internal fun boltffiHandle(): Long {"));
-    assert!(rendered.contains("check(!__boltffi_closed.get()) { \"Engine is closed\" }"));
+    assert!(rendered.contains("check(handle != 0L) { \"Engine is closed\" }"));
     assert!(
         rendered.contains("Native.boltffi_method_class_demo_engine_value(this.boltffiHandle())")
     );
@@ -639,17 +639,14 @@ fn kotlin_defaults_use_mapped_custom_types() {
 }
 
 #[test]
-fn kotlin_target_keeps_a_long_initializer_off_the_handle_constructor_signature() {
+fn kotlin_target_preserves_long_and_unsigned_long_constructors() {
     let rendered = rendered_fixture("exports/long_initializer");
 
-    // `constructor(balance: Long)` would clash with `internal constructor(handle: Long)`
-    assert!(rendered.contains("class Ledger internal constructor(internal val handle: Long)"));
-    assert!(!rendered.contains("constructor(balance: Long)"));
-    assert!(rendered.contains("fun new(balance: Long): Ledger"));
-    // so would `constructor(count: ULong)`: both take a JVM `long`
-    assert!(rendered.contains("class Tally internal constructor(internal val handle: Long)"));
-    assert!(!rendered.contains("constructor(count: ULong)"));
-    assert!(rendered.contains("fun new(count: ULong): Tally"));
+    assert!(rendered.contains("constructor(balance: Long)"));
+    assert!(rendered.contains("private fun new(balance: Long): Ledger"));
+    assert!(rendered.contains("constructor(count: ULong)"));
+    assert!(rendered.contains("private fun new(count: ULong): Tally"));
+    assert!(!rendered.contains("constructor(internal val handle: Long)"));
 }
 
 #[test]

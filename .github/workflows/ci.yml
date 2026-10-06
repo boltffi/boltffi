@@ -72,7 +72,7 @@ jobs:
           cache-on-failure: true
           cache-bin: false
           prefix-key: v1-rust
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '17'
@@ -81,7 +81,7 @@ jobs:
           curl --fail --location --retry 3 https://github.com/JetBrains/kotlin/releases/download/v2.4.20/kotlin-compiler-2.4.20.zip -o "$RUNNER_TEMP/kotlin.zip"
           unzip -q "$RUNNER_TEMP/kotlin.zip" -d "$RUNNER_TEMP/kotlin"
           echo "$RUNNER_TEMP/kotlin/kotlinc/bin" >> "$GITHUB_PATH"
-      - run: cargo test -p boltffi_cli --test kmp_default_arguments -- --ignored
+      - run: cargo test -p boltffi_cli --test kotlin -- --ignored
       - run: cargo test -p boltffi_backend --test kotlin
 
   wasm-link-stable:
@@ -302,7 +302,7 @@ jobs:
       BOLTFFI_CACHE_DIR: ${{ github.workspace }}/.cache/boltffi
     steps:
       - uses: actions/checkout@v7
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: actions-rust-lang/setup-rust-toolchain@v2
         with:
           toolchain: ${{ matrix.rust }}
           target: wasm32-unknown-unknown
