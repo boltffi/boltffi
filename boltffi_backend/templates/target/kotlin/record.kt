@@ -104,6 +104,10 @@
 
 {% call functions::exported_call(method, "    ") %}{% endcall %}
 {%- endfor %}
+{%- if let Some(equality) = equality %}
+
+{{ equality }}
+{%- endif %}
 }
 {%- else %}
 {{ record.documentation() }}data class {{ record.name() }}(
