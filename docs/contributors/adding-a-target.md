@@ -54,7 +54,22 @@ Each `decl` already carries every crossing decision, so the method reads it and 
 
 `HostBackend` carries three associated types the host has to pin down before any method compiles. There is `Surface`, the binding surface this target consumes, and `Bridge`, the bridge contract it accepts, and `Syntax`, the language's syntax fragments. The surface decides which IR the host reads. A target that calls the C ABI directly consumes `Native`, and a target that goes through Wasm consumes `Wasm32`. Pick it once, because it threads through every `Decl<Self::Surface>` the host receives.
 
-The render code builds up the generated source as typed fragments instead of plain `String`s. `LanguageSyntax` in `boltffi_backend/src/core/syntax.rs` gives each language its own small set of fragment types for identifiers, types, expressions, statements, literals, and argument lists, and it holds the reserved `KEYWORDS` too. A field that wants an identifier will not take an expression, so the mistake never reaches the template. The host builds these fragments and the template just prints them, and the casing and escaping stay correct because each fragment already knows how to render itself.
+The render code builds generated source from typed fragments, not plain `String`s.
+`LanguageSyntax` in `boltffi_backend/src/core/syntax.rs` defines fragments for identifiers, types, expressions, statements, literals, and argument lists.
+An identifier field cannot accept an expression.
+Each fragment owns its casing and escaping, and the template prints the fragment.
+`LanguageSyntax::keyword` checks reserved names.
+A language can supply `KEYWORDS` for the default predicate or override `keyword` with a parser.
+
+Ruby uses `ruby-prism` for keyword checks.
+Backend builds require a C compiler and `libclang` for `bindgen`.
+The crate supplies Prism's C source.
+Prism runs in the generator, not in generated Ruby extensions.
+Update `ruby-prism` when the supported Ruby grammar changes.
+
+The `ruby-prism` 1.9.0 Rust `parse` API uses Ruby 4.1 grammar by default.
+That API has no version parameter.
+The current check classifies candidate names, not complete generated Ruby programs.
 
 `HostBackend`, `BridgeBackend`, `BridgeContract`, and `LanguageSyntax` are all sealed inside `boltffi_backend`. An in-crate target implements the matching `sealed` marker alongside the public trait, otherwise the first build fails with a private-bound error that reads like the trait does not exist. One line per impl settles it.
 
