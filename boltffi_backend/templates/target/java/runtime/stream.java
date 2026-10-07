@@ -8,6 +8,11 @@ interface BoltFfiStreamWait {
     int waitForItems(long stream, int timeout);
 }
 
+@FunctionalInterface
+interface BoltFfiStreamFailure {
+    RuntimeException take(long stream);
+}
+
 final class BoltFfiStream {
     private static final byte CLOSED = 1;
 
@@ -22,6 +27,20 @@ final class BoltFfiStream {
         BoltFfiFutureLifecycle free,
         java.util.function.Consumer<T> deliver
     ) {
+        return callback(stream, batchSize, readBatch, poll, unsubscribe, free, deliver, null, null);
+    }
+
+    static <T> StreamSubscription<T> callback(
+        long stream,
+        long batchSize,
+        BoltFfiStreamBatch<T> readBatch,
+        BoltFfiFuturePoll poll,
+        BoltFfiFutureLifecycle unsubscribe,
+        BoltFfiFutureLifecycle free,
+        java.util.function.Consumer<T> deliver,
+        BoltFfiStreamFailure takeFailure,
+        java.util.function.Consumer<RuntimeException> onError
+    ) {
         if (stream == 0L) return StreamSubscription.callback(() -> {});
         Context<T> context = new Context<>(
             stream,
@@ -30,7 +49,9 @@ final class BoltFfiStream {
             poll,
             unsubscribe,
             free,
-            deliver
+            deliver,
+            takeFailure,
+            onError
         );
         context.start();
         return StreamSubscription.callback(context::requestTermination);
@@ -55,6 +76,8 @@ final class BoltFfiStream {
         private final BoltFfiFutureLifecycle unsubscribe;
         private final BoltFfiFutureLifecycle free;
         private final java.util.function.Consumer<T> deliver;
+        private final BoltFfiStreamFailure takeFailure;
+        private final java.util.function.Consumer<RuntimeException> onError;
         private final java.util.concurrent.atomic.AtomicInteger lifecycle =
             new java.util.concurrent.atomic.AtomicInteger(ACTIVE);
         private final java.util.concurrent.atomic.AtomicBoolean processing =
@@ -67,7 +90,9 @@ final class BoltFfiStream {
             BoltFfiFuturePoll poll,
             BoltFfiFutureLifecycle unsubscribe,
             BoltFfiFutureLifecycle free,
-            java.util.function.Consumer<T> deliver
+            java.util.function.Consumer<T> deliver,
+            BoltFfiStreamFailure takeFailure,
+            java.util.function.Consumer<RuntimeException> onError
         ) {
             this.stream = stream;
             this.batchSize = batchSize;
@@ -76,6 +101,8 @@ final class BoltFfiStream {
             this.unsubscribe = unsubscribe;
             this.free = free;
             this.deliver = deliver;
+            this.takeFailure = takeFailure;
+            this.onError = onError;
         }
 
         private void start() {
@@ -137,8 +164,15 @@ final class BoltFfiStream {
         private boolean processPoll(byte pollResult) {
             if (!processing.compareAndSet(false, true)) return false;
             Throwable failure = null;
+            RuntimeException streamFailure = null;
             try {
-                if (lifecycle.get() == ACTIVE) drain();
+                if (lifecycle.get() == ACTIVE) {
+                    drain();
+                    // still processing, so the handle cannot be freed under us
+                    if (pollResult == CLOSED && takeFailure != null) {
+                        streamFailure = takeFailure.take(stream);
+                    }
+                }
             } catch (Throwable error) {
                 failure = error;
             } finally {
@@ -160,6 +194,7 @@ final class BoltFfiStream {
             }
             if (pollResult == CLOSED) {
                 requestTermination();
+                if (streamFailure != null) onError.accept(streamFailure);
                 return false;
             }
             return lifecycle.get() == ACTIVE;
@@ -198,23 +233,27 @@ final class StreamSubscription<T> implements AutoCloseable {
     private final Runnable cancel;
     private final BoltFfiStreamBatch<T> readBatch;
     private final BoltFfiStreamWait waitForItems;
+    private final BoltFfiStreamFailure takeFailure;
+    private volatile RuntimeException failure;
 
     private StreamSubscription(
         Mode mode,
         long stream,
         Runnable cancel,
         BoltFfiStreamBatch<T> readBatch,
-        BoltFfiStreamWait waitForItems
+        BoltFfiStreamWait waitForItems,
+        BoltFfiStreamFailure takeFailure
     ) {
         this.mode = mode;
         this.stream = stream;
         this.cancel = cancel;
         this.readBatch = readBatch;
         this.waitForItems = waitForItems;
+        this.takeFailure = takeFailure;
     }
 
     static <T> StreamSubscription<T> callback(Runnable cancel) {
-        return new StreamSubscription<>(Mode.CALLBACK, 0L, cancel, null, null);
+        return new StreamSubscription<>(Mode.CALLBACK, 0L, cancel, null, null, null);
     }
 
     static <T> StreamSubscription<T> batch(
@@ -224,19 +263,49 @@ final class StreamSubscription<T> implements AutoCloseable {
         BoltFfiFutureLifecycle unsubscribe,
         BoltFfiFutureLifecycle free
     ) {
+        return batch(stream, readBatch, waitForItems, unsubscribe, free, null);
+    }
+
+    static <T> StreamSubscription<T> batch(
+        long stream,
+        BoltFfiStreamBatch<T> readBatch,
+        BoltFfiStreamWait waitForItems,
+        BoltFfiFutureLifecycle unsubscribe,
+        BoltFfiFutureLifecycle free,
+        BoltFfiStreamFailure takeFailure
+    ) {
         return new StreamSubscription<>(
             Mode.BATCH,
             stream,
             () -> release(stream, unsubscribe, free),
             readBatch,
-            waitForItems
+            waitForItems,
+            takeFailure
         );
     }
 
     public java.util.List<T> popBatch(long maxCount) {
         requireBatch("popBatch");
         if (stream == 0L || closed.get()) return java.util.Collections.emptyList();
-        return readBatch.read(stream, maxCount);
+        // closed before this pop, so nothing can arrive after it: an empty pop is final
+        boolean ended = takeFailure != null && hasEnded();
+        java.util.List<T> items = readBatch.read(stream, maxCount);
+        if (items.isEmpty() && ended) {
+            RuntimeException failed = endedFailure();
+            if (failed != null) throw failed;
+        }
+        return items;
+    }
+
+    private boolean hasEnded() {
+        return failure != null || waitForItems.waitForItems(stream, 0) < 0;
+    }
+
+    /** The error a stream seen closed and drained ended with, or null. */
+    private RuntimeException endedFailure() {
+        if (takeFailure == null) return null;
+        if (failure == null) failure = takeFailure.take(stream);
+        return failure;
     }
 
     public int waitForItems(int timeout) {
@@ -339,6 +408,7 @@ final class StreamSubscription<T> implements AutoCloseable {
 
         @Override
         public void run() {
+            boolean ended = false;
             try {
                 while (!done.get() && !subscription.closed.get()) {
                     if (requested.get() == 0L) {
@@ -351,11 +421,19 @@ final class StreamSubscription<T> implements AutoCloseable {
                         batchSize
                     );
                     if (items.isEmpty()) {
+                        // an empty read is final only once the stream was seen closed
+                        // before it; otherwise read once more
+                        if (ended) {
+                            RuntimeException failed = subscription.endedFailure();
+                            if (failed != null) fail(failed);
+                            else complete();
+                            continue;
+                        }
                         int waitResult = subscription.waitForItems.waitForItems(
                             subscription.stream,
                             WAIT_TIMEOUT_MILLIS
                         );
-                        if (waitResult < 0) complete();
+                        if (waitResult < 0) ended = true;
                         continue;
                     }
                     int index = 0;

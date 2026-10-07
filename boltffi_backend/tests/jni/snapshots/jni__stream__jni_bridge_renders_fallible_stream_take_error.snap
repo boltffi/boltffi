@@ -1,0 +1,314 @@
+---
+source: boltffi_backend/tests/jni/stream.rs
+expression: "rendered_fixture(\"stream/fallible\")"
+---
+===== jni/demo.h =====
+<c abi support declarations>
+typedef uint32_t ___JobError;
+#define JOB_ERROR_REFUSED ((___JobError)0)
+#define JOB_ERROR_LOST ((___JobError)1)
+void boltffi_release_class_demo_jobs(uint64_t handle);
+uint64_t boltffi_stream_demo_jobs_lines_subscribe(uint64_t receiver);
+FfiBuf_u8 boltffi_stream_demo_jobs_lines_pop_batch(uint64_t subscription, uintptr_t max_count);
+WaitResult boltffi_stream_demo_jobs_lines_wait(uint64_t subscription, uint32_t timeout_milliseconds);
+void boltffi_stream_demo_jobs_lines_poll(uint64_t subscription, uint64_t callback_data, void (*callback)(uint64_t, StreamPollResult));
+void boltffi_stream_demo_jobs_lines_unsubscribe(uint64_t subscription);
+void boltffi_stream_demo_jobs_lines_free(uint64_t subscription);
+FfiBuf_u8 boltffi_stream_demo_jobs_lines_take_error(uint64_t subscription);
+uint64_t boltffi_stream_demo_jobs_progress_subscribe(uint64_t receiver);
+uintptr_t boltffi_stream_demo_jobs_progress_pop_batch(uint64_t subscription, int32_t *output_ptr, uintptr_t output_capacity);
+WaitResult boltffi_stream_demo_jobs_progress_wait(uint64_t subscription, uint32_t timeout_milliseconds);
+void boltffi_stream_demo_jobs_progress_poll(uint64_t subscription, uint64_t callback_data, void (*callback)(uint64_t, StreamPollResult));
+void boltffi_stream_demo_jobs_progress_unsubscribe(uint64_t subscription);
+void boltffi_stream_demo_jobs_progress_free(uint64_t subscription);
+FfiBuf_u8 boltffi_stream_demo_jobs_progress_take_error(uint64_t subscription);
+uint64_t boltffi_stream_demo_jobs_ticks_subscribe(uint64_t receiver);
+uintptr_t boltffi_stream_demo_jobs_ticks_pop_batch(uint64_t subscription, int32_t *output_ptr, uintptr_t output_capacity);
+WaitResult boltffi_stream_demo_jobs_ticks_wait(uint64_t subscription, uint32_t timeout_milliseconds);
+void boltffi_stream_demo_jobs_ticks_poll(uint64_t subscription, uint64_t callback_data, void (*callback)(uint64_t, StreamPollResult));
+void boltffi_stream_demo_jobs_ticks_unsubscribe(uint64_t subscription);
+void boltffi_stream_demo_jobs_ticks_free(uint64_t subscription);
+FfiBuf_u8 boltffi_stream_demo_jobs_ticks_take_error(uint64_t subscription);
+
+===== jni/jni_glue.c =====
+<jni source includes>
+<jni thread runtime>
+<jni continuation helper>
+<jni exception helpers>
+<jni byte-array helpers>
+JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved) {
+    (void)reserved;
+    JNIEnv *env = NULL;
+    jint env_result = (*vm)->GetEnv(vm, (void **)&env, JNI_VERSION_1_6);
+    if (env_result != JNI_OK) {
+        fprintf(stderr, "BoltFFI JNI_OnLoad failed: GetEnv(JNI_VERSION_1_6) returned %d\n", (int)env_result);
+        return JNI_ERR;
+    }
+    if (!boltffi_jni_lookup_global_class_with_diagnostic(env, "com/boltffi/demo/Native", "com/boltffi/demo/Native", &boltffi_jni_native_class)) {
+        return JNI_ERR;
+    }
+    if (!boltffi_jni_continuation_load(env)) {
+        (*env)->DeleteGlobalRef(env, boltffi_jni_native_class);
+        boltffi_jni_native_class = NULL;
+        return JNI_ERR;
+    }
+    boltffi_jni_vm = vm;
+    return JNI_VERSION_1_6;
+}
+
+JNIEXPORT void JNICALL JNI_OnUnload(JavaVM *vm, void *reserved) {
+    (void)reserved;
+    JNIEnv *env = NULL;
+    if ((*vm)->GetEnv(vm, (void **)&env, JNI_VERSION_1_6) == JNI_OK) {
+        boltffi_jni_continuation_unload(env);
+        if (boltffi_jni_native_class != NULL) {
+            (*env)->DeleteGlobalRef(env, boltffi_jni_native_class);
+        }
+    }
+    boltffi_jni_vm = NULL;
+    boltffi_jni_native_class = NULL;
+}
+
+JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1release_1class_1demo_1jobs(JNIEnv *env, jclass cls, jlong handle) {
+    (void)cls;
+
+    (void)env;
+    boltffi_release_class_demo_jobs(handle);
+
+    return;
+}
+
+JNIEXPORT jlong JNICALL Java_com_boltffi_demo_Native_boltffi_1stream_1demo_1jobs_1lines_1subscribe(JNIEnv *env, jclass cls, jlong receiver) {
+    (void)cls;
+
+    (void)env;
+    uint64_t __boltffi_result = boltffi_stream_demo_jobs_lines_subscribe(receiver);
+
+    return (jlong)__boltffi_result;
+}
+
+JNIEXPORT jbyteArray JNICALL Java_com_boltffi_demo_Native_boltffi_1stream_1demo_1jobs_1lines_1pop_1batch(JNIEnv *env, jclass cls, jlong subscription, jlong max_count) {
+    (void)cls;
+
+    (void)env;
+    FfiBuf_u8 __boltffi_result = boltffi_stream_demo_jobs_lines_pop_batch(subscription, max_count);
+
+    return boltffi_jni_buffer_to_byte_array(env, __boltffi_result);
+}
+
+JNIEXPORT jint JNICALL Java_com_boltffi_demo_Native_boltffi_1stream_1demo_1jobs_1lines_1wait(JNIEnv *env, jclass cls, jlong subscription, jint timeout_milliseconds) {
+    (void)cls;
+
+    (void)env;
+    WaitResult __boltffi_result = boltffi_stream_demo_jobs_lines_wait(subscription, timeout_milliseconds);
+
+    return (jint)__boltffi_result;
+}
+
+JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1stream_1demo_1jobs_1lines_1poll(JNIEnv *env, jclass cls, jlong subscription, jlong callback_data) {
+    (void)cls;
+
+    (void)env;
+    boltffi_stream_demo_jobs_lines_poll(subscription, callback_data, boltffi_jni_continuation_callback);
+
+    return;
+}
+
+JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1stream_1demo_1jobs_1lines_1unsubscribe(JNIEnv *env, jclass cls, jlong subscription) {
+    (void)cls;
+
+    (void)env;
+    boltffi_stream_demo_jobs_lines_unsubscribe(subscription);
+
+    return;
+}
+
+JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1stream_1demo_1jobs_1lines_1free(JNIEnv *env, jclass cls, jlong subscription) {
+    (void)cls;
+
+    (void)env;
+    boltffi_stream_demo_jobs_lines_free(subscription);
+
+    return;
+}
+
+JNIEXPORT jbyteArray JNICALL Java_com_boltffi_demo_Native_boltffi_1stream_1demo_1jobs_1lines_1take_1error(JNIEnv *env, jclass cls, jlong subscription) {
+    (void)cls;
+
+    (void)env;
+    FfiBuf_u8 __boltffi_result = boltffi_stream_demo_jobs_lines_take_error(subscription);
+
+    return boltffi_jni_buffer_to_byte_array(env, __boltffi_result);
+}
+
+JNIEXPORT jlong JNICALL Java_com_boltffi_demo_Native_boltffi_1stream_1demo_1jobs_1progress_1subscribe(JNIEnv *env, jclass cls, jlong receiver) {
+    (void)cls;
+
+    (void)env;
+    uint64_t __boltffi_result = boltffi_stream_demo_jobs_progress_subscribe(receiver);
+
+    return (jlong)__boltffi_result;
+}
+
+JNIEXPORT jint JNICALL Java_com_boltffi_demo_Native_boltffi_1stream_1demo_1jobs_1progress_1wait(JNIEnv *env, jclass cls, jlong subscription, jint timeout_milliseconds) {
+    (void)cls;
+
+    (void)env;
+    WaitResult __boltffi_result = boltffi_stream_demo_jobs_progress_wait(subscription, timeout_milliseconds);
+
+    return (jint)__boltffi_result;
+}
+
+JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1stream_1demo_1jobs_1progress_1poll(JNIEnv *env, jclass cls, jlong subscription, jlong callback_data) {
+    (void)cls;
+
+    (void)env;
+    boltffi_stream_demo_jobs_progress_poll(subscription, callback_data, boltffi_jni_continuation_callback);
+
+    return;
+}
+
+JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1stream_1demo_1jobs_1progress_1unsubscribe(JNIEnv *env, jclass cls, jlong subscription) {
+    (void)cls;
+
+    (void)env;
+    boltffi_stream_demo_jobs_progress_unsubscribe(subscription);
+
+    return;
+}
+
+JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1stream_1demo_1jobs_1progress_1free(JNIEnv *env, jclass cls, jlong subscription) {
+    (void)cls;
+
+    (void)env;
+    boltffi_stream_demo_jobs_progress_free(subscription);
+
+    return;
+}
+
+JNIEXPORT jbyteArray JNICALL Java_com_boltffi_demo_Native_boltffi_1stream_1demo_1jobs_1progress_1take_1error(JNIEnv *env, jclass cls, jlong subscription) {
+    (void)cls;
+
+    (void)env;
+    FfiBuf_u8 __boltffi_result = boltffi_stream_demo_jobs_progress_take_error(subscription);
+
+    return boltffi_jni_buffer_to_byte_array(env, __boltffi_result);
+}
+
+JNIEXPORT jlong JNICALL Java_com_boltffi_demo_Native_boltffi_1stream_1demo_1jobs_1ticks_1subscribe(JNIEnv *env, jclass cls, jlong receiver) {
+    (void)cls;
+
+    (void)env;
+    uint64_t __boltffi_result = boltffi_stream_demo_jobs_ticks_subscribe(receiver);
+
+    return (jlong)__boltffi_result;
+}
+
+JNIEXPORT jint JNICALL Java_com_boltffi_demo_Native_boltffi_1stream_1demo_1jobs_1ticks_1wait(JNIEnv *env, jclass cls, jlong subscription, jint timeout_milliseconds) {
+    (void)cls;
+
+    (void)env;
+    WaitResult __boltffi_result = boltffi_stream_demo_jobs_ticks_wait(subscription, timeout_milliseconds);
+
+    return (jint)__boltffi_result;
+}
+
+JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1stream_1demo_1jobs_1ticks_1poll(JNIEnv *env, jclass cls, jlong subscription, jlong callback_data) {
+    (void)cls;
+
+    (void)env;
+    boltffi_stream_demo_jobs_ticks_poll(subscription, callback_data, boltffi_jni_continuation_callback);
+
+    return;
+}
+
+JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1stream_1demo_1jobs_1ticks_1unsubscribe(JNIEnv *env, jclass cls, jlong subscription) {
+    (void)cls;
+
+    (void)env;
+    boltffi_stream_demo_jobs_ticks_unsubscribe(subscription);
+
+    return;
+}
+
+JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1stream_1demo_1jobs_1ticks_1free(JNIEnv *env, jclass cls, jlong subscription) {
+    (void)cls;
+
+    (void)env;
+    boltffi_stream_demo_jobs_ticks_free(subscription);
+
+    return;
+}
+
+JNIEXPORT jbyteArray JNICALL Java_com_boltffi_demo_Native_boltffi_1stream_1demo_1jobs_1ticks_1take_1error(JNIEnv *env, jclass cls, jlong subscription) {
+    (void)cls;
+
+    (void)env;
+    FfiBuf_u8 __boltffi_result = boltffi_stream_demo_jobs_ticks_take_error(subscription);
+
+    return boltffi_jni_buffer_to_byte_array(env, __boltffi_result);
+}
+
+JNIEXPORT jbyteArray JNICALL Java_com_boltffi_demo_Native_boltffi_1stream_1demo_1jobs_1progress_1pop_1batch(JNIEnv *env, jclass cls, jlong subscription, jlong max_count) {
+    (void)cls;
+    if (max_count < 0) {
+        boltffi_jni_throw_illegal_argument(env, "BoltFFI stream batch size was negative");
+        return NULL;
+    }
+    uintptr_t __boltffi_capacity = (uintptr_t)max_count;
+    if (__boltffi_capacity != 0 && __boltffi_capacity > ((uintptr_t)SIZE_MAX / (uintptr_t)4)) {
+        boltffi_jni_throw_runtime(env, "BoltFFI stream batch allocation is too large");
+        return NULL;
+    }
+    uintptr_t __boltffi_byte_capacity = __boltffi_capacity * (uintptr_t)4;
+    uint8_t *__boltffi_items = NULL;
+    if (__boltffi_byte_capacity != 0) {
+        __boltffi_items = (uint8_t *)malloc((size_t)__boltffi_byte_capacity);
+        if (__boltffi_items == NULL) {
+            boltffi_jni_throw_runtime(env, "failed to allocate BoltFFI stream batch buffer");
+            return NULL;
+        }
+    }
+    uintptr_t __boltffi_count = boltffi_stream_demo_jobs_progress_pop_batch((uint64_t)subscription, (int32_t *)__boltffi_items, __boltffi_capacity);
+    if (__boltffi_count > __boltffi_capacity) {
+        free(__boltffi_items);
+        boltffi_jni_throw_runtime(env, "BoltFFI stream returned more items than requested");
+        return NULL;
+    }
+    uintptr_t __boltffi_byte_len = __boltffi_count * (uintptr_t)4;
+    jbyteArray __boltffi_array = boltffi_jni_bytes_to_byte_array(env, __boltffi_items, __boltffi_byte_len);
+    free(__boltffi_items);
+    return __boltffi_array;
+}
+
+JNIEXPORT jbyteArray JNICALL Java_com_boltffi_demo_Native_boltffi_1stream_1demo_1jobs_1ticks_1pop_1batch(JNIEnv *env, jclass cls, jlong subscription, jlong max_count) {
+    (void)cls;
+    if (max_count < 0) {
+        boltffi_jni_throw_illegal_argument(env, "BoltFFI stream batch size was negative");
+        return NULL;
+    }
+    uintptr_t __boltffi_capacity = (uintptr_t)max_count;
+    if (__boltffi_capacity != 0 && __boltffi_capacity > ((uintptr_t)SIZE_MAX / (uintptr_t)4)) {
+        boltffi_jni_throw_runtime(env, "BoltFFI stream batch allocation is too large");
+        return NULL;
+    }
+    uintptr_t __boltffi_byte_capacity = __boltffi_capacity * (uintptr_t)4;
+    uint8_t *__boltffi_items = NULL;
+    if (__boltffi_byte_capacity != 0) {
+        __boltffi_items = (uint8_t *)malloc((size_t)__boltffi_byte_capacity);
+        if (__boltffi_items == NULL) {
+            boltffi_jni_throw_runtime(env, "failed to allocate BoltFFI stream batch buffer");
+            return NULL;
+        }
+    }
+    uintptr_t __boltffi_count = boltffi_stream_demo_jobs_ticks_pop_batch((uint64_t)subscription, (int32_t *)__boltffi_items, __boltffi_capacity);
+    if (__boltffi_count > __boltffi_capacity) {
+        free(__boltffi_items);
+        boltffi_jni_throw_runtime(env, "BoltFFI stream returned more items than requested");
+        return NULL;
+    }
+    uintptr_t __boltffi_byte_len = __boltffi_count * (uintptr_t)4;
+    jbyteArray __boltffi_array = boltffi_jni_bytes_to_byte_array(env, __boltffi_items, __boltffi_byte_len);
+    free(__boltffi_items);
+    return __boltffi_array;
+}

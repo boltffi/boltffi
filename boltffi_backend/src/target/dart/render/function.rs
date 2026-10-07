@@ -1305,14 +1305,7 @@ fn encoded_error_check(
     bridge: &CBridgeContract,
     context: &RenderContext<Native>,
 ) -> Result<Vec<String>> {
-    let read = codec
-        .render_with(&mut Reader::new("_l$errorReader", context))?
-        .into_source();
-    let error = match ty {
-        TypeRef::String => format!("$$BoltException({read})"),
-        TypeRef::Record(_) | TypeRef::Enum(_) => read,
-        _ => return super::super::unsupported("Dart encoded error payload"),
-    };
+    let error = error_value(ty, codec, context)?;
     Ok(vec![
         format!("if ({buffer}.ptr != $$ffi.nullptr) {{"),
         "  try {".to_owned(),
@@ -1328,6 +1321,23 @@ fn encoded_error_check(
         "  }".to_owned(),
         "}".to_owned(),
     ])
+}
+
+/// The error object an encoded error of type `ty` decodes to, read from
+/// `_l$errorReader`.
+pub(super) fn error_value(
+    ty: &TypeRef,
+    codec: &ReadPlan,
+    context: &RenderContext<Native>,
+) -> Result<String> {
+    let read = codec
+        .render_with(&mut Reader::new("_l$errorReader", context))?
+        .into_source();
+    match ty {
+        TypeRef::String => Ok(format!("$$BoltException({read})")),
+        TypeRef::Record(_) | TypeRef::Enum(_) => Ok(read),
+        _ => super::super::unsupported("Dart encoded error payload"),
+    }
 }
 
 fn direct_return(

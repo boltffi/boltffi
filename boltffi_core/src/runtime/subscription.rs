@@ -1,6 +1,7 @@
+use core::convert::Infallible;
 use core::ffi::c_void;
 use std::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
-use std::sync::{Arc, Condvar, Mutex, Weak};
+use std::sync::{Arc, Condvar, Mutex, PoisonError, Weak};
 use std::time::Duration;
 use std::{marker::PhantomData, mem::MaybeUninit};
 
@@ -45,9 +46,15 @@ impl ContinuationSignalPolicy for StreamContinuationPolicy {
     }
 }
 
-pub struct EventSubscription<T: Send + 'static> {
+/// A single-consumer stream of `T`, ended by either side.
+///
+/// `E` is the error a producer may end the stream with through
+/// [`fail`](Self::fail). The default, [`Infallible`], is a stream that can only
+/// complete.
+pub struct EventSubscription<T: Send + 'static, E: Send + 'static = Infallible> {
     ring_buffer: SpscRingBuffer<T>,
     is_active: AtomicBool,
+    failure: Mutex<Option<E>>,
     notification_mutex: Mutex<()>,
     notification_condvar: Condvar,
     continuation_scheduler: ContinuationScheduler<StreamContinuationPolicy>,
@@ -63,9 +70,18 @@ pub enum WaitResult {
 
 impl<T: Send + 'static> EventSubscription<T> {
     pub fn new(capacity: usize) -> Self {
+        Self::fallible(capacity)
+    }
+}
+
+impl<T: Send + 'static, E: Send + 'static> EventSubscription<T, E> {
+    /// A subscription that can end with an error `E`, buffering up to
+    /// `capacity` events.
+    pub fn fallible(capacity: usize) -> Self {
         Self {
             ring_buffer: SpscRingBuffer::new(capacity),
             is_active: AtomicBool::new(true),
+            failure: Mutex::new(None),
             notification_mutex: Mutex::new(()),
             notification_condvar: Condvar::new(),
             continuation_scheduler: ContinuationScheduler::new(),
@@ -159,12 +175,38 @@ impl<T: Send + 'static> EventSubscription<T> {
         self.continuation_scheduler.cancel();
     }
 
+    /// End the stream with `error`. Consumers receive every event already
+    /// buffered, then `error`.
+    ///
+    /// Returns `false`, dropping `error`, when the stream had already ended.
+    pub fn fail(&self, error: E) -> bool {
+        {
+            let mut failure = self.failure.lock().unwrap_or_else(PoisonError::into_inner);
+            if !self.is_active() {
+                return false;
+            }
+            *failure = Some(error);
+        }
+        self.unsubscribe();
+        true
+    }
+
+    /// The error the stream failed with, once. `None` for a stream that
+    /// completed, was cancelled, or is still running.
+    #[doc(hidden)]
+    pub fn take_failure(&self) -> Option<E> {
+        self.failure
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take()
+    }
+
     pub fn available_count(&self) -> usize {
         self.ring_buffer.available_count()
     }
 }
 
-impl<T: Send + 'static> Drop for EventSubscription<T> {
+impl<T: Send + 'static, E: Send + 'static> Drop for EventSubscription<T, E> {
     fn drop(&mut self) {
         self.unsubscribe();
     }
@@ -429,6 +471,48 @@ mod tests {
         assert_eq!(subscription.pop_event(), Some(42));
         assert_eq!(subscription.pop_event(), Some(100));
         assert_eq!(subscription.pop_event(), None);
+    }
+
+    #[test]
+    fn test_failed_subscription_keeps_buffered_events_and_reports_its_error_once() {
+        let subscription = EventSubscription::<i32, String>::fallible(16);
+        assert!(subscription.push_event(1));
+        assert!(subscription.fail("boom".to_owned()));
+
+        assert!(!subscription.is_active());
+        assert!(!subscription.push_event(2));
+        assert_eq!(subscription.wait_for_events(0), WaitResult::Unsubscribed);
+        assert_eq!(subscription.pop_event(), Some(1));
+        assert_eq!(subscription.take_failure().as_deref(), Some("boom"));
+        assert_eq!(subscription.take_failure(), None);
+    }
+
+    #[test]
+    fn test_failing_an_ended_subscription_is_refused() {
+        let subscription = EventSubscription::<i32, String>::fallible(16);
+        subscription.unsubscribe();
+
+        assert!(!subscription.fail("late".to_owned()));
+        assert_eq!(subscription.take_failure(), None);
+    }
+
+    #[test]
+    fn test_failing_wakes_a_stored_poll_as_closed() {
+        use std::sync::atomic::AtomicI8;
+        static RESULT: AtomicI8 = AtomicI8::new(-1);
+        extern "C" fn record(_: u64, result: StreamPollResult) {
+            RESULT.store(result as i8, Ordering::SeqCst);
+        }
+
+        let subscription = EventSubscription::<i32, String>::fallible(16);
+        subscription.poll(0, record);
+        assert_eq!(RESULT.load(Ordering::SeqCst), -1);
+
+        subscription.fail("boom".to_owned());
+        assert_eq!(
+            RESULT.load(Ordering::SeqCst),
+            StreamPollResult::Closed as i8
+        );
     }
 
     #[test]

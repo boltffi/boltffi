@@ -41,6 +41,16 @@ pub struct Stream {
     free: Identifier,
     item_setup: Vec<Statement>,
     items: Expression,
+    failure: Option<StreamFailure>,
+}
+
+/// How a fallible stream's `take_error` bytes become the `Throwable` it ends
+/// with.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StreamFailure {
+    take_error: Identifier,
+    reader: Identifier,
+    throwable: Expression,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -69,6 +79,7 @@ impl Stream {
         context: &RenderContext<Native>,
     ) -> Result<Self> {
         let item = StreamItem::from_plan(declaration.item(), host, context)?;
+        let failure = StreamFailure::from_declaration(declaration, host, context)?;
         Ok(Self {
             name: Name::new(declaration.name()).function()?,
             documentation: Documentation::new(declaration.meta().doc()),
@@ -86,6 +97,7 @@ impl Stream {
             free: Self::native_method(declaration.protocol().free().name().as_str())?,
             item_setup: item.setup,
             items: item.items,
+            failure,
         })
     }
 
@@ -161,8 +173,60 @@ impl Stream {
         &self.items
     }
 
+    pub fn failure(&self) -> Option<&StreamFailure> {
+        self.failure.as_ref()
+    }
+
     fn native_method(name: &str) -> Result<Identifier> {
         Identifier::escape(name)
+    }
+}
+
+impl StreamFailure {
+    fn from_declaration(
+        declaration: &StreamDecl<Native>,
+        host: &KotlinHost,
+        context: &RenderContext<Native>,
+    ) -> Result<Option<Self>> {
+        let (Some(take_error), Some(error)) =
+            (declaration.protocol().take_error(), declaration.error())
+        else {
+            return Ok(None);
+        };
+        let reader = Identifier::parse("__boltffi_error_reader")?;
+        let decoded = error
+            .read()
+            .render_with(&mut Reader::new(reader.clone(), host, context))?
+            .into_expression();
+        let throwable = match error.ty() {
+            TypeRef::String => Expression::construct(
+                TypeName::new("FfiException"),
+                [decoded].into_iter().collect::<ArgumentList>(),
+            ),
+            TypeRef::Record(_) | TypeRef::Enum(_) => decoded,
+            _ => {
+                return Err(KotlinHost::unsupported(
+                    "kotlin throwable stream error type",
+                ));
+            }
+        };
+        Ok(Some(Self {
+            take_error: Stream::native_method(take_error.name().as_str())?,
+            reader,
+            throwable,
+        }))
+    }
+
+    pub fn take_error(&self) -> &Identifier {
+        &self.take_error
+    }
+
+    pub fn reader(&self) -> &Identifier {
+        &self.reader
+    }
+
+    pub fn throwable(&self) -> &Expression {
+        &self.throwable
     }
 }
 

@@ -273,3 +273,62 @@ mod concurrent_access_is_safe {
         assert_eq!(received, 100);
     }
 }
+
+mod a_failed_stream_reports_its_error_after_its_items {
+    use super::*;
+    use boltffi::__private::FfiBuf;
+
+    /// A subscription handle as the generated `subscribe` export hands it out.
+    fn handle(stream: &JobStream) -> u64 {
+        Arc::into_raw(stream.subscribe()) as u64
+    }
+
+    fn take_error(handle: u64) -> Vec<u8> {
+        unsafe {
+            boltffi_stream_boltffi_tests_streams_job_stream_subscribe_take_error(handle).into_vec()
+        }
+    }
+
+    fn pop(handle: u64) -> Vec<i32> {
+        let mut items = [0_i32; 16];
+        let count = unsafe {
+            boltffi_stream_boltffi_tests_streams_job_stream_subscribe_pop_batch(
+                handle,
+                items.as_mut_ptr(),
+                items.len(),
+            )
+        };
+        items[..count].to_vec()
+    }
+
+    #[test]
+    fn the_error_follows_the_buffered_items() {
+        let stream = JobStream::new();
+        let handle = handle(&stream);
+        assert!(stream.emit(7));
+        assert!(stream.fail("boom".to_owned()));
+
+        let wait =
+            unsafe { boltffi_stream_boltffi_tests_streams_job_stream_subscribe_wait(handle, 0) };
+        assert_eq!(wait, WaitResult::Unsubscribed as i32);
+        assert_eq!(pop(handle), vec![7]);
+
+        let expected = unsafe { FfiBuf::wire_encode(&"boom".to_owned()).into_vec::<u8>() };
+        assert_eq!(take_error(handle), expected);
+        assert!(take_error(handle).is_empty(), "the error is taken once");
+
+        unsafe { boltffi_stream_boltffi_tests_streams_job_stream_subscribe_free(handle) };
+    }
+
+    #[test]
+    fn a_completed_or_cancelled_stream_has_no_error() {
+        let stream = JobStream::new();
+        let handle = handle(&stream);
+        unsafe { boltffi_stream_boltffi_tests_streams_job_stream_subscribe_unsubscribe(handle) };
+
+        assert!(!stream.fail("too late".to_owned()));
+        assert!(take_error(handle).is_empty());
+
+        unsafe { boltffi_stream_boltffi_tests_streams_job_stream_subscribe_free(handle) };
+    }
+}
