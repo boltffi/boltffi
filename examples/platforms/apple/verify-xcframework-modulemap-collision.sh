@@ -10,6 +10,7 @@ case "$(uname -m)" in
     x86_64) architecture=x86_64 ;;
     *) printf 'Unsupported Apple host architecture\n' >&2; exit 1 ;;
 esac
+rust_toolchain="$(cd "$repo_root" && rustup show active-toolchain | awk '{print $1}')"
 
 # Use real, separately built BoltFFI libraries and generated Swift packages.
 for library in first second; do
@@ -54,7 +55,9 @@ layout = "$layout"
 TOML
     (
         cd "$fixture"
-        cargo run --quiet --manifest-path "$repo_root/Cargo.toml" -p boltffi_cli -- -v pack apple
+        # Fixtures live outside the repo, so pin Cargo to the same toolchain
+        # that prepare_selected_platforms used to install Apple targets for.
+        RUSTUP_TOOLCHAIN="$rust_toolchain" cargo run --quiet --manifest-path "$repo_root/Cargo.toml" -p boltffi_cli -- -v pack apple
     )
     cp "$fixture/${module}Package/Package.swift" "$fixture/Package.swift.saved"
 done
