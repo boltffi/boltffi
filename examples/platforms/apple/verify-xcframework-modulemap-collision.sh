@@ -54,7 +54,7 @@ layout = "$layout"
 TOML
     (
         cd "$fixture"
-        cargo run --quiet --manifest-path "$repo_root/Cargo.toml" -p boltffi_cli -- pack apple
+        cargo run --quiet --manifest-path "$repo_root/Cargo.toml" -p boltffi_cli -- -v pack apple
     )
     cp "$fixture/${module}Package/Package.swift" "$fixture/Package.swift.saved"
 done
