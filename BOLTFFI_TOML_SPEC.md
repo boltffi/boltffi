@@ -181,6 +181,15 @@ Uuid = { type = "UUID", conversion = "uuid_string" }
 - `skip_package_swift` (bool, optional): Skip generating `Package.swift`.
   - Default: `false`
 
+Generated Apple packages include an `FFI/` C target for module discovery. Keep
+this directory with `Package.swift`, including when publishing remote packages.
+The target exposes the FFI module and depends on an internal `{ffi_module_name}Binary`
+target. Static XCFramework headers contain `{ffi_module_name}.modulemap` so separate
+libraries can share Xcode's build products directory. The generated package supplies
+the discoverable module map to downstream Swift targets, including Xcode's explicit
+module scanner. Consumers of a bare XCFramework or a hand-written manifest must
+configure module discovery themselves.
+
 ### `[targets.apple.debug_symbols]` (optional)
 
 Debug information for Apple slice libraries collected by `boltffi pack apple`.

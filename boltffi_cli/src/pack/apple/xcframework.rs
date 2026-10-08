@@ -429,7 +429,9 @@ impl StaticLibrarySlicePlan {
     fn write_modulemap(&self) -> Result<()> {
         let modulemap_content =
             render_library_modulemap(&self.module_name, &self.public_header_path)?;
-        let modulemap_path = self.headers_path.join("module.modulemap");
+        let modulemap_path = self
+            .headers_path
+            .join(format!("{}.modulemap", self.module_name));
 
         fs::write(&modulemap_path, modulemap_content).map_err(|source| CliError::WriteFailed {
             path: modulemap_path,
@@ -460,7 +462,7 @@ struct AppleLibraryModulemapTemplate<'a> {
     header_path: &'a str,
 }
 
-fn render_library_modulemap(module_name: &str, header_path: &str) -> Result<String> {
+pub(super) fn render_library_modulemap(module_name: &str, header_path: &str) -> Result<String> {
     AppleLibraryModulemapTemplate {
         module_name,
         header_path,
@@ -794,13 +796,14 @@ mod tests {
         assert_eq!(input.library_path(), library_path);
         assert_eq!(input.headers_path(), slice_headers_path);
         assert_eq!(
-            fs::read_to_string(slice_headers_path.join("module.modulemap"))
+            fs::read_to_string(slice_headers_path.join("DemoFFI.modulemap"))
                 .expect("read library module map"),
             r#"module DemoFFI {
     header "demo/demo.h"
     export *
 }"#
         );
+        assert!(!slice_headers_path.join("module.modulemap").exists());
         assert!(
             slice_headers_path
                 .join("demo")

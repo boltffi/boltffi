@@ -16,10 +16,16 @@ let package = Package(
         .binaryTarget(
             name: "{{ manifest.binary_target_name }}",
             path: "{{ xcframework_path }}"
+        ),
+        .target(
+            name: "{{ manifest.ffi_module_name }}",
+            dependencies: ["{{ manifest.binary_target_name }}"],
+            path: "FFI",
+            publicHeadersPath: "include"
         ){% if manifest.has_wrapper_target %},
         .target(
             name: "{{ manifest.module_name }}",
-            dependencies: ["{{ manifest.binary_target_name }}"],
+            dependencies: ["{{ manifest.ffi_module_name }}"],
             path: "{{ manifest.wrapper_sources }}"
         ){% endif %},
     ]
