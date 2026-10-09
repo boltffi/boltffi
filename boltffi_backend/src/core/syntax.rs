@@ -23,8 +23,9 @@ impl<T> SyntaxFragment for T where T: fmt::Display + Clone + sealed::SyntaxFragm
 /// code roles. An identifier field cannot receive an expression unless
 /// the language explicitly models that value as an identifier.
 pub trait LanguageSyntax: sealed::LanguageSyntax {
-    /// Reserved words that cannot be used as identifiers.
-    const KEYWORDS: &'static [&'static str];
+    /// Keyword table for the default predicate.
+    /// Parser-backed languages can override `keyword` instead.
+    const KEYWORDS: &'static [&'static str] = &[];
 
     /// Identifier syntax accepted by the language.
     type Identifier: SyntaxFragment;
