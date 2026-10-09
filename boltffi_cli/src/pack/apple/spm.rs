@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Component, Path, PathBuf};
 
 use askama::Template;
 
@@ -6,6 +6,8 @@ use crate::cli::{CliError, Result};
 use crate::config::{Config, SpmLayout};
 
 use super::names::AppleNames;
+use super::write_generated_file;
+use super::xcframework::render_library_modulemap;
 
 pub struct SpmPackageGenerator<'a> {
     config: &'a Config,
@@ -29,6 +31,7 @@ struct ApplePackageManifest {
     package_name: String,
     product_target_name: String,
     binary_target_name: String,
+    ffi_module_name: String,
     module_name: String,
     wrapper_sources: String,
     xcframework_name: String,
@@ -92,7 +95,30 @@ impl<'a> SpmPackageGenerator<'a> {
             source,
         })?;
 
+        self.generate_module_discovery()?;
+
         Ok(output_path)
+    }
+
+    fn generate_module_discovery(&self) -> Result<()> {
+        // SwiftPM passes a C target's module map to downstream dependency scanners.
+        // Keep this outside Sources so Swift wrapper targets never mix C and Swift.
+        let discovery = self.config.apple_spm_output().join("FFI");
+        write_generated_file(
+            &discovery.join("include/module.modulemap"),
+            &render_library_modulemap(self.names.ffi_module_name(), "ffi.h")?,
+        )?;
+        write_generated_file(
+            &discovery.join("include/ffi.h"),
+            &format!(
+                "#pragma once\n#include <{0}/{0}.h>\n",
+                self.names.library_name()
+            ),
+        )?;
+        write_generated_file(
+            &discovery.join("discovery.c"),
+            "#include \"include/ffi.h\"\n",
+        )
     }
 
     fn render_package(&self) -> Result<String> {
@@ -105,6 +131,7 @@ impl<'a> SpmPackageGenerator<'a> {
     }
 
     fn render_local_package(&self) -> Result<String> {
+        self.validate_wrapper_discovery_paths()?;
         let manifest = self.package_manifest();
         let xcframework_path = self.local_xcframework_path();
 
@@ -118,6 +145,7 @@ impl<'a> SpmPackageGenerator<'a> {
     }
 
     fn render_remote_package_with(&self, remote_package: &RemoteSpmPackage) -> Result<String> {
+        self.validate_wrapper_discovery_paths()?;
         let manifest = self.package_manifest();
         let repo_url = self
             .config
@@ -145,9 +173,10 @@ impl<'a> SpmPackageGenerator<'a> {
             .unwrap_or("5.9")
             .to_string();
         let wrapper_sources = self.wrapper_sources_path(layout);
-        let binary_target_name = self.names.ffi_module_name().to_string();
+        let ffi_module_name = self.names.ffi_module_name().to_string();
+        let binary_target_name = ffi_binary_target_name(&ffi_module_name, &module_name);
         let product_target_name = if matches!(layout, SpmLayout::Split) {
-            binary_target_name.clone()
+            ffi_module_name.clone()
         } else {
             module_name.clone()
         };
@@ -158,12 +187,64 @@ impl<'a> SpmPackageGenerator<'a> {
             package_name,
             product_target_name,
             binary_target_name,
+            ffi_module_name,
             module_name,
             wrapper_sources,
             xcframework_name: self.names.xcframework_name().to_string(),
             platform_declarations,
             has_wrapper_target: !matches!(layout, SpmLayout::Split),
         }
+    }
+
+    fn validate_wrapper_discovery_paths(&self) -> Result<()> {
+        if !matches!(self.layout, SpmLayout::Split) {
+            let package_root = self.config.apple_spm_output();
+            let wrapper_path = PathBuf::from(self.wrapper_sources_path(self.layout));
+            let (wrapper_path, discovery_path) = if wrapper_path.is_absolute() {
+                let package_root = if package_root.is_absolute() {
+                    package_root
+                } else {
+                    std::env::current_dir()
+                        .map_err(|source| CliError::CommandFailed {
+                            command: format!("resolve Apple Swift package directory: {source}"),
+                            status: None,
+                        })?
+                        .join(package_root)
+                };
+                (
+                    std::path::absolute(&wrapper_path).map_err(|source| {
+                        CliError::CommandFailed {
+                            command: format!("resolve Apple wrapper sources path: {source}"),
+                            status: None,
+                        }
+                    })?,
+                    std::path::absolute(package_root.join("FFI")).map_err(|source| {
+                        CliError::CommandFailed {
+                            command: format!("resolve Apple FFI discovery path: {source}"),
+                            status: None,
+                        }
+                    })?,
+                )
+            } else {
+                (
+                    normalize_package_path(&wrapper_path.to_string_lossy()),
+                    PathBuf::from("FFI"),
+                )
+            };
+            if wrapper_path.starts_with(&discovery_path)
+                || discovery_path.starts_with(&wrapper_path)
+            {
+                return Err(CliError::CommandFailed {
+                    command: format!(
+                        "Apple wrapper sources path {:?} overlaps generated FFI module discovery sources at {:?}",
+                        self.wrapper_sources_path(self.layout),
+                        discovery_path
+                    ),
+                    status: None,
+                });
+            }
+        }
+        Ok(())
     }
 
     fn ios_version_for_spm(&self) -> String {
@@ -231,6 +312,28 @@ impl<'a> SpmPackageGenerator<'a> {
                 }
             })
     }
+}
+
+fn ffi_binary_target_name(ffi_module_name: &str, swift_module_name: &str) -> String {
+    let mut name = format!("{ffi_module_name}Binary");
+    while name == ffi_module_name || name == swift_module_name {
+        name.push_str("Binary");
+    }
+    name
+}
+
+fn normalize_package_path(path: &str) -> PathBuf {
+    let mut normalized = PathBuf::new();
+    for component in Path::new(path).components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                normalized.pop();
+            }
+            _ => normalized.push(component.as_os_str()),
+        }
+    }
+    normalized
 }
 
 fn render_apple_package_template(template: impl Template, distribution: &str) -> Result<String> {
@@ -323,10 +426,112 @@ mod tests {
             self
         }
 
+        fn with_module_name(mut self, module_name: &str) -> Self {
+            self.config.targets.apple.swift.module_name = Some(module_name.to_string());
+            self
+        }
+
+        fn with_ffi_module_name(mut self, module_name: &str) -> Self {
+            self.config.targets.apple.swift.ffi_module_name = Some(module_name.to_string());
+            self
+        }
+
+        fn with_xcframework_name(mut self, name: &str) -> Self {
+            self.config.targets.apple.xcframework.name = Some(name.to_string());
+            self
+        }
+
+        fn with_wrapper_sources(mut self, path: &str) -> Self {
+            self.config.targets.apple.spm.wrapper_sources = Some(path.into());
+            self
+        }
+
         fn build(self) -> Config {
             self.config.validate().expect("config validation failed");
             self.config
         }
+    }
+
+    #[test]
+    fn all_layouts_route_module_discovery_through_a_c_target() {
+        let config = AppleSpmConfigBuilder::new().build();
+        for layout in [SpmLayout::Bundled, SpmLayout::FfiOnly, SpmLayout::Split] {
+            for generator in [
+                SpmPackageGenerator::new_local(&config, layout),
+                SpmPackageGenerator::new_remote(
+                    &config,
+                    "checksum".to_string(),
+                    "1.0.0".to_string(),
+                    layout,
+                ),
+            ] {
+                let package = generator.render_package().expect("render package");
+                assert!(package.contains("name: \"MylibFFIBinary\""));
+                assert!(package.contains("name: \"MylibFFI\""));
+                assert!(package.contains("dependencies: [\"MylibFFIBinary\"]"));
+                assert!(package.contains("path: \"FFI\""));
+                assert!(package.contains("publicHeadersPath: \"include\""));
+                if matches!(layout, SpmLayout::Split) {
+                    assert!(package.contains("targets: [\"MylibFFI\"]"));
+                    assert!(!package.contains("path: \"Sources\""));
+                } else {
+                    assert!(package.contains("dependencies: [\"MylibFFI\"]"));
+                }
+                assert!(!package.contains("unsafeFlags"));
+            }
+        }
+    }
+
+    #[test]
+    fn generates_discovery_sources_alongside_the_manifest() {
+        let temporary_directory = tempfile::tempdir().expect("temporary package");
+        let mut config = AppleSpmConfigBuilder::new().build();
+        config.targets.apple.spm.output = Some(temporary_directory.path().to_path_buf());
+        SpmPackageGenerator::new_local(&config, SpmLayout::Split)
+            .generate()
+            .expect("generate package");
+        let discovery = temporary_directory.path().join("FFI");
+        assert_eq!(
+            std::fs::read_to_string(discovery.join("include/module.modulemap")).unwrap(),
+            "module MylibFFI {\n    header \"ffi.h\"\n    export *\n}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(discovery.join("include/ffi.h")).unwrap(),
+            "#pragma once\n#include <mylib/mylib.h>\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(discovery.join("discovery.c")).unwrap(),
+            "#include \"include/ffi.h\"\n"
+        );
+    }
+
+    #[test]
+    fn bundled_wrapper_sources_cannot_overlap_discovery_sources() {
+        let config = AppleSpmConfigBuilder::new()
+            .with_wrapper_sources(".")
+            .build();
+        let error = SpmPackageGenerator::new_local(&config, SpmLayout::Bundled)
+            .render_package()
+            .expect_err("overlapping wrapper and discovery sources must fail");
+        assert!(
+            error
+                .to_string()
+                .contains("overlaps generated FFI module discovery")
+        );
+    }
+
+    #[test]
+    fn binary_target_name_avoids_the_swift_wrapper_target_name() {
+        let config = AppleSpmConfigBuilder::new()
+            .with_module_name("MylibFFIBinary")
+            .with_xcframework_name("Mylib")
+            .with_ffi_module_name("MylibFFI")
+            .build();
+        let package = SpmPackageGenerator::new_local(&config, SpmLayout::Bundled)
+            .render_package()
+            .expect("render package");
+        assert!(package.contains("name: \"MylibFFIBinaryBinary\""));
+        assert!(package.contains("dependencies: [\"MylibFFIBinaryBinary\"]"));
     }
 
     #[test]
