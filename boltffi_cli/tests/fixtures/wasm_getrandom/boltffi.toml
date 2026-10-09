@@ -1,0 +1,5 @@
+[package]
+name = "wasm_getrandom_fixture"
+
+[targets.wasm]
+enabled = true
