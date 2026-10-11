@@ -1,0 +1,18 @@
+error[E0277]: `NotData` has no canonical id, so it cannot cross the FFI boundary
+ --> tests/ui/unannotated_field.rs:9:16
+  |
+9 |     pub inner: NotData,
+  |                ^^^^^^^ no canonical id
+  |
+help: the trait `TypeInfo<PimTag>` is not implemented for `NotData`
+ --> tests/ui/unannotated_field.rs:3:1
+  |
+3 | pub struct NotData {
+  | ^^^^^^^^^^^^^^^^^^
+  = note: annotate `NotData` with `#[data]`, or declare it with `custom_type!` if it is foreign
+help: the trait `TypeInfo<Tag>` is implemented for `Holder`
+ --> tests/ui/unannotated_field.rs:7:1
+  |
+7 | #[pim_macros::data]
+  | ^^^^^^^^^^^^^^^^^^^
+  = note: this error originates in the attribute macro `pim_macros::data` (in Nightly builds, run with -Z macro-backtrace for more info)

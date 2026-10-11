@@ -1,0 +1,59 @@
+error[E0277]: `NotData` has no canonical id, so it cannot cross the FFI boundary
+ --> tests/ui/export_unannotated_param.rs:8:24
+  |
+8 | pub fn takes(argument: NotData) -> u64 {
+  |                        ^^^^^^^ no canonical id
+  |
+help: the trait `TypeInfo<PimTag>` is not implemented for `NotData`
+ --> tests/ui/export_unannotated_param.rs:3:1
+  |
+3 | pub struct NotData {
+  | ^^^^^^^^^^^^^^^^^^
+  = note: annotate `NotData` with `#[data]`, or declare it with `custom_type!` if it is foreign
+
+error[E0277]: `NotData` has no FFI codec, so it cannot be a parameter or return of an exported function
+ --> tests/ui/export_unannotated_param.rs:7:1
+  |
+7 | #[pim_macros::export]
+  | ^^^^^^^^^^^^^^^^^^^^^ no FFI codec
+  |
+help: the trait `Codec<PimTag>` is not implemented for `NotData`
+ --> tests/ui/export_unannotated_param.rs:3:1
+  |
+3 | pub struct NotData {
+  | ^^^^^^^^^^^^^^^^^^
+  = note: annotate `NotData` with `#[data]`, or use a supported primitive or container
+  = help: the following other types implement trait `Codec<Tag>`:
+            ()
+            Result<T, E>
+            String
+            Vec<T>
+            bool
+            f32
+            f64
+            i16
+          and $N others
+  = note: this error originates in the attribute macro `pim_macros::export` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: `NotData` has no FFI codec, so it cannot be a parameter or return of an exported function
+ --> tests/ui/export_unannotated_param.rs:8:24
+  |
+8 | pub fn takes(argument: NotData) -> u64 {
+  |                        ^^^^^^^ no FFI codec
+  |
+help: the trait `Codec<PimTag>` is not implemented for `NotData`
+ --> tests/ui/export_unannotated_param.rs:3:1
+  |
+3 | pub struct NotData {
+  | ^^^^^^^^^^^^^^^^^^
+  = note: annotate `NotData` with `#[data]`, or use a supported primitive or container
+  = help: the following other types implement trait `Codec<Tag>`:
+            ()
+            Result<T, E>
+            String
+            Vec<T>
+            bool
+            f32
+            f64
+            i16
+          and $N others
