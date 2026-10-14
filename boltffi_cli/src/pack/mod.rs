@@ -76,20 +76,6 @@ pub(crate) fn pack_generate_cargo_args(
         .collect()
 }
 
-pub(crate) fn discover_built_libraries_for_targets(
-    crate_artifact_name: &str,
-    profile_directory_name: &str,
-    targets: &[RustTarget],
-) -> Result<Vec<BuiltLibrary>> {
-    let target_directory = cargo_target_directory()?;
-    Ok(BuiltLibrary::discover_for_targets(
-        &target_directory,
-        crate_artifact_name,
-        profile_directory_name,
-        targets,
-    ))
-}
-
 pub(crate) fn missing_built_libraries(
     targets: &[RustTarget],
     libraries: &[BuiltLibrary],
