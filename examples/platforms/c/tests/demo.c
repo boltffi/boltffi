@@ -6,7 +6,7 @@ int main(void) {
         test_strings, test_bytes, test_records, test_record_vectors,
         test_vectors, test_nested_vectors, test_nested_options,
         test_builtins, test_maps, test_custom_types, test_shapes,
-        test_messages, test_animals, test_filters, test_owned_records,
+        test_messages, test_transparent_enums, test_animals, test_filters, test_owned_records,
         test_record_collections, test_constants, test_callback_ownership, test_scalar_enums,
         test_result_values, test_error_values, test_nested_records,
         test_service_configs, test_borrowed_constructors, test_optional_record_vectors,
