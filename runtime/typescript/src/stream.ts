@@ -1,6 +1,7 @@
 export type StreamBatch<T> = (handle: number, maxCount: number) => T[];
 export type StreamLifecycle = (handle: number) => void;
 export type StreamPoll = (handle: number) => void;
+export type StreamFailure = (handle: number) => Error | undefined;
 
 export const enum StreamPollResult {
   Ready = 0,
@@ -50,6 +51,7 @@ export class StreamPollManager {
 export class StreamSession<T> implements AsyncIterable<T> {
   private closed: boolean;
   private unsubscribed = false;
+  private failure: Error | undefined;
 
   constructor(
     private readonly handle: number,
@@ -57,13 +59,39 @@ export class StreamSession<T> implements AsyncIterable<T> {
     private readonly pollHandle: StreamPoll,
     private readonly polls: StreamPollManager,
     private readonly unsubscribeHandle: StreamLifecycle,
-    private readonly freeHandle: StreamLifecycle
+    private readonly freeHandle: StreamLifecycle,
+    private readonly takeFailure?: StreamFailure
   ) {
     this.closed = handle === 0;
   }
 
+  /**
+   * Buffered items, at most `maxCount`. A stream that has failed throws its
+   * error once nothing is left to pop.
+   */
   popBatch(maxCount = 16): T[] {
-    return this.closed || this.handle === 0 ? [] : this.batch(this.handle, maxCount);
+    if (this.closed || this.handle === 0) {
+      return [];
+    }
+    const items = this.batch(this.handle, maxCount);
+    if (items.length === 0) {
+      this.throwFailure();
+    }
+    return items;
+  }
+
+  // wasm runs single-threaded, so nothing can be pushed between an empty pop
+  // and this: an error reported now really follows every item
+  private throwFailure(): void {
+    if (this.takeFailure === undefined) {
+      return;
+    }
+    if (this.failure === undefined) {
+      this.failure = this.takeFailure(this.handle);
+    }
+    if (this.failure !== undefined) {
+      throw this.failure;
+    }
   }
 
   unsubscribe(): void {

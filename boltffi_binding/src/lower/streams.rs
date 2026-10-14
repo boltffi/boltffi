@@ -15,7 +15,7 @@ use boltffi_ast::{StreamDef as SourceStream, TypeExpr};
 
 use crate::{
     ByteSize, CanonicalName, DirectValueType, Primitive as BindingPrimitive, ReadPlan, StreamDecl,
-    StreamDeclParts, StreamItemPlan, StreamMode, StreamProtocol, ValueRef,
+    StreamDeclParts, StreamErrorPlan, StreamItemPlan, StreamMode, StreamProtocol, ValueRef,
 };
 
 use super::{
@@ -54,7 +54,12 @@ fn lower_one<S: SurfaceLower>(
         .map(|owner| ids.class(owner))
         .transpose()?;
     let item = lower_item::<S>(index, ids, &stream.item_type)?;
-    let protocol = build_protocol(allocator, stream.id.as_str())?;
+    let error = stream
+        .error_type
+        .as_ref()
+        .map(|error_type| lower_error::<S>(index, ids, error_type))
+        .transpose()?;
+    let protocol = build_protocol(allocator, stream.id.as_str(), error.is_some())?;
     Ok(StreamDecl::new(StreamDeclParts {
         id: stream_id,
         name: CanonicalName::from(&stream.name),
@@ -63,6 +68,7 @@ fn lower_one<S: SurfaceLower>(
         mode: lower_mode(stream.mode),
         handle: S::stream_handle_carrier(),
         item,
+        error,
         protocol,
     }))
 }
@@ -135,6 +141,23 @@ fn encoded_item<S: SurfaceLower>(
     })
 }
 
+/// Always encoded: the error arrives once, after the items, through
+/// `take_error`, so there is no batch to copy it into directly.
+fn lower_error<S: SurfaceLower>(
+    index: &Index,
+    ids: &DeclarationIds,
+    type_expr: &TypeExpr,
+) -> Result<StreamErrorPlan<S>, LowerError> {
+    validate_item_type(type_expr)?;
+    let ty = types::lower(ids, type_expr)?;
+    let root = codecs::node(index, ids, type_expr, ValueRef::self_value())?;
+    Ok(StreamErrorPlan::new(
+        ty,
+        ReadPlan::new(root),
+        S::encoded_return_shape(),
+    ))
+}
+
 fn validate_item_type(type_expr: &TypeExpr) -> Result<(), LowerError> {
     match type_expr {
         TypeExpr::Class { .. }
@@ -180,6 +203,7 @@ fn lower_mode(mode: boltffi_ast::StreamMode) -> StreamMode {
 fn build_protocol(
     allocator: &mut SymbolAllocator,
     source_id: &str,
+    fallible: bool,
 ) -> Result<StreamProtocol, LowerError> {
     let subscribe = allocator.mint_stream(source_id, StreamLifecycle::Subscribe)?;
     let pop_batch = allocator.mint_stream(source_id, StreamLifecycle::PopBatch)?;
@@ -187,6 +211,9 @@ fn build_protocol(
     let poll = allocator.mint_stream(source_id, StreamLifecycle::Poll)?;
     let unsubscribe = allocator.mint_stream(source_id, StreamLifecycle::Unsubscribe)?;
     let free = allocator.mint_stream(source_id, StreamLifecycle::Free)?;
+    let take_error = fallible
+        .then(|| allocator.mint_stream(source_id, StreamLifecycle::TakeError))
+        .transpose()?;
     Ok(StreamProtocol::new(
         subscribe,
         pop_batch,
@@ -194,6 +221,7 @@ fn build_protocol(
         poll,
         unsubscribe,
         free,
+        take_error,
     ))
 }
 
@@ -325,6 +353,59 @@ mod tests {
             .expect("error enum should lower");
 
         assert!(enumeration.is_error_payload());
+    }
+
+    #[test]
+    fn fallible_stream_lowers_an_encoded_error_and_a_take_error_symbol() {
+        let error_id = SourceEnumId::new("demo::LoadError");
+        let mut contract = package();
+        contract
+            .enums
+            .push(c_style_enum(error_id.as_str(), "LoadError"));
+        let mut loads = stream("demo::loads", "loads", TypeExpr::Primitive(Primitive::U32));
+        loads.error_type = Some(TypeExpr::enumeration(
+            error_id,
+            SourcePath::single("LoadError"),
+        ));
+        contract.streams.push(loads);
+
+        let bindings = lower::<Native>(&contract).expect("stream should lower");
+        let decl = only_stream(&bindings);
+
+        assert!(decl.error().is_some());
+        assert_eq!(
+            decl.protocol()
+                .take_error()
+                .map(|symbol| symbol.name().as_str()),
+            Some("boltffi_stream_demo_loads_take_error")
+        );
+        let enumeration = bindings
+            .decls()
+            .iter()
+            .find_map(|decl| match decl {
+                Decl::Enum(enumeration) => Some(enumeration.as_ref()),
+                _ => None,
+            })
+            .expect("error enum should lower");
+        assert!(enumeration.is_error_payload());
+    }
+
+    #[test]
+    fn infallible_stream_has_no_error_plan_or_take_error_symbol() {
+        let bindings = lower_streams_ok::<Native>(vec![stream(
+            "demo::events",
+            "events",
+            TypeExpr::Primitive(Primitive::U32),
+        )]);
+        let decl = only_stream(&bindings);
+
+        assert!(decl.error().is_none());
+        assert!(decl.protocol().take_error().is_none());
+        assert!(
+            !symbol_names(&bindings)
+                .iter()
+                .any(|name| name.ends_with("_take_error"))
+        );
     }
 
     #[test]

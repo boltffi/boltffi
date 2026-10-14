@@ -25,6 +25,7 @@ struct Template {
     wait: Method,
     unsubscribe: Method,
     free: Method,
+    take_error: Option<Method>,
     item: Item,
     stream_handle_type: TypeFragment,
     stream_handle_parser: Identifier,
@@ -39,6 +40,7 @@ pub struct Stream {
     wait: Method,
     unsubscribe: Method,
     free: Method,
+    take_error: Option<Method>,
     item: Item,
     handle: primitive::Runtime,
     receiver: Option<Receiver>,
@@ -86,6 +88,13 @@ impl Stream {
                 MethodFlags::FastCall,
                 bridge,
             )?,
+            take_error: declaration
+                .protocol()
+                .take_error()
+                .map(|symbol| {
+                    Method::new(symbols.take_error()?, symbol, MethodFlags::FastCall, bridge)
+                })
+                .transpose()?,
             item: Item::new(declaration.item(), bridge, context)?,
             handle: primitive::Runtime::native_handle(declaration.handle())?,
             receiver: declaration
@@ -105,6 +114,7 @@ impl Stream {
             wait: self.wait,
             unsubscribe: self.unsubscribe,
             free: self.free,
+            take_error: self.take_error,
             item: self.item,
             stream_handle_type,
             stream_handle_parser,
@@ -125,6 +135,11 @@ impl Stream {
             &self.free.method,
         ]
         .into_iter()
+        .chain(
+            self.take_error
+                .as_ref()
+                .map(|take_error| &take_error.method),
+        )
     }
 
     pub fn primitives(&self) -> Vec<primitive::Runtime> {
@@ -141,7 +156,11 @@ impl Stream {
     }
 
     pub fn owned_buffer(&self) -> Option<result::OwnedBuffer> {
-        self.item.owned_buffer()
+        self.item.owned_buffer().or_else(|| {
+            self.take_error
+                .as_ref()
+                .map(|_| result::OwnedBuffer::RawWire)
+        })
     }
 }
 
@@ -354,5 +373,9 @@ impl Symbols {
 
     pub fn free(&self) -> Result<PythonIdentifier> {
         PythonIdentifier::parse(format!("{}_free", self.stem))
+    }
+
+    pub fn take_error(&self) -> Result<PythonIdentifier> {
+        PythonIdentifier::parse(format!("{}_take_error", self.stem))
     }
 }

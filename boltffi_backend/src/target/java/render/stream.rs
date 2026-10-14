@@ -5,7 +5,7 @@ use boltffi_binding::{
 
 use crate::{
     bridge::jni::JniBridgeContract,
-    core::{AuxChunk, RenderContext, Result},
+    core::{AuxChunk, Error, RenderContext, Result},
     target::java::{
         JavaHost, JavaVersion,
         codec::{Reader, Runtime},
@@ -13,6 +13,7 @@ use crate::{
         primitive::Primitive,
         render::{
             DirectVector, Enumeration, Record,
+            call::error_throwable,
             native::Method,
             signature::{ErasedSignature, ReturnType, ValueType},
             type_name::JavaType,
@@ -34,8 +35,18 @@ pub struct Stream {
     poll: Expression,
     unsubscribe: Expression,
     free: Expression,
+    failure: Option<StreamFailure>,
     native_methods: Vec<Method>,
     doc: Option<Javadoc>,
+}
+
+/// How a fallible stream turns its `take_error` bytes into the exception it
+/// ends with.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StreamFailure {
+    take_error: Expression,
+    reader: Identifier,
+    thrown: Expression,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -109,6 +120,15 @@ impl Stream {
         poll.validate_return(&ReturnType::Void)?;
         unsubscribe.validate_return(&ReturnType::Void)?;
         free.validate_return(&ReturnType::Void)?;
+        let take_error = protocol
+            .take_error()
+            .map(|symbol| Method::from_symbol(symbol, bridge, version))
+            .transpose()?;
+        if let Some(take_error) = &take_error {
+            take_error.validate_return(&ReturnType::Value(ValueType::Reference(
+                TypeName::array(TypeName::primitive(Primitive::Byte)),
+            )))?;
+        }
         let receiver =
             Expression::this().call(Identifier::known("rawHandle"), ArgumentList::default());
         let subscription = Expression::identifier(Identifier::known("streamHandle"));
@@ -129,8 +149,32 @@ impl Stream {
             )?,
             poll: poll.call(native_owner, [subscription.clone(), continuation])?,
             unsubscribe: unsubscribe.call(native_owner, [subscription.clone()])?,
-            free: free.call(native_owner, [subscription])?,
-            native_methods: vec![subscribe, pop_batch, wait, poll, unsubscribe, free],
+            free: free.call(native_owner, [subscription.clone()])?,
+            failure: match (&take_error, declaration.error()) {
+                (Some(take_error), Some(error)) => {
+                    let reader = Identifier::known("__boltffi_error_reader");
+                    let decoded = error
+                        .read()
+                        .render_with(&mut Reader::new(reader.clone(), version, context))?
+                        .into_expression();
+                    Some(StreamFailure {
+                        take_error: take_error.call(native_owner, [subscription])?,
+                        reader,
+                        thrown: error_throwable(error.ty(), decoded, version, context)?,
+                    })
+                }
+                (None, None) => None,
+                _ => {
+                    return Err(Error::BrokenBridgeContract {
+                        bridge: "jni",
+                        invariant: "a stream error plan comes with a take_error symbol",
+                    });
+                }
+            },
+            native_methods: [subscribe, pop_batch, wait, poll, unsubscribe, free]
+                .into_iter()
+                .chain(take_error)
+                .collect(),
             doc: declaration.meta().doc().map(Javadoc::new),
         })
     }
@@ -150,7 +194,7 @@ impl Stream {
             matches!(self.item.runtime, ItemRuntime::Direct)
                 .then(Runtime::direct_vector_helper)
                 .transpose()?,
-            matches!(self.item.runtime, ItemRuntime::Wire)
+            (matches!(self.item.runtime, ItemRuntime::Wire) || self.failure.is_some())
                 .then(Runtime::helper)
                 .transpose()?,
         ]
@@ -160,8 +204,8 @@ impl Stream {
     }
 
     pub fn signature(&self, version: JavaVersion) -> ErasedSignature {
-        let parameters = match self.delivery {
-            Delivery::Callback => vec![ValueType::Reference(TypeName::parameterized(
+        let consumer = |item: TypeName| {
+            ValueType::Reference(TypeName::parameterized(
                 TypeName::qualified(
                     ["java", "util", "function"]
                         .into_iter()
@@ -169,8 +213,18 @@ impl Stream {
                         .collect(),
                     TypeIdentifier::known("Consumer", version),
                 ),
-                [self.item.ty.clone()],
-            ))],
+                [item],
+            ))
+        };
+        let parameters = match self.delivery {
+            Delivery::Callback => std::iter::once(consumer(self.item.ty.clone()))
+                .chain(self.failure.as_ref().map(|_| {
+                    consumer(TypeName::named(TypeIdentifier::known(
+                        "RuntimeException",
+                        version,
+                    )))
+                }))
+                .collect(),
             Delivery::Batch => Vec::new(),
         };
         ErasedSignature::new(self.name.clone(), parameters)
@@ -222,6 +276,24 @@ impl Stream {
 
     pub fn doc(&self) -> Option<&Javadoc> {
         self.doc.as_ref()
+    }
+
+    pub fn failure(&self) -> Option<&StreamFailure> {
+        self.failure.as_ref()
+    }
+}
+
+impl StreamFailure {
+    pub fn take_error(&self) -> &Expression {
+        &self.take_error
+    }
+
+    pub fn reader(&self) -> &Identifier {
+        &self.reader
+    }
+
+    pub fn thrown(&self) -> &Expression {
+        &self.thrown
     }
 }
 

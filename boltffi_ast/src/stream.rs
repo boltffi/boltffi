@@ -20,6 +20,9 @@ pub struct StreamDef {
     pub owner: Option<ClassId>,
     /// Rust source item type yielded by the stream.
     pub item_type: TypeExpr,
+    /// Rust source error type the stream may end with, when it is fallible.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error_type: Option<TypeExpr>,
     /// Source stream mode requested by the author.
     pub mode: StreamMode,
     /// User attributes preserved from the stream declaration.
@@ -49,6 +52,7 @@ impl StreamDef {
             name: name.into(),
             owner: None,
             item_type,
+            error_type: None,
             mode: StreamMode::Async,
             user_attrs: Vec::new(),
             doc: None,
