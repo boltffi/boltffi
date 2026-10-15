@@ -15,6 +15,7 @@ import {
   Database,
   Settings,
   FlaskConical,
+  Globe,
   ChevronDown,
   type LucideIcon
 } from "lucide-react";
@@ -179,6 +180,12 @@ const sections: Section[] = [
       { id: "link-a-c-program", label: "Linking" },
       { id: "memory-management", label: "Memory Management" },
       { id: "c-callers", label: "C++ Callers" },
+    ],
+  },
+  {
+    id: "wasm", label: "WebAssembly", icon: Globe,
+    children: [
+      { id: "randomness", label: "Randomness" },
     ],
   },
   { 

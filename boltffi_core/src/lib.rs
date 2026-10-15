@@ -15,7 +15,17 @@ pub mod safety;
 pub mod status;
 pub mod types;
 pub mod wasm;
+#[cfg(feature = "getrandom")]
+mod wasm_getrandom;
 pub mod wire;
+
+/// What `wasm_getrandom_backend!` expands to refers to.
+#[cfg(all(feature = "getrandom", target_arch = "wasm32"))]
+#[doc(hidden)]
+pub mod __getrandom {
+    pub use crate::wasm_getrandom::fill;
+    pub use getrandom::Error;
+}
 
 pub use boltffi_macros::{
     FfiType, custom_ffi, custom_type, data, default, error, export, ffi_stream, name, skip,
