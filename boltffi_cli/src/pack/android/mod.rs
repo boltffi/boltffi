@@ -4,6 +4,7 @@ use crate::build::{
     BindingExpansion, BuildOptions, BuildSelection, Builder, OutputCallback, all_successful,
     failed_targets,
 };
+use crate::cargo::CargoCrateType;
 use crate::cli::{CliError, Result};
 use crate::commands::generate::{GenerateOptions, GenerateTarget, run_generate_with_output};
 use crate::commands::pack::PackAndroidOptions;
@@ -264,9 +265,12 @@ pub(crate) fn build_android_targets(
         None
     };
 
+    // the packager links the staticlib into the JNI library
     let build_options = BuildOptions {
         release,
-        selection: BuildSelection::Expanded(Box::new(binding_expansion.clone())),
+        selection: BuildSelection::Expanded(Box::new(
+            binding_expansion.only_crate_type(CargoCrateType::StaticLib),
+        )),
         on_output,
         extra_env: Vec::new(),
     };

@@ -13,7 +13,6 @@ use crate::config::Config;
 use self::args::CargoArguments;
 
 pub(crate) use self::library::SelectedLibrary;
-#[cfg(test)]
 pub(crate) use self::metadata::CargoCrateType;
 pub(crate) use self::metadata::{CargoMetadata, CargoMetadataPackage};
 
