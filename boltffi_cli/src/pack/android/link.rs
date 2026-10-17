@@ -207,7 +207,10 @@ impl<'a> AndroidPackager<'a> {
         ));
         run_command(compile)?;
 
-        write_android_export_version_script(&export_script_path)?;
+        write_android_export_version_script(
+            &export_script_path,
+            self.config.android_export_c_symbols(),
+        )?;
 
         let mut link = Command::new(&clang);
         link.args(android_shared_link_args(
@@ -348,8 +351,8 @@ fn android_shared_link_args(
     args
 }
 
-fn write_android_export_version_script(path: &Path) -> Result<()> {
-    std::fs::write(path, android_export_version_script()).map_err(|source| {
+fn write_android_export_version_script(path: &Path, export_c_symbols: bool) -> Result<()> {
+    std::fs::write(path, android_export_version_script(export_c_symbols)).map_err(|source| {
         CliError::CommandFailed {
             command: format!("write android linker version script {}", path.display()),
             status: source.raw_os_error(),
@@ -357,8 +360,9 @@ fn write_android_export_version_script(path: &Path) -> Result<()> {
     })
 }
 
-fn android_export_version_script() -> &'static str {
-    r#"{
+fn android_export_version_script(export_c_symbols: bool) -> &'static str {
+    if export_c_symbols {
+        r#"{
     global:
         Java_*;
         JNI_OnLoad*;
@@ -368,6 +372,17 @@ fn android_export_version_script() -> &'static str {
         *;
 };
 "#
+    } else {
+        r#"{
+    global:
+        Java_*;
+        JNI_OnLoad*;
+        JNI_OnUnload*;
+    local:
+        *;
+};
+"#
+    }
 }
 
 fn run_command(mut command: Command) -> Result<()> {
@@ -737,7 +752,7 @@ enabled = true
 
     #[test]
     fn android_export_map_keeps_public_jni_and_boltffi_symbols() {
-        let script = android_export_version_script();
+        let script = android_export_version_script(true);
 
         assert!(script.contains("Java_*;"));
         assert!(script.contains("JNI_OnLoad*;"));
@@ -745,6 +760,17 @@ enabled = true
         assert!(script.contains("boltffi_*;"));
         assert!(script.contains("local:"));
         assert!(script.contains("*;"));
+    }
+
+    #[test]
+    fn android_export_map_without_c_symbols_keeps_only_jni() {
+        let script = android_export_version_script(false);
+
+        assert!(script.contains("Java_*;"));
+        assert!(script.contains("JNI_OnLoad*;"));
+        assert!(script.contains("JNI_OnUnload*;"));
+        assert!(!script.contains("boltffi_"));
+        assert!(script.contains("local:"));
     }
 
     #[test]
