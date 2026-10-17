@@ -1,4 +1,4 @@
-use boltffi_binding::{CodecNode, ReadPlan, WritePlan};
+use boltffi_binding::{CodecNode, EnumId, ReadPlan, WritePlan};
 
 use crate::{
     core::Result,
@@ -48,6 +48,17 @@ impl Expression {
         let mut writer = Writer::with_self_position_access(package, SelfPositionAccess::Attribute);
         Ok(Self {
             expression: Writer::single(plan.render_with(&mut writer))?,
+        })
+    }
+
+    /// The wire bytes of `value`, an instance of the enum `enumeration`.
+    pub fn write_enum_value(
+        value: PythonExpression,
+        enumeration: EnumId,
+        package: &Package,
+    ) -> Result<Self> {
+        Ok(Self {
+            expression: Writer::new(package).write_enum(value, enumeration)?,
         })
     }
 

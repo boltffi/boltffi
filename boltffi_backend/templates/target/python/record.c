@@ -7,6 +7,13 @@ typedef struct {
 
 static void {{ prefix }}_dealloc(PyObject *self) {
     PyTypeObject *type = Py_TYPE(self);
+{%- if factory.is_some() %}
+    /* The base classes are python classes, so this type inherits their GC
+       flag even though it holds no references of its own. */
+    if (PyType_HasFeature(type, Py_TPFLAGS_HAVE_GC)) {
+        PyObject_GC_UnTrack(self);
+    }
+{%- endif %}
     type->tp_free(self);
     Py_DECREF(type);
 }
@@ -188,6 +195,28 @@ static PyType_Spec {{ prefix }}_type_spec = {
     {{ prefix }}_type_slots
 };
 
+{%- match factory %}
+{%- when Some(factory) %}
+static PyObject *{{ factory }}(PyObject *module, PyObject *bases) {
+    if ({{ type_object }} != NULL) {
+        PyErr_SetString(PyExc_RuntimeError, "{{ class_name }} is already created");
+        return NULL;
+    }
+    if (!PyTuple_Check(bases)) {
+        PyErr_SetString(PyExc_TypeError, "{{ class_name }} bases must be a tuple");
+        return NULL;
+    }
+    {{ type_object }} = PyType_FromSpecWithBases(&{{ prefix }}_type_spec, bases);
+    if ({{ type_object }} == NULL) {
+        return NULL;
+    }
+    if (PyModule_AddObjectRef(module, "{{ class_name }}", {{ type_object }}) < 0) {
+        Py_CLEAR({{ type_object }});
+        return NULL;
+    }
+    return Py_NewRef({{ type_object }});
+}
+{%- when None %}
 static int {{ type_setup }}(PyObject *module) {
     {{ type_object }} = PyType_FromSpec(&{{ prefix }}_type_spec);
     if ({{ type_object }} == NULL) {
@@ -198,6 +227,7 @@ static int {{ type_setup }}(PyObject *module) {
     }
     return 1;
 }
+{%- endmatch %}
 
 static int {{ parser }}(PyObject *value, {{ c_type }} *out) {
     if (!boltffi_python_expect_type_instance(value, {{ type_object }}, "{{ class_name }}")) {

@@ -194,6 +194,12 @@ impl Enumeration {
         bridge: &CBridgeContract,
         context: &RenderContext<Native>,
     ) -> Result<Self> {
+        if declaration.has_transparent_variants() {
+            return Err(Error::UnsupportedTarget {
+                target: "csharp",
+                shape: "transparent data enum variant",
+            });
+        }
         let reader = Identifier::parse("reader")?;
         let writer = Identifier::parse("writer")?;
         let data_variants = declaration
