@@ -203,7 +203,11 @@ fn aggregate(
             }
         }
         if let Some(name) = shadowed_builtin(fragment, &id) {
-            declared.shadowed.insert(name);
+            declared
+                .shadowed
+                .entry(crate_segment(module).to_owned())
+                .or_default()
+                .insert(name);
         }
         if let Some(kind) = declared_kind(fragment) {
             declared.kinds.insert(id, kind);
@@ -222,7 +226,7 @@ fn aggregate(
             continue;
         }
         if !is_lookup {
-            resolve_fragment(&mut fragment, &slots, &declared)?;
+            resolve_fragment(&mut fragment, &slots, &declared, crate_segment(&module))?;
         }
         match fragment {
             SourceFragment::Record(def) => contract.records.push(def),
@@ -386,11 +390,11 @@ enum DeclaredKind {
 struct Declared {
     kinds: HashMap<String, DeclaredKind>,
     pools: HashMap<String, Vec<String>>,
-    shadowed: HashSet<String>,
+    shadowed: HashMap<String, HashSet<String>>,
 }
 
 /// A declaration or custom remote whose unqualified name matches a builtin makes
-/// that builtin's spelling ambiguous at every use site.
+/// that builtin's spelling ambiguous at every use site in its crate.
 fn shadowed_builtin(fragment: &SourceFragment, id: &str) -> Option<String> {
     let name = match fragment {
         SourceFragment::Record(_) | SourceFragment::Enum(_) | SourceFragment::Class(_) => {
@@ -580,8 +584,9 @@ fn resolve_fragment(
     fragment: &mut SourceFragment,
     slots: &[TypeNode],
     declared: &Declared,
+    krate: &str,
 ) -> Result<(), SourceFragmentError> {
-    let mut resolve = |expr: &mut TypeExpr| resolve_expr(expr, slots, declared);
+    let mut resolve = |expr: &mut TypeExpr| resolve_expr(expr, slots, declared, krate);
     match fragment {
         SourceFragment::Record(def) => {
             refuse_primitive_field_slots(&def.fields, slots)?;
@@ -695,6 +700,7 @@ fn resolve_expr(
     expr: &mut TypeExpr,
     slots: &[TypeNode],
     declared: &Declared,
+    krate: &str,
 ) -> Result<(), SourceFragmentError> {
     if let TypeExpr::Record { id, path } = expr
         && let Some(index) = id.as_str().strip_prefix(SLOT_ID_PREFIX)
@@ -729,25 +735,29 @@ fn resolve_expr(
         | TypeExpr::Arc(inner)
         | TypeExpr::Vec(inner)
         | TypeExpr::Slice(inner)
-        | TypeExpr::Option(inner) => resolve_expr(inner, slots, declared),
+        | TypeExpr::Option(inner) => resolve_expr(inner, slots, declared, krate),
         TypeExpr::Result { ok, err } => {
-            resolve_expr(ok, slots, declared)?;
-            resolve_expr(err, slots, declared)
+            resolve_expr(ok, slots, declared, krate)?;
+            resolve_expr(err, slots, declared, krate)
         }
         TypeExpr::Map { key, value, .. } => {
-            resolve_expr(key, slots, declared)?;
-            resolve_expr(value, slots, declared)
+            resolve_expr(key, slots, declared, krate)?;
+            resolve_expr(value, slots, declared, krate)
         }
         TypeExpr::Tuple(elements) => {
             for element in elements {
-                resolve_expr(element, slots, declared)?;
+                resolve_expr(element, slots, declared, krate)?;
             }
             Ok(())
         }
-        TypeExpr::FnPtr(signature) => resolve_fn_sig(signature, slots, declared),
+        TypeExpr::FnPtr(signature) => resolve_fn_sig(signature, slots, declared, krate),
         TypeExpr::Builtin(builtin) => {
             let name = builtin.type_id();
-            if declared.shadowed.contains(name) {
+            if declared
+                .shadowed
+                .get(krate)
+                .is_some_and(|names| names.contains(name))
+            {
                 return Err(SourceFragmentError::ShadowedBuiltin {
                     name: name.to_owned(),
                 });
@@ -757,7 +767,7 @@ fn resolve_expr(
         TypeExpr::Dyn(bounds) | TypeExpr::ImplTrait(bounds) => {
             match &mut bounds.base {
                 boltffi_ast::BaseTrait::Function(function_trait) => {
-                    resolve_fn_sig(&mut function_trait.signature, slots, declared)?;
+                    resolve_fn_sig(&mut function_trait.signature, slots, declared, krate)?;
                 }
                 boltffi_ast::BaseTrait::Named { id, .. } => {
                     if let Some(index) = id.as_str().strip_prefix(SLOT_ID_PREFIX) {
@@ -800,12 +810,13 @@ fn resolve_fn_sig(
     signature: &mut boltffi_ast::FnSig,
     slots: &[TypeNode],
     declared: &Declared,
+    krate: &str,
 ) -> Result<(), SourceFragmentError> {
     for parameter in &mut signature.parameters {
-        resolve_expr(parameter, slots, declared)?;
+        resolve_expr(parameter, slots, declared, krate)?;
     }
     if let ReturnDef::Value(expr) = &mut signature.returns {
-        resolve_expr(expr, slots, declared)?;
+        resolve_expr(expr, slots, declared, krate)?;
     }
     Ok(())
 }
@@ -994,8 +1005,7 @@ pub enum SourceFragmentError {
     },
     /// A builtin-named leaf collides with a same-named declaration or custom remote.
     ///
-    /// Spelling cannot tell the two apart at a use site; the whole-crate scan can,
-    /// so consumers fall back to the legacy path.
+    /// Spelling cannot tell the two apart at a use site in the declaring crate.
     ShadowedBuiltin {
         /// The contested builtin name.
         name: String,
@@ -1321,6 +1331,23 @@ mod tests {
                 SourceFragmentError::ShadowedBuiltin { name } if name == "Duration"
             ));
         }
+    }
+
+    #[test]
+    fn a_custom_remote_in_another_crate_leaves_the_builtin_alone() {
+        let mut custom = custom_with_remote(&["std", "time", "Duration"]);
+        custom.module = "dependency::customs".to_owned();
+
+        let contract = aggregate_records(
+            &[custom, duration_field_record()],
+            PackageInfo::new("demo", None),
+        )
+        .expect("a dependency's remote does not shadow the builtin in this crate");
+
+        assert!(matches!(
+            contract.records[0].fields[0].type_expr,
+            TypeExpr::Builtin(BuiltinType::Duration)
+        ));
     }
 
     #[test]
