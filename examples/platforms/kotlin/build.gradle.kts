@@ -53,8 +53,10 @@ val generateKotlinBindings = tasks.register<Exec>("generateKotlinBindings") {
         "-p",
         "boltffi_cli",
         "--",
+        // Transparent variants render for kotlin and python only, so the demo
+        // keeps them behind a feature the other targets never enable.
         "--cargo-arg=--features",
-        "--cargo-arg=async-initializers",
+        "--cargo-arg=async-initializers,transparent-demo",
         "generate",
         "kotlin",
         "--experimental",
@@ -63,7 +65,7 @@ val generateKotlinBindings = tasks.register<Exec>("generateKotlinBindings") {
 
 val buildDemoLibrary = tasks.register<Exec>("buildDemoLibrary") {
     workingDir = demoDir
-    commandLine("cargo", "build", "-q", "--features", "async-initializers")
+    commandLine("cargo", "build", "-q", "--features", "async-initializers,transparent-demo")
     environment("BOLTFFI_BINDING_EXPANSION", "1")
     environment("BOLTFFI_BINDING_EXPANSION_ROOT", demoDir.absolutePath)
     environment("BOLTFFI_BINDING_EXPANSION_SOURCE", demoSource.absolutePath)
