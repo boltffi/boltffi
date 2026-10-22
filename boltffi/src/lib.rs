@@ -32,7 +32,7 @@ pub use boltffi_core::{
     ArcFromCallbackHandle, BoxFromCallbackHandle, CallbackForeignType, CallbackHandle,
     CustomFfiConvertible, CustomTypeConversionError, EventSubscription, FfiType, InternedString,
     InternedStringPool, InternedStringRepr, StreamProducer, UnexpectedFfiCallbackError, custom_ffi,
-    custom_type, data, default, error, export, ffi_stream, name, skip,
+    custom_type, data, default, error, export, ffi_stream, name, scaffolding, skip,
 };
 
 /// Defines a static interned-string pool.
@@ -60,17 +60,36 @@ pub use boltffi_core::{
 /// ```
 pub use boltffi_core::interned_string_pool;
 
+/// Keeps a source record in bindgen's metadata build and drops it from every other build,
+/// so records never reach a shipped binary.
+#[cfg(boltffi_source_records)]
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __source_record {
+    ($($record:tt)*) => { $($record)* };
+}
+
+#[cfg(not(boltffi_source_records))]
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __source_record {
+    ($($record:tt)*) => {};
+}
+
 #[doc(hidden)]
 pub mod __private {
+    pub use crate::__source_record as source_record;
+    pub use boltffi_core::capture;
     pub use boltffi_core::{
         ArcFromCallbackHandle, AsyncCallback, AsyncCallbackString, AsyncCallbackVoid,
-        BoxFromCallbackHandle, CallbackForeignType, CallbackHandle, EventSubscription, FfiBuf,
-        FfiSpan, FfiStatus, ForeignCall, InternedString, InternedStringPool, InternedStringRepr,
-        NativeCallbackOwner, Passable, RustFutureContinuationCallback, RustFutureHandle,
+        BoxFromCallbackHandle, CallbackForeignType, CallbackHandle, CallbackLocalHandle,
+        CallbackMarker, ClassHandle, CustomReprTag, CustomType, EventSubscription, FfiBuf, FfiSpan,
+        FfiStatus, ForeignCall, InternedString, InternedStringPool, InternedStringRepr,
+        NativeCallbackOwner, Passable, ReprArg, RustFutureContinuationCallback, RustFutureHandle,
         StreamContinuationCallback, StreamPollResult, SubscriptionHandle,
         UnexpectedFfiCallbackError, UnexpectedFfiCallbackPayload, VecTransport, WaitResult,
-        WirePassable, rustfuture, set_last_error, set_last_error_debug, set_last_error_display,
-        set_last_error_len, take_last_error, wire,
+        WirePassable, callback_arc, callback_box, rustfuture, set_last_error, set_last_error_debug,
+        set_last_error_display, set_last_error_len, take_last_error, wire,
     };
     #[cfg(target_arch = "wasm32")]
     pub use boltffi_core::{
@@ -80,6 +99,7 @@ pub mod __private {
         rust_future_poll_sync, take_packed_bytes, take_packed_utf8_string, take_return_slot_vec,
         write_option_f64_presence, write_return_slot,
     };
+    pub use boltffi_core::{CfgEval, lane_resume};
 }
 
 #[cfg(test)]

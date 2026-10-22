@@ -18,7 +18,7 @@ class ClassOwnershipTest {
             val message = OwnedMessage("unread", drops)
             val native = Class.forName("com.boltffi.demo.Native")
             val join = native.getDeclaredMethod(
-                "boltffi_function_demo_classes_ownership_join_message",
+                "boltffi_function_demo_join_message",
                 ByteBuffer::class.java,
                 Int::class.javaPrimitiveType,
                 Long::class.javaPrimitiveType,

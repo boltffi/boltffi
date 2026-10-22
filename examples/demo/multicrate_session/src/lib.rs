@@ -1,4 +1,6 @@
 use boltffi::*;
+
+scaffolding!();
 use std::sync::Mutex;
 
 pub use demo_multicrate_model::{
@@ -30,6 +32,7 @@ pub enum SessionEvent {
     Stopped,
 }
 
+#[export]
 pub struct SessionBook {
     sessions: Mutex<Vec<ForeignSession>>,
 }

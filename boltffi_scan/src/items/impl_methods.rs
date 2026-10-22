@@ -8,13 +8,22 @@ use crate::{ModuleScope, ScanError, attributes};
 
 use super::{signature, stream};
 
-pub(super) fn class_methods(
+pub(crate) fn class_methods(
     item: &syn::ItemImpl,
     parent: &str,
     scope: &ModuleScope,
     declared_types: &DeclaredTypes,
 ) -> Result<Vec<MethodDef>, ScanError> {
     scan(item, parent, scope, declared_types, StreamMethods::Separate)
+}
+
+pub(crate) fn scan_value_methods(
+    item: &syn::ItemImpl,
+    parent: &str,
+    scope: &ModuleScope,
+    declared_types: &DeclaredTypes,
+) -> Result<Vec<MethodDef>, ScanError> {
+    value_methods(item, parent, scope, declared_types)
 }
 
 pub(super) fn value_methods(

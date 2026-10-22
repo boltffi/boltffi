@@ -115,7 +115,7 @@ class CallbackClassHandleTest {
             receiver.first!!.close()
             val native = Class.forName("com.boltffi.demo.Native")
             val deliver = native.getDeclaredMethod(
-                "boltffi_function_demo_callbacks_class_handles_deliver_message_pair",
+                "boltffi_function_demo_deliver_message_pair",
                 Long::class.javaPrimitiveType,
                 Long::class.javaPrimitiveType,
                 Boolean::class.javaPrimitiveType,

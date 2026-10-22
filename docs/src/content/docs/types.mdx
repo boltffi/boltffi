@@ -298,6 +298,7 @@ See [Records](/docs/records) for nested structs, default values, enums with data
 Classes are reference types. The object lives in Rust, and the target language holds a handle to it. Use classes for stateful objects, resources, or anything with methods.
 
 ```rust
+#[export]
 pub struct Counter { value: i32 }
 
 #[export]
@@ -708,6 +709,8 @@ BoltFFI recognizes certain standard library and common crate types and maps them
     { rust: "Vec<u8>", swift: "Data", kotlin: "ByteArray", java: "byte[]", csharp: "byte[]", typescript: "Uint8Array", c: "DemoBytesView / DemoBytes" },
   ]}
 />
+
+These types are matched by name: any signature that spells `Duration`, `SystemTime`, `Uuid` or `Url` crosses as the builtin. So your own `#[data]`, `#[error]`, class, callback or `custom_type!` can't take one of these names. Such a declaration fails to compile with ``a declared type named `Duration` shadows the builtin `Duration` ``. Rename it, for example to `Timeout`.
 
 ### Duration
 

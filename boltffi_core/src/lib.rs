@@ -5,6 +5,7 @@ extern crate self as boltffi_core;
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 pub mod callback;
+pub mod capture;
 pub mod custom_ffi;
 pub mod handle;
 pub mod interned_string;
@@ -18,7 +19,8 @@ pub mod wasm;
 pub mod wire;
 
 pub use boltffi_macros::{
-    FfiType, custom_ffi, custom_type, data, default, error, export, ffi_stream, name, skip,
+    FfiType, custom_ffi, custom_type, data, default, error, export, ffi_stream, name, scaffolding,
+    skip,
 };
 
 /// Defines a static interned-string pool.
@@ -34,13 +36,16 @@ pub use boltffi_macros::{
 /// assert_eq!(value, BrowserName::CHROME);
 /// ```
 pub use boltffi_macros::interned_string_pool;
+#[doc(hidden)]
+pub use boltffi_macros::{CfgEval, lane_resume};
 #[cfg(target_arch = "wasm32")]
 pub use callback::WasmCallbackOwner;
 pub use callback::{
     ArcFromCallbackHandle, BoxFromCallbackHandle, CallbackForeignType, CallbackHandle,
-    NativeCallbackOwner,
+    CallbackLocalHandle, CallbackMarker, ClassHandle, NativeCallbackOwner, callback_arc,
+    callback_box,
 };
-pub use custom_ffi::CustomFfiConvertible;
+pub use custom_ffi::{CustomFfiConvertible, CustomReprTag, CustomType, ReprArg};
 pub use handle::HandleBox;
 pub use interned_string::{InternedString, InternedStringPool, InternedStringRepr};
 pub use passable::{Passable, VecTransport, WirePassable};

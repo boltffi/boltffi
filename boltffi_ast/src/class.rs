@@ -21,12 +21,16 @@ pub struct ClassDef {
     #[serde(default)]
     pub thread_safety: ClassThreadSafety,
     /// User attributes preserved from the class declaration.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub user_attrs: Vec<UserAttr>,
     /// Documentation attached to the class.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub doc: Option<DocComment>,
     /// Deprecation metadata attached to the class.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub deprecated: Option<DeprecationInfo>,
     /// Visibility and source location for diagnostics.
+    #[serde(default, skip_serializing_if = "Source::is_exported")]
     pub source: Source,
     /// Span available during macro expansion.
     #[serde(default, skip_serializing, skip_deserializing)]

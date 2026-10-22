@@ -1,4 +1,6 @@
 use boltffi::*;
+
+scaffolding!();
 use std::sync::atomic::{AtomicI32, Ordering};
 
 #[data]
@@ -61,6 +63,7 @@ impl CustomFfiConvertible for ForeignCode {
     }
 }
 
+#[export]
 pub struct ForeignCounter {
     value: AtomicI32,
 }

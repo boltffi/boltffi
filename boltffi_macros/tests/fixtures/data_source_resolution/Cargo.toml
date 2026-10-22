@@ -6,8 +6,12 @@ version = "0.0.0"
 edition = "2024"
 publish = false
 
+[lib]
+name = "source_resolution"
+
 [features]
 experimental = []
 
 [dependencies]
 boltffi = { path = "../../../../boltffi" }
+registry = { package = "stamp_registry", path = "registry" }

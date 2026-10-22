@@ -220,18 +220,17 @@ only then.
 | D5 | `custom_type!` types are written by their declared name, which aliases the remote type | A signature naming `DateTime<Utc>` has no lane, and stable Rust cannot test whether a macro exists |
 | D6 | Types named `Duration`, `SystemTime`, `Uuid` or `Url` are rejected at the declaration | Signatures spelling those names cross as the builtin |
 | D7 | Capture is always on; bindgen reads records only | A fallback is a second pipeline to keep equivalent |
-| D8 | A class's `#[export] impl` sits in the struct's module, and names the class | The class lane is defined beside the impl and must resolve wherever the struct does. The impl is all the macro sees, so `impl Motor` for a renamed `struct Engine` binds `Motor` |
+| D8 | `#[export]` on the struct or enum declares a class; every `#[export] impl` block adds methods | Invocations are independent, so no impl block can tell it is the first. The type's declaration is the one site each class has: it owns the lane, handle and thread safety, and a block reaches them as `#[data(impl)]` reaches a record, from any module and through any path or alias |
 | D9 | Lanes carry one level: the type's own fragment, with its references unresolved | Lowering never reads past a named type's own shape, so this is exact, lets types refer to each other, and keeps each use linear |
 | D10 | Bindings cover the root crate and its path dependencies in full; registry and git crates only where they are reached | Matches what `main` binds, and extends it to registry types a signature uses. Two crates binding the same name are refused |
 | D11 | `generate` checks every symbol the bindings call against the built library | A dependency's wrappers live in that crate, so a crate the library never uses is not linked. The error lists the symbols and names the fix, `use <crate> as _;` |
 
 ## 5. Implementation Status
 
-The design is implemented in full on
-[`spike/per-invocation-lanes`](https://github.com/boltffi/boltffi/tree/spike/per-invocation-lanes),
-on top of the integration branch, to check that it holds before asking for this decision.
-[Per-invocation expansion](https://github.com/boltffi/boltffi/blob/spike/per-invocation-lanes/docs/contributors/per-invocation-expansion.md)
-walks one crate through every expansion there.
+The design is implemented in full, landed through
+[#944](https://github.com/boltffi/boltffi/pull/944) on the integration branch.
+[Per-invocation expansion](../docs/contributors/per-invocation-expansion.md)
+walks one crate through every expansion.
 
 - Every annotation expands per invocation. The macros read no source files, and bindgen
   reads records only.
@@ -258,21 +257,25 @@ walks one crate through every expansion there.
 ### Negative and costs
 
 - **Breaking.** Every crate adds `boltffi::scaffolding!()` at its root. Symbols drop module
-  segments (D3), `custom_type!` spelling changes (D5), class impls sit in the struct's
-  module and name the class (D8), and builtin names are refused (D6). A `macro_rules!`
-  named like a declared type collides with its lane.
+  segments (D3), `custom_type!` spelling changes (D5), every class adds `#[export]` to its
+  struct or enum (D8), and builtin names are refused (D6). A `macro_rules!` named like a declared
+  type collides with its lane.
 - **Compile time.** Against `main`, the demo builds 28% slower clean in debug, 9% faster
   in release, and 26% slower after an edit. Synthetic crates of 400 flat records or a
   200-deep record chain build 55% and 51% slower. Pre-lowered summaries (D2) are the next
   lever. Measured with [`0002-bench.py`](0002-bench.py), median of 5 runs, on `main` at
   `196a06b9` and the branch at `d1426da7`, on an Apple M4 Pro with rustc 1.95.0.
+- **Recursion depth.** Each distinct type an invocation names adds two nested expansions,
+  so one item naming 64 or more distinct types exceeds rustc's default `recursion_limit` of
+  128. rustc's error suggests raising it, and `#![recursion_limit = "256"]` fixes it.
 - **Dependencies.** A path dependency the library never uses is not linked, so `generate`
-  fails until the root names it (D11). `custom_type!` in a dependency does not compile
-  yet: its conversions are keyed to the declaring crate's tag. It fails on `main` too.
-- **Binary size.** Records grow the demo's release dylib from 1.82 to 2.43 MB. Nothing reads
-  them at runtime; stripping them in `boltffi pack` is follow-up work.
+  fails until the root names it (D11).
+- **Binary size.** Records are `#[used]` statics that survive dead-stripping, and grew the
+  demo's release dylib from 1.82 to 2.43 MB. They are now emitted only in bindgen's own
+  build, which sets `BOLTFFI_SOURCE_RECORDS`, so a shipped binary carries none.
 - **Diagnostics.** Misuse surfaces as `cannot find macro`, and a missing
-  `scaffolding!()` as ``cannot find type `__BoltffiTag` ``; both need friendlier errors.
+  `scaffolding!()` as ``cannot find type `__BoltffiTag` `` in every build; both need
+  friendlier errors.
 
 ### Not yet verified
 

@@ -1,5 +1,6 @@
 use boltffi::export;
 
+#[export]
 pub struct AsyncFactory {
     value: i32,
 }

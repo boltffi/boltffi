@@ -5,6 +5,8 @@
 //! instantiation, so it has to be declared as a wasm import; otherwise the
 //! linker looks for a definition and does not find one.
 
+boltffi::scaffolding!();
+
 use boltffi::{data, export};
 
 #[export]

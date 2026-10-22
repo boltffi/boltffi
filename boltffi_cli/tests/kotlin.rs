@@ -17,7 +17,7 @@ use boltffi_backend::{
     },
 };
 use boltffi_bindgen::{generate::Generation, metadata::BindingMetadataBuild};
-use boltffi_binding::{Bindings, Decl, Native, SerializedBindings};
+use boltffi_binding::{Bindings, Decl, Native, aggregate_records, lower, reachable_from};
 use tempfile::TempDir;
 
 struct KotlinRuntime {
@@ -38,13 +38,13 @@ impl KotlinRuntime {
             .canonicalize()
             .expect("shared Rust demo manifest");
         let cargo_target = directory.path().join("rust");
-        let envelopes = BindingMetadataBuild::new(&manifest)
+        let source = BindingMetadataBuild::new(&manifest)
             .cargo_args([format!(
                 "--target-dir={}",
                 cargo_target.join("metadata").display()
             )])
-            .read()
-            .expect("compile the shared Rust fixture and read its metadata");
+            .read_source()
+            .expect("compile the shared Rust fixture and read its source records");
         let native_build = Command::new(env!("CARGO"))
             .args(["build", "--lib", "--manifest-path"])
             .arg(&manifest)
@@ -58,16 +58,16 @@ impl KotlinRuntime {
             String::from_utf8_lossy(&native_build.stdout),
             String::from_utf8_lossy(&native_build.stderr)
         );
-        let bindings = envelopes
-            .into_iter()
-            .find_map(|envelope| match envelope.into_bindings() {
-                SerializedBindings::Native(bindings)
-                    if bindings.package().name().as_path_string() == "demo" =>
-                {
-                    Some(bindings)
-                }
-                _ => None,
-            })
+        let seeds = source
+            .source_records
+            .iter()
+            .filter(|record| record.package == source.package)
+            .filter_map(|record| record.module.split("::").next())
+            .map(str::to_owned)
+            .collect::<BTreeSet<_>>();
+        let contract = aggregate_records(&source.source_records, source.package)
+            .expect("aggregate the demo's source records");
+        let bindings = lower::<Native>(&reachable_from(contract, seeds.iter().map(String::as_str)))
             .expect("native demo bindings");
         let selected = bindings
             .decls()
@@ -450,7 +450,7 @@ fn android_bindings_load_desktop_natives_from_application_resources() {
     .expect("shared class fixture");
     fs::write(
         source_directory.join("lib.rs"),
-        format!("use boltffi::export;\n{source}"),
+        format!("use boltffi::export;\nboltffi::scaffolding!();\n{source}"),
     )
     .unwrap();
     let manifest = serde_json::json!({

@@ -52,6 +52,7 @@ pub fn lower<S: SurfaceLower>(
     index
         .traits()
         .iter()
+        .filter(|callback| index.lowers(callback.id.as_str()))
         .map(|callback| lower_one::<S>(index, ids, allocator, callback))
         .collect()
 }
@@ -124,6 +125,11 @@ fn local_protocol<S: SurfaceLower>(
         })
         .collect::<Result<Vec<_>, LowerError>>()?;
     Ok(CallbackLocalProtocol::new(handle, free, clone, methods))
+}
+
+/// Whether a callback trait gets a local protocol, read from its own methods alone.
+pub fn has_local_protocol(source: &SourceTrait) -> bool {
+    LocalCallbackProtocolSource::new(source).is_some()
 }
 
 #[derive(Clone, Copy)]

@@ -16,6 +16,14 @@ pub fn scan(
     build(marked.item(), marked.scope(), declared_types)
 }
 
+pub(crate) fn scan_item(
+    item: &syn::ItemFn,
+    scope: &ModuleScope,
+    declared_types: &DeclaredTypes,
+) -> Result<FunctionDef, ScanError> {
+    build(item, scope, declared_types)
+}
+
 fn build(
     item: &syn::ItemFn,
     scope: &ModuleScope,

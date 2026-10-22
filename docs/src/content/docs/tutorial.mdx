@@ -40,6 +40,9 @@ Create `src/lib.rs`:
 use boltffi::*;
 use std::sync::atomic::{AtomicI64, Ordering};
 
+boltffi::scaffolding!();
+
+#[export]
 pub struct Counter {
     value: AtomicI64,
 }
@@ -173,11 +176,14 @@ Extend the counter to reject negative values:
 use boltffi::*;
 use std::sync::atomic::{AtomicI64, Ordering};
 
+boltffi::scaffolding!();
+
 #[error]
 pub struct CounterError {
     pub message: String,
 }
 
+#[export]
 pub struct Counter {
     value: AtomicI64,
     min: i64,
@@ -268,8 +274,11 @@ Make the counter persist to a file asynchronously:
 ```rust
 use boltffi::*;
 use std::sync::atomic::{AtomicI64, Ordering};
+
+boltffi::scaffolding!();
 use std::path::PathBuf;
 
+#[export]
 pub struct PersistentCounter {
     value: AtomicI64,
     path: PathBuf,

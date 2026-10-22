@@ -122,7 +122,8 @@ Methods on classes can be async. The object reference is captured along with any
 
 <CodeComparison
   title=""
-  rust={`pub struct Database {
+  rust={`#[export]
+pub struct Database {
     connection: Connection,
 }
 

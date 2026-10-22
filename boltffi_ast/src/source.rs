@@ -78,6 +78,12 @@ pub struct Source {
     pub span: Option<SourceSpan>,
 }
 
+impl Default for Source {
+    fn default() -> Self {
+        Self::exported()
+    }
+}
+
 impl Source {
     /// Creates source metadata for an exported AST node.
     ///
@@ -92,6 +98,11 @@ impl Source {
             visibility: Visibility::Public,
             span: None,
         }
+    }
+
+    /// Whether the visibility is public, the default that serialized metadata omits.
+    pub fn is_exported(&self) -> bool {
+        self.visibility == Visibility::Public
     }
 
     /// Builds source metadata from visibility and an optional span.

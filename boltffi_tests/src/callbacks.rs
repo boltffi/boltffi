@@ -266,6 +266,7 @@ pub async fn invoke_async_multi_impl(
     callback.load(id).await + callback.compute(a, b).await
 }
 
+#[export]
 pub struct SyncProcessor {
     multiplier: i32,
 }
@@ -301,6 +302,7 @@ impl SyncProcessor {
     }
 }
 
+#[export]
 pub struct AsyncProcessor {
     offset: u64,
 }

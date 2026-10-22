@@ -1,0 +1,833 @@
+//! Scans one macro invocation's item without whole-crate knowledge.
+//!
+//! Ids come out as `$self::Name` placeholders and every named type reference becomes a
+//! `$slot:N` leaf paired with the written path in [`CapturedItem::slots`], for the macro
+//! to project through the compiler at the invocation site.
+
+use boltffi_ast::{
+    ClassDef, ClassId, ConstantDef, ConstantOwner, CustomTypeDef, DocComment, EnumDef, FunctionDef,
+    MethodDef, RecordDef, RecordId, StreamDef, TraitDef, TypeExpr,
+};
+
+use crate::declared_types::DeclaredTypes;
+use crate::items::class::ClassDeclaration;
+use crate::path::{ModulePath, ModuleScope};
+use crate::{ScanError, items};
+
+/// One deferred reference, in the form the record emitter projects it through.
+pub enum SlotSource {
+    /// A type whose descriptor comes from its `TypeDesc` impl.
+    Type(Box<syn::Type>),
+    /// A trait bound whose descriptor is the value-namespace const the trait's
+    /// definition site emits under the trait's own name.
+    TraitValue(syn::Path),
+}
+
+impl quote::ToTokens for SlotSource {
+    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        match self {
+            Self::Type(ty) => ty.to_tokens(tokens),
+            Self::TraitValue(path) => path.to_tokens(tokens),
+        }
+    }
+}
+
+/// One item scanned in deferred-resolution mode.
+pub struct CapturedItem<Def> {
+    /// The declaration with placeholder ids and slot leaves.
+    pub def: Def,
+    /// Written references, in slot-index order.
+    pub slots: Vec<SlotSource>,
+}
+
+/// Captures a `#[data]` struct as a record definition.
+pub fn capture_struct(item: &syn::ItemStruct) -> Result<CapturedItem<RecordDef>, ScanError> {
+    captured(|scope, declared_types| items::record::scan_item(item, scope, declared_types))
+}
+
+/// Captures a `#[data]` enum as an enum definition.
+pub fn capture_enum(item: &syn::ItemEnum) -> Result<CapturedItem<EnumDef>, ScanError> {
+    captured(|scope, declared_types| items::enumeration::scan_item(item, scope, declared_types))
+}
+
+/// Captures an `#[error]` struct as a record definition carrying the error marker.
+pub fn capture_error_struct(item: &syn::ItemStruct) -> Result<CapturedItem<RecordDef>, ScanError> {
+    let mut captured = capture_struct(item)?;
+    crate::marker::Marker::Error.append_value_attrs(&mut captured.def.user_attrs);
+    Ok(captured)
+}
+
+/// Captures an `#[error]` enum as an enum definition carrying the error marker.
+pub fn capture_error_enum(item: &syn::ItemEnum) -> Result<CapturedItem<EnumDef>, ScanError> {
+    let mut captured = capture_enum(item)?;
+    crate::marker::Marker::Error.append_value_attrs(&mut captured.def.user_attrs);
+    Ok(captured)
+}
+
+/// Captures an `#[export]` free function as a function definition.
+pub fn capture_function(item: &syn::ItemFn) -> Result<CapturedItem<FunctionDef>, ScanError> {
+    captured(|scope, declared_types| items::function::scan_item(item, scope, declared_types))
+}
+
+/// Captures an `#[export]` struct or enum as the class it declares, without members.
+///
+/// The `marker_args` parameter is the export marker's argument tokens, which carry the
+/// class thread-safety choice.
+pub fn capture_class(
+    declaration: ClassDeclaration<'_>,
+    marker_args: proc_macro2::TokenStream,
+) -> Result<CapturedItem<ClassDef>, ScanError> {
+    let thread_safety = crate::marker::export_marker_from_args(marker_args)?.class_thread_safety();
+    captured(|scope, declared_types| {
+        items::class::scan_declaration(declaration, scope, declared_types, thread_safety)
+    })
+}
+
+/// Captures an `#[export]` constant as a constant definition.
+pub fn capture_constant(item: &syn::ItemConst) -> Result<CapturedItem<ConstantDef>, ScanError> {
+    captured(|scope, declared_types| items::constant::scan_item(item, scope, declared_types))
+}
+
+/// Captures an exported callback trait as a trait definition.
+pub fn capture_trait(item: &syn::ItemTrait) -> Result<CapturedItem<TraitDef>, ScanError> {
+    captured(|scope, declared_types| items::callback::scan_item(item, scope, declared_types))
+}
+
+/// Captures a `custom_type!` invocation's spec tokens as a custom type definition.
+pub fn capture_custom(
+    tokens: proc_macro2::TokenStream,
+) -> Result<CapturedItem<CustomTypeDef>, ScanError> {
+    captured(|scope, declared_types| {
+        items::custom_type::scan_macro_tokens(tokens.clone(), scope, declared_types)
+    })
+}
+
+/// Captures a `#[custom_ffi]` trait impl as a custom type definition.
+pub fn capture_custom_ffi(item: &syn::ItemImpl) -> Result<CapturedItem<CustomTypeDef>, ScanError> {
+    captured(|scope, declared_types| {
+        items::custom_type::scan_trait_impl_item(item, scope, declared_types)
+    })
+}
+
+/// One `interned_string_pool!` declaration, captured from its invocation tokens.
+pub struct CapturedPool {
+    /// The pool type's declared name.
+    pub name: String,
+    /// Static values addressable by wire id, in declaration order.
+    pub values: Vec<String>,
+}
+
+/// Captures an `interned_string_pool!` invocation's declaration tokens.
+pub fn capture_interned_string_pool(
+    tokens: proc_macro2::TokenStream,
+) -> Result<CapturedPool, ScanError> {
+    let spec = items::interned_string_pool::Spec::parse_tokens(tokens)?;
+    Ok(CapturedPool {
+        name: spec.name().to_string(),
+        values: spec.values().to_vec(),
+    })
+}
+
+/// Methods captured from one `#[data(impl)]` or `#[export] impl` block, targeting a
+/// slot-deferred type.
+pub struct CapturedMethods {
+    /// The impl target as a slot-deferred type expression.
+    pub target: TypeExpr,
+    /// The impl target's written spelling, for stable dedup keys.
+    pub spelling: String,
+    /// The block's methods, with ids nested under the target's slot placeholder.
+    pub methods: Vec<MethodDef>,
+    /// The block's associated constants, with ids nested under the target's slot
+    /// placeholder and a provisional owner replaced when the target resolves.
+    pub constants: Vec<ConstantDef>,
+    /// The block's `#[ffi_stream]` methods, owned by the target's slot placeholder.
+    pub streams: Vec<StreamDef>,
+    /// A class block's doc comment, which documents a class whose struct has none.
+    pub doc: Option<DocComment>,
+    /// Written references, in slot-index order.
+    pub slots: Vec<SlotSource>,
+}
+
+/// Captures a `#[data(impl)]` methods block against its slot-deferred target.
+pub fn capture_methods(item: &syn::ItemImpl) -> Result<CapturedMethods, ScanError> {
+    methods_block(item, MethodsTarget::Data)
+}
+
+/// Captures an `#[export] impl` block against its slot-deferred class.
+pub fn capture_class_methods(item: &syn::ItemImpl) -> Result<CapturedMethods, ScanError> {
+    methods_block(item, MethodsTarget::Class)
+}
+
+#[derive(Clone, Copy)]
+enum MethodsTarget {
+    Data,
+    Class,
+}
+
+fn methods_block(item: &syn::ItemImpl, kind: MethodsTarget) -> Result<CapturedMethods, ScanError> {
+    if let MethodsTarget::Class = kind {
+        crate::impl_target::Target::class(item)?;
+    }
+    let scope = ModuleScope::with_spans(ModulePath::root("$self"), &[], None);
+    let mut declared_types = DeclaredTypes::deferred();
+    let scanner = crate::type_expr::Scanner::new(&declared_types, &scope);
+    let target = scanner.scan(&item.self_ty)?;
+    let parent = match &target {
+        TypeExpr::Record { id, .. } => id.as_str().to_owned(),
+        _ => return Err(ScanError::unsupported_type(&item.self_ty)),
+    };
+    let (methods, streams, doc) = match kind {
+        MethodsTarget::Data => (
+            items::impl_methods::scan_value_methods(item, &parent, &scope, &declared_types)?,
+            Vec::new(),
+            None,
+        ),
+        MethodsTarget::Class => (
+            items::impl_methods::class_methods(item, &parent, &scope, &declared_types)?,
+            items::stream::scan_owned(
+                item,
+                &ClassId::new(parent.clone()),
+                &scope,
+                &declared_types,
+            )?,
+            crate::attributes::Attributes::new(&item.attrs, &scanner).doc(),
+        ),
+    };
+    let owner = ConstantOwner::Record(RecordId::new(parent));
+    let constants =
+        items::constant::scan_associated_in_impl(item, &owner, &scope, &declared_types)?;
+    let spelling = crate::spelling::path(&match &*item.self_ty {
+        syn::Type::Path(path) => path.path.clone(),
+        _ => return Err(ScanError::unsupported_type(&item.self_ty)),
+    });
+    Ok(CapturedMethods {
+        target,
+        spelling,
+        methods,
+        constants,
+        streams,
+        doc,
+        slots: declared_types.take_slots(),
+    })
+}
+
+fn captured<Def>(
+    scan: impl FnOnce(&ModuleScope, &DeclaredTypes) -> Result<Def, ScanError>,
+) -> Result<CapturedItem<Def>, ScanError> {
+    let scope = ModuleScope::with_spans(ModulePath::root("$self"), &[], None);
+    let mut declared_types = DeclaredTypes::deferred();
+    let def = scan(&scope, &declared_types)?;
+    Ok(CapturedItem {
+        def,
+        slots: declared_types.take_slots(),
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use boltffi_ast::{ReturnDef, TypeExpr};
+    use quote::ToTokens;
+
+    use super::*;
+
+    #[test]
+    fn captures_a_struct_with_deferred_references() {
+        let item: syn::ItemStruct = syn::parse_quote! {
+            pub struct Route {
+                pub start: Point,
+                pub stops: Vec<geometry::Point>,
+                pub label: String,
+            }
+        };
+
+        let captured = capture_struct(&item).expect("struct captures");
+
+        assert_eq!(captured.def.id.as_str(), "$self::Route");
+        assert_eq!(
+            captured.slots.len(),
+            2,
+            "each distinct written path gets one slot"
+        );
+        assert_eq!(
+            captured.slots[0].to_token_stream().to_string(),
+            "Point",
+            "slots keep the written spelling"
+        );
+        assert_eq!(
+            captured.slots[1].to_token_stream().to_string(),
+            "geometry :: Point"
+        );
+        assert!(
+            matches!(
+                &captured.def.fields[0].type_expr,
+                TypeExpr::Record { id, .. } if id.as_str() == "$slot:0"
+            ),
+            "named references defer to their slot"
+        );
+        assert!(
+            matches!(
+                &captured.def.fields[1].type_expr,
+                TypeExpr::Vec(inner)
+                    if matches!(inner.as_ref(), TypeExpr::Record { id, .. } if id.as_str() == "$slot:1")
+            ),
+            "container spellings stay structural around the slot"
+        );
+        assert!(
+            matches!(&captured.def.fields[2].type_expr, TypeExpr::String),
+            "standard leaves never take a slot"
+        );
+    }
+
+    #[test]
+    fn captures_trait_bounds_as_value_namespace_slots() {
+        let item: syn::ItemFn = syn::parse_quote! {
+            pub fn apply(callback: impl ValueCallback, boxed: Box<dyn ValueCallback + Send>) -> i32 {
+                0
+            }
+        };
+
+        let captured = capture_function(&item).expect("function captures");
+
+        assert_eq!(
+            captured.slots.len(),
+            1,
+            "impl and dyn references to one trait share a slot"
+        );
+        assert!(
+            matches!(&captured.slots[0], SlotSource::TraitValue(path)
+                if path.to_token_stream().to_string() == "ValueCallback"),
+            "trait slots reference the descriptor const by the written path"
+        );
+        assert!(
+            matches!(
+                &captured.def.parameters[0].type_expr,
+                TypeExpr::ImplTrait(bounds)
+                    if matches!(
+                        &bounds.base,
+                        boltffi_ast::BaseTrait::Named { id, .. } if id.as_str() == "$slot:0"
+                    )
+            ),
+            "the impl-Trait base defers to the trait slot"
+        );
+    }
+
+    #[test]
+    fn captures_generic_remote_paths_as_whole_type_slots() {
+        let item: syn::ItemFn = syn::parse_quote! {
+            pub fn width(span: Range<u32>) -> u32 {
+                0
+            }
+        };
+
+        let captured = capture_function(&item).expect("function captures");
+
+        assert_eq!(captured.slots.len(), 1);
+        assert!(
+            matches!(&captured.slots[0], SlotSource::Type(ty)
+                if ty.to_token_stream().to_string() == "Range < u32 >"),
+            "the generic path defers whole, compiler-resolved at the custom's impl"
+        );
+        assert!(
+            matches!(
+                &captured.def.parameters[0].type_expr,
+                TypeExpr::Record { id, path }
+                    if id.as_str() == "$slot:0" && path.last().is_some_and(|segment| segment.name.as_str() == "Range")
+            ),
+            "the provisional leaf carries the argument-less written path"
+        );
+    }
+
+    #[test]
+    fn captures_repeated_references_into_one_slot() {
+        let item: syn::ItemStruct = syn::parse_quote! {
+            pub struct Segment {
+                pub from: Point,
+                pub to: Point,
+            }
+        };
+
+        let captured = capture_struct(&item).expect("struct captures");
+
+        assert_eq!(captured.slots.len(), 1, "identical spellings share a slot");
+        assert!(
+            matches!(
+                &captured.def.fields[1].type_expr,
+                TypeExpr::Record { id, .. } if id.as_str() == "$slot:0"
+            ),
+            "the second reference reuses the first slot"
+        );
+    }
+
+    #[test]
+    fn captures_an_enum_with_payload_references() {
+        let item: syn::ItemEnum = syn::parse_quote! {
+            pub enum Shape {
+                Empty,
+                At(Point),
+            }
+        };
+
+        let captured = capture_enum(&item).expect("enum captures");
+
+        assert_eq!(captured.def.id.as_str(), "$self::Shape");
+        assert_eq!(captured.slots.len(), 1);
+    }
+
+    #[test]
+    fn captures_error_items_with_the_error_marker() {
+        let item: syn::ItemEnum = syn::parse_quote! {
+            pub enum MathError {
+                DivisionByZero,
+            }
+        };
+
+        let captured = capture_error_enum(&item).expect("error enum captures");
+
+        assert!(
+            captured.def.user_attrs.iter().any(|attr| {
+                attr.path
+                    .last()
+                    .is_some_and(|segment| segment.name.as_str() == "error")
+            }),
+            "the error marker rides as a user attr"
+        );
+    }
+
+    #[test]
+    fn captures_a_function_signature() {
+        let item: syn::ItemFn = syn::parse_quote! {
+            pub fn nearest(route: Route, count: u32) -> Option<Point> {
+                unimplemented!()
+            }
+        };
+
+        let captured = capture_function(&item).expect("function captures");
+
+        assert_eq!(captured.def.id.as_str(), "$self::nearest");
+        assert_eq!(captured.slots.len(), 2, "Route and Point defer");
+        assert!(
+            matches!(
+                &captured.def.returns,
+                ReturnDef::Value(TypeExpr::Option(inner))
+                    if matches!(inner.as_ref(), TypeExpr::Record { id, .. } if id.as_str() == "$slot:1")
+            ),
+            "the return type defers through the option"
+        );
+    }
+
+    #[test]
+    fn captures_a_class_from_its_struct_without_members() {
+        let item: syn::ItemStruct = syn::parse_quote! {
+            /// Counts things.
+            pub struct Counter {
+                value: std::sync::atomic::AtomicI32,
+            }
+        };
+
+        let captured = capture_class(
+            ClassDeclaration::Struct(&item),
+            proc_macro2::TokenStream::new(),
+        )
+        .expect("class struct captures");
+
+        assert_eq!(captured.def.id.as_str(), "$self::Counter");
+        assert!(
+            captured.def.methods.is_empty(),
+            "members come from the impl blocks"
+        );
+        assert!(
+            captured.slots.is_empty(),
+            "private fields never cross, so they take no slots"
+        );
+        assert_eq!(
+            captured.def.doc.as_ref().map(|doc| doc.as_str()),
+            Some("Counts things.")
+        );
+        assert_eq!(
+            captured.def.thread_safety,
+            boltffi_ast::ClassThreadSafety::default()
+        );
+    }
+
+    #[test]
+    fn captures_a_class_from_its_enum() {
+        let item: syn::ItemEnum = syn::parse_quote! {
+            /// Runs or idles.
+            pub enum Engine {
+                Idle,
+                Running(u32),
+            }
+        };
+
+        let captured = capture_class(
+            ClassDeclaration::Enum(&item),
+            quote::quote!(single_threaded),
+        )
+        .expect("class enum captures");
+
+        assert_eq!(captured.def.id.as_str(), "$self::Engine");
+        assert!(
+            captured.slots.is_empty(),
+            "variants stay in Rust, so they take no slots"
+        );
+        assert_eq!(
+            captured.def.doc.as_ref().map(|doc| doc.as_str()),
+            Some("Runs or idles.")
+        );
+        assert_eq!(
+            captured.def.thread_safety,
+            boltffi_ast::ClassThreadSafety::UnsafeSingleThreaded
+        );
+    }
+
+    #[test]
+    fn captures_single_threaded_class_thread_safety() {
+        let item: syn::ItemStruct = syn::parse_quote! {
+            pub struct Counter;
+        };
+
+        let captured = capture_class(
+            ClassDeclaration::Struct(&item),
+            quote::quote!(single_threaded),
+        )
+        .expect("class struct captures");
+
+        assert_eq!(
+            captured.def.thread_safety,
+            boltffi_ast::ClassThreadSafety::UnsafeSingleThreaded,
+            "the export marker's thread-safety choice rides the fragment"
+        );
+    }
+
+    #[test]
+    fn captures_stream_methods_with_deferred_item_types() {
+        let item: syn::ItemImpl = syn::parse_quote! {
+            impl Engine {
+                pub fn start(&self) {}
+
+                #[ffi_stream(item = Point, mode = "batch")]
+                pub fn points(&self) -> Arc<EventSubscription<Point>> {
+                    unimplemented!()
+                }
+            }
+        };
+
+        let captured = capture_class_methods(&item).expect("class methods block captures");
+
+        assert_eq!(
+            captured.streams.len(),
+            1,
+            "only stream methods produce streams"
+        );
+        assert_eq!(captured.streams[0].id.as_str(), "$slot:0::points");
+        assert_eq!(captured.streams[0].mode, boltffi_ast::StreamMode::Batch);
+        assert!(
+            matches!(
+                &captured.streams[0].item_type,
+                TypeExpr::Record { id, .. } if id.as_str() == "$slot:1"
+            ),
+            "the item type defers to its slot"
+        );
+        assert_eq!(
+            captured.slots.len(),
+            2,
+            "the class and the item take slots, the runtime wrapper types never do"
+        );
+    }
+
+    #[test]
+    fn captures_stream_methods_with_qualified_runtime_types() {
+        let item: syn::ItemImpl = syn::parse_quote! {
+            impl Engine {
+                #[ffi_stream(item = i32)]
+                pub fn values(&self) -> std::sync::Arc<boltffi::EventSubscription<i32>> {
+                    unimplemented!()
+                }
+            }
+        };
+
+        let captured = capture_class_methods(&item).expect("class methods block captures");
+
+        assert_eq!(captured.streams.len(), 1);
+        assert!(matches!(
+            &captured.streams[0].item_type,
+            TypeExpr::Primitive(_)
+        ));
+    }
+
+    #[test]
+    fn rejects_stream_methods_without_subscription_returns() {
+        let item: syn::ItemImpl = syn::parse_quote! {
+            impl Engine {
+                #[ffi_stream(item = i32)]
+                pub fn values(&self) -> i32 {
+                    unimplemented!()
+                }
+            }
+        };
+
+        assert!(
+            capture_class_methods(&item).is_err(),
+            "the subscription return shape stays required"
+        );
+    }
+
+    #[test]
+    fn captures_a_callback_trait() {
+        let item: syn::ItemTrait = syn::parse_quote! {
+            pub trait Listener {
+                fn on_event(&self, message: String);
+            }
+        };
+
+        let captured = capture_trait(&item).expect("trait captures");
+
+        assert_eq!(captured.def.id.as_str(), "$self::Listener");
+        assert_eq!(captured.def.methods.len(), 1);
+    }
+
+    #[test]
+    fn captures_associated_constants_under_the_target_placeholder() {
+        let item: syn::ItemImpl = syn::parse_quote! {
+            impl Point {
+                pub const ORIGIN: Point = Point { x: 0.0 };
+                pub const UNIT: Self = Point { x: 1.0 };
+                const PRIVATE: f64 = 0.5;
+                #[skip]
+                pub const HIDDEN: f64 = 0.25;
+
+                pub fn doubled(&self) -> Point {
+                    unimplemented!()
+                }
+            }
+        };
+
+        let captured = capture_methods(&item).expect("methods block captures");
+
+        assert_eq!(
+            captured.constants.len(),
+            2,
+            "private and skipped constants stay out"
+        );
+        assert_eq!(captured.constants[0].id.as_str(), "$slot:0::ORIGIN");
+        assert!(
+            matches!(
+                &captured.constants[0].type_expr,
+                TypeExpr::Record { id, .. } if id.as_str() == "$slot:0"
+            ),
+            "the declared type defers to the target's slot"
+        );
+        assert!(
+            matches!(&captured.constants[1].type_expr, TypeExpr::SelfType),
+            "Self stays a self type"
+        );
+    }
+
+    #[test]
+    fn captures_a_class_methods_block_under_the_target_placeholder() {
+        let item: syn::ItemImpl = syn::parse_quote! {
+            impl model::Counter {
+                pub const LIMIT: i32 = 9;
+
+                pub fn moved(&self, by: Point) -> i32 {
+                    unimplemented!()
+                }
+
+                #[ffi_stream(item = Point)]
+                pub fn changes(&self) -> Arc<EventSubscription<Point>> {
+                    unimplemented!()
+                }
+            }
+        };
+
+        let captured = capture_class_methods(&item).expect("class methods block captures");
+
+        assert_eq!(captured.spelling, "model::Counter");
+        assert_eq!(
+            captured.slots[0].to_token_stream().to_string(),
+            "model :: Counter",
+            "the class is the first slot, whatever path names it"
+        );
+        assert_eq!(captured.methods.len(), 1, "the stream is not a method");
+        assert_eq!(captured.methods[0].id.as_str(), "$slot:0::moved");
+        assert_eq!(captured.constants[0].id.as_str(), "$slot:0::LIMIT");
+        assert_eq!(captured.streams[0].id.as_str(), "$slot:0::changes");
+        assert_eq!(
+            captured.streams[0]
+                .owner
+                .as_ref()
+                .map(|owner| owner.as_str()),
+            Some("$slot:0"),
+            "the stream's owner defers to the class's slot"
+        );
+        assert!(
+            capture_methods(&item).is_err(),
+            "a data methods block takes no streams"
+        );
+    }
+
+    #[test]
+    fn captures_class_constants_under_the_class_slot() {
+        let item: syn::ItemImpl = syn::parse_quote! {
+            impl Counter {
+                pub const MAX: i32 = 9;
+
+                pub fn new() -> Self {
+                    unimplemented!()
+                }
+            }
+        };
+
+        let captured = capture_class_methods(&item).expect("class methods block captures");
+
+        assert_eq!(captured.constants.len(), 1);
+        assert_eq!(captured.constants[0].id.as_str(), "$slot:0::MAX");
+        assert!(
+            captured.constants[0].owner.is_some(),
+            "the owner defers to the class's slot until aggregation"
+        );
+    }
+
+    #[test]
+    fn captures_a_constant() {
+        let item: syn::ItemConst = syn::parse_quote! {
+            pub const LIMIT: u32 = 42;
+        };
+
+        let captured = capture_constant(&item).expect("constant captures");
+
+        assert_eq!(captured.def.id.as_str(), "$self::LIMIT");
+        assert!(captured.slots.is_empty());
+    }
+
+    #[test]
+    fn captures_an_interned_string_pool_declaration() {
+        let captured = capture_interned_string_pool(quote::quote! {
+            pub Browser {
+                CHROME = "Chrome",
+                FIREFOX = "Firefox",
+            }
+        })
+        .expect("pool captures");
+
+        assert_eq!(captured.name, "Browser");
+        assert_eq!(captured.values, ["Chrome", "Firefox"]);
+    }
+
+    #[test]
+    fn captures_interned_string_references_with_deferred_pools() {
+        let item: syn::ItemFn = syn::parse_quote! {
+            pub fn browser(name: InternedString<Browser>) -> u32 {
+                unimplemented!()
+            }
+        };
+
+        let captured = capture_function(&item).expect("function captures");
+
+        assert_eq!(captured.slots.len(), 1, "the pool reference takes the slot");
+        assert_eq!(
+            captured.slots[0].to_token_stream().to_string(),
+            "Browser",
+            "the slot holds the pool's written path, not InternedString"
+        );
+        assert!(
+            matches!(
+                &captured.def.parameters[0].type_expr,
+                TypeExpr::InternedString { pool_id, static_values, .. }
+                    if pool_id == "$slot:0" && static_values.is_empty()
+            ),
+            "the pool defers to its slot with values left for aggregation"
+        );
+    }
+
+    #[test]
+    fn rejects_generics_loudly() {
+        let item: syn::ItemStruct = syn::parse_quote! {
+            pub struct Wrapper<T> {
+                pub inner: T,
+            }
+        };
+
+        assert!(
+            capture_struct(&item).is_err(),
+            "generic items stay unsupported"
+        );
+    }
+
+    #[test]
+    fn rejects_generic_class_structs_loudly() {
+        let item: syn::ItemStruct = syn::parse_quote! {
+            pub struct Engine<T> {
+                inner: T,
+            }
+        };
+
+        assert!(
+            capture_class(
+                ClassDeclaration::Struct(&item),
+                proc_macro2::TokenStream::new()
+            )
+            .is_err(),
+            "generic classes stay unsupported"
+        );
+    }
+
+    #[test]
+    fn a_class_methods_block_carries_its_doc_and_a_data_block_does_not() {
+        let item: syn::ItemImpl = syn::parse_quote! {
+            #[doc = "Old impl docs."]
+            impl Engine {
+                pub fn start(&self) {}
+            }
+        };
+
+        assert_eq!(
+            capture_class_methods(&item)
+                .expect("class methods block captures")
+                .doc
+                .as_ref()
+                .map(|doc| doc.as_str()),
+            Some("Old impl docs.")
+        );
+        assert!(
+            capture_methods(&item)
+                .expect("data methods block captures")
+                .doc
+                .is_none(),
+            "a data type's docs stay on its struct"
+        );
+    }
+
+    #[test]
+    fn rejects_trait_and_generic_class_methods_blocks_loudly() {
+        let trait_impl: syn::ItemImpl = syn::parse_quote! {
+            impl Default for Engine {
+                fn default() -> Self {
+                    unimplemented!()
+                }
+            }
+        };
+        let generic_impl: syn::ItemImpl = syn::parse_quote! {
+            impl<'a> Engine {
+                pub fn named(&self, name: &'a str) -> u32 {
+                    unimplemented!()
+                }
+            }
+        };
+
+        assert!(
+            matches!(
+                capture_class_methods(&trait_impl),
+                Err(ScanError::UnsupportedClassImplShape { .. })
+            ),
+            "a trait impl exports nothing, so it fails instead"
+        );
+        assert!(
+            matches!(
+                capture_class_methods(&generic_impl),
+                Err(ScanError::UnsupportedGenerics { .. })
+            ),
+            "generic blocks stay unsupported"
+        );
+    }
+}

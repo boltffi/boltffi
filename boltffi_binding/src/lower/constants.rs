@@ -58,6 +58,13 @@ pub fn lower<S: SurfaceLower>(
     index
         .constants()
         .iter()
+        .filter(|constant| {
+            index.lowers(constant.id.as_str())
+                || constant
+                    .owner
+                    .as_ref()
+                    .is_some_and(|owner| index.lowers(owner.as_str()))
+        })
         .map(|constant| lower_one::<S>(index, ids, allocator, constant))
         .collect()
 }

@@ -13,6 +13,7 @@ pub struct StreamMessage {
 
 /// Publishes events to subscribers. Clients call `subscribe_values`
 /// or `subscribe_points` to get a stream, then poll for new items.
+#[export]
 pub struct EventBus {
     int_producer: StreamProducer<i32>,
     point_producer: StreamProducer<Point>,

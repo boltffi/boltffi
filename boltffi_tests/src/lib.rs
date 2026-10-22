@@ -4,14 +4,14 @@
 
 use boltffi::*;
 
+scaffolding!();
+
 #[data]
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
 pub struct FixturePoint {
     pub x: f64,
     pub y: f64,
 }
-
-pub use __boltffi_expansion::*;
 
 mod asynchronous;
 mod bytes;

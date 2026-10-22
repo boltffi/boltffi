@@ -137,7 +137,7 @@ impl<'expansion, 'lowered> NativeReturn<'expansion, 'lowered> {
         if !matches!(self.input.target, HandleTarget::Class(_)) {
             return Err(Error::UnsupportedExpansion("non-class handle return"));
         }
-        let handle = wrapper::names::Class::from_type_path(class)?.handle();
+        let handle = wrapper::names::Class::handle_of(class);
         let value = &self.input.value;
         match self.input.presence {
             HandlePresence::Required => Ok(quote! {
@@ -163,14 +163,12 @@ impl<'expansion, 'lowered> NativeReturn<'expansion, 'lowered> {
         let HandleTarget::Callback(id) = self.input.target else {
             return Err(Error::UnsupportedExpansion("non-callback handle return"));
         };
-        let declaration = self.input.expansion.callback(*id)?;
-        let local_protocol = declaration
-            .local_protocol()
-            .ok_or(Error::UnsupportedExpansion(
+        if !self.input.expansion.has_local_callback(*id) {
+            return Err(Error::UnsupportedExpansion(
                 "callback return without local callback protocol",
-            ))?;
-        let local_handle =
-            wrapper::handle::CallbackLocalPath::new(local_protocol.handle()).tokens()?;
+            ));
+        }
+        let local_handle = callback.local_handle();
         let value = &self.input.value;
         Ok(match (callback.form(), callback.presence()) {
             (rust_api::CallbackCarrier::BoxedDyn, HandlePresence::Required) => quote! {
@@ -242,7 +240,7 @@ impl<'expansion, 'lowered> WasmReturn<'expansion, 'lowered> {
         if !matches!(self.input.target, HandleTarget::Class(_)) {
             return Err(Error::UnsupportedExpansion("non-class handle return"));
         }
-        let handle = wrapper::names::Class::from_type_path(class)?.handle();
+        let handle = wrapper::names::Class::handle_of(class);
         let value = &self.input.value;
         match self.input.presence {
             HandlePresence::Required => Ok(quote! {
@@ -268,14 +266,12 @@ impl<'expansion, 'lowered> WasmReturn<'expansion, 'lowered> {
         let HandleTarget::Callback(id) = self.input.target else {
             return Err(Error::UnsupportedExpansion("non-callback handle return"));
         };
-        let declaration = self.input.expansion.callback(*id)?;
-        let local_protocol = declaration
-            .local_protocol()
-            .ok_or(Error::UnsupportedExpansion(
+        if !self.input.expansion.has_local_callback(*id) {
+            return Err(Error::UnsupportedExpansion(
                 "callback return without local callback protocol",
-            ))?;
-        let local_handle =
-            wrapper::handle::CallbackLocalPath::new(local_protocol.handle()).tokens()?;
+            ));
+        }
+        let local_handle = callback.local_handle();
         let value = &self.input.value;
         Ok(match (callback.form(), callback.presence()) {
             (rust_api::CallbackCarrier::BoxedDyn, HandlePresence::Required) => quote! {

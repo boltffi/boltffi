@@ -101,6 +101,7 @@ pub async fn async_fallible_fetch(key: i32) -> Result<String, FixtureError> {
     }
 }
 
+#[export]
 pub struct CancellableTask {
     started: Arc<AtomicBool>,
     completed: Arc<AtomicBool>,
@@ -157,6 +158,7 @@ impl CancellableTask {
     }
 }
 
+#[export]
 pub struct FallibleService {
     failure_mode: Arc<AtomicU32>,
 }

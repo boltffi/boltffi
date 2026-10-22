@@ -5,6 +5,7 @@ use demo_bench_macros::benchmark_candidate;
 
 use crate::records::blittable::DataPoint;
 
+#[export]
 pub struct SharedCounter {
     value: Mutex<i32>,
 }
@@ -54,6 +55,7 @@ impl SharedCounter {
     }
 }
 
+#[export]
 #[benchmark_candidate(object, uniffi)]
 pub struct DataStore {
     items: Mutex<Vec<DataPoint>>,
@@ -216,6 +218,7 @@ impl DataStore {
     }
 }
 
+#[export]
 #[benchmark_candidate(object, uniffi)]
 pub struct Accumulator {
     value: Mutex<i64>,

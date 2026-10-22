@@ -25,7 +25,7 @@ impl Spec {
         Self::parse_tokens(marked.item().mac.tokens.clone())
     }
 
-    fn parse_tokens(tokens: proc_macro2::TokenStream) -> Result<Self, ScanError> {
+    pub(crate) fn parse_tokens(tokens: proc_macro2::TokenStream) -> Result<Self, ScanError> {
         let parsed =
             syn::parse2::<ParsedSpec>(tokens).map_err(|err| ScanError::InvalidCustomType {
                 message: format!("invalid interned_string_pool invocation: {err}"),

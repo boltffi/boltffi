@@ -14,6 +14,15 @@ import kotlin.test.assertNull
 
 class DemoClassesAndStreamsTest {
     @Test
+    fun trafficLightMethodsSeeTheVariantBehindTheHandle() {
+        TrafficLight().use { red ->
+            demoCase("case:classes.enum_backed.traffic_light.seconds_left.should_match_on_the_variant_behind_the_handle")
+            assertEquals(0u, red.secondsLeft())
+            red.turnGreen(30u).use { green -> assertEquals(30u, green.secondsLeft()) }
+        }
+    }
+
+    @Test
     fun inventoryCounterAndMathUtilsCoverAllClassConstructorsAndMethods() {
         Inventory().use { inventory ->
             assertEquals(100u, inventory.capacity())
@@ -46,6 +55,10 @@ class DemoClassesAndStreamsTest {
             assertEquals(2, counter.get())
             counter.increment()
             assertEquals(3, counter.get())
+            demoCase("case:classes.methods.counter.decrement.should_call_a_method_declared_in_a_methods_block")
+            counter.decrement()
+            assertEquals(2, counter.get())
+            counter.increment()
             counter.add(7)
             assertEquals(10, counter.get())
             assertEquals(10, counter.tryGetPositive())

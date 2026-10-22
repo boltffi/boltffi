@@ -1,6 +1,6 @@
 ---
 title: "Classes"
-description: "Expose Rust structs as BoltFFI classes with #[export] impl blocks, including constructors, methods, ownership, thread safety, and lifecycle management."
+description: "Expose Rust structs and enums as BoltFFI classes with #[export] on the type and its impl blocks, including constructors, methods, ownership, thread safety, and lifecycle management."
 ---
 
 import CodeComparison from "../../components/CodeComparisonWrapper.astro";
@@ -14,18 +14,19 @@ BoltFFI has two ways to expose a struct: as data or as a class.
 
 Data (`#[data]`) is for plain values. A `Point { x, y }` or a `User { id, name, email }`. Data is copied when it crosses the boundary. The target language gets a struct or record with public fields. You can also attach methods, constructors, and [associated constants](/docs/constants#associated-constants) with `#[data(impl)]`. See [Records](/docs/records#methods-and-constructors).
 
-Classes (`#[export] impl`) are for objects with behavior. A `DatabaseConnection` or a `HttpClient`. The object lives in Rust, the target language holds a reference to it. Methods operate on that reference. The object is not copied - there's one instance, and both sides point to it. The exported impl may also define [associated constants](/docs/constants#associated-constants).
+Classes (`#[export]` on a struct and its impl blocks) are for objects with behavior. A `DatabaseConnection` or a `HttpClient`. The object lives in Rust, the target language holds a reference to it. Methods operate on that reference. The object is not copied - there's one instance, and both sides point to it. The exported impl may also define [associated constants](/docs/constants#associated-constants).
 
 Use data when you're passing values around. Use classes when you're managing state or resources.
 
 ## Defining a class
 
-Put `#[export]` on the impl block, not the struct. The struct stays private; only the methods you define in the impl block are exposed.
+Put `#[export]` on the struct and on the impl block. The struct declares the class and its fields stay private; only the methods in `#[export] impl` blocks are exposed.
 
 <CodeComparison
   title=""
   rust={`use std::sync::Mutex;
 
+#[export]
 pub struct Counter {
     value: Mutex<i32>,
 }
@@ -116,6 +117,67 @@ demo_counter_increment(&counter);
 printf("%d\\n", demo_counter_get(&counter));
 demo_counter_free(&counter);`}
 />
+
+### More than one impl block
+
+A class can have any number of `#[export] impl` blocks. Each adds its methods, constructors, constants and streams to the class its struct or enum declares. A block can sit in any module of the crate, above or below the struct, and name the class by any path or `use` alias.
+
+```rust
+#[export]
+pub struct Counter {
+    value: Mutex<i32>,
+}
+
+#[export]
+impl Counter {
+    pub fn new() -> Self {
+        Counter { value: Mutex::new(0) }
+    }
+}
+
+mod mutation {
+    #[export]
+    impl super::Counter {
+        pub fn increment(&self) {
+            *self.value.lock().unwrap() += 1;
+        }
+    }
+}
+```
+
+Thread safety belongs to the struct or enum that declares the class, so `#[export(single_threaded)]` goes there and an `#[export] impl` block takes no arguments. `#[deprecated]` goes there too. The class's doc comment comes from that struct or enum, or, when it has none, from the first documented `#[export] impl` block.
+
+A block cannot implement a trait or take generic parameters.
+
+### Enums as classes
+
+`#[export]` on an enum declares a class the same way. The variants stay in Rust, and the target language sees only the methods.
+
+```rust
+#[export]
+pub enum TrafficLight {
+    Red,
+    Green { seconds: u32 },
+}
+
+#[export]
+impl TrafficLight {
+    pub fn new() -> Self {
+        Self::Red
+    }
+
+    pub fn seconds_left(&self) -> u32 {
+        match self {
+            Self::Red => 0,
+            Self::Green { seconds } => *seconds,
+        }
+    }
+}
+```
+
+To pass the variants themselves across, make it a [`#[data]` enum](/docs/records#enums) instead. An enum is either one or the other.
+
+An `#[export] impl` for a struct or enum without `#[export]` fails with `` `Counter` is not an exported class ``, next to ``cannot find macro `Counter` ``.
 
 ## Constructors
 
@@ -470,6 +532,7 @@ Because the target language can call your methods from any thread at any time, B
   title=""
   rust={`use std::sync::Mutex;
 
+#[export]
 pub struct Account {
     balance: Mutex<i64>,
 }
@@ -636,6 +699,7 @@ Use `&self` instead, and move the synchronization inside your struct. `Mutex`, `
 ```rust
 use std::sync::Mutex;
 
+#[export]
 pub struct Counter {
     value: Mutex<i32>,
 }
@@ -985,6 +1049,7 @@ If your struct contains types that aren't thread-safe (like `RefCell`, `Rc`, or 
   title=""
   rust={`use std::sync::atomic::{AtomicI32, Ordering};
 
+#[export]
 pub struct SafeCounter {
     value: AtomicI32,
 }
@@ -1091,11 +1156,12 @@ But synchronization has a cost. If you control thread access in the target langu
 `#[export(single_threaded)]` disables both checks:
 
 ```rust
+#[export(single_threaded)]
 pub struct FastCounter {
     value: i32,
 }
 
-#[export(single_threaded)]
+#[export]
 impl FastCounter {
     pub fn new() -> Self {
         FastCounter { value: 0 }

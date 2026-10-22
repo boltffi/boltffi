@@ -192,6 +192,7 @@ fn generate_typescript(config: &Config, options: &GenerateOptions) -> Result<()>
 
     expansion
         .generation()
+        .triple(config.wasm_triple())
         .binding_surface(BindingMetadataSurface::Wasm32)
         .coverage_mode(CoverageMode::Partial)
         .typescript_module(config.wasm_typescript_module_name())

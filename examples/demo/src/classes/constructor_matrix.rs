@@ -5,6 +5,7 @@ use crate::records::{
     Address, Classroom, Person, Point, Polygon, SearchResult, Task, Team, UserProfile,
 };
 
+#[export]
 pub struct ConstructorCoverageMatrix {
     constructor_variant: String,
     summary: String,
