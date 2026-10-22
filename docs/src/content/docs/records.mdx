@@ -963,6 +963,120 @@ fwrite(description.ptr, 1, description.len, stdout);
 demo_string_free(&description);`}
 />
 
+### Transparent variants
+
+A variant whose payload is exactly one record or C-style enum can be marked
+`#[boltffi::transparent]`. The bindings then drop the wrapper class for that
+variant: the payload type itself becomes the variant, so reading the enum
+means one less allocation and one less field hop, and a type check against
+the payload type smart-casts directly.
+
+```rust
+#[data]
+pub struct Ping {
+    pub sequence: u32,
+    pub label: String,
+}
+
+#[data]
+pub enum Envelope {
+    Unset,
+    #[boltffi::transparent]
+    Ping(Ping),
+    Raw(String),
+}
+```
+
+In Kotlin the enum renders as a sealed interface and the payload record
+implements it; the codec lives on the companion:
+
+```kotlin
+sealed interface Envelope {
+    object Unset : Envelope
+    data class Raw(val field0: String) : Envelope
+}
+
+data class Ping(
+    val sequence: UInt,
+    val label: String
+) : Envelope
+
+when (val message = envelope) {
+    is Ping -> message.label   // the record itself, no `.value`
+    is Envelope.Raw -> message.field0
+    Envelope.Unset -> ""
+}
+```
+
+In Python the payload record inherits the enum class, so `isinstance` and
+`match` work against the record directly:
+
+```python
+match envelope:
+    case Ping(sequence=sequence, label=label): ...
+    case EnvelopeRaw(value): ...
+    case EnvelopeUnset(): ...
+```
+
+A record may be a transparent payload of several enums at once — it
+implements each enum's interface, and the codec recovers the right variant
+tag from which enum it is written through.
+
+A C-style enum payload works the same way: the enum class takes the data
+enum as a supertype, so an entry is the variant.
+
+```rust
+#[data]
+#[repr(i32)]
+pub enum Mode {
+    Fast = 0,
+    Slow = 1,
+}
+
+#[data]
+pub enum Setting {
+    Unset,
+    #[boltffi::transparent]
+    Mode(Mode),
+}
+```
+
+```kotlin
+enum class Mode(val value: Int) : Setting {
+    FAST(0),
+    SLOW(1);
+    // ...
+}
+
+val setting: Setting = Mode.FAST
+```
+
+In Python the `IntEnum` inherits the enum class (`class Mode(Setting,
+IntEnum)`), so `Mode.FAST` is a `Setting`, keeps its `int` semantics, and
+decodes back to the same member.
+
+Constraints, checked at generate time:
+
+- The payload must be exactly one record or C-style enum. Unit variants,
+  scalar and data-enum payloads, and multi-field payloads keep their wrapper
+  classes (mixing transparent and wrapped variants in one enum is fine).
+- No two transparent variants of one enum may carry the same payload type:
+  encode recovers the tag from the payload's concrete type, which a shared
+  type would make ambiguous. Note the flip side: adding a second
+  field of an existing payload type to an enum is representable only by
+  leaving the new variant wrapped.
+- Error enums (`#[error]`) cannot have transparent variants — the sealed
+  interface cannot extend `Exception`.
+
+A record containing only fixed-width primitives is a C-native class in
+Python; as a transparent payload its type is built during package import,
+with the enum classes as its bases, instead of at extension init. It is
+therefore not an attribute of the extension module itself — reach it through
+the package, as you would any other record.
+
+Transparent variants are currently supported by the Kotlin and Python
+backends; the other backends reject them at generate time.
+
 ## Methods and constructors
 
 Use `#[data(impl)]` on an `impl` block to expose constructors, instance methods, and static methods on records and enums. The generated bindings use each language's native idiom for value-type members.
