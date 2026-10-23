@@ -6,7 +6,7 @@ use boltffi_backend::target::jvm::{LibraryName, NativeLibraries};
 
 use crate::build::native_link::{NativeLinkMetadata, parse_native_static_libraries};
 use crate::build::{BindingExpansion, CargoBuildProfile, OutputCallback, run_command_streaming};
-use crate::cargo::SelectedLibrary;
+use crate::cargo::{CargoCrateType, SelectedLibrary};
 use crate::cli::{CliError, Result};
 use crate::config::Config;
 use crate::pack::PackError;
@@ -682,6 +682,16 @@ fn apple_dsym_bundle_path(path: &Path) -> PathBuf {
         .join(format!("{file_name}.dSYM"))
 }
 
+/// The crate type a JVM pack links: the staticlib when the library builds one, the
+/// cdylib otherwise.
+fn jvm_linked_crate_type(library: &SelectedLibrary) -> CargoCrateType {
+    if library.builds_staticlib() {
+        CargoCrateType::StaticLib
+    } else {
+        CargoCrateType::Cdylib
+    }
+}
+
 pub(crate) fn build_jvm_native_library(
     packaging_target: &JvmPackagingTarget,
     release: bool,
@@ -736,7 +746,9 @@ pub(crate) fn build_jvm_native_library(
         .configure_cargo_build(&mut command);
     if let Some(expansion) = binding_expansion {
         command.arg("--lib");
-        expansion.configure_rustc(&mut command)?;
+        expansion
+            .only_crate_type(jvm_linked_crate_type(&cargo_context.library))
+            .configure_rustc(&mut command)?;
     }
 
     if !run_command_streaming(&mut command, on_output.as_ref()) {
@@ -1401,7 +1413,9 @@ pub(crate) fn query_native_link_metadata(
         .toolchain
         .configure_cargo_build(&mut command);
     match binding_expansion {
-        Some(expansion) => expansion.configure_rustc(&mut command)?,
+        Some(expansion) => expansion
+            .only_crate_type(CargoCrateType::StaticLib)
+            .configure_rustc(&mut command)?,
         None => {
             command.arg("--");
         }
@@ -1477,7 +1491,9 @@ fn query_library_filenames(
 
     command.args(&cargo_context.cargo_command_args).arg("--lib");
     match binding_expansion {
-        Some(expansion) => expansion.configure_rustc(&mut command)?,
+        Some(expansion) => expansion
+            .only_crate_type(CargoCrateType::StaticLib)
+            .configure_rustc(&mut command)?,
         None => {
             command.arg("--");
         }

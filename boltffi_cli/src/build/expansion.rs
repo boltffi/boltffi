@@ -10,7 +10,7 @@ use boltffi_binding::{
     BINDING_EXPANSION_SURFACE_ENV, BINDING_METADATA_FEATURES_ENV, BindingMetadataSurface,
 };
 
-use crate::cargo::{Cargo, CargoMetadata, SelectedLibrary};
+use crate::cargo::{Cargo, CargoCrateType, CargoMetadata, SelectedLibrary};
 use crate::cli::{CliError, Result};
 use crate::config::Config;
 
@@ -24,6 +24,8 @@ pub struct BindingExpansion {
     features: Box<str>,
     toolchain_selector: Option<String>,
     surface: BindingMetadataSurface,
+    /// The one crate type rustc builds, when a pack links only that one.
+    crate_type: Option<CargoCrateType>,
 }
 
 impl BindingExpansion {
@@ -120,8 +122,29 @@ impl BindingExpansion {
 
     pub fn configure_rustc(&self, command: &mut Command) -> Result<()> {
         command.envs(self.env()?);
+        if let Some(crate_type) = &self.crate_type {
+            command
+                .arg("--crate-type")
+                .arg(String::from(crate_type.clone()));
+        }
         command.arg("--").arg("--cfg").arg(BINDING_EXPANSION_CFG);
         Ok(())
+    }
+
+    /// This expansion building only `crate_type`, the library a pack links, when the
+    /// library builds it. Without the other types rustc keeps no Rust symbols for
+    /// downstream crates, so it compiles and links what the exports reach.
+    pub(crate) fn only_crate_type(&self, crate_type: CargoCrateType) -> Self {
+        let builds = match crate_type {
+            CargoCrateType::StaticLib => self.library.builds_staticlib(),
+            CargoCrateType::Cdylib => self.library.builds_cdylib(),
+            _ => false,
+        };
+        let mut expansion = self.clone();
+        if builds {
+            expansion.crate_type = Some(crate_type);
+        }
+        expansion
     }
 
     pub fn generation(&self) -> Generation {
@@ -188,6 +211,7 @@ impl BindingExpansion {
             features,
             toolchain_selector: cargo.toolchain_selector().map(str::to_owned),
             surface,
+            crate_type: None,
         })
     }
 
@@ -331,6 +355,7 @@ impl BindingExpansion {
             features: "".into(),
             toolchain_selector: Some("+nightly".to_string()),
             surface: BindingMetadataSurface::Native,
+            crate_type: None,
         }
     }
 
@@ -384,6 +409,7 @@ mod tests {
             features: "ffi".into(),
             toolchain_selector: Some("+nightly".to_string()),
             surface: BindingMetadataSurface::Native,
+            crate_type: None,
         }
     }
 
@@ -627,6 +653,48 @@ mod tests {
                 .get_args()
                 .map(|argument| argument.to_string_lossy().into_owned())
                 .collect::<Vec<_>>(),
+            ["--", "--cfg", "boltffi_binding_expansion"]
+        );
+    }
+
+    fn rustc_args(expansion: &BindingExpansion) -> Vec<String> {
+        let mut command = Command::new("cargo");
+        expansion
+            .configure_rustc(&mut command)
+            .expect("expansion should configure command");
+        command
+            .get_args()
+            .map(|argument| argument.to_string_lossy().into_owned())
+            .collect()
+    }
+
+    #[test]
+    fn builds_only_the_linked_crate_type_the_library_has() {
+        let both = expansion().fixture_outputs(true, true);
+        assert_eq!(
+            rustc_args(&both.only_crate_type(CargoCrateType::StaticLib)),
+            [
+                "--crate-type",
+                "staticlib",
+                "--",
+                "--cfg",
+                "boltffi_binding_expansion"
+            ]
+        );
+        assert_eq!(
+            rustc_args(&both.only_crate_type(CargoCrateType::Cdylib)),
+            [
+                "--crate-type",
+                "cdylib",
+                "--",
+                "--cfg",
+                "boltffi_binding_expansion"
+            ]
+        );
+
+        let cdylib_only = expansion().fixture_outputs(false, true);
+        assert_eq!(
+            rustc_args(&cdylib_only.only_crate_type(CargoCrateType::StaticLib)),
             ["--", "--cfg", "boltffi_binding_expansion"]
         );
     }

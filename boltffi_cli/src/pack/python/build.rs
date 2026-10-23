@@ -1,6 +1,7 @@
 use std::process::Command;
 
 use crate::build::{OutputCallback, run_command_streaming};
+use crate::cargo::CargoCrateType;
 use crate::cli::{CliError, Result};
 use crate::pack::{PackError, print_cargo_line};
 use crate::reporter::Step;
@@ -86,7 +87,11 @@ impl<'a> PythonSharedLibraryBuilder<'a> {
         // for build scripts only, never for rustc, so a macro that does not get it
         // sees no active features and emits no exports for a feature-gated module.
         command.arg("--lib");
-        self.plan.expansion.configure_rustc(&mut command)?;
+        // the wheel ships the cdylib alone
+        self.plan
+            .expansion
+            .only_crate_type(CargoCrateType::Cdylib)
+            .configure_rustc(&mut command)?;
 
         Ok(command)
     }
@@ -121,8 +126,15 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(args.first().map(String::as_str), Some("rustc"));
         assert_eq!(
-            args.iter().rev().take(4).rev().cloned().collect::<Vec<_>>(),
-            vec!["--lib", "--", "--cfg", "boltffi_binding_expansion"],
+            args.iter().rev().take(6).rev().cloned().collect::<Vec<_>>(),
+            vec![
+                "--lib",
+                "--crate-type",
+                "cdylib",
+                "--",
+                "--cfg",
+                "boltffi_binding_expansion"
+            ],
         );
 
         assert!(
