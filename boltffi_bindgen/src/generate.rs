@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -800,10 +801,14 @@ impl Generation {
     }
 
     /// Writes generated output to a directory.
+    ///
+    /// Rejects duplicate generated paths before writing any files.
     pub fn write_output(
         output: GeneratedOutput,
         output_dir: &Path,
     ) -> Result<Vec<PathBuf>, GenerationError> {
+        check_duplicates(&output)?;
+
         output
             .files()
             .iter()
@@ -868,6 +873,12 @@ pub enum GenerationError {
         /// Requested target.
         target: Target,
     },
+    /// Multiple generated files target the same output path.
+    #[error("duplicate generated output path `{path}`")]
+    DuplicateOutputPath {
+        /// Conflicting generated file path.
+        path: PathBuf,
+    },
     /// A generated file could not be written to disk.
     #[error("write generated file `{path}`: {source}")]
     Write {
@@ -876,6 +887,18 @@ pub enum GenerationError {
         /// Filesystem error.
         source: std::io::Error,
     },
+}
+
+fn check_duplicates(output: &GeneratedOutput) -> Result<(), GenerationError> {
+    let mut paths = HashSet::new();
+    for file in output.files() {
+        if !paths.insert(file.path()) {
+            return Err(GenerationError::DuplicateOutputPath {
+                path: file.path().as_path().to_path_buf(),
+            });
+        }
+    }
+    Ok(())
 }
 
 fn write_file(path: &Path, contents: &str) -> Result<(), GenerationError> {
