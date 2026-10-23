@@ -145,6 +145,9 @@ impl CStyle {
 
 impl Data {
     fn new(enumeration: &DataEnumDecl<Wasm32>, context: &RenderContext<Wasm32>) -> Result<Self> {
+        if enumeration.has_transparent_variants() {
+            return Err(Enumeration::error("transparent data enum variant"));
+        }
         let (methods, diagnostics) = Function::data_enum_methods(
             enumeration.id(),
             enumeration.initializers(),

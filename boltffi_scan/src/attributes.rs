@@ -60,6 +60,18 @@ impl<'a, 'types> Attributes<'a, 'types> {
             })
     }
 
+    pub(super) fn transparent(&self) -> Result<bool, ScanError> {
+        self.attrs
+            .iter()
+            .filter(|attr| owned_name(attr) == Some("transparent"))
+            .try_fold(false, |_, attr| match &attr.meta {
+                syn::Meta::Path(_) => Ok(true),
+                _ => Err(ScanError::InvalidAttribute {
+                    attribute: spelling::attr(attr),
+                }),
+            })
+    }
+
     pub(super) fn user_attrs(&self) -> Vec<UserAttr> {
         self.attrs
             .iter()
@@ -246,6 +258,7 @@ pub fn owned_name(attribute: &syn::Attribute) -> Option<&'static str> {
         "name",
         "custom_ffi",
         "custom_type",
+        "transparent",
     ]
     .into_iter()
     .find(|owned_name| name == *owned_name)
