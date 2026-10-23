@@ -280,6 +280,17 @@ Uuid = { type = "java.util.UUID", conversion = "uuid_string" }
 - `output` (path, optional): Where `boltffi pack android` writes the `jniLibs/` folder.
   - Default: `{targets.android.output}/jniLibs`
 
+### `[targets.android.link]` (optional)
+
+How `boltffi pack android` links each ABI's JNI library.
+
+- `extra_args` (array of strings): Extra arguments for that link, e.g. `["-Wl,-z,max-page-size=16384"]`.
+  - Default: `[]`
+- `export_c_symbols` (bool): Export the library's `boltffi_*` C symbols beside its JNI entry points.
+  Off, it exports only `Java_*`, `JNI_OnLoad` and `JNI_OnUnload`, and the linker drops whatever
+  those don't reach.
+  - Default: `true`
+
 ### `[targets.android.debug_symbols]` (optional)
 
 Debug information for Android JNI libraries collected by `boltffi pack android`.

@@ -701,6 +701,10 @@ impl Config {
         &self.targets.android.link.extra_args
     }
 
+    pub fn android_export_c_symbols(&self) -> bool {
+        self.targets.android.link.export_c_symbols
+    }
+
     pub fn kotlin_class_name(&self) -> String {
         to_pascal_case(&self.package.name)
     }
@@ -2882,6 +2886,28 @@ extra_args = ["-Wl,-z,max-page-size=16384"]
             config.android_extra_link_args(),
             &["-Wl,-z,max-page-size=16384".to_string()]
         );
+    }
+
+    #[test]
+    fn android_link_exports_c_symbols_unless_turned_off() {
+        let default = parse_config(
+            r#"
+[package]
+name = "mylib"
+"#,
+        );
+        assert!(default.android_export_c_symbols());
+
+        let jni_only = parse_config(
+            r#"
+[package]
+name = "mylib"
+
+[targets.android.link]
+export_c_symbols = false
+"#,
+        );
+        assert!(!jni_only.android_export_c_symbols());
     }
 
     #[test]

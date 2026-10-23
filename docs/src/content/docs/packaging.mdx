@@ -332,6 +332,13 @@ This builds for all Android ABIs (arm64-v8a, armeabi-v7a, x86, x86_64), generate
 
 If you enable `[targets.android.debug_symbols]`, BoltFFI also writes `{crate_artifact_name}.android.symbols.zip` under `dist/android/symbols/`. That archive mirrors the `jniLibs/<abi>/` layout and includes a `symbols.json` manifest.
 
+Each JNI library also exports its `boltffi_*` C symbols, for native code that calls the library directly. When only the Kotlin bindings call it, turn that off and the linker drops the code no JNI entry point reaches:
+
+```toml
+[targets.android.link]
+export_c_symbols = false
+```
+
 For release-style packaging, BoltFFI rejects this option unless the selected Cargo profile has debuginfo enabled.
 
 ### Output Structure
