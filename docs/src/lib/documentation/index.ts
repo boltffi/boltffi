@@ -35,7 +35,7 @@ const DOCUMENTATION_SECTIONS: readonly DocumentationSection[] = [
   },
   {
     title: 'Build and package',
-    pages: ['packaging', 'c', 'configuration'],
+    pages: ['packaging', 'c', 'wasm', 'configuration'],
   },
   {
     title: 'Internals and experimental features',

@@ -1,0 +1,15 @@
+# Its own workspace: the repository root must not adopt a fixture as a member.
+[package]
+name = "wasm_getrandom_fixture"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+boltffi = { path = "../../../../boltffi", default-features = false, features = ["getrandom"] }
+getrandom = { version = "0.4", default-features = false }
+
+[workspace]
