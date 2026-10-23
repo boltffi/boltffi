@@ -7,6 +7,7 @@ mod default_value;
 mod direct_vector;
 mod documentation;
 mod enumeration;
+mod equality;
 mod field;
 mod function;
 mod jvm_invocation;
