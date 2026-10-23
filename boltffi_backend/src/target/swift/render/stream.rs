@@ -12,7 +12,10 @@ use crate::{
         codec::{ReadExpression, Reader},
         name_style::{GeneratedLocal, Name},
         primitive::SwiftPrimitive,
-        render::{Documentation, SwiftType, function::AssociatedFunction},
+        render::{
+            Documentation, SwiftType,
+            function::{AssociatedFunction, EncodedError},
+        },
         syntax::{ArgumentList, Expression, Identifier, TypeName},
     },
 };
@@ -59,6 +62,16 @@ pub struct Stream {
     free_buffer: Identifier,
     subscription_binding: Identifier,
     yielded_item_binding: Identifier,
+    failure: Option<StreamFailure>,
+}
+
+/// How a fallible stream turns its `take_error` buffer into the error it ends
+/// with.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct StreamFailure {
+    take_error: Identifier,
+    reader: Identifier,
+    error: Expression,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -140,6 +153,27 @@ impl Stream {
             free_buffer: Identifier::parse(bridge.support().buffer_free()?.name())?,
             subscription_binding: GeneratedLocal::StreamSubscription.identifier()?,
             yielded_item_binding: Identifier::parse("item")?,
+            failure: match (protocol.take_error(), declaration.error()) {
+                (Some(take_error), Some(error)) => {
+                    let reader = GeneratedLocal::ErrorReader.identifier()?;
+                    let decode = error
+                        .read()
+                        .render_with(&mut Reader::new(reader.clone(), context))
+                        .map(ReadExpression::into_expression)?;
+                    Some(StreamFailure {
+                        take_error: Identifier::parse(take_error.name())?,
+                        reader,
+                        error: EncodedError::throw_expression(error.ty(), decode)?,
+                    })
+                }
+                (None, None) => None,
+                _ => {
+                    return Err(Error::BrokenBridgeContract {
+                        bridge: SwiftHost::TARGET,
+                        invariant: "a stream error plan comes with a take_error function",
+                    });
+                }
+            },
         })
     }
 
@@ -147,10 +181,12 @@ impl Stream {
         let mut source = StreamTemplate::declaration(self).render()?;
         source.push_str("\n\n");
         let emitted = Emitted::primary(source).with_aux(self.stream_helper()?);
+        let emitted = match self.item.requires_wire_runtime() || self.failure.is_some() {
+            true => emitted.with_aux(AssociatedFunction::wire_helper()?),
+            false => emitted,
+        };
         let emitted = match self.item.requires_wire_runtime() {
-            true => emitted
-                .with_aux(AssociatedFunction::wire_helper()?)
-                .with_aux(self.stream_wire_helper()?),
+            true => emitted.with_aux(self.stream_wire_helper()?),
             false => emitted,
         };
         Ok(emitted)
@@ -173,16 +209,54 @@ impl Stream {
     }
 
     fn signature(&self) -> String {
-        match &self.delivery {
-            Delivery::Async => format!("() -> _Concurrency.AsyncStream<{}>", self.item_type()),
-            Delivery::Batch { subscription } => format!("() -> {subscription}"),
-            Delivery::Callback { cancellable } => {
-                format!(
-                    "(callback: @escaping ({}) -> Void) -> {cancellable}",
-                    self.item_type()
-                )
+        match (&self.delivery, self.failure.is_some()) {
+            (Delivery::Async, false) => {
+                format!("() -> _Concurrency.AsyncStream<{}>", self.item_type())
             }
+            (Delivery::Async, true) => format!(
+                "() -> _Concurrency.AsyncThrowingStream<{}, Swift.Error>",
+                self.item_type()
+            ),
+            (Delivery::Batch { subscription }, _) => format!("() -> {subscription}"),
+            (Delivery::Callback { cancellable }, false) => format!(
+                "(callback: @escaping ({}) -> Void) -> {cancellable}",
+                self.item_type()
+            ),
+            (Delivery::Callback { cancellable }, true) => format!(
+                "(onError: @escaping (Swift.Error) -> Void, callback: @escaping ({}) -> Void) -> {cancellable}",
+                self.item_type()
+            ),
         }
+    }
+
+    fn fallible(&self) -> bool {
+        self.failure.is_some()
+    }
+
+    /// The `takeFailure` closure of a fallible stream: the decoded error, or
+    /// `nil` for a stream that completed or was cancelled.
+    fn take_failure(&self, indent: &str) -> String {
+        let Some(failure) = &self.failure else {
+            return String::new();
+        };
+        [
+            "{ subscription in".to_owned(),
+            format!(
+                "{indent}    let buffer = {}(subscription)",
+                failure.take_error
+            ),
+            format!("{indent}    defer {{ {}(buffer) }}", self.free_buffer),
+            format!("{indent}    guard buffer.len > 0, let pointer = buffer.ptr else {{"),
+            format!("{indent}        return nil"),
+            format!("{indent}    }}"),
+            format!(
+                "{indent}    var {} = WireReader(ptr: pointer, len: Int(buffer.len))",
+                failure.reader
+            ),
+            format!("{indent}    return {}", failure.error),
+            format!("{indent}}}"),
+        ]
+        .join("\n")
     }
 
     fn body(&self, indent: &str) -> String {

@@ -27,7 +27,16 @@ pub struct ClassStream {
     pub wait_method: Identifier,
     pub unsubscribe_method: Identifier,
     pub free_method: Identifier,
+    pub failure: Option<StreamFailure>,
     uses_wire_helpers: bool,
+}
+
+/// How a fallible stream's subscription reads and raises the error it ended
+/// with.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StreamFailure {
+    pub take_error_method: Identifier,
+    pub decode: Expression,
 }
 
 impl ClassStream {
@@ -40,7 +49,16 @@ impl ClassStream {
         let symbols = stream_render::Symbols::new(declaration, Some(owner.name()))?;
         let item = StreamItem::from_plan(declaration.item(), package)?;
         let pop_batch_body = item.pop_batch_body(symbols.pop_batch()?)?;
-        let uses_wire_helpers = item.uses_wire_helpers;
+        let failure = declaration
+            .error()
+            .map(|error| {
+                Ok::<_, crate::core::Error>(StreamFailure {
+                    take_error_method: symbols.take_error()?,
+                    decode: CodecExpression::read(error.read(), package)?.into_expression(),
+                })
+            })
+            .transpose()?;
+        let uses_wire_helpers = item.uses_wire_helpers || failure.is_some();
         Ok(Self {
             documentation: Documentation::new(declaration.meta().doc()),
             python_name: Name::new(declaration.name()).function()?,
@@ -55,6 +73,7 @@ impl ClassStream {
             wait_method: symbols.wait()?,
             unsubscribe_method: symbols.unsubscribe()?,
             free_method: symbols.free()?,
+            failure,
             uses_wire_helpers,
         })
     }

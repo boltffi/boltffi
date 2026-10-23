@@ -304,7 +304,7 @@ enum ErrorConversion {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-struct EncodedError {
+pub(in crate::target::swift) struct EncodedError {
     buffer: OwnedBuffer,
     reader: Identifier,
     decode: Expression,
@@ -3607,7 +3607,10 @@ impl EncodedError {
         })
     }
 
-    fn throw_expression(ty: &TypeRef, decode: Expression) -> Result<Expression> {
+    pub(in crate::target::swift) fn throw_expression(
+        ty: &TypeRef,
+        decode: Expression,
+    ) -> Result<Expression> {
         match ty {
             TypeRef::String => Ok(Expression::call(
                 "FfiError",
