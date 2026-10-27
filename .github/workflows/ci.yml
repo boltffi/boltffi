@@ -322,7 +322,15 @@ jobs:
         working-directory: examples/platforms/wasm
       - run: cargo test -p boltffi_cli --test wasm_pack -- --ignored
       - run: cargo test -p boltffi_cli --test wasm_bindgen_cli
-      - run: npx playwright install --with-deps chromium firefox webkit
+      - name: Install Playwright system dependencies
+        working-directory: examples/platforms/wasm
+        run: |
+          for attempt in 1 2 3; do
+            sudo env "PATH=$PATH" timeout -k 30s 5m npx playwright install-deps chromium firefox webkit && exit 0
+            echo "::warning::playwright install-deps attempt $attempt failed or timed out"
+          done
+          exit 1
+      - run: npx playwright install chromium firefox webkit
         working-directory: examples/platforms/wasm
       - run: npm run test:browser
         working-directory: examples/platforms/wasm
