@@ -10,6 +10,14 @@ pub struct DartConfig {
     pub output: PathBuf,
     #[serde(default)]
     pub enabled: bool,
+    // The generated pubspec declares `resolution: workspace` by default so
+    // the package resolves against the consuming workspace root's lockfile.
+    // A package consumed through a bare path/git dependency outside any
+    // workspace must instead publish a standalone pubspec -- pub rejects a
+    // `resolution: workspace` member that is not a subdirectory of the
+    // workspace root.
+    #[serde(default)]
+    pub standalone: bool,
     #[serde(
         default,
         serialize_with = "DartConfig::serialize_native_targets",
@@ -26,6 +34,7 @@ impl Default for DartConfig {
         Self {
             output: default_dart_output(),
             enabled: false,
+            standalone: false,
             native_targets: None,
             cargo_args: Vec::new(),
         }

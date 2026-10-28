@@ -57,6 +57,22 @@ impl<'name> Name<'name> {
     }
 }
 
+pub(crate) fn cancellation_token_name<'a>(names: impl Iterator<Item = &'a str>) -> &'static str {
+    let mut primary_used = false;
+    let mut secondary_used = false;
+    for name in names {
+        primary_used |= name == "cancellationToken";
+        secondary_used |= name == "boltCancellationToken";
+    }
+    if !primary_used {
+        "cancellationToken"
+    } else if !secondary_used {
+        "boltCancellationToken"
+    } else {
+        "boltCancellationToken$"
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use boltffi_binding::NamePart;

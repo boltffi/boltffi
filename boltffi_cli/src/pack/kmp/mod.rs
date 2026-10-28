@@ -628,7 +628,7 @@ name = "workspace-member"
 
 [targets.kotlin_multiplatform]
 enabled = true
-output = "{}"
+output = '{}'
 "#,
             output_directory.display()
         ));
@@ -656,7 +656,7 @@ name = "jni"
 
 [targets.kotlin_multiplatform]
 enabled = true
-output = "{}"
+output = '{}'
 "#,
             output_directory.display()
         ));
@@ -687,7 +687,7 @@ name = "jni"
 
 [targets.kotlin_multiplatform]
 enabled = true
-output = "{}"
+output = '{}'
 "#,
             output_directory.display()
         ));
@@ -709,7 +709,7 @@ output = "{}"
         assert!(
             matches!(&error, CliError::CommandFailed { command, status: None }
                 if command.contains("KMP JNI glue includes unsupported generated header `jni.h`")
-                    && command.contains(&jni_glue.display().to_string())),
+                    && command.replace('\\', "/").contains(&jni_glue.display().to_string().replace('\\', "/"))),
             "{error:?}"
         );
 
@@ -728,7 +728,7 @@ name = "demo"
 
 [targets.kotlin_multiplatform]
 enabled = true
-output = "{}"
+output = '{}'
 "#,
             output_directory.display()
         ));
@@ -750,7 +750,7 @@ output = "{}"
         assert!(
             matches!(&error, CliError::CommandFailed { command, status: None }
                 if command.contains("KMP JNI glue includes unsupported generated header `demo.h`")
-                    && command.contains(&android_jni_glue.display().to_string())),
+                    && command.replace('\\', "/").contains(&android_jni_glue.display().to_string().replace('\\', "/"))),
             "{error:?}"
         );
 
@@ -769,7 +769,7 @@ name = "demo"
 
 [targets.kotlin_multiplatform]
 enabled = true
-output = "{}"
+output = '{}'
 "#,
             output_directory.display()
         ));
@@ -791,7 +791,7 @@ output = "{}"
         assert!(
             matches!(&error, CliError::CommandFailed { command, status: None }
                 if command.contains("KMP JNI glue includes unsupported generated header `boltffi_generated/..\\jni.h`")
-                    && command.contains(&jni_glue.display().to_string())),
+                    && command.replace('\\', "/").contains(&jni_glue.display().to_string().replace('\\', "/"))),
             "{error:?}"
         );
 
@@ -810,7 +810,7 @@ name = "demo"
 
 [targets.kotlin_multiplatform]
 enabled = true
-output = "{}"
+output = '{}'
 "#,
             output_directory.display()
         ));
@@ -832,7 +832,7 @@ output = "{}"
         assert!(
             matches!(&error, CliError::CommandFailed { command, status: None }
                 if command.contains("KMP JNI glue includes unsupported generated header `demo.h`")
-                    && command.contains(&jni_glue.display().to_string())),
+                    && command.replace('\\', "/").contains(&jni_glue.display().to_string().replace('\\', "/"))),
             "{error:?}"
         );
 
@@ -851,7 +851,7 @@ name = "demo"
 
 [targets.kotlin_multiplatform]
 enabled = true
-output = "{}"
+output = '{}'
 "#,
             output_directory.display()
         ));
@@ -892,7 +892,7 @@ name = "demo"
 
 [targets.kotlin_multiplatform]
 enabled = true
-output = "{}"
+output = '{}'
 "#,
             output_directory.display()
         ));
@@ -1167,7 +1167,7 @@ name = "demo"
 
 [targets.kotlin_multiplatform]
 enabled = true
-output = "{}"
+output = '{}'
 package = "com.example.demo"
 module_name = "Demo"
 "#,

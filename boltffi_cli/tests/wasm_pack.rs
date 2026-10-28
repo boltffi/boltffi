@@ -27,6 +27,8 @@ fn pure_packages_preserve_cargo_artifacts_and_survive_failed_repacking() {
     });
     fs::write(&config, toml::to_string(&configuration).unwrap()).unwrap();
     let build = Command::new(env!("CARGO_BIN_EXE_boltffi"))
+        .arg("--overlay")
+        .arg(&config)
         .args(["build", "wasm"])
         .current_dir(&fixture)
         .env("CARGO_TARGET_DIR", target)
