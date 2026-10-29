@@ -227,8 +227,9 @@ only then.
 
 ## 5. Implementation Status
 
-The design is implemented in full and shipped in 0.32.0 through
-[#1004](https://github.com/boltffi/boltffi/pull/1004).
+The design is implemented in full. It landed through
+[#944](https://github.com/boltffi/boltffi/pull/944) on the integration branch and shipped in
+0.32.0 through [#1004](https://github.com/boltffi/boltffi/pull/1004).
 [Per-invocation expansion](../docs/contributors/per-invocation-expansion.md)
 walks one crate through every expansion.
 

@@ -347,6 +347,12 @@ Methods with no parameters and a name other than `new` become factory methods.
 <CodeComparison
   title=""
   rust={`#[export]
+pub struct Config {
+    debug: bool,
+    timeout: u32,
+}
+
+#[export]
 impl Config {
     pub fn new() -> Self {
         Config::default_config()
@@ -791,6 +797,11 @@ The C target does not generate async methods yet. In the other targets, marking 
 <CodeComparison
   title=""
   rust={`#[export]
+pub struct HttpClient {
+    client: reqwest::Client,
+}
+
+#[export]
 impl HttpClient {
     pub fn new() -> Self {
         HttpClient { client: reqwest::Client::new() }
@@ -903,7 +914,7 @@ impl Session {
     }
     
     pub fn user(&self) -> User {
-        User::find(self.user_id)
+        User { id: self.user_id }
     }
 }
 
@@ -987,9 +998,14 @@ Use `#[skip]` to exclude a method from FFI export. The method stays in Rust but 
 <CodeComparison
   title=""
   rust={`#[export]
+pub struct MyClass {
+    factor: i32,
+}
+
+#[export]
 impl MyClass {
     pub fn exported(&self) -> i32 {
-        self.helper() * 2
+        self.helper() * self.factor
     }
     
     #[skip]

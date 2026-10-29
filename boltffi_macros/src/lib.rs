@@ -10,7 +10,7 @@ mod expansion;
 mod interned_string;
 mod lane;
 
-/// Checks that a type is `#[repr(C)]`; it generates no code.
+/// Checks that a type has exactly `#[repr(C)]`; it generates no code.
 #[proc_macro_derive(FfiType)]
 pub fn derive_ffi_type(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
@@ -60,7 +60,6 @@ pub fn custom_type(item: TokenStream) -> TokenStream {
     append_capture(quote!(#expanded #lane).into(), captured)
 }
 
-/// Defines a static interned-string pool.
 #[proc_macro]
 pub fn interned_string_pool(item: TokenStream) -> TokenStream {
     let captured = capture::interned_string_pool_tokens(item.clone());
@@ -160,7 +159,7 @@ fn type_marker(attr: &syn::Attribute) -> Option<&'static str> {
         .find(|marker| ident == marker && !(message && *marker == "error"))
 }
 
-/// Marks a struct or enum as an error, thrown in each target's native error model when returned as `Err`.
+/// Marks a struct or enum as an error, which targets throw natively when it is returned as `Err`.
 ///
 /// See [Errors](https://boltffi.dev/docs/errors).
 #[proc_macro_attribute]
@@ -171,9 +170,11 @@ pub fn error(attribute: TokenStream, item: TokenStream) -> TokenStream {
         .unwrap_or_else(|| invocation(lane::Kind::Error, attribute, item))
 }
 
-/// Exports a function, a class (on a struct or enum), its `impl` block, or a callback trait.
+/// Exports a function, constant, class (on its struct or enum), `impl` block or callback trait.
 ///
-/// See [Functions](https://boltffi.dev/docs/functions), [Classes](https://boltffi.dev/docs/classes) and [Callbacks](https://boltffi.dev/docs/callbacks).
+/// See [Functions](https://boltffi.dev/docs/functions),
+/// [Classes](https://boltffi.dev/docs/classes), [Callbacks](https://boltffi.dev/docs/callbacks)
+/// and [Constants](https://boltffi.dev/docs/constants).
 #[proc_macro_attribute]
 pub fn export(attribute: TokenStream, item: TokenStream) -> TokenStream {
     let mut parsed = match syn::parse::<syn::Item>(item.clone()) {
@@ -320,7 +321,8 @@ fn append_capture(expanded: TokenStream, captured: proc_macro2::TokenStream) -> 
     quote!(#expanded #captured).into()
 }
 
-/// Keeps a method of an exported `impl` block out of the bindings.
+/// Keeps a method or associated constant of an exported `impl` block or callback trait out of the
+/// bindings.
 ///
 /// See [Classes](https://boltffi.dev/docs/classes).
 #[proc_macro_attribute]
@@ -334,9 +336,11 @@ pub fn name(_attribute: TokenStream, item: TokenStream) -> TokenStream {
     item
 }
 
-/// Gives a record field a default value, which targets with default arguments make optional.
+/// Gives a record field, enum variant field or parameter a default value, which targets with
+/// default arguments make optional.
 ///
-/// See [Records](https://boltffi.dev/docs/records).
+/// See [Records](https://boltffi.dev/docs/records) and
+/// [Functions](https://boltffi.dev/docs/functions).
 #[proc_macro_attribute]
 pub fn default(_attribute: TokenStream, item: TokenStream) -> TokenStream {
     item

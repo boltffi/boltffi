@@ -42,14 +42,13 @@ Name the type by its declared name wherever it crosses the boundary:
 ```rust
 #[export]
 pub struct EventLog {
-    last_seen: UtcDateTime,
     events: Mutex<Vec<UtcDateTime>>,
 }
 
 #[export]
 impl EventLog {
-    pub fn last_seen(&self) -> UtcDateTime {
-        self.last_seen
+    pub fn last_seen(&self) -> Option<UtcDateTime> {
+        self.events.lock().unwrap().last().copied()
     }
 
     pub fn record(&self, at: UtcDateTime) {
