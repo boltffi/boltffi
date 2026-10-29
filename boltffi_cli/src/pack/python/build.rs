@@ -32,6 +32,7 @@ impl<'a> PythonSharedLibraryBuilder<'a> {
     }
 
     pub fn build(&self, step: &Step) -> Result<BuiltPythonSharedLibrary> {
+        self.plan.expansion.prepare_record_store()?;
         let verbose = step.is_verbose();
         let on_output: Option<OutputCallback> =
             verbose.then(|| Box::new(|line: &str| print_cargo_line(line)) as OutputCallback);

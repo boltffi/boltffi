@@ -688,6 +688,9 @@ pub(crate) fn build_jvm_native_library(
     binding_expansion: Option<&BindingExpansion>,
     step: &Step,
 ) -> Result<JvmBuildArtifacts> {
+    if let Some(binding_expansion) = binding_expansion {
+        binding_expansion.prepare_record_store()?;
+    }
     let cargo_context = &packaging_target.cargo_context;
     let native_static_libraries = Arc::new(Mutex::new(Vec::<String>::new()));
     let captured_static_libraries = Arc::clone(&native_static_libraries);

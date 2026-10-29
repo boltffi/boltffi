@@ -1,0 +1,5 @@
+[package]
+name = "fresh_alias_build_fixture"
+
+[targets.wasm]
+enabled = true
