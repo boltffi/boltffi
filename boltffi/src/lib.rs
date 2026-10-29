@@ -1,3 +1,30 @@
+//! Expose a Rust library to Swift, Kotlin, Java, C#, Python, TypeScript and more.
+//!
+//! Mark what crosses the boundary with these macros, then run the `boltffi` CLI to build the
+//! library and generate the bindings for each target.
+//!
+//! ```
+//! use boltffi::{data, export};
+//!
+//! boltffi::scaffolding!();
+//!
+//! #[data]
+//! #[derive(Clone, Copy)]
+//! pub struct Point {
+//!     pub x: f64,
+//!     pub y: f64,
+//! }
+//!
+//! #[export]
+//! pub fn midpoint(a: Point, b: Point) -> Point {
+//!     Point { x: (a.x + b.x) / 2.0, y: (a.y + b.y) / 2.0 }
+//! }
+//! # fn main() {}
+//! ```
+//!
+//! See the [user guide](https://boltffi.dev/docs/overview) and
+//! [Getting started](https://boltffi.dev/docs/getting-started).
+
 extern crate self as boltffi;
 
 /// Re-exported so generated user-crate stubs and Dart `@Native` bindings
