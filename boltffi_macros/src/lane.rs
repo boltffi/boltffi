@@ -114,11 +114,6 @@ impl Kind {
         .find(|kind| kind.keyword() == keyword)
     }
 
-    /// Whether this invocation expands to wrappers rather than a data type's runtime.
-    const fn wraps(self) -> bool {
-        matches!(self, Self::Export | Self::ExportMethods | Self::DataImpl)
-    }
-
     pub(crate) fn capture(self, attribute: &TokenStream) -> Capture {
         match self {
             Self::Export => Capture::Class(attribute.clone()),
@@ -183,8 +178,8 @@ impl Build {
 /// one another; only customs, whose repr lowers through them, define theirs once their
 /// references resolve. An item the record store holds resolves its references from the
 /// store; any other item resolves them through a lane chain. Bindgen's records build
-/// skips wrappers but still emits every data type's runtime, since the crate's own code
-/// can depend on it, such as a custom type whose `FfiRepr` lists the type's records.
+/// emits no lane, chain or wrapper, only the codecs [`records_build_codecs`] gives each
+/// data type.
 pub(crate) fn start(kind: Kind, attribute: TokenStream, item: TokenStream) -> TokenStream {
     if let Some(name) = own_name(kind, &item).filter(is_builtin_name) {
         return compile_error(&format!(
@@ -197,19 +192,20 @@ pub(crate) fn start(kind: Kind, attribute: TokenStream, item: TokenStream) -> To
             const _: ::core::marker::PhantomData<crate::__BoltffiTag> = ::core::marker::PhantomData;
         }
     });
+    if Build::current() == Build::SourceRecords {
+        let codecs = match kind {
+            Kind::Data | Kind::Error => records_build_codecs(&item),
+            _ => TokenStream::new(),
+        };
+        return quote! {
+            #scaffolded
+            #codecs
+        };
+    }
     let fragments = match fragments(kind, &attribute, &item) {
         Ok(fragments) => fragments,
         Err(message) => return compile_error(&message),
     };
-    if Build::current() == Build::SourceRecords && kind.wraps() {
-        return match immediate_lane(kind, &fragments, &item) {
-            Ok(lane) => quote! {
-                #scaffolded
-                #lane
-            },
-            Err(message) => compile_error(&message),
-        };
-    }
     let store = Store::find();
     let expanded = match store.as_ref().and_then(|store| store.resolve(&fragments)) {
         Some(resolution) => resolution.and_then(|resolution| {
@@ -254,6 +250,44 @@ enum Resolved {
     /// From the record store, with no chain to wait on, so every lane carries resolved
     /// entries.
     FromStore,
+}
+
+/// The codecs a records build gives a `#[data]` or `#[error]` type, so the crate's own code
+/// type-checks where it relies on them, such as a `CustomFfiConvertible` whose `FfiRepr`
+/// holds the type. Bindgen reads a records build only for its records and never runs it,
+/// so the codecs resolve no field type and their bodies are unreachable.
+fn records_build_codecs(item: &TokenStream) -> TokenStream {
+    let Ok(item) = syn::parse2::<syn::DeriveInput>(item.clone()) else {
+        return TokenStream::new();
+    };
+    let facade = capture::facade();
+    let name = &item.ident;
+    let (impl_generics, type_generics, where_clause) = item.generics.split_for_impl();
+    let never_runs = quote! { ::core::unreachable!("a BoltFFI records build never runs") };
+    quote! {
+        #[allow(deprecated)]
+        const _: () = {
+            impl #impl_generics #facade::__private::wire::WireEncode for #name #type_generics
+            #where_clause
+            {
+                fn wire_size(&self) -> usize {
+                    #never_runs
+                }
+
+                fn encode_to(&self, _: &mut [u8]) -> usize {
+                    #never_runs
+                }
+            }
+
+            impl #impl_generics #facade::__private::wire::WireDecode for #name #type_generics
+            #where_clause
+            {
+                fn decode_from(_: &[u8]) -> #facade::__private::wire::DecodeResult<Self> {
+                    #never_runs
+                }
+            }
+        };
+    }
 }
 
 const fn chains_before_lane(kind: Kind) -> bool {
