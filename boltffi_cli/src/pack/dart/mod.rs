@@ -182,11 +182,8 @@ fn push_dart_cfg_env(extra_env: &mut Vec<(String, String)>) {
     extra_env.push(("RUSTFLAGS".to_string(), rustflags));
 }
 
-// Cargo only sets CARGO_FEATURE_* for build scripts, so this must build as
-// a binding expansion for the macros to see active features (same fix as
-// the Python target's cdylib build). resolve_preferred (not
-// resolve_for_surface) keeps the configured/default artifact selected
-// even when the package has more than one FFI-capable cargo target.
+// resolve_preferred keeps the configured/default artifact selected even when
+// the package has more than one FFI-capable cargo target.
 fn dart_expansion(config: &Config, build_cargo_args: &[String]) -> Result<BindingExpansion> {
     BindingExpansion::resolve_preferred(config, build_cargo_args, &config.crate_artifact_name())
 }

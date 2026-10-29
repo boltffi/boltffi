@@ -74,8 +74,7 @@ pub enum SourceFragment {
     /// An invocation the per-invocation capture cannot describe yet.
     ///
     /// Its presence means the crate's source records are incomplete; aggregation refuses
-    /// the whole set so consumers fall back to the legacy path instead of shipping a
-    /// silently partial contract.
+    /// the whole set instead of shipping a silently partial contract.
     Unsupported {
         /// Item name at the invocation site.
         name: String,
