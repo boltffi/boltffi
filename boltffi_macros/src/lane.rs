@@ -144,10 +144,28 @@ fn fragments(kind: Kind, attribute: &TokenStream, item: &TokenStream) -> Result<
     }
 }
 
+const SOURCE_RECORDS_ENV: &str = "BOLTFFI_SOURCE_RECORDS";
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum Build {
+    SourceRecords,
+    Wrappers,
+}
+
+impl Build {
+    fn current() -> Self {
+        match std::env::var_os(SOURCE_RECORDS_ENV) {
+            Some(value) if value == "1" => Self::SourceRecords,
+            _ => Self::Wrappers,
+        }
+    }
+}
+
 /// Starts the lane chain for `item`, whose tokens the caller emits separately. A
 /// declared type's lane is defined here, before any chain runs, so types that refer to
 /// each other never wait on one another; only customs, whose repr lowers through them,
-/// define theirs once their chain finishes.
+/// define theirs once their chain finishes. Bindgen's records build runs no chain: it
+/// emits records only, and their slots still resolve through every lane's tag.
 pub(crate) fn start(kind: Kind, attribute: TokenStream, item: TokenStream) -> TokenStream {
     if let Some(name) = own_name(kind, &item).filter(is_builtin_name) {
         return compile_error(&format!(
@@ -159,12 +177,15 @@ pub(crate) fn start(kind: Kind, attribute: TokenStream, item: TokenStream) -> To
         Ok(fragments) => fragments,
         Err(message) => return compile_error(&message),
     };
-    let lane = match immediate_lane(kind, &fragments, &item) {
+    let build = Build::current();
+    let lane = match immediate_lane(kind, &fragments, &item, build) {
         Ok(lane) => lane,
         Err(message) => return compile_error(&message),
     };
-    let pending = lane_paths(&fragments);
-    let chain = step(kind, &attribute, &item, Vec::new(), pending);
+    let chain = match build {
+        Build::SourceRecords => TokenStream::new(),
+        Build::Wrappers => step(kind, &attribute, &item, Vec::new(), lane_paths(&fragments)),
+    };
     let scaffolded = (kind != Kind::Pool).then(|| {
         quote! {
             const _: ::core::marker::PhantomData<crate::__BoltffiTag> = ::core::marker::PhantomData;
@@ -186,8 +207,9 @@ fn immediate_lane(
     kind: Kind,
     fragments: &Fragments,
     item: &TokenStream,
+    build: Build,
 ) -> Result<TokenStream, String> {
-    if chains_before_lane(kind) {
+    if chains_before_lane(kind) && build == Build::Wrappers {
         return Ok(TokenStream::new());
     }
     let parsed = syn::parse2::<syn::Item>(item.clone()).ok();

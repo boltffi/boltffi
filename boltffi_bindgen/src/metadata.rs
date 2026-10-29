@@ -5,7 +5,7 @@ use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus};
 
-use boltffi_binding::{BindingMetadataSurface, RawSourceRecord};
+use boltffi_binding::RawSourceRecord;
 use serde::Deserialize;
 use thiserror::Error;
 
@@ -25,7 +25,6 @@ pub const SOURCE_RECORDS_ENV: &str = "BOLTFFI_SOURCE_RECORDS";
 pub struct BindingMetadataBuild {
     manifest_path: PathBuf,
     target: Option<String>,
-    surface: Option<BindingMetadataSurface>,
     toolchain_selector: Option<String>,
     cargo_args: Result<MetadataCargoArgs, LibraryCargoArgsError>,
     cargo_environment: Vec<(OsString, OsString)>,
@@ -37,7 +36,6 @@ impl BindingMetadataBuild {
         Self {
             manifest_path: manifest_path.into(),
             target: None,
-            surface: None,
             toolchain_selector: None,
             cargo_args: Ok(MetadataCargoArgs::default()),
             cargo_environment: Vec::new(),
@@ -48,19 +46,6 @@ impl BindingMetadataBuild {
     pub fn target(mut self, target: impl Into<String>) -> Self {
         self.target = Some(target.into());
         self
-    }
-
-    #[allow(missing_docs)]
-    pub fn surface(mut self, surface: BindingMetadataSurface) -> Self {
-        self.surface = Some(surface);
-        self
-    }
-
-    /// Whether the build's records describe the native surface its library exports.
-    pub fn surface_is_native(&self) -> bool {
-        self.surface
-            .unwrap_or_else(|| BindingMetadataSurface::from_target_triple(self.target.as_deref()))
-            == BindingMetadataSurface::Native
     }
 
     /// Passes Cargo build arguments to the metadata build.
@@ -819,7 +804,7 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use boltffi_ast::PackageInfo;
-    use boltffi_binding::{BindingMetadataSurface, Decl, Native, Wasm32};
+    use boltffi_binding::{Decl, Native, Wasm32, linkage_anchor};
 
     use super::{
         BindingMetadataBuild, BindingMetadataBuildError, CargoBuild, MetadataCargoArgs,
@@ -889,30 +874,6 @@ mod tests {
                 .iter()
                 .any(|(key, value)| *key == OsStr::new(SOURCE_RECORDS_ENV) && value.is_some()),
             "the metadata build asks every crate for its source records"
-        );
-    }
-
-    #[test]
-    fn wasm_bindings_build_the_metadata_artifact_for_the_host() {
-        let build = BindingMetadataBuild::new("/workspace/ffi/Cargo.toml")
-            .surface(BindingMetadataSurface::Wasm32);
-        let cargo_args = build.cargo_args.as_ref().unwrap();
-        let command = CargoBuild::new(
-            &build,
-            cargo_args,
-            "aarch64-apple-darwin",
-            Some(Path::new("/workspace/target")),
-        )
-        .plain_command();
-        let arguments = command
-            .get_args()
-            .map(|argument| argument.to_string_lossy().into_owned())
-            .collect::<Vec<_>>();
-
-        assert!(
-            arguments
-                .windows(2)
-                .any(|arguments| arguments == ["--target", "aarch64-apple-darwin"])
         );
     }
 
@@ -1165,11 +1126,8 @@ include!("included.rs");
             .iter()
             .map(|file| file.contents().to_owned())
             .collect::<String>();
-        let artifacts = source
-            .artifacts
-            .iter()
-            .map(|path| fs::read(path).expect("read built artifact"))
-            .collect::<Vec<_>>();
+        let library =
+            fs::read(fixture.ordinary_library(&[])).expect("read the ordinarily built library");
         for (name, symbol) in [
             ("plainAdd", "boltffi_function_16metadata_fixture9plain_add"),
             (
@@ -1191,9 +1149,9 @@ include!("included.rs");
         ] {
             assert!(swift.contains(name), "`{name}` is declared");
             assert!(
-                artifacts.iter().any(|bytes| bytes
+                library
                     .windows(symbol.len())
-                    .any(|window| window == symbol.as_bytes())),
+                    .any(|window| window == symbol.as_bytes()),
                 "`{symbol}` is exported"
             );
         }
@@ -1209,29 +1167,20 @@ include!("included.rs");
             .iter()
             .map(|arg| (*arg).to_owned())
             .collect::<Vec<_>>();
-        let source = BindingMetadataBuild::new(fixture.manifest())
-            .cargo_args(cargo_args.clone())
-            .read_source()
-            .expect("fixture compiles");
         let swift = crate::generate::Generation::new(fixture.manifest())
-            .cargo_args(cargo_args)
+            .cargo_args(cargo_args.clone())
             .render(crate::target::Target::Swift)
             .expect("fixture generates")
             .files()
             .iter()
             .map(|file| file.contents().to_owned())
             .collect::<String>();
-        let artifacts = source
-            .artifacts
-            .iter()
-            .map(|path| fs::read(path).expect("read built artifact"))
-            .collect::<Vec<_>>();
+        let library = fs::read(fixture.ordinary_library(&cargo_args))
+            .expect("read the ordinarily built library");
         let exported = |symbol: &str| {
-            artifacts.iter().any(|bytes| {
-                bytes
-                    .windows(symbol.len())
-                    .any(|window| window == symbol.as_bytes())
-            })
+            library
+                .windows(symbol.len())
+                .any(|window| window == symbol.as_bytes())
         };
         for (name, symbol) in present {
             assert!(swift.contains(name), "`{name}` is declared");
@@ -1604,32 +1553,64 @@ pub fn captured_value() -> u32 { 42 }
         }
 
         let fixture = FixtureCrate::with_boltffi_macros();
-        let target_dir = fixture.root.join("target");
-        let host = host_target(None, &[]).expect("cargo names its host");
-        let status = Command::new(std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into()))
-            .arg("build")
-            .arg("--quiet")
-            .arg("--target")
-            .arg(&host)
-            .arg("--manifest-path")
-            .arg(fixture.manifest())
-            .arg("--target-dir")
-            .arg(&target_dir)
-            .env_remove(SOURCE_RECORDS_ENV)
-            .status()
-            .expect("cargo runs");
-        assert!(status.success(), "the fixture builds without the records");
-
-        let library = target_dir
-            .join(host)
-            .join("debug")
-            .join("libmetadata_fixture.rlib");
+        let library = fixture.ordinary_library(&[]);
+        let bytes = fs::read(&library).expect("read the ordinarily built library");
+        let contains = |symbol: &str| {
+            bytes
+                .windows(symbol.len())
+                .any(|window| window == symbol.as_bytes())
+        };
         let records = BindingMetadataReader::new([library])
             .read_source_records()
             .expect("the library reads");
         assert!(
             records.is_empty(),
             "only the metadata build embeds source records"
+        );
+        assert!(
+            !contains(&linkage_anchor("metadata_fixture")),
+            "only the metadata build exports the linkage anchor"
+        );
+        assert!(
+            contains("boltffi_function_16metadata_fixture11range_width"),
+            "an ordinary build expands the wrappers"
+        );
+    }
+
+    #[test]
+    fn metadata_build_emits_records_and_a_linkage_anchor_without_wrappers() {
+        if cfg!(miri) {
+            return;
+        }
+
+        let fixture = FixtureCrate::with_boltffi_macros();
+        let source = BindingMetadataBuild::new(fixture.manifest())
+            .read_source()
+            .expect("fixture compiles");
+        let artifacts = source
+            .artifacts
+            .iter()
+            .map(|path| fs::read(path).expect("read built artifact"))
+            .collect::<Vec<_>>();
+        let contains = |symbol: &str| {
+            artifacts.iter().any(|bytes| {
+                bytes
+                    .windows(symbol.len())
+                    .any(|window| window == symbol.as_bytes())
+            })
+        };
+
+        assert!(
+            !source.source_records.is_empty(),
+            "the metadata build captures every invocation"
+        );
+        assert!(
+            contains(&linkage_anchor("metadata_fixture")),
+            "the crate exports its linkage anchor"
+        );
+        assert!(
+            !contains("boltffi_function_16metadata_fixture11range_width"),
+            "the metadata build expands no wrappers"
         );
     }
 
@@ -2263,6 +2244,29 @@ pub fn view() -> CoreFfi {
 
         fn manifest(&self) -> PathBuf {
             self.manifest.clone()
+        }
+
+        fn ordinary_library(&self, cargo_args: &[String]) -> PathBuf {
+            let target_dir = self.root.join("ordinary-target");
+            let host = host_target(None, &[]).expect("cargo names its host");
+            let status = Command::new(std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into()))
+                .arg("build")
+                .arg("--quiet")
+                .arg("--target")
+                .arg(&host)
+                .arg("--manifest-path")
+                .arg(self.manifest())
+                .arg("--target-dir")
+                .arg(&target_dir)
+                .args(cargo_args)
+                .env_remove(SOURCE_RECORDS_ENV)
+                .status()
+                .expect("cargo runs");
+            assert!(status.success(), "the fixture builds the way users build it");
+            target_dir
+                .join(host)
+                .join("debug")
+                .join("libmetadata_fixture.rlib")
         }
     }
 

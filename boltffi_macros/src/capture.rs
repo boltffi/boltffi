@@ -183,9 +183,27 @@ pub(crate) fn unsupported_tokens(name: &str, reason: &str) -> TokenStream {
 }
 
 pub(crate) fn scaffolding_tokens() -> TokenStream {
+    let facade = facade();
+    let linkage = match std::env::var("CARGO_CRATE_NAME") {
+        Ok(crate_name) => {
+            let anchor = format_ident!("{}", boltffi_binding::linkage_anchor(&crate_name));
+            quote! {
+                #facade::__private::source_record! {
+                    const _: () = {
+                        #[unsafe(no_mangle)]
+                        pub extern "C" fn #anchor() {}
+                    };
+                }
+            }
+        }
+        Err(_) => quote! {
+            ::core::compile_error!("BoltFFI: `CARGO_CRATE_NAME` is not set");
+        },
+    };
     quote! {
         #[doc(hidden)]
         pub enum __BoltffiTag {}
+        #linkage
     }
 }
 
