@@ -19,7 +19,7 @@
 
 mod store;
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use boltffi_ast::{PackageInfo, Path, PathRoot, PathSegment};
 use boltffi_binding::{
@@ -66,7 +66,7 @@ impl PartialEq for Entry {
 }
 
 /// What a lane expands to: the declared type's id and every declaration it needs.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 struct Lane {
     id: String,
     entries: Vec<Entry>,
@@ -211,7 +211,7 @@ pub(crate) fn start(kind: Kind, attribute: TokenStream, item: TokenStream) -> To
         };
     }
     let store = Store::find();
-    let expanded = match store.and_then(|store| store.resolve(&fragments)) {
+    let expanded = match store.as_ref().and_then(|store| store.resolve(&fragments)) {
         Some(resolution) => resolution.and_then(|resolution| {
             let expanded = finish(
                 kind,
@@ -228,6 +228,7 @@ pub(crate) fn start(kind: Kind, attribute: TokenStream, item: TokenStream) -> To
         }),
         None => immediate_lane(kind, &fragments, &item).map(|lane| {
             let stale = store
+                .as_ref()
                 .map(|store| store.stale_warning(&fragments))
                 .unwrap_or_default();
             let chain = step(kind, &attribute, &item, Vec::new(), lane_paths(&fragments));
@@ -397,6 +398,25 @@ fn lane_paths(fragments: &Fragments) -> Vec<TokenStream> {
         .collect()
 }
 
+/// Each distinct type the fragments' slots name, as written, in first-use order.
+fn spelled_slots(fragments: &Fragments) -> Vec<&SlotSource> {
+    let mut seen = HashSet::new();
+    fragments
+        .iter()
+        .flat_map(|(_, slots)| slots)
+        .filter(|slot| seen.insert(spelling(slot)))
+        .collect()
+}
+
+/// The type a slot names as written, generic arguments included, which is how a site
+/// spells it in a conversion. A lane is named by [`lane_path`], which drops them.
+fn spelling(slot: &SlotSource) -> String {
+    match slot {
+        SlotSource::Type(ty) => ty.to_token_stream().to_string(),
+        SlotSource::TraitValue(path) => path.to_token_stream().to_string(),
+    }
+}
+
 /// The name the invocation's own declaration goes by, when it declares a type.
 fn own_name(kind: Kind, item: &TokenStream) -> Option<syn::Ident> {
     let parsed = syn::parse2::<syn::Item>(item.clone()).ok();
@@ -444,17 +464,28 @@ pub(crate) struct Reached {
 
 impl Reference {
     fn through_lanes(fragments: &Fragments, resolved: &[Literal]) -> Result<Vec<Self>, String> {
-        lane_paths(fragments)
+        let lanes = lane_paths(fragments)
             .iter()
             .zip(resolved)
             .map(|(path, literal)| {
                 let lane = serde_json::from_str::<Lane>(&raw_text(literal)?)
                     .map_err(|error| error.to_string())?;
-                let path = path.to_string();
+                Ok((path.to_string(), lane))
+            })
+            .collect::<Result<HashMap<_, _>, String>>()?;
+        spelled_slots(fragments)
+            .into_iter()
+            .map(|slot| {
+                let lane_name = lane_path(slot).to_string();
+                let lane = lanes
+                    .get(&lane_name)
+                    .cloned()
+                    .ok_or_else(|| format!("no lane resolves `{lane_name}`"))?;
+                let path = spelling(slot);
                 Ok(Self {
                     descriptor: raw_json(serde_json::json!({ "id": lane.id }).to_string())?,
                     reached: vec![Reached {
-                        tag: format!("{path}!(@tag)"),
+                        tag: format!("{lane_name}!(@tag)"),
                         id: lane.id,
                         path: path.clone(),
                     }],
@@ -476,7 +507,7 @@ impl Reference {
         references: &'reference [Self],
         slot: &SlotSource,
     ) -> Result<&'reference Self, String> {
-        let path = lane_path(slot).to_string();
+        let path = spelling(slot);
         references
             .iter()
             .find(|reference| reference.path == path)
@@ -564,7 +595,7 @@ fn finish(
             };
             (reached.id.clone(), reach)
         })
-        .collect::<std::collections::HashMap<_, _>>();
+        .collect::<HashMap<_, _>>();
     let expanded = match kind {
         Kind::CustomFfi | Kind::CustomType | Kind::Pool => TokenStream::new(),
         _ => render(
@@ -752,7 +783,7 @@ fn render(
     selected: &[String],
     shallow: &HashSet<String>,
     item: Option<&syn::Item>,
-    customs: std::collections::HashMap<String, CustomReach>,
+    customs: HashMap<String, CustomReach>,
 ) -> Result<TokenStream, String> {
     let package = PackageInfo::new(
         crate_name()?,
@@ -1023,8 +1054,8 @@ struct CustomReach {
 /// that custom's associated representation type, keyed to the crate that declared it.
 fn reach_through_reprs(
     defs: &[boltffi_ast::CustomTypeDef],
-    mut reached: std::collections::HashMap<String, CustomReach>,
-) -> std::collections::HashMap<String, CustomReach> {
+    mut reached: HashMap<String, CustomReach>,
+) -> HashMap<String, CustomReach> {
     while let Some((id, reach)) = defs.iter().find_map(|custom| {
         let outer = reached.get(custom.id.as_str())?;
         let repr = match custom.converters.into_ffi {
@@ -1068,7 +1099,7 @@ fn reach_through_reprs(
 /// they resolve here no matter which module or crate declared them.
 fn convert_through_site_path(
     custom: &mut boltffi_ast::CustomTypeDef,
-    customs: &std::collections::HashMap<String, CustomReach>,
+    customs: &HashMap<String, CustomReach>,
 ) {
     let Some(CustomReach { path, tag }) = customs.get(custom.id.as_str()) else {
         return;

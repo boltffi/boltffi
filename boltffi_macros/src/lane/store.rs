@@ -1,6 +1,8 @@
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
+use std::time::SystemTime;
 
 use boltffi_binding::{RawSourceRecord, RecordStore, SELF_ID, SourceFragment, TypeNode};
 use boltffi_scan::SlotSource;
@@ -8,8 +10,8 @@ use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
 use super::{
-    Build, Entry, REPR_ARG_OF, Reached, Reference, crate_name, lane_path, lane_paths, raw_json,
-    selected_id,
+    Build, Entry, REPR_ARG_OF, Reached, Reference, crate_name, lane_path, raw_json, selected_id,
+    spelled_slots, spelling,
 };
 use crate::capture::{self, Fragments};
 
@@ -25,24 +27,48 @@ pub struct Resolution {
     pub checks: TokenStream,
 }
 
+/// A store as read from disk, with the modification time it was read at, so a process that
+/// outlives one build, such as rust-analyzer's proc-macro server, reads it again once
+/// `boltffi generate` rewrites it.
+struct Loaded {
+    modified: SystemTime,
+    store: Option<Rc<Store>>,
+}
+
 thread_local! {
-    static LOADED: RefCell<HashMap<PathBuf, Option<&'static Store>>> = RefCell::new(HashMap::new());
+    static LOADED: RefCell<HashMap<PathBuf, Loaded>> = RefCell::new(HashMap::new());
 }
 
 impl Store {
-    pub fn find() -> Option<&'static Self> {
+    pub fn find() -> Option<Rc<Self>> {
         if Build::current() == Build::SourceRecords {
             return None;
         }
-        let path = Path::new(env!("OUT_DIR"))
+        Path::new(env!("OUT_DIR"))
             .ancestors()
             .map(|directory| directory.join(RecordStore::RELATIVE_PATH))
-            .find(|path| path.is_file())?;
+            .find(|path| path.is_file())
+            .and_then(Self::load)
+    }
+
+    fn load(path: PathBuf) -> Option<Rc<Self>> {
+        let modified = std::fs::metadata(&path)
+            .and_then(|metadata| metadata.modified())
+            .ok()?;
         LOADED.with(|loaded| {
-            *loaded
-                .borrow_mut()
-                .entry(path.clone())
-                .or_insert_with(|| Self::read(path).map(|store| &*Box::leak(Box::new(store))))
+            let mut loaded = loaded.borrow_mut();
+            match loaded.get(&path) {
+                Some(cached) if cached.modified == modified => cached.store.clone(),
+                _ => {
+                    let store = Self::read(path.clone()).map(Rc::new);
+                    let cached = Loaded {
+                        modified,
+                        store: store.clone(),
+                    };
+                    loaded.insert(path, cached);
+                    store
+                }
+            }
         })
     }
 
@@ -92,8 +118,8 @@ impl Store {
             .map(|id| {
                 let name = id.rsplit("::").next().unwrap_or(&id);
                 let note = format!(
-                    "BoltFFI: `{name}` changed since `boltffi generate`, so the types it names \
-                     resolve through their lanes until `boltffi generate` runs again"
+                    "BoltFFI: `{name}` changed since `boltffi generate` last ran; until it runs \
+                     again, `{name}` can name types only by their declared names"
                 );
                 quote! {
                     const _: () = {
@@ -120,17 +146,17 @@ impl Store {
     ) -> Result<Resolution, String> {
         let krate = crate_name()?;
         let alias = format!("{}::__private::{REPR_ARG_OF}", capture::facade());
-        let references = lane_paths(fragments)
-            .iter()
-            .map(|path| {
-                let path = path.to_string();
+        let references = spelled_slots(fragments)
+            .into_iter()
+            .map(|spelled| {
+                let path = spelling(spelled);
                 let descriptor = fragments
                     .iter()
                     .zip(records)
                     .find_map(|((_, slots), record)| {
                         slots
                             .iter()
-                            .position(|slot| lane_path(slot).to_string() == path)
+                            .position(|slot| spelling(slot) == path)
                             .and_then(|index| record.slots.get(index))
                     })
                     .ok_or_else(|| format!("the record store resolves no `{path}`"))?;
@@ -287,5 +313,70 @@ fn crate_scoped(id: &str) -> String {
     match (id.split_once("::"), id.rsplit_once("::")) {
         (Some((krate, _)), Some((_, name))) => format!("{krate}::{name}"),
         _ => id.to_owned(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs::{self, File};
+    use std::path::Path;
+    use std::rc::Rc;
+    use std::time::{Duration, SystemTime};
+
+    use boltffi_ast::PackageInfo;
+    use boltffi_binding::{RawSourceRecord, RecordStore};
+
+    use super::Store;
+
+    fn record(name: &str) -> RawSourceRecord {
+        RawSourceRecord {
+            package: PackageInfo::new("demo", None),
+            module: "demo".to_owned(),
+            slots: Vec::new(),
+            json: format!("{{\"name\":\"{name}\"}}").into_bytes(),
+        }
+    }
+
+    fn write(path: &Path, records: &[RawSourceRecord], modified: SystemTime) {
+        let json = RecordStore::new(records)
+            .to_json()
+            .expect("the store serializes");
+        fs::write(path, json).expect("the store is written");
+        File::options()
+            .write(true)
+            .open(path)
+            .and_then(|file| file.set_modified(modified))
+            .expect("the store's modification time is set");
+    }
+
+    #[test]
+    fn a_rewritten_store_is_read_again() {
+        let path = std::env::temp_dir().join(format!(
+            "boltffi-record-store-reload-{}.json",
+            std::process::id()
+        ));
+        let generated = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000);
+
+        write(&path, &[record("Point")], generated);
+        let read = Store::load(path.clone()).expect("the store loads");
+        let unchanged = Store::load(path.clone()).expect("the store loads");
+        write(
+            &path,
+            &[record("Point"), record("Line")],
+            generated + Duration::from_secs(1),
+        );
+        let regenerated = Store::load(path.clone()).expect("the store loads");
+        fs::remove_file(&path).expect("the store is removed");
+
+        assert!(
+            Rc::ptr_eq(&read, &unchanged),
+            "an unchanged store is read once"
+        );
+        assert_eq!(read.records.len(), 1);
+        assert_eq!(
+            regenerated.records.len(),
+            2,
+            "a store `boltffi generate` rewrote is read again"
+        );
     }
 }

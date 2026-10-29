@@ -26,6 +26,17 @@ boltffi::custom_type!(
     into_ffi = |feet: &si::f64::Feet| feet.0,
     try_from_ffi = |feet: f64| Ok::<_, boltffi::CustomTypeConversionError>(si::f64::Feet(feet)),
 );
+
+#[derive(Clone, Copy, Debug)]
+pub struct Tagged<T>(pub T);
+
+boltffi::custom_type!(
+    pub TaggedSeconds,
+    remote = Tagged<f64>,
+    repr = f64,
+    into_ffi = |seconds: &Tagged<f64>| seconds.0,
+    try_from_ffi = |seconds: f64| Ok::<_, boltffi::CustomTypeConversionError>(Tagged(seconds)),
+);
 "#;
 
 const DECLARATIONS: &str = r#"
@@ -122,6 +133,11 @@ pub mod route {{
     #[boltffi::export]
     pub fn walk(points: Points, remaining: Remaining) -> Leg {{
         Leg {{ meters: points.len() as Meters, points, remaining }}
+    }}
+
+    #[boltffi::export]
+    pub fn hold(seconds: units::Tagged<f64>) -> units::Tagged<f64> {{
+        seconds
     }}
 }}
 "#
@@ -266,6 +282,7 @@ fn generated_bindings_let_every_spelling_cross() {
         "boltffi_function_3app6stride",
         "boltffi_function_3app5total",
         "boltffi_function_3app4walk",
+        "boltffi_function_3app4hold",
     ]
     .into_iter()
     .for_each(|symbol| {
