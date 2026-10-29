@@ -97,6 +97,17 @@ pub mod route {{
 
     type Distance = {distance};
     type Coordinate = crate::geo::Point;
+    type Meters = f64;
+    type Points = Vec<crate::geo::Point>;
+    type Remaining = Option<units::si::f64::Length>;
+
+    #[boltffi::data]
+    #[derive(Clone)]
+    pub struct Leg {{
+        pub meters: Meters,
+        pub points: Points,
+        pub remaining: Remaining,
+    }}
 
     #[boltffi::export]
     pub fn stride(distance: Distance, start: Coordinate) -> units::si::f64::Length {{
@@ -106,6 +117,11 @@ pub mod route {{
     #[boltffi::export]
     pub fn total(lengths: Vec<units::si::f64::Length>) -> Option<Length> {{
         lengths.into_iter().reduce(|total, leg| Length(total.0 + leg.0))
+    }}
+
+    #[boltffi::export]
+    pub fn walk(points: Points, remaining: Remaining) -> Leg {{
+        Leg {{ meters: points.len() as Meters, points, remaining }}
     }}
 }}
 "#
@@ -249,6 +265,7 @@ fn generated_bindings_let_every_spelling_cross() {
     [
         "boltffi_function_3app6stride",
         "boltffi_function_3app5total",
+        "boltffi_function_3app4walk",
     ]
     .into_iter()
     .for_each(|symbol| {
