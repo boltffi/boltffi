@@ -86,6 +86,16 @@ BoltFFI reads these four names as its builtin types wherever they appear. A `#[d
 
 Exported symbols no longer include the module path. Two exports with the same name in one crate, such as `files::open` and `sockets::open`, fail to build. The same holds for declared types. Rename one of them.
 
+## Name path dependencies the library does not use
+
+A path dependency's exports are compiled into that dependency, and the linker keeps them only when your crate uses it. If one is bound but never used, `boltffi generate` fails and lists the missing symbols. Name the crate once in `src/lib.rs`:
+
+```rust
+use shapes as _;
+```
+
+See [Types from other crates](/docs/getting-started#types-from-other-crates).
+
 ## Raise the recursion limit for large items
 
 Each declared type an item names adds two levels of macro expansion. An item that names 64 or more distinct declared types reaches rustc's default recursion limit. Raise it at the crate root:

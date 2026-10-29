@@ -41,6 +41,12 @@ Name the type by its declared name wherever it crosses the boundary:
 
 ```rust
 #[export]
+pub struct EventLog {
+    last_seen: UtcDateTime,
+    events: Mutex<Vec<UtcDateTime>>,
+}
+
+#[export]
 impl EventLog {
     pub fn last_seen(&self) -> UtcDateTime {
         self.last_seen
@@ -160,6 +166,11 @@ The generated bindings show a list of `i64` for the result. Each value is conver
 When `try_from_ffi` returns an error, BoltFFI panics with a message identifying the custom type. This is intentional: invalid data crossing the FFI boundary indicates a bug in the consumer's code. If you need to handle invalid input gracefully, validate at the API level:
 
 ```rust
+#[export]
+pub struct UserService {
+    users: HashMap<uuid::Uuid, User>,
+}
+
 #[export]
 impl UserService {
     pub fn get_user(&self, id: String) -> Result<Option<User>, ValidationError> {

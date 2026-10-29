@@ -1,7 +1,7 @@
 # ADR: Declaration Lanes. Per-Invocation Expansion Without a Source Scan
 
 ## Status
-Proposed
+Accepted
 
 ## Authors
 - [Henrik](https://github.com/akesson)
@@ -227,8 +227,8 @@ only then.
 
 ## 5. Implementation Status
 
-The design is implemented in full, landed through
-[#944](https://github.com/boltffi/boltffi/pull/944) on the integration branch.
+The design is implemented in full and shipped in 0.32.0 through
+[#1004](https://github.com/boltffi/boltffi/pull/1004).
 [Per-invocation expansion](../docs/contributors/per-invocation-expansion.md)
 walks one crate through every expansion.
 
@@ -263,8 +263,10 @@ walks one crate through every expansion.
 - **Compile time.** Against `main`, the demo builds 28% slower clean in debug, 9% faster
   in release, and 26% slower after an edit. Synthetic crates of 400 flat records or a
   200-deep record chain build 55% and 51% slower. Pre-lowered summaries (D2) are the next
-  lever. Measured with [`0002-bench.py`](0002-bench.py), median of 5 runs, on `main` at
-  `196a06b9` and the branch at `d1426da7`, on an Apple M4 Pro with rustc 1.95.0.
+  lever. Measured with
+  [`0002-bench.py`](https://github.com/boltffi/boltffi/blob/23fe0e13/adrs/0002-bench.py),
+  median of 5 runs, on `main` at `196a06b9` and the branch at `d1426da7`, on an Apple M4
+  Pro with rustc 1.95.0.
 - **Recursion depth.** Each distinct type an invocation names adds two nested expansions,
   so one item naming 64 or more distinct types exceeds rustc's default `recursion_limit` of
   128. rustc's error suggests raising it, and `#![recursion_limit = "256"]` fixes it.

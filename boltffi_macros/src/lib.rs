@@ -10,6 +10,7 @@ mod expansion;
 mod interned_string;
 mod lane;
 
+/// Checks that a type is `#[repr(C)]`; it generates no code.
 #[proc_macro_derive(FfiType)]
 pub fn derive_ffi_type(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
@@ -28,16 +29,25 @@ pub fn derive_ffi_type(input: TokenStream) -> TokenStream {
     }
 }
 
+/// Exposes an exported method returning `Arc<EventSubscription<T>>` as a native stream of `item`.
+///
+/// See [Streaming](https://boltffi.dev/docs/streaming).
 #[proc_macro_attribute]
 pub fn ffi_stream(_attribute: TokenStream, item: TokenStream) -> TokenStream {
     item
 }
 
+/// Exposes a type you own through its `CustomFfiConvertible` impl; put it on that impl.
+///
+/// See [Custom types](https://boltffi.dev/docs/custom-types).
 #[proc_macro_attribute]
 pub fn custom_ffi(attribute: TokenStream, item: TokenStream) -> TokenStream {
     invocation(lane::Kind::CustomFfi, attribute, item)
 }
 
+/// Maps a type from another crate, such as `uuid::Uuid`, to an FFI representation and back.
+///
+/// See [Custom types](https://boltffi.dev/docs/custom-types).
 #[proc_macro]
 pub fn custom_type(item: TokenStream) -> TokenStream {
     let captured = capture::custom_type_tokens(item.clone());
@@ -50,6 +60,7 @@ pub fn custom_type(item: TokenStream) -> TokenStream {
     append_capture(quote!(#expanded #lane).into(), captured)
 }
 
+/// Defines a static interned-string pool.
 #[proc_macro]
 pub fn interned_string_pool(item: TokenStream) -> TokenStream {
     let captured = capture::interned_string_pool_tokens(item.clone());
@@ -62,6 +73,11 @@ pub fn interned_string_pool(item: TokenStream) -> TokenStream {
     append_capture(quote!(#expanded #lane).into(), captured)
 }
 
+/// Marks a struct or enum as a record, a value type copied across the boundary.
+///
+/// `#[data(impl)]` on its `impl` block exports its methods.
+///
+/// See [Records](https://boltffi.dev/docs/records) and [Types](https://boltffi.dev/docs/types).
 #[proc_macro_attribute]
 pub fn data(attribute: TokenStream, item: TokenStream) -> TokenStream {
     if attribute.to_string().trim() == "impl" {
@@ -144,6 +160,9 @@ fn type_marker(attr: &syn::Attribute) -> Option<&'static str> {
         .find(|marker| ident == marker && !(message && *marker == "error"))
 }
 
+/// Marks a struct or enum as an error, thrown in each target's native error model when returned as `Err`.
+///
+/// See [Errors](https://boltffi.dev/docs/errors).
 #[proc_macro_attribute]
 pub fn error(attribute: TokenStream, item: TokenStream) -> TokenStream {
     syn::parse::<syn::Item>(item.clone())
@@ -152,6 +171,9 @@ pub fn error(attribute: TokenStream, item: TokenStream) -> TokenStream {
         .unwrap_or_else(|| invocation(lane::Kind::Error, attribute, item))
 }
 
+/// Exports a function, a class (on a struct or enum), its `impl` block, or a callback trait.
+///
+/// See [Functions](https://boltffi.dev/docs/functions), [Classes](https://boltffi.dev/docs/classes) and [Callbacks](https://boltffi.dev/docs/callbacks).
 #[proc_macro_attribute]
 pub fn export(attribute: TokenStream, item: TokenStream) -> TokenStream {
     let mut parsed = match syn::parse::<syn::Item>(item.clone()) {
@@ -277,6 +299,9 @@ pub fn lane_resume(input: TokenStream) -> TokenStream {
     lane::resume(input.into()).into()
 }
 
+/// Call once at the root of every crate that uses BoltFFI; the other macros expand against it.
+///
+/// See [Getting started](https://boltffi.dev/docs/getting-started).
 #[proc_macro]
 pub fn scaffolding(item: TokenStream) -> TokenStream {
     if !item.is_empty() {
@@ -295,16 +320,23 @@ fn append_capture(expanded: TokenStream, captured: proc_macro2::TokenStream) -> 
     quote!(#expanded #captured).into()
 }
 
+/// Keeps a method of an exported `impl` block out of the bindings.
+///
+/// See [Classes](https://boltffi.dev/docs/classes).
 #[proc_macro_attribute]
 pub fn skip(_attribute: TokenStream, item: TokenStream) -> TokenStream {
     item
 }
 
+/// Accepted on exported items and currently has no effect.
 #[proc_macro_attribute]
 pub fn name(_attribute: TokenStream, item: TokenStream) -> TokenStream {
     item
 }
 
+/// Gives a record field a default value, which targets with default arguments make optional.
+///
+/// See [Records](https://boltffi.dev/docs/records).
 #[proc_macro_attribute]
 pub fn default(_attribute: TokenStream, item: TokenStream) -> TokenStream {
     item

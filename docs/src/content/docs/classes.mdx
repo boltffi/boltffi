@@ -239,6 +239,12 @@ Methods with parameters that return `Self` become additional constructors. In Sw
 <CodeComparison
   title=""
   rust={`#[export]
+pub struct Database {
+    path: String,
+    read_only: bool,
+}
+
+#[export]
 impl Database {
     pub fn new() -> Self {
         Database { path: ":memory:".into(), read_only: false }
@@ -428,7 +434,7 @@ impl Database {
         if !path_exists(path) {
             return Err(DbError::NotFound);
         }
-        Ok(Database { path: path.into() })
+        Ok(Database { path: path.into(), read_only: false })
     }
 }`}
   swift={`public class Database {
@@ -881,6 +887,16 @@ Methods can accept or return other class instances.
 <CodeComparison
   title=""
   rust={`#[export]
+pub struct Session {
+    user_id: u64,
+}
+
+#[export]
+pub struct User {
+    id: u64,
+}
+
+#[export]
 impl Session {
     pub fn new(user: &User) -> Self {
         Session { user_id: user.id() }
