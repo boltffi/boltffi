@@ -188,14 +188,7 @@ impl<'a> Builder<'a> {
     }
 
     pub fn build_host_with_native_link_metadata(&self) -> Result<native_link::NativeLinkMetadata> {
-        if !matches!(self.options.selection, BuildSelection::Expanded(_)) {
-            return Err(CliError::CommandFailed {
-                command: "native link metadata requires a selected binding expansion".to_owned(),
-                status: None,
-            });
-        }
-        let mut command = self.host_command()?;
-        command.arg("--print=native-static-libs");
+        let mut command = self.native_link_metadata_command()?;
         let output = command.output().map_err(|source| CliError::CommandFailed {
             command: format!("cargo rustc --print=native-static-libs: {source}"),
             status: None,
@@ -222,7 +215,7 @@ impl<'a> Builder<'a> {
 
         self.apply_common_build_args(&mut command);
         command.args(&command_args.command_args);
-        self.apply_expansion(&mut command)?;
+        self.apply_expansion(&mut command);
 
         let success = run_command_streaming(&mut command, self.options.on_output.as_ref());
 
@@ -232,6 +225,18 @@ impl<'a> Builder<'a> {
         }])
     }
 
+    fn native_link_metadata_command(&self) -> Result<Command> {
+        if !matches!(self.options.selection, BuildSelection::Expanded(_)) {
+            return Err(CliError::CommandFailed {
+                command: "native link metadata requires a selected binding expansion".to_owned(),
+                status: None,
+            });
+        }
+        let mut command = self.host_command()?;
+        command.arg("--").arg("--print=native-static-libs");
+        Ok(command)
+    }
+
     fn host_command(&self) -> Result<Command> {
         let command_args = self.cargo_build_command_args();
         let mut command = Command::new("cargo");
@@ -239,7 +244,7 @@ impl<'a> Builder<'a> {
         self.apply_common_build_args(&mut command);
         command.args(&command_args.command_args);
         command.arg("--message-format=json-render-diagnostics");
-        self.apply_expansion(&mut command)?;
+        self.apply_expansion(&mut command);
         command.env_remove("IPHONEOS_DEPLOYMENT_TARGET");
         command.envs(
             self.options
@@ -263,7 +268,7 @@ impl<'a> Builder<'a> {
         self.apply_common_build_args(&mut cmd);
         self.apply_env_for_target(&mut cmd, target);
         cmd.args(&command_args.command_args);
-        self.apply_expansion(&mut cmd)?;
+        self.apply_expansion(&mut cmd);
 
         if target.platform() == Platform::Android {
             android_toolchain
@@ -300,13 +305,9 @@ impl<'a> Builder<'a> {
         command.arg("-p").arg(self.package_spec());
     }
 
-    fn apply_expansion(&self, command: &mut Command) -> Result<()> {
-        match &self.options.selection {
-            BuildSelection::Expanded(_) => {
-                command.arg("--lib");
-                Ok(())
-            }
-            BuildSelection::Default { .. } => Ok(()),
+    fn apply_expansion(&self, command: &mut Command) {
+        if matches!(self.options.selection, BuildSelection::Expanded(_)) {
+            command.arg("--lib");
         }
     }
 
@@ -538,6 +539,42 @@ name = "demo"
         );
         assert_eq!(arguments.last().map(String::as_str), Some("--lib"));
         assert!(!arguments.iter().any(|argument| argument == "--target"));
+    }
+
+    #[test]
+    fn native_link_metadata_passes_the_print_flag_to_rustc() {
+        let config: Config = toml::from_str(
+            r#"
+[package]
+name = "demo"
+"#,
+        )
+        .unwrap();
+        let expansion = BindingExpansion::fixture(
+            "/external/workspace/Cargo.toml",
+            "/external/workspace/demo/Cargo.toml",
+            Vec::<String>::new(),
+        );
+        let builder = Builder::new(
+            &config,
+            BuildOptions {
+                release: false,
+                selection: BuildSelection::Expanded(Box::new(expansion)),
+                on_output: None,
+                extra_env: Vec::new(),
+            },
+        );
+        let command = builder.native_link_metadata_command().unwrap();
+        let arguments = command
+            .get_args()
+            .map(|argument| argument.to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            &arguments[arguments.len() - 3..],
+            ["--lib", "--", "--print=native-static-libs"],
+            "cargo rejects --print on stable unless it follows the rustc `--`"
+        );
     }
 
     #[test]

@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use askama::Template;
+use boltffi_bindgen::cargo::LibraryCargoArgs;
 
 use crate::build::{
     CargoBuildProfile, OutputCallback, resolve_build_profile, run_command_streaming,
@@ -143,6 +144,9 @@ impl CSharpPackagingPlan {
         let build_cargo_args = resolve_build_cargo_args(config, TargetSection::CSharp, cargo_args);
         let cargo = Cargo::current(&build_cargo_args)?;
         ensure_csharp_pack_cargo_args_supported(&cargo)?;
+        if !no_build {
+            LibraryCargoArgs::parse(cargo.probe_command_arguments())?;
+        }
         let metadata = cargo.metadata()?;
         let cargo_manifest_path = cargo.manifest_path()?;
         let package_selector =
