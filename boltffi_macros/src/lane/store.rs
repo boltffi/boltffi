@@ -2,12 +2,15 @@ use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use boltffi_binding::{RawSourceRecord, RecordStore, SELF_ID, SourceFragment};
+use boltffi_binding::{RawSourceRecord, RecordStore, SELF_ID, SourceFragment, TypeNode};
 use boltffi_scan::SlotSource;
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
-use super::{Entry, Lane, Reference, crate_name, lane_path, lane_paths, raw_json, selected_id};
+use super::{
+    Build, Entry, REPR_ARG_OF, Reached, Reference, crate_name, lane_path, lane_paths, raw_json,
+    selected_id,
+};
 use crate::capture::{self, Fragments};
 
 pub struct Store {
@@ -28,8 +31,10 @@ thread_local! {
 
 impl Store {
     pub fn find() -> Option<&'static Self> {
-        let manifest_dir = PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR")?);
-        let path = manifest_dir
+        if Build::current() == Build::SourceRecords {
+            return None;
+        }
+        let path = Path::new(env!("OUT_DIR"))
             .ancestors()
             .map(|directory| directory.join(RecordStore::RELATIVE_PATH))
             .find(|path| path.is_file())?;
@@ -114,6 +119,7 @@ impl Store {
         records: &[&RawSourceRecord],
     ) -> Result<Resolution, String> {
         let krate = crate_name()?;
+        let alias = format!("{}::__private::{REPR_ARG_OF}", capture::facade());
         let references = lane_paths(fragments)
             .iter()
             .map(|path| {
@@ -128,24 +134,30 @@ impl Store {
                             .and_then(|index| record.slots.get(index))
                     })
                     .ok_or_else(|| format!("the record store resolves no `{path}`"))?;
-                let id = declaration_id(descriptor);
-                let lane = id
-                    .as_ref()
-                    .map(|id| {
-                        self.entries(id, &mut HashSet::new()).map(|entries| Lane {
-                            id: id.clone(),
-                            entries,
-                        })
-                    })
-                    .transpose()?;
+                let node = type_node(descriptor)?;
+                let mut reached = Vec::new();
+                declarations(&node, &mut Vec::new(), &mut |id, positions| {
+                    let path = positions.iter().fold(path.clone(), |container, position| {
+                        format!("{alias}<{container}, {position}>")
+                    });
+                    reached.push(Reached {
+                        tag: crate_tag(id, &krate).to_string(),
+                        id: id.to_owned(),
+                        path,
+                    });
+                });
+                let mut seen = HashSet::new();
+                let entries = reached
+                    .iter()
+                    .try_fold(Vec::new(), |mut entries, reached| {
+                        entries.extend(self.entries(&reached.id, &mut seen)?);
+                        Ok::<_, String>(entries)
+                    })?;
                 Ok(Reference {
                     descriptor: raw_json(descriptor.clone())?,
-                    tag: id
-                        .as_deref()
-                        .map(|id| crate_tag(id, &krate).to_string())
-                        .unwrap_or_default(),
                     path,
-                    lane,
+                    reached,
+                    entries,
                 })
             })
             .collect::<Result<Vec<_>, String>>()?;
@@ -158,6 +170,8 @@ impl Store {
         Ok(Resolution { references, checks })
     }
 
+    /// A declaration's entry, resolved as rustc resolved it, and the entries of every
+    /// declaration its slots reach, so no copy of it classifies with its slots unresolved.
     fn entries(&self, id: &str, seen: &mut HashSet<String>) -> Result<Vec<Entry>, String> {
         if !seen.insert(id.to_owned()) {
             return Ok(Vec::new());
@@ -167,36 +181,31 @@ impl Store {
             .get(id)
             .map(|index| &self.records[*index])
             .ok_or_else(|| format!("the record store declares no `{id}`"))?;
-        let module = crate_of(record).to_owned();
-        let json = raw_json(String::from_utf8_lossy(&record.json).into_owned())?;
-        match fragment_of(record) {
-            Some(SourceFragment::Custom(_)) => {
-                let own = Entry {
-                    module,
-                    slots: record
-                        .slots
-                        .iter()
-                        .map(|descriptor| raw_json(descriptor.clone()))
-                        .collect::<Result<Vec<_>, _>>()?,
-                    json,
-                    lookup: false,
-                };
-                record
-                    .slots
-                    .iter()
-                    .filter_map(|descriptor| declaration_id(descriptor))
-                    .try_fold(vec![own], |mut entries, slot_id| {
-                        entries.extend(self.entries(&slot_id, seen)?);
-                        Ok(entries)
-                    })
-            }
-            _ => Ok(vec![Entry {
-                module,
-                slots: Vec::new(),
-                json,
-                lookup: true,
-            }]),
-        }
+        let own = Entry {
+            module: crate_of(record).to_owned(),
+            slots: record
+                .slots
+                .iter()
+                .map(|descriptor| raw_json(descriptor.clone()))
+                .collect::<Result<Vec<_>, _>>()?,
+            json: raw_json(String::from_utf8_lossy(&record.json).into_owned())?,
+            lookup: false,
+        };
+        let mut reached = Vec::new();
+        record.slots.iter().try_for_each(|descriptor| {
+            declarations(
+                &type_node(descriptor)?,
+                &mut Vec::new(),
+                &mut |slot_id, _| {
+                    reached.push(slot_id.to_owned());
+                },
+            );
+            Ok::<_, String>(())
+        })?;
+        reached.iter().try_fold(vec![own], |mut entries, slot_id| {
+            entries.extend(self.entries(slot_id, seen)?);
+            Ok(entries)
+        })
     }
 }
 
@@ -252,12 +261,26 @@ fn declared_id(record: &RawSourceRecord) -> Option<String> {
     }
 }
 
-fn declaration_id(descriptor: &str) -> Option<String> {
-    serde_json::from_str::<serde_json::Value>(descriptor)
-        .ok()?
-        .get("id")?
-        .as_str()
-        .map(crate_scoped)
+fn type_node(descriptor: &str) -> Result<TypeNode, String> {
+    serde_json::from_str(descriptor).map_err(|error| error.to_string())
+}
+
+/// Visits each declaration a slot descriptor names, depth first, with the argument
+/// positions that lead to it from the slot's own type.
+fn declarations(
+    node: &TypeNode,
+    positions: &mut Vec<usize>,
+    visit: &mut impl FnMut(&str, &[usize]),
+) {
+    match node {
+        TypeNode::Id { id } => visit(&crate_scoped(id), positions),
+        TypeNode::Prim { .. } => {}
+        TypeNode::Shape { args, .. } => args.iter().enumerate().for_each(|(position, arg)| {
+            positions.push(position);
+            declarations(arg, positions, visit);
+            positions.pop();
+        }),
+    }
 }
 
 fn crate_scoped(id: &str) -> String {

@@ -10,11 +10,12 @@ use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 
 use boltffi_ast::{
-    BuiltinType, ClassDef, ClassId, ConstantDef, ConstantId, ConstantOwner, CustomRemotePath,
-    CustomRemoteType, CustomTypeConverter, CustomTypeDef, CustomTypeId, DocComment, EnumDef,
-    EnumId, FieldDef, FunctionDef, FunctionId, MethodDef, NamePart, PackageInfo, Path, PathRoot,
-    PathSegment, Primitive, RecordDef, RecordId, ReturnDef, SourceContract, StreamDef, StreamId,
-    TraitDef, TraitId, TypeExpr, VariantPayload,
+    BuiltinType, ClassDef, ClassId, ConstExpr, ConstantDef, ConstantId, ConstantOwner,
+    CustomRemotePath, CustomRemoteType, CustomTypeConverter, CustomTypeDef, CustomTypeId,
+    DocComment, EnumDef, EnumId, FieldDef, FunctionDef, FunctionId, GenericArgument,
+    IntegerLiteral, Literal, MethodDef, NamePart, PackageInfo, Path, PathRoot, PathSegment,
+    Primitive, RecordDef, RecordId, ReturnDef, SourceContract, StreamDef, StreamId, TraitDef,
+    TraitId, TypeExpr, VariantPayload,
 };
 use serde::{Deserialize, Serialize};
 
@@ -129,24 +130,32 @@ pub fn aggregate_records(
     records: &[RawSourceRecord],
     package: PackageInfo,
 ) -> Result<SourceContract, SourceFragmentError> {
-    aggregate(records, &[], package)
+    aggregate(records, &[], package, None)
 }
 
 /// Aggregates one invocation's resolved records with lookup-only records for the
 /// declarations it names. Lookup records keep their slots unresolved and only answer
 /// id, kind, and shape questions; an own declaration wins over its lookup copy.
+///
+/// `argument_alias` is the path of a generic alias over a container type and an argument
+/// position, such as `ReprArgOf<Container, N>`. A slot whose written type resolves to a
+/// container, as `Points` does for `type Points = Vec<Point>`, spells each declaration the
+/// container holds through it, so the invocation can name `Point` where only `Points` is
+/// in scope.
 pub fn aggregate_invocation(
     resolved: &[RawSourceRecord],
     lookup: &[RawSourceRecord],
     package: PackageInfo,
+    argument_alias: &Path,
 ) -> Result<SourceContract, SourceFragmentError> {
-    aggregate(resolved, lookup, package)
+    aggregate(resolved, lookup, package, Some(argument_alias))
 }
 
 fn aggregate(
     resolved: &[RawSourceRecord],
     lookup: &[RawSourceRecord],
     package: PackageInfo,
+    argument_alias: Option<&Path>,
 ) -> Result<SourceContract, SourceFragmentError> {
     let tagged = resolved
         .iter()
@@ -187,7 +196,10 @@ fn aggregate(
         fragments.push((fragment, slots, record.module.clone(), is_lookup));
     }
 
-    let mut declared = Declared::default();
+    let mut declared = Declared {
+        argument_alias: argument_alias.cloned(),
+        ..Declared::default()
+    };
     let mut unique: HashMap<String, (&SourceFragment, &[TypeNode], bool)> = HashMap::new();
     for (fragment, slots, module, is_lookup) in &fragments {
         let id = fragment_id(fragment, module);
@@ -390,6 +402,7 @@ struct Declared {
     kinds: HashMap<String, DeclaredKind>,
     pools: HashMap<String, Vec<String>>,
     shadowed: HashMap<String, HashSet<String>>,
+    argument_alias: Option<Path>,
 }
 
 /// A declaration or custom remote whose unqualified name matches a builtin makes
@@ -588,7 +601,6 @@ fn resolve_fragment(
     let mut resolve = |expr: &mut TypeExpr| resolve_expr(expr, slots, declared, krate);
     match fragment {
         SourceFragment::Record(def) => {
-            refuse_primitive_field_slots(&def.fields, slots)?;
             resolve_fields(&mut def.fields, &mut resolve)?;
             resolve_methods(&mut def.methods, &mut resolve)
         }
@@ -636,31 +648,6 @@ fn resolve_fragment(
     }
 }
 
-/// A record field slot never resolves to a primitive, so a lookup-only record whose slots
-/// stay unresolved still answers whether it crosses by direct memory.
-fn refuse_primitive_field_slots(
-    fields: &[FieldDef],
-    slots: &[TypeNode],
-) -> Result<(), SourceFragmentError> {
-    fields.iter().try_for_each(|field| {
-        let TypeExpr::Record { id, .. } = &field.type_expr else {
-            return Ok(());
-        };
-        let Some(index) = id.as_str().strip_prefix(SLOT_ID_PREFIX) else {
-            return Ok(());
-        };
-        match slot_node(index, slots)? {
-            TypeNode::Prim { prim } if matches!(leaf_expr(prim), Ok(TypeExpr::Primitive(_))) => {
-                Err(SourceFragmentError::PrimitiveFieldSlot {
-                    field: field.name.spelling().to_owned(),
-                    primitive: prim.clone(),
-                })
-            }
-            _ => Ok(()),
-        }
-    })
-}
-
 fn resolve_fields(
     fields: &mut [FieldDef],
     resolve: &mut impl FnMut(&mut TypeExpr) -> Result<(), SourceFragmentError>,
@@ -705,7 +692,11 @@ fn resolve_expr(
         && let Some(index) = id.as_str().strip_prefix(SLOT_ID_PREFIX)
     {
         let node = slot_node(index, slots)?;
-        *expr = node_expr(node, Some(path.clone()), &declared.kinds)?;
+        let spelling = Spelling {
+            slot: id.clone(),
+            path: path.clone(),
+        };
+        *expr = node_expr(node, Some(spelling), declared)?;
         return Ok(());
     }
     if let TypeExpr::InternedString {
@@ -821,17 +812,45 @@ fn resolve_fn_sig(
     Ok(())
 }
 
+/// A slot's type as the source spells it: the slot it fills and the path written there.
+struct Spelling {
+    slot: RecordId,
+    path: Path,
+}
+
+impl Spelling {
+    /// The spelling of the type argument at `position` of the container this one names.
+    fn argument(&self, alias: &Path, position: usize) -> Self {
+        let container = TypeExpr::record(self.slot.clone(), self.path.clone());
+        let index = IntegerLiteral::new(position as i128, position.to_string());
+        let mut path = alias.clone();
+        if let Some(segment) = path.segments.last_mut() {
+            segment.arguments = vec![
+                GenericArgument::Type(container),
+                GenericArgument::Const(ConstExpr::Literal(Literal::Integer(index))),
+            ];
+        }
+        Self {
+            slot: self.slot.clone(),
+            path,
+        }
+    }
+}
+
 fn node_expr(
     node: &TypeNode,
-    path: Option<Path>,
-    kinds: &HashMap<String, DeclaredKind>,
+    spelling: Option<Spelling>,
+    declared: &Declared,
 ) -> Result<TypeExpr, SourceFragmentError> {
     match node {
         TypeNode::Id { id } => {
-            let kind = kinds
+            let kind = declared
+                .kinds
                 .get(id)
                 .ok_or_else(|| SourceFragmentError::UnresolvedReference { id: id.clone() })?;
-            let path = path.unwrap_or_else(|| synthesized_path(id));
+            let path = spelling
+                .map(|spelling| spelling.path)
+                .unwrap_or_else(|| synthesized_path(id));
             Ok(match kind {
                 DeclaredKind::Record => TypeExpr::record(RecordId::new(id.clone()), path),
                 DeclaredKind::Enum => TypeExpr::enumeration(EnumId::new(id.clone()), path),
@@ -848,7 +867,14 @@ fn node_expr(
         TypeNode::Shape { shape, args } => {
             let mut resolved = args
                 .iter()
-                .map(|arg| node_expr(arg, None, kinds))
+                .enumerate()
+                .map(|(position, arg)| {
+                    let argument = spelling
+                        .as_ref()
+                        .zip(declared.argument_alias.as_ref())
+                        .map(|(spelling, alias)| spelling.argument(alias, position));
+                    node_expr(arg, argument, declared)
+                })
                 .collect::<Result<Vec<_>, _>>()?;
             shape_expr(shape, &mut resolved)
         }
@@ -1012,13 +1038,6 @@ pub enum SourceFragmentError {
         /// The crate whose declaration shadows it and whose signature spells it.
         krate: String,
     },
-    /// A record field names a type that resolves to a primitive, such as an alias.
-    PrimitiveFieldSlot {
-        /// The field's spelling.
-        field: String,
-        /// The primitive the named type resolved to.
-        primitive: String,
-    },
     /// A record marks an invocation the capture cannot describe yet.
     UnsupportedCapture {
         /// Module path of the emitting invocation.
@@ -1081,11 +1100,6 @@ impl std::fmt::Display for SourceFragmentError {
                 formatter,
                 "builtin `{name}` is shadowed in crate `{krate}` by a declaration of the same \
                  name; name the custom type by its declared name in signatures"
-            ),
-            Self::PrimitiveFieldSlot { field, primitive } => write!(
-                formatter,
-                "field `{field}` names a type that resolves to `{primitive}`; \
-                 write the primitive directly"
             ),
             Self::UnsupportedCapture {
                 module,
@@ -1166,18 +1180,81 @@ mod tests {
     }
 
     #[test]
-    fn a_record_field_slot_resolving_to_a_primitive_is_refused() {
+    fn a_record_field_slot_resolving_to_a_primitive_takes_the_primitive() {
         let aliased = raw(
             "demo",
             &[r#"{"prim":"f64"}"#],
             record_fragment(vec![FieldDef::new(name("meters"), slot_leaf(0, "Meters"))]),
         );
 
-        assert!(matches!(
-            aggregate_records(&[aliased], PackageInfo::new("demo", None)),
-            Err(SourceFragmentError::PrimitiveFieldSlot { field, primitive })
-                if field == "meters" && primitive == "f64"
-        ));
+        let contract = aggregate_records(&[aliased], PackageInfo::new("demo", None))
+            .expect("a primitive alias resolves");
+
+        assert_eq!(
+            contract.records[0].fields[0].type_expr,
+            TypeExpr::Primitive(Primitive::F64)
+        );
+    }
+
+    fn points_record() -> RawSourceRecord {
+        raw(
+            "demo",
+            &[r#"{"shape":"Vec","args":[{"id":"demo::Point"}]}"#],
+            record_fragment(vec![FieldDef::new(name("points"), slot_leaf(0, "Points"))]),
+        )
+    }
+
+    fn argument_alias() -> Path {
+        Path::new(
+            PathRoot::Absolute,
+            ["boltffi", "__private", "ReprArgOf"]
+                .into_iter()
+                .map(PathSegment::new)
+                .collect(),
+        )
+    }
+
+    #[test]
+    fn an_invocation_spells_what_an_aliased_container_holds_through_the_argument_alias() {
+        let contract = aggregate_invocation(
+            &[points_record(), point_record()],
+            &[],
+            PackageInfo::new("demo", None),
+            &argument_alias(),
+        )
+        .expect("the invocation aggregates");
+
+        let mut element = argument_alias();
+        element.segments[2].arguments = vec![
+            GenericArgument::Type(slot_leaf(0, "Points")),
+            GenericArgument::Const(ConstExpr::Literal(Literal::Integer(IntegerLiteral::new(
+                0, "0",
+            )))),
+        ];
+        assert_eq!(
+            contract.records[1].fields[0].type_expr,
+            TypeExpr::Vec(Box::new(TypeExpr::record(
+                RecordId::new("demo::Point"),
+                element
+            )))
+        );
+    }
+
+    #[test]
+    fn bindgen_names_what_an_aliased_container_holds_by_its_declaration() {
+        let contract = aggregate_records(
+            &[points_record(), point_record()],
+            PackageInfo::new("demo", None),
+        )
+        .expect("the records aggregate");
+
+        assert_eq!(
+            contract.records[1].fields[0].type_expr,
+            TypeExpr::Vec(Box::new(TypeExpr::record(
+                RecordId::new("demo::Point"),
+                Path::single("Point")
+            )))
+        );
     }
 
     #[test]
@@ -1193,8 +1270,13 @@ mod tests {
             record_fragment(vec![FieldDef::new(name("next"), slot_leaf(0, "Route"))]),
         );
 
-        let contract = aggregate_invocation(&[own], &[lookup], PackageInfo::new("demo", None))
-            .expect("invocation aggregates");
+        let contract = aggregate_invocation(
+            &[own],
+            &[lookup],
+            PackageInfo::new("demo", None),
+            &argument_alias(),
+        )
+        .expect("invocation aggregates");
 
         assert_eq!(contract.records.len(), 1);
         assert_eq!(
@@ -1220,7 +1302,7 @@ mod tests {
         );
 
         assert!(matches!(
-            aggregate_invocation(&[], &[direct, encoded], PackageInfo::new("demo", None)),
+            aggregate_invocation(&[], &[direct, encoded], PackageInfo::new("demo", None), &argument_alias()),
             Err(SourceFragmentError::DuplicateDeclaration { id }) if id == "demo::Route"
         ));
     }
@@ -1242,7 +1324,7 @@ mod tests {
         );
 
         assert!(matches!(
-            aggregate_invocation(&[own], &[lookup], PackageInfo::new("demo", None)),
+            aggregate_invocation(&[own], &[lookup], PackageInfo::new("demo", None), &argument_alias()),
             Err(SourceFragmentError::DuplicateDeclaration { id }) if id == "demo::Route"
         ));
     }
@@ -1255,8 +1337,13 @@ mod tests {
             record_fragment(vec![FieldDef::new(name("next"), slot_leaf(0, "Route"))]),
         );
 
-        let contract = aggregate_invocation(&[], &[lookup], PackageInfo::new("demo", None))
-            .expect("lookup aggregates");
+        let contract = aggregate_invocation(
+            &[],
+            &[lookup],
+            PackageInfo::new("demo", None),
+            &argument_alias(),
+        )
+        .expect("lookup aggregates");
 
         assert_eq!(
             contract.records[0].fields[0].type_expr,

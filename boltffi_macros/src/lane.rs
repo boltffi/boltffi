@@ -11,7 +11,8 @@
 //!
 //! A lane is reached only through a path that names it, so it cannot follow a `type`
 //! alias or the remote path of a custom type. `boltffi generate` therefore keeps the
-//! records of its records build in the workspace, where rustc resolved every spelling.
+//! records of its records build, where rustc resolved every spelling, in Cargo's build
+//! directory.
 //! An invocation the record store holds takes its references from the store instead of
 //! a lane chain, and checks in const context that each spelling still resolves to the
 //! declaration the store recorded. Lowering and expansion are the same either way.
@@ -20,7 +21,7 @@ mod store;
 
 use std::collections::HashSet;
 
-use boltffi_ast::PackageInfo;
+use boltffi_ast::{PackageInfo, Path, PathRoot, PathSegment};
 use boltffi_binding::{
     Native, RawSourceRecord, SELF_ID, SLOT_ID_PREFIX, SourceFragment, SurfaceLower, Wasm32,
     aggregate_invocation, lower_invocation,
@@ -197,38 +198,49 @@ pub(crate) fn start(kind: Kind, attribute: TokenStream, item: TokenStream) -> To
         Ok(fragments) => fragments,
         Err(message) => return compile_error(&message),
     };
-    let lane = match immediate_lane(kind, &fragments, &item) {
-        Ok(lane) => lane,
-        Err(message) => return compile_error(&message),
-    };
     let store = Store::find();
     let expanded = match store.and_then(|store| store.resolve(&fragments)) {
-        Some(resolution) => resolution
-            .and_then(|resolution| {
-                let expanded = finish(kind, &attribute, &item, &resolution.references)?;
-                let checks = resolution.checks;
-                Ok(quote! {
-                    #expanded
-                    #checks
-                })
+        Some(resolution) => resolution.and_then(|resolution| {
+            let expanded = finish(
+                kind,
+                &attribute,
+                &item,
+                &resolution.references,
+                Resolved::FromStore,
+            )?;
+            let checks = resolution.checks;
+            Ok(quote! {
+                #expanded
+                #checks
             })
-            .unwrap_or_else(|message| compile_error(&message)),
-        None => {
+        }),
+        None => immediate_lane(kind, &fragments, &item).map(|lane| {
             let stale = store
                 .map(|store| store.stale_warning(&fragments))
                 .unwrap_or_default();
             let chain = step(kind, &attribute, &item, Vec::new(), lane_paths(&fragments));
             quote! {
+                #lane
                 #stale
                 #chain
             }
-        }
+        }),
     };
+    let expanded = expanded.unwrap_or_else(|message| compile_error(&message));
     quote! {
         #scaffolded
-        #lane
         #expanded
     }
+}
+
+/// Where an invocation's references resolved, which decides when its lane is defined.
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum Resolved {
+    /// Through lane chains; a declared type defined its lane before the chain ran.
+    ThroughLanes,
+    /// From the record store, with no chain to wait on, so every lane carries resolved
+    /// entries.
+    FromStore,
 }
 
 const fn chains_before_lane(kind: Kind) -> bool {
@@ -293,7 +305,9 @@ fn step(
     let Some((next, rest)) = pending.split_first() else {
         return fragments(kind, attribute, item)
             .and_then(|fragments| Reference::through_lanes(&fragments, &resolved))
-            .and_then(|references| finish(kind, attribute, item, &references))
+            .and_then(|references| {
+                finish(kind, attribute, item, &references, Resolved::ThroughLanes)
+            })
             .unwrap_or_else(|message| compile_error(&message));
     };
     let facade = capture::facade();
@@ -399,12 +413,20 @@ pub(crate) fn lane_path(slot: &SlotSource) -> TokenStream {
 }
 
 /// What one spelling an invocation writes resolves to: the slot descriptor its own record
-/// takes, the lane answer of the declaration it names, and the tag that declaration's
-/// conversions are keyed to.
+/// takes, the declarations the spelling reaches, and the entries those declarations need
+/// to aggregate.
 pub(crate) struct Reference {
     path: String,
     descriptor: Box<RawValue>,
-    lane: Option<Lane>,
+    reached: Vec<Reached>,
+    entries: Vec<Entry>,
+}
+
+/// A declaration a spelling reaches: how this site names it, and the tag its declaring
+/// crate keys its conversions to.
+pub(crate) struct Reached {
+    id: String,
+    path: String,
     tag: String,
 }
 
@@ -419,12 +441,23 @@ impl Reference {
                 let path = path.to_string();
                 Ok(Self {
                     descriptor: raw_json(serde_json::json!({ "id": lane.id }).to_string())?,
-                    tag: format!("{path}!(@tag)"),
+                    reached: vec![Reached {
+                        tag: format!("{path}!(@tag)"),
+                        id: lane.id,
+                        path: path.clone(),
+                    }],
+                    entries: lane.entries,
                     path,
-                    lane: Some(lane),
                 })
             })
             .collect()
+    }
+
+    /// The declaration the spelling names itself, rather than one a container it names holds.
+    fn named(&self) -> Option<&Reached> {
+        self.reached
+            .first()
+            .filter(|reached| reached.path == self.path)
     }
 
     fn of<'reference>(
@@ -444,6 +477,7 @@ fn finish(
     attribute: &TokenStream,
     item: &TokenStream,
     references: &[Reference],
+    resolved: Resolved,
 ) -> Result<TokenStream, String> {
     let parsed = syn::parse2::<syn::Item>(item.clone()).ok();
     let fragments = fragments(kind, attribute, item)?;
@@ -471,8 +505,7 @@ fn finish(
     let mut entries = own.clone();
     references
         .iter()
-        .filter_map(|reference| reference.lane.as_ref())
-        .flat_map(|lane| &lane.entries)
+        .flat_map(|reference| &reference.entries)
         .for_each(|entry| {
             if !entries.contains(entry) {
                 entries.push(entry.clone());
@@ -483,7 +516,7 @@ fn finish(
         .filter_map(|(fragment, slots)| {
             let id = selected_id(fragment, &krate, || {
                 let reference = Reference::of(references, slots.first()?).ok()?;
-                reference.lane.as_ref().map(|lane| lane.id.clone())
+                reference.named().map(|reached| reached.id.clone())
             })?;
             Some((id, fragment))
         })
@@ -511,13 +544,13 @@ fn finish(
         .collect::<HashSet<_>>();
     let customs = references
         .iter()
-        .filter_map(|reference| {
-            let lane = reference.lane.as_ref()?;
+        .flat_map(|reference| &reference.reached)
+        .map(|reached| {
             let reach = CustomReach {
-                path: reference.path.clone(),
-                tag: reference.tag.clone(),
+                path: reached.path.clone(),
+                tag: reached.tag.clone(),
             };
-            Some((lane.id.clone(), reach))
+            (reached.id.clone(), reach)
         })
         .collect::<std::collections::HashMap<_, _>>();
     let expanded = match kind {
@@ -532,7 +565,7 @@ fn finish(
         )?,
     };
     let lane = match lane_target(kind, parsed.as_ref(), item) {
-        Some((vis, name)) if chains_before_lane(kind) => {
+        Some((vis, name)) if chains_before_lane(kind) || resolved == Resolved::FromStore => {
             lane_definition(&vis, &name, &krate, entries)?
         }
         _ => TokenStream::new(),
@@ -557,8 +590,8 @@ fn check_methods_target(
     let target = slots
         .first()
         .and_then(|slot| Reference::of(references, slot).ok())
-        .and_then(|reference| reference.lane.as_ref())
-        .and_then(|lane| lane.entries.first())
+        .filter(|reference| reference.named().is_some())
+        .and_then(|reference| reference.entries.first())
         .ok_or("lane continuation lost a methods target")?;
     let target = serde_json::from_str::<SourceFragment>(target.json.get()).ok();
     let class = matches!(target, Some(SourceFragment::Class(_)));
@@ -604,15 +637,22 @@ fn repr_tag(
     });
     let tags = repr_slots
         .into_iter()
-        .map(|slot| {
-            slot.map(|slot| {
-                Reference::of(references, slot).and_then(|reference| {
-                    syn::parse_str::<TokenStream>(&reference.tag).map_err(|error| error.to_string())
+        .map(|slot| match slot {
+            Some(slot) => Reference::of(references, slot)?
+                .reached
+                .iter()
+                .map(|reached| {
+                    syn::parse_str::<TokenStream>(&reached.tag)
+                        .map(Some)
+                        .map_err(|error| error.to_string())
                 })
-            })
-            .transpose()
+                .collect::<Result<Vec<_>, String>>(),
+            None => Ok(vec![None]),
         })
-        .collect::<Result<Vec<_>, String>>()?;
+        .collect::<Result<Vec<_>, String>>()?
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
     let target = match kind {
         Kind::CustomType => crate::custom::r#type::parse_spec(item.clone().into())
             .ok()
@@ -724,8 +764,13 @@ fn render(
             })
             .collect::<Vec<_>>()
     };
-    let mut contract = aggregate_invocation(&records(false), &records(true), package.clone())
-        .map_err(|error| error.to_string())?;
+    let mut contract = aggregate_invocation(
+        &records(false),
+        &records(true),
+        package.clone(),
+        &argument_alias(),
+    )
+    .map_err(|error| error.to_string())?;
     let customs = reach_through_reprs(&contract.customs, customs);
     contract
         .customs
@@ -940,6 +985,20 @@ impl<'lowered> SurfaceRender<'lowered, Wasm32> for Expander<'lowered> {
         self.wasm32(expansion)
     }
 }
+
+/// The facade's `ReprArgOf`, through which a site names a declaration that a container
+/// written as a type alias holds.
+fn argument_alias() -> Path {
+    Path::new(
+        PathRoot::Absolute,
+        [capture::facade_name().as_str(), "__private", REPR_ARG_OF]
+            .into_iter()
+            .map(PathSegment::new)
+            .collect(),
+    )
+}
+
+const REPR_ARG_OF: &str = "ReprArgOf";
 
 /// How this site reaches a custom: the type path, and the tag its declaring crate keys
 /// the conversion to.

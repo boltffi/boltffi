@@ -97,6 +97,17 @@ pub mod route {{
 
     type Distance = {distance};
     type Coordinate = crate::geo::Point;
+    type Meters = f64;
+    type Points = Vec<crate::geo::Point>;
+    type Remaining = Option<units::si::f64::Length>;
+
+    #[boltffi::data]
+    #[derive(Clone)]
+    pub struct Leg {{
+        pub meters: Meters,
+        pub points: Points,
+        pub remaining: Remaining,
+    }}
 
     #[boltffi::export]
     pub fn stride(distance: Distance, start: Coordinate) -> units::si::f64::Length {{
@@ -106,6 +117,11 @@ pub mod route {{
     #[boltffi::export]
     pub fn total(lengths: Vec<units::si::f64::Length>) -> Option<Length> {{
         lengths.into_iter().reduce(|total, leg| Length(total.0 + leg.0))
+    }}
+
+    #[boltffi::export]
+    pub fn walk(points: Points, remaining: Remaining) -> Leg {{
+        Leg {{ meters: points.len() as Meters, points, remaining }}
     }}
 }}
 "#
@@ -123,9 +139,39 @@ pub mod route {{
         self.root.join("target")
     }
 
+    fn project_files(&self) -> Vec<String> {
+        let mut files = self
+            .files_under(&self.root)
+            .into_iter()
+            .map(|path| {
+                path.strip_prefix(&self.root)
+                    .expect("project file")
+                    .to_string_lossy()
+                    .replace('\\', "/")
+            })
+            .collect::<Vec<_>>();
+        files.sort();
+        files
+    }
+
+    fn files_under(&self, directory: &Path) -> Vec<PathBuf> {
+        fs::read_dir(directory)
+            .expect("read project directory")
+            .map(|entry| entry.expect("project entry").path())
+            .filter(|path| *path != self.target())
+            .flat_map(|path| match path.is_dir() {
+                true => self.files_under(&path),
+                false => vec![path],
+            })
+            .collect()
+    }
+
     fn generate(&self) -> String {
         Generation::new(self.root.join("app/Cargo.toml"))
-            .cargo_environment([("CARGO_TARGET_DIR", self.target())])
+            .cargo_environment([
+                ("CARGO_TARGET_DIR", self.target()),
+                ("CARGO_BUILD_BUILD_DIR", self.target()),
+            ])
             .render(Target::C)
             .expect("generation resolves every spelling")
             .files()
@@ -142,6 +188,7 @@ pub mod route {{
             .arg("--manifest-path")
             .arg(self.root.join("app/Cargo.toml"))
             .env("CARGO_TARGET_DIR", self.target())
+            .env("CARGO_BUILD_BUILD_DIR", self.target())
             .env_remove("BOLTFFI_SOURCE_RECORDS")
             .output()
             .expect("cargo runs")
@@ -191,8 +238,23 @@ fn generated_bindings_let_every_spelling_cross() {
     let build = workspace.build();
 
     assert!(
-        workspace.root.join(RecordStore::RELATIVE_PATH).is_file(),
-        "generation keeps the records for later builds"
+        workspace
+            .target()
+            .join(RecordStore::RELATIVE_PATH)
+            .is_file(),
+        "generation keeps the records in Cargo's build directory"
+    );
+    assert_eq!(
+        workspace.project_files(),
+        [
+            "Cargo.lock",
+            "Cargo.toml",
+            "app/Cargo.toml",
+            "app/src/lib.rs",
+            "units/Cargo.toml",
+            "units/src/lib.rs",
+        ],
+        "generation adds nothing to the project beside Cargo's own output"
     );
     assert!(
         build.status.success(),
@@ -203,6 +265,7 @@ fn generated_bindings_let_every_spelling_cross() {
     [
         "boltffi_function_3app6stride",
         "boltffi_function_3app5total",
+        "boltffi_function_3app4walk",
     ]
     .into_iter()
     .for_each(|symbol| {

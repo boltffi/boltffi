@@ -14,12 +14,15 @@ use quote::{format_ident, quote};
 
 /// Resolves the facade crate's path at the invocation site, honoring renames.
 pub(crate) fn facade() -> TokenStream {
+    let name = format_ident!("{}", facade_name());
+    quote! { ::#name }
+}
+
+/// The name the user's crate depends on the `boltffi` facade under.
+pub(crate) fn facade_name() -> String {
     match proc_macro_crate::crate_name("boltffi") {
-        Ok(proc_macro_crate::FoundCrate::Name(name)) => {
-            let name = format_ident!("{name}");
-            quote! { ::#name }
-        }
-        _ => quote! { ::boltffi },
+        Ok(proc_macro_crate::FoundCrate::Name(name)) => name,
+        _ => "boltffi".to_owned(),
     }
 }
 

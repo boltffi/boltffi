@@ -115,7 +115,7 @@ impl BindingMetadataBuild {
             artifacts,
             libraries,
             local_packages,
-            workspace_root: metadata.workspace_root.clone(),
+            build_directory: metadata.build_directory().map(Path::to_path_buf),
         })
     }
 }
@@ -133,28 +133,35 @@ pub struct SourceMetadata {
     pub libraries: Vec<PathBuf>,
     /// The root and every path package its normal dependencies reach.
     pub local_packages: Vec<boltffi_ast::PackageInfo>,
-    /// Root of the workspace the package belongs to, where the record store lives.
-    pub workspace_root: PathBuf,
+    /// Cargo's build directory for ordinary builds of the package, where the record store
+    /// lives. `None` when cargo reported neither a build nor a target directory.
+    pub build_directory: Option<PathBuf>,
 }
 
 impl SourceMetadata {
-    /// Writes the records to the workspace's [`RecordStore`], unless it already holds them.
+    /// Writes the records to the [`RecordStore`] in the package's build directory, unless it
+    /// already holds them.
     ///
-    /// Later builds of the workspace read the store, so a signature naming a type through
-    /// an alias or a remote path expands from the declaration rustc resolved it to.
-    pub fn write_record_store(&self) -> std::io::Result<PathBuf> {
-        let path = self.workspace_root.join(RecordStore::RELATIVE_PATH);
+    /// Later builds of the package read the store, so a signature naming a type through an
+    /// alias or a remote path expands from the declaration rustc resolved it to.
+    pub fn write_record_store(&self) -> std::io::Result<()> {
+        let Some(path) = self
+            .build_directory
+            .as_ref()
+            .map(|directory| directory.join(RecordStore::RELATIVE_PATH))
+        else {
+            return Ok(());
+        };
         let json = RecordStore::new(&self.source_records)
             .to_json()
             .map_err(std::io::Error::other)?;
         if std::fs::read_to_string(&path).is_ok_and(|kept| kept == json) {
-            return Ok(path);
+            return Ok(());
         }
         if let Some(directory) = path.parent() {
             std::fs::create_dir_all(directory)?;
         }
-        std::fs::write(&path, json)?;
-        Ok(path)
+        std::fs::write(&path, json)
     }
 }
 
@@ -314,8 +321,10 @@ struct CargoMetadata {
     /// any config override are already applied.
     #[serde(default)]
     target_directory: PathBuf,
+    /// Cargo's resolved build directory, which cargo versions before `build-dir` do not
+    /// report because they build in the target directory.
     #[serde(default)]
-    workspace_root: PathBuf,
+    build_directory: Option<PathBuf>,
     #[serde(default)]
     resolve: Option<MetadataResolve>,
 }
@@ -360,6 +369,12 @@ impl CargoMetadata {
             true => None,
             false => Some(&self.target_directory),
         }
+    }
+
+    fn build_directory(&self) -> Option<&Path> {
+        self.build_directory
+            .as_deref()
+            .or_else(|| self.target_directory())
     }
 
     fn package(
