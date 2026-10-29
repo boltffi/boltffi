@@ -218,11 +218,12 @@ impl std::fmt::Display for SourceRecordError {
 
 impl std::error::Error for SourceRecordError {}
 
-/// The source records of a workspace's last records build, kept in the workspace.
+/// The source records of a package's last records build, kept in Cargo's build directory.
 ///
-/// `boltffi generate` writes the store after its records build. Later builds read it so
-/// an invocation learns which declaration every type it names resolves to, as rustc
-/// resolved it, whatever spelling the signature uses.
+/// `boltffi generate` writes the store after its records build, into the build directory
+/// that ordinary builds of the package use. Later builds read it so an invocation learns
+/// which declaration every type it names resolves to, as rustc resolved it, whatever
+/// spelling the signature uses.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct RecordStore {
     version: u32,
@@ -239,8 +240,8 @@ struct StoredRecord {
 }
 
 impl RecordStore {
-    /// Where the store lives, relative to the workspace root.
-    pub const RELATIVE_PATH: &'static str = ".boltffi/records.json";
+    /// Where the store lives, relative to Cargo's build directory.
+    pub const RELATIVE_PATH: &'static str = "boltffi/records.json";
 
     const VERSION: u32 = 1;
 

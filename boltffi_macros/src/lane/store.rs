@@ -7,7 +7,9 @@ use boltffi_scan::SlotSource;
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
-use super::{Entry, Lane, Reference, crate_name, lane_path, lane_paths, raw_json, selected_id};
+use super::{
+    Build, Entry, Lane, Reference, crate_name, lane_path, lane_paths, raw_json, selected_id,
+};
 use crate::capture::{self, Fragments};
 
 pub struct Store {
@@ -28,8 +30,10 @@ thread_local! {
 
 impl Store {
     pub fn find() -> Option<&'static Self> {
-        let manifest_dir = PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR")?);
-        let path = manifest_dir
+        if Build::current() == Build::SourceRecords {
+            return None;
+        }
+        let path = Path::new(env!("OUT_DIR"))
             .ancestors()
             .map(|directory| directory.join(RecordStore::RELATIVE_PATH))
             .find(|path| path.is_file())?;

@@ -11,7 +11,8 @@
 //!
 //! A lane is reached only through a path that names it, so it cannot follow a `type`
 //! alias or the remote path of a custom type. `boltffi generate` therefore keeps the
-//! records of its records build in the workspace, where rustc resolved every spelling.
+//! records of its records build, where rustc resolved every spelling, in Cargo's build
+//! directory.
 //! An invocation the record store holds takes its references from the store instead of
 //! a lane chain, and checks in const context that each spelling still resolves to the
 //! declaration the store recorded. Lowering and expansion are the same either way.
