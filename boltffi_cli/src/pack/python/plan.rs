@@ -67,10 +67,7 @@ pub struct PythonPackagingPlan {
     pub interpreters: Vec<PythonInterpreterSelection>,
     pub layout: PythonPackageLayout,
     pub cargo_context: PythonCargoContext,
-    /// The expansion handle every other `pack` backend resolves. It carries the
-    /// active feature set the `#[data]` macro must see, and the `--cfg` that
-    /// keeps an expansion build from sharing a fingerprint with a plain
-    /// `cargo build`.
+    /// The expansion handle every other `pack` backend resolves.
     pub(crate) expansion: BindingExpansion,
 }
 

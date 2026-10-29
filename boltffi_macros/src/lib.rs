@@ -40,7 +40,11 @@ pub fn custom_ffi(attribute: TokenStream, item: TokenStream) -> TokenStream {
 
 #[proc_macro]
 pub fn custom_type(item: TokenStream) -> TokenStream {
-    let captured = capture::custom_type_tokens(item.clone());
+    let captured = records(
+        lane::Kind::CustomType,
+        &proc_macro2::TokenStream::new(),
+        item.clone(),
+    );
     let lane = lane::start(
         lane::Kind::CustomType,
         proc_macro2::TokenStream::new(),
@@ -52,7 +56,11 @@ pub fn custom_type(item: TokenStream) -> TokenStream {
 
 #[proc_macro]
 pub fn interned_string_pool(item: TokenStream) -> TokenStream {
-    let captured = capture::interned_string_pool_tokens(item.clone());
+    let captured = records(
+        lane::Kind::Pool,
+        &proc_macro2::TokenStream::new(),
+        item.clone(),
+    );
     let lane = lane::start(
         lane::Kind::Pool,
         proc_macro2::TokenStream::new(),

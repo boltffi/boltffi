@@ -1,7 +1,7 @@
 //! Per-invocation capture: every `#[data]`/`#[export]` expansion appends its own source
 //! record, so binding discovery reads what the compiler compiled instead of re-scanning
 //! source. Invocations the capture cannot describe yet emit an unsupported marker, which
-//! makes bindgen fall back to the legacy path rather than ship a partial contract.
+//! makes bindgen refuse the crate rather than ship a partial contract.
 
 use boltffi_binding::SourceFragment;
 use boltffi_scan::{

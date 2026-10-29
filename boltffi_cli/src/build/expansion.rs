@@ -1,9 +1,7 @@
 use std::path::PathBuf;
-use std::process::Command;
 
 use boltffi_bindgen::cargo::LibraryCargoArgs;
 use boltffi_bindgen::generate::Generation;
-use boltffi_binding::BindingMetadataSurface;
 
 use crate::cargo::{Cargo, CargoMetadata, SelectedLibrary};
 use crate::cli::Result;
@@ -15,12 +13,11 @@ pub struct BindingExpansion {
     target_directory: PathBuf,
     cargo_args: LibraryCargoArgs,
     toolchain_selector: Option<String>,
-    surface: BindingMetadataSurface,
 }
 
 impl BindingExpansion {
     pub fn resolve(config: &Config, build_cargo_args: &[String]) -> Result<Self> {
-        Self::resolve_for_surface(config, build_cargo_args, BindingMetadataSurface::Native)
+        Self::resolve_selection(config, build_cargo_args, None)
     }
 
     /// The expansion for a caller that already selected its library by artifact
@@ -31,36 +28,12 @@ impl BindingExpansion {
         build_cargo_args: &[String],
         preferred_artifact: &str,
     ) -> Result<Self> {
-        Self::resolve_selection(
-            config,
-            build_cargo_args,
-            BindingMetadataSurface::Native,
-            Some(preferred_artifact),
-        )
-    }
-
-    pub fn resolve_for_surface(
-        config: &Config,
-        build_cargo_args: &[String],
-        surface: BindingMetadataSurface,
-    ) -> Result<Self> {
-        Self::resolve_selection(config, build_cargo_args, surface, None)
-    }
-
-    /// Like [`Self::resolve_preferred`], but for a non-`Native` surface.
-    pub fn resolve_preferred_for_surface(
-        config: &Config,
-        build_cargo_args: &[String],
-        surface: BindingMetadataSurface,
-        preferred_artifact: &str,
-    ) -> Result<Self> {
-        Self::resolve_selection(config, build_cargo_args, surface, Some(preferred_artifact))
+        Self::resolve_selection(config, build_cargo_args, Some(preferred_artifact))
     }
 
     fn resolve_selection(
         config: &Config,
         build_cargo_args: &[String],
-        surface: BindingMetadataSurface,
         preferred_artifact: Option<&str>,
     ) -> Result<Self> {
         let cargo = Cargo::current(build_cargo_args)?;
@@ -73,7 +46,6 @@ impl BindingExpansion {
             &metadata,
             &cargo_manifest_path,
             cargo_args,
-            surface,
             preferred_artifact,
         )
     }
@@ -110,12 +82,6 @@ impl BindingExpansion {
         &self.library
     }
 
-    /// Opens the rustc argument list that callers extend after the Cargo arguments.
-    pub fn configure_rustc(&self, command: &mut Command) -> Result<()> {
-        command.arg("--");
-        Ok(())
-    }
-
     pub fn generation(&self) -> Generation {
         Generation::new(self.manifest_path())
             .cargo_args(self.cargo_args.iter().cloned())
@@ -128,7 +94,6 @@ impl BindingExpansion {
         metadata: &CargoMetadata,
         cargo_manifest_path: &std::path::Path,
         cargo_args: LibraryCargoArgs,
-        surface: BindingMetadataSurface,
         preferred_artifact: Option<&str>,
     ) -> Result<Self> {
         let library = match preferred_artifact {
@@ -161,7 +126,6 @@ impl BindingExpansion {
             target_directory: metadata.target_directory.clone(),
             cargo_args,
             toolchain_selector: cargo.toolchain_selector().map(str::to_owned),
-            surface,
         })
     }
 }
@@ -179,12 +143,7 @@ impl BindingExpansion {
             target_directory: PathBuf::from("/external/workspace/target"),
             cargo_args: LibraryCargoArgs::parse(cargo_args).unwrap(),
             toolchain_selector: Some("+nightly".to_string()),
-            surface: BindingMetadataSurface::Native,
         }
-    }
-
-    pub(crate) fn surface(&self) -> BindingMetadataSurface {
-        self.surface
     }
 
     pub(crate) fn fixture_outputs(mut self, builds_staticlib: bool, builds_cdylib: bool) -> Self {
@@ -197,10 +156,7 @@ impl BindingExpansion {
 
 #[cfg(test)]
 mod tests {
-    use std::process::Command;
-
     use boltffi_bindgen::cargo::{LibraryCargoArgs, LibraryCargoArgsError};
-    use boltffi_binding::BindingMetadataSurface;
 
     use super::BindingExpansion;
     use crate::cargo::fixture::{CargoMetadataFixture, CargoPackageFixture, CargoTargetFixture};
@@ -220,7 +176,6 @@ mod tests {
             cargo_args: LibraryCargoArgs::parse(["--features".to_string(), "ffi".to_string()])
                 .unwrap(),
             toolchain_selector: Some("+nightly".to_string()),
-            surface: BindingMetadataSurface::Native,
         }
     }
 
@@ -310,7 +265,6 @@ mod tests {
             &metadata,
             cargo_manifest_path,
             LibraryCargoArgs::default(),
-            BindingMetadataSurface::Native,
             None,
         )
         .expect("hyphenated configured library should select its normalized Cargo artifact");
@@ -366,7 +320,6 @@ mod tests {
             &metadata,
             cargo_manifest_path,
             LibraryCargoArgs::default(),
-            BindingMetadataSurface::Native,
             Some(&config.crate_artifact_name()),
         )
         .expect("a caller-selected artifact should survive a second FFI cargo target");
@@ -380,7 +333,6 @@ mod tests {
                 &metadata,
                 cargo_manifest_path,
                 LibraryCargoArgs::default(),
-                BindingMetadataSurface::Native,
                 None,
             )
             .is_err(),
@@ -391,23 +343,5 @@ mod tests {
     #[test]
     fn retains_selected_rustup_toolchain() {
         assert_eq!(expansion().toolchain_selector(), Some("+nightly"));
-    }
-
-    #[test]
-    fn configures_cargo_command_with_selected_expansion() {
-        let expansion = expansion();
-        let mut command = Command::new("cargo");
-        expansion
-            .configure_rustc(&mut command)
-            .expect("expansion should configure command");
-
-        assert_eq!(command.get_envs().count(), 0);
-        assert_eq!(
-            command
-                .get_args()
-                .map(|argument| argument.to_string_lossy().into_owned())
-                .collect::<Vec<_>>(),
-            ["--"]
-        );
     }
 }

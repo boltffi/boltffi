@@ -13,7 +13,6 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use boltffi_backend::target::typescript::TypeScriptHost;
-use boltffi_binding::BindingMetadataSurface;
 use walkdir::WalkDir;
 
 use crate::build::{
@@ -277,11 +276,7 @@ fn build_wasm_target(
         None
     };
 
-    let expansion = BindingExpansion::resolve_for_surface(
-        config,
-        build_cargo_args,
-        BindingMetadataSurface::Wasm32,
-    )?;
+    let expansion = BindingExpansion::resolve(config, build_cargo_args)?;
     let build_options = BuildOptions {
         release: matches!(profile, WasmProfile::Release),
         selection: BuildSelection::Expanded(Box::new(expansion)),

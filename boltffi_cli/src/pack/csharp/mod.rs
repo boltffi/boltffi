@@ -4,8 +4,7 @@ use std::process::Command;
 use askama::Template;
 
 use crate::build::{
-    BindingExpansion, CargoBuildProfile, OutputCallback, resolve_build_profile,
-    run_command_streaming,
+    CargoBuildProfile, OutputCallback, resolve_build_profile, run_command_streaming,
 };
 use crate::cargo::Cargo;
 use crate::cli::{CliError, Result};
@@ -38,18 +37,6 @@ pub(crate) fn pack_csharp(
         &options.execution.cargo_args,
         options.execution.no_build,
     )?;
-    let binding_expansion = (!options.execution.no_build)
-        .then(|| {
-            BindingExpansion::resolve(
-                config,
-                &resolve_build_cargo_args(
-                    config,
-                    TargetSection::CSharp,
-                    &options.execution.cargo_args,
-                ),
-            )
-        })
-        .transpose()?;
     step.finish_success();
 
     sync_csharp_project(config, &plan)?;
@@ -82,13 +69,7 @@ pub(crate) fn pack_csharp(
         let native_library = if options.execution.no_build {
             existing_csharp_native_library(packaging_target)?
         } else {
-            build_csharp_native_library(
-                packaging_target,
-                binding_expansion
-                    .as_ref()
-                    .expect("C# native builds require binding expansion"),
-                &step,
-            )?
+            build_csharp_native_library(packaging_target, &step)?
         };
         copy_csharp_native_asset(&plan.layout, packaging_target, &native_library)?;
         step.finish_success_with(&format!("{}", native_library.display()));
@@ -296,7 +277,6 @@ fn ensure_csharp_pack_cargo_args_supported(cargo: &Cargo) -> Result<()> {
 
 fn build_csharp_native_library(
     packaging_target: &CSharpPackagingTarget,
-    binding_expansion: &BindingExpansion,
     step: &Step,
 ) -> Result<PathBuf> {
     let cargo_context = &packaging_target.cargo_context;
@@ -341,7 +321,6 @@ fn build_csharp_native_library(
         })?
         .configure_cargo_build(&mut command);
     command.arg("--lib");
-    binding_expansion.configure_rustc(&mut command)?;
 
     if step.is_verbose() {
         crate::pack::print_verbose_detail(&format!(

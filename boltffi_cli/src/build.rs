@@ -302,9 +302,9 @@ impl<'a> Builder<'a> {
 
     fn apply_expansion(&self, command: &mut Command) -> Result<()> {
         match &self.options.selection {
-            BuildSelection::Expanded(expansion) => {
+            BuildSelection::Expanded(_) => {
                 command.arg("--lib");
-                expansion.configure_rustc(command)
+                Ok(())
             }
             BuildSelection::Default { .. } => Ok(()),
         }
@@ -536,7 +536,7 @@ name = "demo"
                 .windows(2)
                 .any(|arguments| arguments == ["--features", "ffi"])
         );
-        assert_eq!(&arguments[arguments.len() - 2..], ["--lib", "--"]);
+        assert_eq!(arguments.last().map(String::as_str), Some("--lib"));
         assert!(!arguments.iter().any(|argument| argument == "--target"));
     }
 
