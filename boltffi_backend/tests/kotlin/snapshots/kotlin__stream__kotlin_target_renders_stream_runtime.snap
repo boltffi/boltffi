@@ -324,7 +324,7 @@ internal class WireReader(private val bytes: ByteArray) {
         return List(length) { read(this) }
     }
 
-    fun <K, V> readMap(readKey: (WireReader) -> K, readValue: (WireReader) -> V): Map<K, V> {
+    fun <K, V> readMap(readKey: (WireReader) -> K, readValue: (WireReader) -> V): kotlin.collections.Map<K, V> {
         val length = readU32().toInt()
         val values = LinkedHashMap<K, V>(length)
         repeat(length) {
@@ -563,7 +563,7 @@ internal class WireWriter(initialCapacity: Int) {
     }
 
     fun <K, V> writeMap(
-        value: Map<K, V>,
+        value: kotlin.collections.Map<K, V>,
         writeKey: (WireWriter, K) -> Unit,
         writeValue: (WireWriter, V) -> Unit,
     ) {
@@ -658,7 +658,7 @@ private object WireWriterPool {
     }
 }
 
-private inline fun <K, V> Map<K, V>.wireSize(
+private inline fun <K, V> kotlin.collections.Map<K, V>.wireSize(
     keySize: (K) -> Int,
     valueSize: (V) -> Int,
 ): Int = 4 + entries.sumOf { entry -> keySize(entry.key) + valueSize(entry.value) }

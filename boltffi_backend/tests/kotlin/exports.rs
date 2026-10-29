@@ -372,6 +372,20 @@ fn kotlin_target_renders_map_values_through_shared_codec() {
 }
 
 #[test]
+fn kotlin_target_qualifies_maps_beside_a_class_named_map() {
+    let rendered = rendered_fixture("exports/class_named_map");
+
+    assert!(rendered.contains("class Map internal constructor"));
+    assert!(rendered.contains("kotlin.collections.Map<String, Int>"));
+    assert!(
+        rendered
+            .match_indices("Map<")
+            .all(|(index, _)| rendered[..index].ends_with("kotlin.collections.")),
+        "every map type is qualified, so an exported class named Map cannot shadow it"
+    );
+}
+
+#[test]
 fn kotlin_target_renders_tuples_through_shared_codec() {
     insta::assert_snapshot!(rendered_fixture("exports/tuple_functions"));
 }
