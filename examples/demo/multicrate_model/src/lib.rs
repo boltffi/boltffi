@@ -33,6 +33,24 @@ pub enum ForeignState {
     Busy { reason: String },
 }
 
+/// A path that crosses FFI as a list of points, so the point record's codecs
+/// must exist in every build of this crate, metadata builds included.
+pub struct ForeignPath(Vec<ForeignPoint>);
+
+#[custom_ffi]
+impl CustomFfiConvertible for ForeignPath {
+    type FfiRepr = Vec<ForeignPoint>;
+    type Error = String;
+
+    fn into_ffi(&self) -> Vec<ForeignPoint> {
+        self.0.clone()
+    }
+
+    fn try_from_ffi(repr: Vec<ForeignPoint>) -> Result<Self, String> {
+        Ok(Self(repr))
+    }
+}
+
 pub struct ForeignCode(String);
 
 impl ForeignCode {
