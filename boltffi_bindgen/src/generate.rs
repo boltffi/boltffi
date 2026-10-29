@@ -20,8 +20,8 @@ use boltffi_backend::target::{
 };
 use boltffi_backend::{CustomTypeMapping, GeneratedOutput, Target as BackendTarget};
 use boltffi_binding::{
-    BindingMetadataSurface, Bindings, LowerError, Native, RawSourceRecord, SourceFragmentError,
-    Surface, SurfaceLower, Wasm32, aggregate_records, lower, reachable_from,
+    Bindings, LowerError, Native, RawSourceRecord, SourceFragmentError, Surface, SurfaceLower,
+    Wasm32, aggregate_records, lower, reachable_from,
 };
 use thiserror::Error;
 
@@ -41,7 +41,6 @@ use crate::target::Target;
 pub struct Generation {
     manifest_path: PathBuf,
     triple: Option<String>,
-    binding_surface: Option<BindingMetadataSurface>,
     coverage: CoverageMode,
     cargo_args: Vec<String>,
     cargo_environment: Vec<(OsString, OsString)>,
@@ -96,7 +95,6 @@ impl Generation {
         Self {
             manifest_path: manifest_path.into(),
             triple: None,
-            binding_surface: None,
             coverage: CoverageMode::Complete,
             cargo_args: Vec::new(),
             cargo_environment: Vec::new(),
@@ -149,12 +147,6 @@ impl Generation {
     /// Builds for a Cargo target triple.
     pub fn triple(mut self, triple: impl Into<String>) -> Self {
         self.triple = Some(triple.into());
-        self
-    }
-
-    #[allow(missing_docs)]
-    pub fn binding_surface(mut self, surface: BindingMetadataSurface) -> Self {
-        self.binding_surface = Some(surface);
         self
     }
 
@@ -849,36 +841,22 @@ impl Generation {
         if source.source_records.is_empty() {
             return Err(GenerationError::NoSourceRecords);
         }
+        source
+            .write_record_store()
+            .map_err(GenerationError::RecordStore)?;
         let seeds = seed_crates(&source.source_records, &source.local_packages);
         let contract = aggregate_records(&source.source_records, source.package)
             .map_err(GenerationError::SourceAggregation)?;
         let contract = reachable_from(contract, seeds.iter().map(String::as_str));
         let bindings = lower::<S>(&contract).map_err(GenerationError::Lower)?;
         if let Some(library) = linked_library(&source.libraries) {
-            let checked = checked_symbols(&build, library, &contract)?;
-            library_symbols::require_exported(
-                library,
-                bindings
-                    .symbols()
-                    .symbols()
-                    .iter()
-                    .map(|symbol| symbol.name().as_str())
-                    .filter(|name| {
-                        checked
-                            .as_ref()
-                            .is_none_or(|checked| checked.contains(*name))
-                    }),
-            )?;
+            library_symbols::require_linked(library, seeds.iter().map(String::as_str))?;
         }
         Ok(bindings)
     }
 
     fn metadata_build(&self) -> BindingMetadataBuild {
-        let surface = self
-            .binding_surface
-            .unwrap_or_else(|| BindingMetadataSurface::from_target_triple(self.triple.as_deref()));
         let mut build = BindingMetadataBuild::new(&self.manifest_path)
-            .surface(surface)
             .cargo_environment(self.cargo_environment.clone());
         if !self.cargo_args.is_empty() {
             build = build.cargo_args(self.cargo_args.clone());
@@ -891,31 +869,6 @@ impl Generation {
         }
         build
     }
-}
-
-/// The symbols `library` can vouch for, or `None` for all of them. A wasm surface built for
-/// the host lacks the wasm-only exports, so only the names both surfaces share are checked.
-fn checked_symbols(
-    build: &BindingMetadataBuild,
-    library: &Path,
-    contract: &boltffi_ast::SourceContract,
-) -> Result<Option<BTreeSet<String>>, GenerationError> {
-    if build.surface_is_native()
-        || library
-            .extension()
-            .is_some_and(|extension| extension == "wasm")
-    {
-        return Ok(None);
-    }
-    let native = lower::<Native>(contract).map_err(GenerationError::Lower)?;
-    Ok(Some(
-        native
-            .symbols()
-            .symbols()
-            .iter()
-            .map(|symbol| symbol.name().as_str().to_owned())
-            .collect(),
-    ))
 }
 
 /// The library the bindings load: the dynamic one when built, else the static one.
@@ -951,6 +904,9 @@ pub enum GenerationError {
     /// The compiled crate carried no per-invocation source records.
     #[error("compiled crate carries no BoltFFI source records; does it export anything?")]
     NoSourceRecords,
+    /// The workspace's record store could not be written.
+    #[error("write the BoltFFI record store: {0}")]
+    RecordStore(std::io::Error),
     /// Per-invocation source records did not aggregate into one contract.
     #[error("aggregate per-invocation source records: {0}")]
     SourceAggregation(SourceFragmentError),
@@ -1158,7 +1114,6 @@ mod tests {
             generation.metadata_build(),
             BindingMetadataBuild::new("selected/Cargo.toml")
                 .target("x86_64-unknown-linux-gnu")
-                .surface(BindingMetadataSurface::Native)
                 .cargo_args(["--features".to_string(), "ffi".to_string()])
                 .cargo_environment([(
                     OsString::from("CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER"),

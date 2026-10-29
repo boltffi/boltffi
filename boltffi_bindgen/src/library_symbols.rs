@@ -1,13 +1,14 @@
-//! The symbols a built library exports, to check generated bindings against.
+//! The crates a built library links, read from the linkage anchors a records build exports.
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
+use boltffi_binding::linkage_anchor;
 use object::read::archive::ArchiveFile;
 use object::{BinaryFormat, File, FileKind, NameOrOrdinal, Object, ObjectSymbol};
 use thiserror::Error;
 
-/// Symbols the bindings call that the built library does not export.
+/// Crates the bindings take declarations from that the built library does not link.
 #[derive(Debug, Error)]
 pub enum LibrarySymbolsError {
     /// The library could not be read.
@@ -26,63 +27,66 @@ pub enum LibrarySymbolsError {
         /// Object parse error.
         source: object::Error,
     },
-    /// Bindings name symbols the library lacks, so they would fail when loaded.
+    /// The bindings call exports of crates the library never links, so they would fail when loaded.
     #[error(
-        "bindings call symbols that `{path}` does not export: {}; \
-         the crates declaring them are not linked into the library; \
+        "bindings use crates that `{path}` does not link: {}; \
          name each such crate from the library crate, for example `use <crate> as _;`",
-        missing.join(", ")
+        unlinked.join(", ")
     )]
-    Missing {
+    Unlinked {
         /// Library path.
         path: PathBuf,
-        /// Missing symbol names, sorted.
-        missing: Vec<String>,
+        /// Unlinked crate names, sorted.
+        unlinked: Vec<String>,
     },
-    /// Bindings name symbols not found, and archive members that could hold them are unreadable.
+    /// Linkage could not be confirmed, and archive members that could hold it are unreadable.
     #[error(
-        "bindings call symbols not found in `{path}`: {}; \
+        "bindings use crates not found in `{path}`: {}; \
          its members {} are not object files the check can read, such as LLVM bitcode \
          from `-Clinker-plugin-lto`; build the library without bitcode members",
-        missing.join(", "),
+        unlinked.join(", "),
         unreadable.join(", ")
     )]
     Unreadable {
         /// Library path.
         path: PathBuf,
-        /// Missing symbol names, sorted.
-        missing: Vec<String>,
+        /// Crate names whose linkage was not confirmed, sorted.
+        unlinked: Vec<String>,
         /// Archive members that did not parse as object files.
         unreadable: Vec<String>,
     },
 }
 
-/// Checks that `library` exports every name in `symbols`.
-pub fn require_exported<'name>(
+/// Checks that `library` links every crate in `crates`.
+///
+/// A records build exports one [`linkage_anchor`] from each crate's scaffolding. A
+/// library exports a crate's anchor exactly when it links that crate, the same way it
+/// keeps or drops the crate's wrappers.
+pub fn require_linked<'krate>(
     library: &Path,
-    symbols: impl IntoIterator<Item = &'name str>,
+    crates: impl IntoIterator<Item = &'krate str>,
 ) -> Result<(), LibrarySymbolsError> {
     let Exported {
         symbols: exported,
         unreadable,
     } = exported(library)?;
-    let mut missing = symbols
+    let mut unlinked = crates
         .into_iter()
-        .filter(|symbol| !exported.contains(*symbol))
+        .filter(|krate| !exported.contains(&linkage_anchor(krate)))
         .map(str::to_owned)
         .collect::<Vec<_>>();
-    if missing.is_empty() {
+    if unlinked.is_empty() {
         return Ok(());
     }
-    missing.sort();
-    missing.dedup();
+    unlinked.sort();
+    unlinked.dedup();
     let path = library.to_path_buf();
     if unreadable.is_empty() {
-        return Err(LibrarySymbolsError::Missing { path, missing });
+        return Err(LibrarySymbolsError::Unlinked { path, unlinked });
     }
     Err(LibrarySymbolsError::Unreadable {
         path,
-        missing,
+        unlinked,
         unreadable,
     })
 }
@@ -195,7 +199,7 @@ mod tests {
     }
 
     #[test]
-    fn missing_symbols_name_the_archive_members_that_could_not_be_read() {
+    fn unconfirmed_crates_name_the_archive_members_that_could_not_be_read() {
         let directory =
             std::env::temp_dir().join(format!("boltffi-library-symbols-{}", std::process::id()));
         std::fs::create_dir_all(&directory).expect("temp dir is created");
@@ -206,13 +210,13 @@ mod tests {
         )
         .expect("archive is written");
 
-        let error = require_exported(&library, ["boltffi_function_4demo6answer"])
-            .expect_err("a symbol only a bitcode member could define is not verified");
+        let error = require_linked(&library, ["demo"])
+            .expect_err("a crate only a bitcode member could link is not verified");
 
         assert!(matches!(
             &error,
-            LibrarySymbolsError::Unreadable { missing, unreadable, .. }
-                if missing == &["boltffi_function_4demo6answer"] && unreadable == &["lib.bc"]
+            LibrarySymbolsError::Unreadable { unlinked, unreadable, .. }
+                if unlinked == &["demo"] && unreadable == &["lib.bc"]
         ));
         assert!(
             error.to_string().contains("linker-plugin-lto"),

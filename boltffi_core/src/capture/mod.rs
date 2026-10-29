@@ -8,4 +8,6 @@ pub use record::{
     SOURCE_RECORD_MAGIC, SOURCE_SECTION_MACH_O, SOURCE_SECTION_MACH_O_NAME, SOURCE_SECTION_OBJECT,
     record, record_len,
 };
-pub use type_info::{ClassDesc, DESC_CAPACITY, DescBuf, TraitDesc, TypeDesc, TypeInfo, trait_desc};
+pub use type_info::{
+    ClassDesc, DESC_CAPACITY, DescBuf, TraitDesc, TypeDesc, TypeInfo, expect_descriptor, trait_desc,
+};

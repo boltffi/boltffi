@@ -6,6 +6,7 @@
 //! round-trip between the const writer and this reader.
 
 use boltffi_ast::PackageInfo;
+use serde::{Deserialize, Serialize};
 
 /// Frame marker for one per-invocation source record.
 pub const SOURCE_RECORD_MAGIC: &[u8; 8] = b"BFFISRC1";
@@ -217,9 +218,101 @@ impl std::fmt::Display for SourceRecordError {
 
 impl std::error::Error for SourceRecordError {}
 
+/// The source records of a workspace's last records build, kept in the workspace.
+///
+/// `boltffi generate` writes the store after its records build. Later builds read it so
+/// an invocation learns which declaration every type it names resolves to, as rustc
+/// resolved it, whatever spelling the signature uses.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct RecordStore {
+    version: u32,
+    records: Vec<StoredRecord>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+struct StoredRecord {
+    package: String,
+    package_version: Option<String>,
+    module: String,
+    slots: Vec<String>,
+    json: String,
+}
+
+impl RecordStore {
+    /// Where the store lives, relative to the workspace root.
+    pub const RELATIVE_PATH: &'static str = ".boltffi/records.json";
+
+    const VERSION: u32 = 1;
+
+    /// Keeps the records of one records build.
+    pub fn new(records: &[RawSourceRecord]) -> Self {
+        Self {
+            version: Self::VERSION,
+            records: records
+                .iter()
+                .map(|record| StoredRecord {
+                    package: record.package.name.clone(),
+                    package_version: record.package.version.clone(),
+                    module: record.module.clone(),
+                    slots: record.slots.clone(),
+                    json: String::from_utf8_lossy(&record.json).into_owned(),
+                })
+                .collect(),
+        }
+    }
+
+    /// Reads a store, or returns `None` when the text is not a store of this version.
+    pub fn from_json(text: &str) -> Option<Self> {
+        serde_json::from_str::<Self>(text)
+            .ok()
+            .filter(|store| store.version == Self::VERSION)
+    }
+
+    /// Returns the store as JSON.
+    pub fn to_json(&self) -> Result<String, serde_json::Error> {
+        serde_json::to_string(self)
+    }
+
+    /// Returns the stored records.
+    pub fn records(&self) -> Vec<RawSourceRecord> {
+        self.records
+            .iter()
+            .map(|record| RawSourceRecord {
+                package: PackageInfo::new(record.package.clone(), record.package_version.clone()),
+                module: record.module.clone(),
+                slots: record.slots.clone(),
+                json: record.json.clone().into_bytes(),
+            })
+            .collect()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_store_keeps_its_records_exactly() {
+        let records = vec![RawSourceRecord {
+            package: PackageInfo::new("demo-app", Some("1.2.3".to_owned())),
+            module: "demo_app::geometry".to_owned(),
+            slots: vec![r#"{"id":"demo_app::geometry::Point","fingerprint":"0a1b"}"#.to_owned()],
+            json: br#"{"function":{"id":"$self::norm"}}"#.to_vec(),
+        }];
+
+        let store = RecordStore::new(&records);
+        let read = RecordStore::from_json(&store.to_json().expect("store serializes"))
+            .expect("a store of this version reads back");
+
+        assert_eq!(read.records(), records);
+    }
+
+    #[test]
+    fn a_store_of_another_version_is_not_read() {
+        let text = r#"{"version":0,"records":[]}"#;
+
+        assert!(RecordStore::from_json(text).is_none());
+    }
 
     fn frame(package: &str, version: &str, module: &str, slots: &[&str], json: &[u8]) -> Vec<u8> {
         let mut payload = Vec::new();

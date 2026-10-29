@@ -8,6 +8,15 @@
 //! as bindgen does with the same fragments.
 //!
 //! `docs/contributors/per-invocation-expansion.md` walks one crate through every step.
+//!
+//! A lane is reached only through a path that names it, so it cannot follow a `type`
+//! alias or the remote path of a custom type. `boltffi generate` therefore keeps the
+//! records of its records build in the workspace, where rustc resolved every spelling.
+//! An invocation the record store holds takes its references from the store instead of
+//! a lane chain, and checks in const context that each spelling still resolves to the
+//! declaration the store recorded. Lowering and expansion are the same either way.
+
+mod store;
 
 use std::collections::HashSet;
 
@@ -24,6 +33,8 @@ use serde_json::value::RawValue;
 
 use crate::capture::{self, Capture, Fragments};
 use crate::expansion::{contract::Expansion, expander::Expander};
+
+pub(crate) use self::store::Store;
 
 /// Numbers lane macros, method-block modules and configuration probes apart. A lane is only ever
 /// named by the `use` beside it, so two same-named types in different scopes need distinct crate-root names.
@@ -144,16 +155,43 @@ fn fragments(kind: Kind, attribute: &TokenStream, item: &TokenStream) -> Result<
     }
 }
 
-/// Starts the lane chain for `item`, whose tokens the caller emits separately. A
-/// declared type's lane is defined here, before any chain runs, so types that refer to
-/// each other never wait on one another; only customs, whose repr lowers through them,
-/// define theirs once their chain finishes.
+const SOURCE_RECORDS_ENV: &str = "BOLTFFI_SOURCE_RECORDS";
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum Build {
+    SourceRecords,
+    Wrappers,
+}
+
+impl Build {
+    fn current() -> Self {
+        match std::env::var_os(SOURCE_RECORDS_ENV) {
+            Some(value) if value == "1" => Self::SourceRecords,
+            _ => Self::Wrappers,
+        }
+    }
+}
+
+/// Expands `item`, whose tokens the caller emits separately. A declared type's lane is
+/// defined here, before anything resolves, so types that refer to each other never wait on
+/// one another; only customs, whose repr lowers through them, define theirs once their
+/// references resolve. An item the record store holds resolves its references from the
+/// store; any other item resolves them through a lane chain. Bindgen's records build
+/// emits records only: no lane, no chain, no wrapper.
 pub(crate) fn start(kind: Kind, attribute: TokenStream, item: TokenStream) -> TokenStream {
     if let Some(name) = own_name(kind, &item).filter(is_builtin_name) {
         return compile_error(&format!(
             "a declared type named `{name}` shadows the builtin `{name}`, which every signature \
              spelling `{name}` crosses as; rename the type"
         ));
+    }
+    let scaffolded = (kind != Kind::Pool).then(|| {
+        quote! {
+            const _: ::core::marker::PhantomData<crate::__BoltffiTag> = ::core::marker::PhantomData;
+        }
+    });
+    if Build::current() == Build::SourceRecords {
+        return quote! { #scaffolded };
     }
     let fragments = match fragments(kind, &attribute, &item) {
         Ok(fragments) => fragments,
@@ -163,17 +201,33 @@ pub(crate) fn start(kind: Kind, attribute: TokenStream, item: TokenStream) -> To
         Ok(lane) => lane,
         Err(message) => return compile_error(&message),
     };
-    let pending = lane_paths(&fragments);
-    let chain = step(kind, &attribute, &item, Vec::new(), pending);
-    let scaffolded = (kind != Kind::Pool).then(|| {
-        quote! {
-            const _: ::core::marker::PhantomData<crate::__BoltffiTag> = ::core::marker::PhantomData;
+    let store = Store::find();
+    let expanded = match store.and_then(|store| store.resolve(&fragments)) {
+        Some(resolution) => resolution
+            .and_then(|resolution| {
+                let expanded = finish(kind, &attribute, &item, &resolution.references)?;
+                let checks = resolution.checks;
+                Ok(quote! {
+                    #expanded
+                    #checks
+                })
+            })
+            .unwrap_or_else(|message| compile_error(&message)),
+        None => {
+            let stale = store
+                .map(|store| store.stale_warning(&fragments))
+                .unwrap_or_default();
+            let chain = step(kind, &attribute, &item, Vec::new(), lane_paths(&fragments));
+            quote! {
+                #stale
+                #chain
+            }
         }
-    });
+    };
     quote! {
         #scaffolded
         #lane
-        #chain
+        #expanded
     }
 }
 
@@ -237,7 +291,9 @@ fn step(
     pending: Vec<TokenStream>,
 ) -> TokenStream {
     let Some((next, rest)) = pending.split_first() else {
-        return finish(kind, attribute, item, &resolved)
+        return fragments(kind, attribute, item)
+            .and_then(|fragments| Reference::through_lanes(&fragments, &resolved))
+            .and_then(|references| finish(kind, attribute, item, &references))
             .unwrap_or_else(|message| compile_error(&message));
     };
     let facade = capture::facade();
@@ -342,38 +398,64 @@ pub(crate) fn lane_path(slot: &SlotSource) -> TokenStream {
     path.to_token_stream()
 }
 
+/// What one spelling an invocation writes resolves to: the slot descriptor its own record
+/// takes, the lane answer of the declaration it names, and the tag that declaration's
+/// conversions are keyed to.
+pub(crate) struct Reference {
+    path: String,
+    descriptor: Box<RawValue>,
+    lane: Option<Lane>,
+    tag: String,
+}
+
+impl Reference {
+    fn through_lanes(fragments: &Fragments, resolved: &[Literal]) -> Result<Vec<Self>, String> {
+        lane_paths(fragments)
+            .iter()
+            .zip(resolved)
+            .map(|(path, literal)| {
+                let lane = serde_json::from_str::<Lane>(&raw_text(literal)?)
+                    .map_err(|error| error.to_string())?;
+                let path = path.to_string();
+                Ok(Self {
+                    descriptor: raw_json(serde_json::json!({ "id": lane.id }).to_string())?,
+                    tag: format!("{path}!(@tag)"),
+                    path,
+                    lane: Some(lane),
+                })
+            })
+            .collect()
+    }
+
+    fn of<'reference>(
+        references: &'reference [Self],
+        slot: &SlotSource,
+    ) -> Result<&'reference Self, String> {
+        let path = lane_path(slot).to_string();
+        references
+            .iter()
+            .find(|reference| reference.path == path)
+            .ok_or_else(|| format!("no reference resolves `{path}`"))
+    }
+}
+
 fn finish(
     kind: Kind,
     attribute: &TokenStream,
     item: &TokenStream,
-    resolved: &[Literal],
+    references: &[Reference],
 ) -> Result<TokenStream, String> {
     let parsed = syn::parse2::<syn::Item>(item.clone()).ok();
     let fragments = fragments(kind, attribute, item)?;
-    let lanes = resolved
-        .iter()
-        .map(|literal| {
-            serde_json::from_str::<Lane>(&raw_text(literal)?).map_err(|error| error.to_string())
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    let paths = lane_paths(&fragments)
-        .into_iter()
-        .map(|path| path.to_string())
-        .collect::<Vec<_>>();
     let krate = crate_name()?;
-    check_methods_target(kind, &fragments, &paths, &lanes)?;
+    check_methods_target(kind, &fragments, references)?;
     let own = fragments
         .iter()
         .map(|(fragment, slots)| {
             let slots = slots
                 .iter()
                 .map(|slot| {
-                    let path = lane_path(slot).to_string();
-                    let index = paths
-                        .iter()
-                        .position(|candidate| *candidate == path)
-                        .ok_or("lane continuation lost a slot")?;
-                    raw_json(serde_json::json!({ "id": lanes[index].id }).to_string())
+                    Reference::of(references, slot).map(|reference| reference.descriptor.clone())
                 })
                 .collect::<Result<Vec<_>, String>>()?;
             Ok(Entry {
@@ -387,8 +469,9 @@ fn finish(
         })
         .collect::<Result<Vec<_>, String>>()?;
     let mut entries = own.clone();
-    lanes
+    references
         .iter()
+        .filter_map(|reference| reference.lane.as_ref())
         .flat_map(|lane| &lane.entries)
         .for_each(|entry| {
             if !entries.contains(entry) {
@@ -397,12 +480,10 @@ fn finish(
         });
     let selections = fragments
         .iter()
-        .enumerate()
-        .filter_map(|(index, (fragment, _))| {
+        .filter_map(|(fragment, slots)| {
             let id = selected_id(fragment, &krate, || {
-                let path = lane_path(fragments[index].1.first()?).to_string();
-                let index = paths.iter().position(|candidate| *candidate == path)?;
-                Some(lanes[index].id.clone())
+                let reference = Reference::of(references, slots.first()?).ok()?;
+                reference.lane.as_ref().map(|lane| lane.id.clone())
             })?;
             Some((id, fragment))
         })
@@ -428,10 +509,16 @@ fn finish(
         .filter(|(_, methods)| *methods)
         .map(|(id, _)| id.clone())
         .collect::<HashSet<_>>();
-    let customs = paths
+    let customs = references
         .iter()
-        .zip(&lanes)
-        .map(|(path, lane)| (lane.id.clone(), path.clone()))
+        .filter_map(|reference| {
+            let lane = reference.lane.as_ref()?;
+            let reach = CustomReach {
+                path: reference.path.clone(),
+                tag: reference.tag.clone(),
+            };
+            Some((lane.id.clone(), reach))
+        })
         .collect::<std::collections::HashMap<_, _>>();
     let expanded = match kind {
         Kind::CustomFfi | Kind::CustomType | Kind::Pool => TokenStream::new(),
@@ -441,7 +528,7 @@ fn finish(
             &selected,
             &shallow,
             parsed.as_ref(),
-            &customs,
+            customs,
         )?,
     };
     let lane = match lane_target(kind, parsed.as_ref(), item) {
@@ -450,7 +537,7 @@ fn finish(
         }
         _ => TokenStream::new(),
     };
-    let repr_tag = repr_tag(kind, item, &fragments);
+    let repr_tag = repr_tag(kind, item, &fragments, references)?;
     Ok(quote! {
         #expanded
         #lane
@@ -462,17 +549,16 @@ fn finish(
 fn check_methods_target(
     kind: Kind,
     fragments: &Fragments,
-    paths: &[String],
-    lanes: &[Lane],
+    references: &[Reference],
 ) -> Result<(), String> {
     let Some((SourceFragment::Methods { spelling, .. }, slots)) = fragments.first() else {
         return Ok(());
     };
     let target = slots
         .first()
-        .map(|slot| lane_path(slot).to_string())
-        .and_then(|path| paths.iter().position(|candidate| *candidate == path))
-        .and_then(|index| lanes[index].entries.first())
+        .and_then(|slot| Reference::of(references, slot).ok())
+        .and_then(|reference| reference.lane.as_ref())
+        .and_then(|lane| lane.entries.first())
         .ok_or("lane continuation lost a methods target")?;
     let target = serde_json::from_str::<SourceFragment>(target.json.get()).ok();
     let class = matches!(target, Some(SourceFragment::Class(_)));
@@ -495,11 +581,16 @@ fn check_methods_target(
 
 /// Names the tag a custom's representation converts under, when that representation is
 /// another declared type, through that type's lane.
-fn repr_tag(kind: Kind, item: &TokenStream, fragments: &Fragments) -> TokenStream {
+fn repr_tag(
+    kind: Kind,
+    item: &TokenStream,
+    fragments: &Fragments,
+    references: &[Reference],
+) -> Result<TokenStream, String> {
     let Some((SourceFragment::Custom(custom), slots)) = fragments.first() else {
-        return TokenStream::new();
+        return Ok(TokenStream::new());
     };
-    let mut lanes = Vec::new();
+    let mut repr_slots = Vec::new();
     declared_in_repr(&custom.repr, &mut Vec::new(), &mut |expr, _| {
         let slot = match expr {
             boltffi_ast::TypeExpr::Record { id, .. } => id
@@ -509,8 +600,19 @@ fn repr_tag(kind: Kind, item: &TokenStream, fragments: &Fragments) -> TokenStrea
                 .and_then(|index| slots.get(index)),
             _ => None,
         };
-        lanes.push(slot.map(lane_path));
+        repr_slots.push(slot);
     });
+    let tags = repr_slots
+        .into_iter()
+        .map(|slot| {
+            slot.map(|slot| {
+                Reference::of(references, slot).and_then(|reference| {
+                    syn::parse_str::<TokenStream>(&reference.tag).map_err(|error| error.to_string())
+                })
+            })
+            .transpose()
+        })
+        .collect::<Result<Vec<_>, String>>()?;
     let target = match kind {
         Kind::CustomType => crate::custom::r#type::parse_spec(item.clone().into())
             .ok()
@@ -521,20 +623,20 @@ fn repr_tag(kind: Kind, item: &TokenStream, fragments: &Fragments) -> TokenStrea
         _ => None,
     };
     let Some(target) = target else {
-        return TokenStream::new();
+        return Ok(TokenStream::new());
     };
-    lanes
+    Ok(tags
         .into_iter()
         .enumerate()
-        .filter_map(|(position, lane)| Some((position, lane?)))
-        .map(|(position, lane)| {
+        .filter_map(|(position, tag)| Some((position, tag?)))
+        .map(|(position, tag)| {
             quote! {
                 impl ::boltffi::__private::CustomReprTag<crate::__BoltffiTag, #position> for #target {
-                    type Tag = #lane!(@tag);
+                    type Tag = #tag;
                 }
             }
         })
-        .collect()
+        .collect())
 }
 
 /// Visits the declared types a representation names in source order, each with the
@@ -598,7 +700,7 @@ fn render(
     selected: &[String],
     shallow: &HashSet<String>,
     item: Option<&syn::Item>,
-    customs: &std::collections::HashMap<String, String>,
+    customs: std::collections::HashMap<String, CustomReach>,
 ) -> Result<TokenStream, String> {
     let package = PackageInfo::new(
         crate_name()?,
@@ -624,7 +726,7 @@ fn render(
     };
     let mut contract = aggregate_invocation(&records(false), &records(true), package.clone())
         .map_err(|error| error.to_string())?;
-    let customs = reach_through_reprs(&contract.customs, reach_through_lanes(customs));
+    let customs = reach_through_reprs(&contract.customs, customs);
     contract
         .customs
         .iter_mut()
@@ -844,23 +946,6 @@ impl<'lowered> SurfaceRender<'lowered, Wasm32> for Expander<'lowered> {
 struct CustomReach {
     path: String,
     tag: String,
-}
-
-/// Each custom this site names, reached through its own lane, so the conversion is keyed
-/// to the crate that declared it.
-fn reach_through_lanes(
-    customs: &std::collections::HashMap<String, String>,
-) -> std::collections::HashMap<String, CustomReach> {
-    customs
-        .iter()
-        .map(|(id, path)| {
-            let reach = CustomReach {
-                path: path.clone(),
-                tag: format!("{path}!(@tag)"),
-            };
-            (id.clone(), reach)
-        })
-        .collect()
 }
 
 /// Names a custom this site reaches only as another custom's representation through

@@ -1,5 +1,8 @@
+use std::fs;
 use std::path::Path;
 use std::process::Command;
+
+use boltffi_binding::RecordStore;
 
 #[test]
 fn typescript_bindings_follow_the_wasm_build() {
@@ -13,6 +16,10 @@ fn typescript_bindings_follow_the_wasm_build() {
         .env("CARGO_TARGET_DIR", &target)
         .output()
         .expect("the boltffi binary runs");
+    let record_store = fixture.join(RecordStore::RELATIVE_PATH);
+    if let Some(store_directory) = record_store.parent().filter(|_| record_store.exists()) {
+        fs::remove_dir_all(store_directory).expect("remove the record store from the fixture");
+    }
     assert!(
         generate.status.success(),
         "{}\n{}",
