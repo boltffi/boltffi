@@ -16,7 +16,9 @@ use crate::commands::generate::{
 use crate::commands::pack::PackKmpOptions;
 use crate::config::{Config, TargetSection};
 use crate::pack::PackError;
-use crate::pack::android::{AndroidBindingMode, AndroidPackager, build_android_targets};
+use crate::pack::android::{
+    AndroidBindingMode, AndroidBuildDirectories, AndroidPackager, build_android_targets,
+};
 use crate::pack::java::link::{build_jvm_native_library, compile_jni_library_with_layout};
 use crate::pack::java::prepare_kmp_jvm_packaging;
 use crate::pack::{missing_built_libraries, resolve_build_cargo_args};
@@ -488,8 +490,7 @@ fn package_kmp_android_libraries(
     )?;
     step.finish_success();
 
-    let libraries = crate::target::BuiltLibrary::discover_for_targets(
-        plan.target_directory(),
+    let libraries = AndroidBuildDirectories::for_expansion(binding_expansion).discover(
         plan.artifact_name(),
         plan.build_profile().output_directory_name(),
         &android_targets,

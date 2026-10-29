@@ -51,11 +51,6 @@ impl KmpPackagingPlan {
         self.cargo_context().toolchain_selector.as_deref()
     }
 
-    /// Returns the target directory reported by Cargo metadata for selected package builds.
-    pub(crate) fn target_directory(&self) -> &Path {
-        &self.cargo_context().target_directory
-    }
-
     pub(crate) fn build_profile(&self) -> &CargoBuildProfile {
         &self.cargo_context().build_profile
     }
@@ -170,10 +165,6 @@ output = "dist/kmp"
         assert_eq!(plan.artifact_name(), "workspace_member_ffi");
         assert_eq!(plan.fallback_header_name(), "workspace_member");
         assert_eq!(plan.generation_toolchain_selector(), Some("+nightly"));
-        assert_eq!(
-            plan.target_directory(),
-            PathBuf::from("/tmp/workspace/target")
-        );
         assert_eq!(
             plan.generation_cargo_args(true),
             vec![
