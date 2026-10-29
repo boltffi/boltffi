@@ -5,7 +5,7 @@ use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus};
 
-use boltffi_binding::RawSourceRecord;
+use boltffi_binding::{RawSourceRecord, RecordStore};
 use serde::Deserialize;
 use thiserror::Error;
 
@@ -115,6 +115,7 @@ impl BindingMetadataBuild {
             artifacts,
             libraries,
             local_packages,
+            workspace_root: metadata.workspace_root.clone(),
         })
     }
 }
@@ -132,6 +133,29 @@ pub struct SourceMetadata {
     pub libraries: Vec<PathBuf>,
     /// The root and every path package its normal dependencies reach.
     pub local_packages: Vec<boltffi_ast::PackageInfo>,
+    /// Root of the workspace the package belongs to, where the record store lives.
+    pub workspace_root: PathBuf,
+}
+
+impl SourceMetadata {
+    /// Writes the records to the workspace's [`RecordStore`], unless it already holds them.
+    ///
+    /// Later builds of the workspace read the store, so a signature naming a type through
+    /// an alias or a remote path expands from the declaration rustc resolved it to.
+    pub fn write_record_store(&self) -> std::io::Result<PathBuf> {
+        let path = self.workspace_root.join(RecordStore::RELATIVE_PATH);
+        let json = RecordStore::new(&self.source_records)
+            .to_json()
+            .map_err(std::io::Error::other)?;
+        if std::fs::read_to_string(&path).is_ok_and(|kept| kept == json) {
+            return Ok(path);
+        }
+        if let Some(directory) = path.parent() {
+            std::fs::create_dir_all(directory)?;
+        }
+        std::fs::write(&path, json)?;
+        Ok(path)
+    }
 }
 
 /// Failure while building a crate for embedded binding metadata.
@@ -290,6 +314,8 @@ struct CargoMetadata {
     /// any config override are already applied.
     #[serde(default)]
     target_directory: PathBuf,
+    #[serde(default)]
+    workspace_root: PathBuf,
     #[serde(default)]
     resolve: Option<MetadataResolve>,
 }
@@ -2262,7 +2288,10 @@ pub fn view() -> CoreFfi {
                 .env_remove(SOURCE_RECORDS_ENV)
                 .status()
                 .expect("cargo runs");
-            assert!(status.success(), "the fixture builds the way users build it");
+            assert!(
+                status.success(),
+                "the fixture builds the way users build it"
+            );
             target_dir
                 .join(host)
                 .join("debug")

@@ -46,46 +46,82 @@ pub(crate) fn item_tokens(
     let Ok(item) = syn::parse::<syn::Item>(item) else {
         return TokenStream::new();
     };
-    let (name, identity) = match (&item, &capture) {
+    let name = match &item {
+        syn::Item::Struct(item) => item.ident.to_string(),
+        syn::Item::Enum(item) => item.ident.to_string(),
+        syn::Item::Impl(item) => type_leaf_name(&item.self_ty).unwrap_or_else(|| "impl".to_owned()),
+        syn::Item::Fn(item) => item.sig.ident.to_string(),
+        syn::Item::Trait(item) => item.ident.to_string(),
+        syn::Item::Const(item) => item.ident.to_string(),
+        _ => return TokenStream::new(),
+    };
+    let described =
+        fragments(&item, &capture, error).map_err(|reason| SourceFragment::Unsupported {
+            name: name.clone(),
+            reason,
+        });
+    let fingerprint = match &described {
+        Ok(fragments) => fingerprint(fragments.iter().map(|(fragment, _)| fragment)),
+        Err(unsupported) => fingerprint([unsupported]),
+    };
+    let identity = match (&item, &capture) {
         (
             syn::Item::Struct(syn::ItemStruct { ident, .. })
             | syn::Item::Enum(syn::ItemEnum { ident, .. }),
             Capture::Class(_),
         ) => {
-            let identity = local_identity_tokens(ident, &ident.to_string());
+            let identity = local_identity_tokens(ident, &name, &fingerprint, &[]);
             let class = class_identity_tokens(ident);
-            (ident.to_string(), Some(quote! { #identity #class }))
+            Some(quote! { #identity #class })
         }
-        (syn::Item::Struct(item), _) => (
-            item.ident.to_string(),
-            Some(local_identity_tokens(&item.ident, &item.ident.to_string())),
-        ),
-        (syn::Item::Enum(item), _) => (
-            item.ident.to_string(),
-            Some(local_identity_tokens(&item.ident, &item.ident.to_string())),
-        ),
+        (
+            syn::Item::Struct(syn::ItemStruct { ident, .. })
+            | syn::Item::Enum(syn::ItemEnum { ident, .. }),
+            _,
+        ) => Some(local_identity_tokens(ident, &name, &fingerprint, &[])),
         (syn::Item::Impl(item), capture) => {
-            let name = type_leaf_name(&item.self_ty).unwrap_or_else(|| "impl".to_owned());
-            let identity = matches!(capture, Capture::ClassMethods)
-                .then(|| exported_class_tokens(&item.self_ty));
-            (name, identity)
+            matches!(capture, Capture::ClassMethods).then(|| exported_class_tokens(&item.self_ty))
         }
-        (syn::Item::Fn(item), _) => (item.sig.ident.to_string(), None),
-        (syn::Item::Trait(item), _) => (item.ident.to_string(), None),
-        (syn::Item::Const(item), _) => (item.ident.to_string(), None),
-        _ => return TokenStream::new(),
+        _ => None,
     };
-    let records = match fragments(&item, &capture, error) {
+    let records = match described {
         Ok(fragments) => fragments
             .iter()
             .map(|(fragment, slots)| record_tokens(fragment, slots))
             .collect(),
-        Err(reason) => unsupported_tokens(&name, &reason),
+        Err(unsupported) => record_tokens(&unsupported, &[]),
     };
     quote! {
         #identity
         #records
     }
+}
+
+/// A short hash of the fragments that declare a type. A type's descriptor carries it, so a
+/// wrapper expanded from stored records notices when the declaration it read has changed.
+fn fingerprint<'fragment>(
+    fragments: impl IntoIterator<Item = &'fragment SourceFragment>,
+) -> String {
+    const OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
+    const PRIME: u64 = 0x0100_0000_01b3;
+    let hash = fragments
+        .into_iter()
+        .filter_map(|fragment| serde_json::to_vec(fragment).ok())
+        .flatten()
+        .fold(OFFSET, |hash, byte| {
+            (hash ^ u64::from(byte)).wrapping_mul(PRIME)
+        });
+    format!("{hash:016x}")
+}
+
+fn slot_types(slots: &[boltffi_scan::SlotSource]) -> Vec<&syn::Type> {
+    slots
+        .iter()
+        .filter_map(|slot| match slot {
+            boltffi_scan::SlotSource::Type(ty) => Some(&**ty),
+            boltffi_scan::SlotSource::TraitValue(_) => None,
+        })
+        .collect()
 }
 
 /// What one invocation declares, as fragments paired with their written references.
@@ -155,14 +191,13 @@ pub(crate) fn interned_string_pool_tokens(item: proc_macro::TokenStream) -> Toke
     match boltffi_scan::capture_interned_string_pool(proc_macro2::TokenStream::from(item)) {
         Ok(pool) => {
             let ident = format_ident!("{}", pool.name);
-            let identity = local_identity_tokens(&ident, &pool.name);
-            let record = record_tokens(
-                &SourceFragment::InternedStringPool {
-                    id: format!("$self::{}", pool.name),
-                    values: pool.values,
-                },
-                &[],
-            );
+            let fragment = SourceFragment::InternedStringPool {
+                id: format!("$self::{}", pool.name),
+                values: pool.values,
+            };
+            let identity =
+                local_identity_tokens(&ident, &pool.name, &fingerprint([&fragment]), &[]);
+            let record = record_tokens(&fragment, &[]);
             quote! {
                 #identity
                 #record
@@ -200,10 +235,17 @@ pub(crate) fn scaffolding_tokens() -> TokenStream {
             ::core::compile_error!("BoltFFI: `CARGO_CRATE_NAME` is not set");
         },
     };
+    let store = crate::lane::Store::find().map(|store| {
+        let path = store.path().to_string_lossy().into_owned();
+        quote! {
+            const _: &[u8] = ::core::include_bytes!(#path);
+        }
+    });
     quote! {
         #[doc(hidden)]
         pub enum __BoltffiTag {}
         #linkage
+        #store
     }
 }
 
@@ -231,12 +273,9 @@ fn record_tokens(fragment: &SourceFragment, slots: &[boltffi_scan::SlotSource]) 
         .map(|(index, source)| {
             let ident = format_ident!("SLOT_{index}");
             let desc = match source {
-                boltffi_scan::SlotSource::Type(ty) => {
-                    let lane = crate::lane::lane_path(source);
-                    quote! {
-                        <#ty as #facade::__private::capture::TypeDesc<#lane!(@tag)>>::DESC
-                    }
-                }
+                boltffi_scan::SlotSource::Type(ty) => quote! {
+                    <#ty as #facade::__private::capture::TypeDesc<_>>::DESC
+                },
                 boltffi_scan::SlotSource::TraitValue(path) => quote! {
                     #facade::__private::capture::trait_desc(&#path)
                 },
@@ -318,11 +357,23 @@ pub(crate) fn custom_ffi_tokens(item: proc_macro::TokenStream) -> TokenStream {
     };
     let self_ty = &*item.self_ty;
     let name = type_leaf_name(self_ty).unwrap_or_else(|| "custom_ffi".to_owned());
-    let identity = local_identity_tokens(self_ty, &name);
-    let record = match boltffi_scan::capture_custom_ffi(&item) {
-        Ok(captured) => record_tokens(&SourceFragment::Custom(captured.def), &captured.slots),
-        Err(error) => unsupported_tokens(&name, &error.to_string()),
+    let (fragment, slots) = match boltffi_scan::capture_custom_ffi(&item) {
+        Ok(captured) => (SourceFragment::Custom(captured.def), captured.slots),
+        Err(error) => (
+            SourceFragment::Unsupported {
+                name: name.clone(),
+                reason: error.to_string(),
+            },
+            Vec::new(),
+        ),
     };
+    let identity = local_identity_tokens(
+        self_ty,
+        &name,
+        &fingerprint([&fragment]),
+        &slot_types(&slots),
+    );
+    let record = record_tokens(&fragment, &slots);
     quote! {
         #identity
         #record
@@ -335,11 +386,34 @@ pub(crate) fn custom_type_tokens(item: proc_macro::TokenStream) -> TokenStream {
     };
     let remote = &spec.remote;
     let name = spec.name.to_string();
-    let record = match boltffi_scan::capture_custom(proc_macro2::TokenStream::from(item)) {
-        Ok(captured) => record_tokens(&SourceFragment::Custom(captured.def), &captured.slots),
-        Err(error) => unsupported_tokens(&name, &error.to_string()),
+    let (fragment, slots) = match boltffi_scan::capture_custom(proc_macro2::TokenStream::from(item))
+    {
+        Ok(captured) => (SourceFragment::Custom(captured.def), captured.slots),
+        Err(error) => (
+            SourceFragment::Unsupported {
+                name: name.clone(),
+                reason: error.to_string(),
+            },
+            Vec::new(),
+        ),
     };
+    let fingerprint = fingerprint([&fragment]);
+    let uses = slot_types(&slots);
     let facade = facade();
+    let desc = match uses.is_empty() {
+        true => quote! {
+            #facade::__private::capture::DescBuf::declared(::core::module_path!(), #name, #fingerprint)
+        },
+        false => quote! {
+            #facade::__private::capture::DescBuf::declared_using(
+                ::core::module_path!(),
+                #name,
+                #fingerprint,
+                &[#(<#uses as #facade::__private::capture::TypeDesc<_>>::DESC),*],
+            )
+        },
+    };
+    let record = record_tokens(&fragment, &slots);
     quote! {
         #[allow(deprecated)]
         const _: () = {
@@ -349,11 +423,7 @@ pub(crate) fn custom_type_tokens(item: proc_macro::TokenStream) -> TokenStream {
             }
 
             impl #facade::__private::capture::TypeDesc<crate::__BoltffiTag> for #remote {
-                const DESC: #facade::__private::capture::DescBuf =
-                    #facade::__private::capture::DescBuf::named(
-                        ::core::module_path!(),
-                        #name,
-                    );
+                const DESC: #facade::__private::capture::DescBuf = #desc;
             }
         };
         #record
@@ -368,6 +438,13 @@ pub(crate) fn trait_identity_tokens(item: &syn::ItemTrait) -> TokenStream {
     let ident = &item.ident;
     let marker = trait_marker(ident);
     let name = ident.to_string();
+    let fingerprint = match fragments(&syn::Item::Trait(item.clone()), &Capture::Item, false) {
+        Ok(fragments) => fingerprint(fragments.iter().map(|(fragment, _)| fragment)),
+        Err(reason) => fingerprint([&SourceFragment::Unsupported {
+            name: name.clone(),
+            reason,
+        }]),
+    };
     let facade = facade();
     quote! {
         #[doc(hidden)]
@@ -377,7 +454,11 @@ pub(crate) fn trait_identity_tokens(item: &syn::ItemTrait) -> TokenStream {
 
         impl #facade::__private::capture::TraitDesc for #marker {
             const DESC: #facade::__private::capture::DescBuf =
-                #facade::__private::capture::DescBuf::named(::core::module_path!(), #name);
+                #facade::__private::capture::DescBuf::declared(
+                    ::core::module_path!(),
+                    #name,
+                    #fingerprint,
+                );
         }
 
         #[doc(hidden)]
@@ -391,8 +472,32 @@ pub(crate) fn trait_marker(trait_ident: &syn::Ident) -> syn::Ident {
     format_ident!("__BoltffiTrait{}", trait_ident)
 }
 
-fn local_identity_tokens<T: quote::ToTokens>(self_ty: &T, name: &str) -> TokenStream {
+fn local_identity_tokens<T: quote::ToTokens>(
+    self_ty: &T,
+    name: &str,
+    fingerprint: &str,
+    uses: &[&syn::Type],
+) -> TokenStream {
     let facade = facade();
+    let module = quote! {
+        <#self_ty as #facade::__private::capture::TypeInfo<#self_ty>>::MODULE
+    };
+    let named = quote! {
+        <#self_ty as #facade::__private::capture::TypeInfo<#self_ty>>::NAME
+    };
+    let desc = match uses.is_empty() {
+        true => quote! {
+            #facade::__private::capture::DescBuf::declared(#module, #named, #fingerprint)
+        },
+        false => quote! {
+            #facade::__private::capture::DescBuf::declared_using(
+                #module,
+                #named,
+                #fingerprint,
+                &[#(<#uses as #facade::__private::capture::TypeDesc<_>>::DESC),*],
+            )
+        },
+    };
     quote! {
         #[allow(deprecated)]
         const _: () = {
@@ -401,12 +506,8 @@ fn local_identity_tokens<T: quote::ToTokens>(self_ty: &T, name: &str) -> TokenSt
                 const NAME: &'static str = #name;
             }
 
-            impl<__BoltffiAnyTag> #facade::__private::capture::TypeDesc<__BoltffiAnyTag> for #self_ty {
-                const DESC: #facade::__private::capture::DescBuf =
-                    #facade::__private::capture::DescBuf::named(
-                        <#self_ty as #facade::__private::capture::TypeInfo<__BoltffiAnyTag>>::MODULE,
-                        <#self_ty as #facade::__private::capture::TypeInfo<__BoltffiAnyTag>>::NAME,
-                    );
+            impl #facade::__private::capture::TypeDesc<#self_ty> for #self_ty {
+                const DESC: #facade::__private::capture::DescBuf = #desc;
             }
         };
     }
@@ -421,7 +522,7 @@ fn class_identity_tokens<T: quote::ToTokens>(self_ty: &T) -> TokenStream {
         const _: () = {
             impl<__BoltffiAnyTag> #facade::__private::capture::ClassDesc<__BoltffiAnyTag> for #self_ty {
                 const DESC: #facade::__private::capture::DescBuf =
-                    <#self_ty as #facade::__private::capture::TypeDesc<__BoltffiAnyTag>>::DESC;
+                    <#self_ty as #facade::__private::capture::TypeDesc<#self_ty>>::DESC;
             }
         };
     }

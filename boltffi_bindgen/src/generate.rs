@@ -841,6 +841,9 @@ impl Generation {
         if source.source_records.is_empty() {
             return Err(GenerationError::NoSourceRecords);
         }
+        source
+            .write_record_store()
+            .map_err(GenerationError::RecordStore)?;
         let seeds = seed_crates(&source.source_records, &source.local_packages);
         let contract = aggregate_records(&source.source_records, source.package)
             .map_err(GenerationError::SourceAggregation)?;
@@ -901,6 +904,9 @@ pub enum GenerationError {
     /// The compiled crate carried no per-invocation source records.
     #[error("compiled crate carries no BoltFFI source records; does it export anything?")]
     NoSourceRecords,
+    /// The workspace's record store could not be written.
+    #[error("write the BoltFFI record store: {0}")]
+    RecordStore(std::io::Error),
     /// Per-invocation source records did not aggregate into one contract.
     #[error("aggregate per-invocation source records: {0}")]
     SourceAggregation(SourceFragmentError),

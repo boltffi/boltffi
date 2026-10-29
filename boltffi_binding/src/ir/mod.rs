@@ -146,8 +146,9 @@ pub use source_fragment::{
     aggregate_records,
 };
 pub use source_record::{
-    RawSourceRecord, SOURCE_RECORD_MAGIC, SOURCE_SECTION_MACH_O_NAME, SOURCE_SECTION_OBJECT_NAME,
-    SourceRecordError, SourceRecordSectionBytes, is_source_record_section,
+    RawSourceRecord, RecordStore, SOURCE_RECORD_MAGIC, SOURCE_SECTION_MACH_O_NAME,
+    SOURCE_SECTION_OBJECT_NAME, SourceRecordError, SourceRecordSectionBytes,
+    is_source_record_section,
 };
 pub use surface::{
     AsyncProtocolIntrospect, BufferShapeRules, CallbackProtocolIntrospect,
