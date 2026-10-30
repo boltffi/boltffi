@@ -1,0 +1,24 @@
+error: duplicate interned string pool value: "Chrome"
+ --> tests/diagnostics/unsupported_items/interned_string_pool_with_duplicate_value.rs:6:20
+  |
+6 |         CHROMIUM = "Chrome",
+  |                    ^^^^^^^^
+
+error: first defined here
+ --> tests/diagnostics/unsupported_items/interned_string_pool_with_duplicate_value.rs:5:18
+  |
+5 |         CHROME = "Chrome",
+  |                  ^^^^^^^^
+
+error: BoltFFI: invalid custom type declaration: duplicate string value "Chrome" in interned_string_pool `BrowserName`
+ --> tests/diagnostics/unsupported_items/interned_string_pool_with_duplicate_value.rs:3:1
+  |
+3 | / boltffi::interned_string_pool! {
+4 | |     pub BrowserName {
+5 | |         CHROME = "Chrome",
+6 | |         CHROMIUM = "Chrome",
+7 | |     }
+8 | | }
+  | |_^
+  |
+  = note: this error originates in the macro `boltffi::interned_string_pool` (in Nightly builds, run with -Z macro-backtrace for more info)

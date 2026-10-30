@@ -1,0 +1,7 @@
+error: cannot find macro `E` in this scope
+ --> tests/diagnostics/errors/undeclared_error_struct.rs:4:27
+  |
+4 | pub fn f() -> Result<i32, E> { Ok(1) }
+  |                           ^
+  |
+  = note: `E` is in scope, but it is a struct, not a macro

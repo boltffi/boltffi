@@ -1,0 +1,24 @@
+error: cannot find macro `P` in this scope
+ --> tests/diagnostics/cfg/gated_type_used_by_an_ungated_function.rs:7:13
+  |
+7 | pub fn f(a: P) {}
+  |             ^
+
+error[E0425]: cannot find type `P` in this scope
+ --> tests/diagnostics/cfg/gated_type_used_by_an_ungated_function.rs:7:13
+  |
+7 | pub fn f(a: P) {}
+  |             ^ not found in this scope
+  |
+note: found an item that was configured out
+ --> tests/diagnostics/cfg/gated_type_used_by_an_ungated_function.rs:5:12
+  |
+2 | #[cfg(any())]
+  |          -- the item is gated here
+...
+5 | pub struct P { pub x: i32 }
+  |            ^
+help: you might be missing a type parameter
+  |
+7 | pub fn f<P>(a: P) {}
+  |         +++

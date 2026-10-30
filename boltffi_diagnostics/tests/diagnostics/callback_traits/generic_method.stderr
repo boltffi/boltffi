@@ -1,0 +1,7 @@
+error: BoltFFI: `method $self::T::f` cannot use generics
+ --> tests/diagnostics/callback_traits/generic_method.rs:2:1
+  |
+2 | #[boltffi::export]
+  | ^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `boltffi::export` (in Nightly builds, run with -Z macro-backtrace for more info)

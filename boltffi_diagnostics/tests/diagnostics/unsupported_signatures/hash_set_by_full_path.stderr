@@ -1,0 +1,13 @@
+error[E0433]: cannot find `HashSet` in `collections`
+ --> tests/diagnostics/unsupported_signatures/hash_set_by_full_path.rs:3:31
+  |
+3 | pub fn f(a: std::collections::HashSet<String>) {}
+  |                               ^^^^^^^ could not find `HashSet` in `collections`
+
+warning: unused variable: `a`
+ --> tests/diagnostics/unsupported_signatures/hash_set_by_full_path.rs:3:10
+  |
+3 | pub fn f(a: std::collections::HashSet<String>) {}
+  |          ^ help: if this is intentional, prefix it with an underscore: `_a`
+  |
+  = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default

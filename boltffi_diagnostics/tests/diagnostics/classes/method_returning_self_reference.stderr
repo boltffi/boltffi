@@ -1,0 +1,7 @@
+error: BoltFFI: unsupported source type `&Self`
+ --> tests/diagnostics/classes/method_returning_self_reference.rs:6:1
+  |
+6 | #[boltffi::export]
+  | ^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `boltffi::export` (in Nightly builds, run with -Z macro-backtrace for more info)

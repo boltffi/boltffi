@@ -1,0 +1,7 @@
+error[E0425]: cannot find function `inner` in module `super`
+ --> tests/diagnostics/functions/function_inside_a_function.rs:3:2
+  |
+3 |  #[boltffi::export]
+  |  ^^^^^^^^^^^^^^^^^^ not found in `super`
+  |
+  = note: this error originates in the attribute macro `boltffi::export` (in Nightly builds, run with -Z macro-backtrace for more info)

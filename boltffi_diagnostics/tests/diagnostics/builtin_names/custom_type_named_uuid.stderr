@@ -1,0 +1,13 @@
+error: BoltFFI: a declared type named `Uuid` shadows the builtin `Uuid`, which every signature spelling `Uuid` crosses as; rename the type
+  --> tests/diagnostics/builtin_names/custom_type_named_uuid.rs:7:1
+   |
+ 7 | / boltffi::custom_type!(
+ 8 | |     pub Uuid,
+ 9 | |     remote = ids::Token,
+10 | |     repr = u64,
+11 | |     into_ffi = |token: &ids::Token| token.0,
+12 | |     try_from_ffi = |raw: u64| Ok(ids::Token(raw)),
+13 | | );
+   | |_^
+   |
+   = note: this error originates in the macro `boltffi::custom_type` (in Nightly builds, run with -Z macro-backtrace for more info)

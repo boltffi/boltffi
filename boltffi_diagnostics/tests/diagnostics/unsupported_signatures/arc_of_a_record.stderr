@@ -1,0 +1,15 @@
+error: BoltFFI: opaque Rust pointer container cannot be represented in binding IR yet
+ --> tests/diagnostics/unsupported_signatures/arc_of_a_record.rs:7:1
+  |
+7 | #[boltffi::export]
+  | ^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the macro `::boltffi::__private::lane_resume` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unused variable: `a`
+ --> tests/diagnostics/unsupported_signatures/arc_of_a_record.rs:8:10
+  |
+8 | pub fn f(a: std::sync::Arc<Point>) {}
+  |          ^ help: if this is intentional, prefix it with an underscore: `_a`
+  |
+  = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
