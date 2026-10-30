@@ -19,7 +19,7 @@
 
 mod store;
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use boltffi_ast::{PackageInfo, Path, PathRoot, PathSegment};
 use boltffi_binding::{
@@ -66,7 +66,7 @@ impl PartialEq for Entry {
 }
 
 /// What a lane expands to: the declared type's id and every declaration it needs.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 struct Lane {
     id: String,
     entries: Vec<Entry>,
@@ -112,11 +112,6 @@ impl Kind {
         ]
         .into_iter()
         .find(|kind| kind.keyword() == keyword)
-    }
-
-    /// Whether this invocation expands to wrappers rather than a data type's runtime.
-    const fn wraps(self) -> bool {
-        matches!(self, Self::Export | Self::ExportMethods | Self::DataImpl)
     }
 
     pub(crate) fn capture(self, attribute: &TokenStream) -> Capture {
@@ -183,8 +178,8 @@ impl Build {
 /// one another; only customs, whose repr lowers through them, define theirs once their
 /// references resolve. An item the record store holds resolves its references from the
 /// store; any other item resolves them through a lane chain. Bindgen's records build
-/// skips wrappers but still emits every data type's runtime, since the crate's own code
-/// can depend on it, such as a custom type whose `FfiRepr` lists the type's records.
+/// emits no lane, chain or wrapper, only the codecs [`records_build_codecs`] gives each
+/// data type.
 pub(crate) fn start(kind: Kind, attribute: TokenStream, item: TokenStream) -> TokenStream {
     if let Some(name) = own_name(kind, &item).filter(is_builtin_name) {
         return compile_error(&format!(
@@ -197,21 +192,22 @@ pub(crate) fn start(kind: Kind, attribute: TokenStream, item: TokenStream) -> To
             const _: ::core::marker::PhantomData<crate::__BoltffiTag> = ::core::marker::PhantomData;
         }
     });
+    if Build::current() == Build::SourceRecords {
+        let codecs = match kind {
+            Kind::Data | Kind::Error => records_build_codecs(&item),
+            _ => TokenStream::new(),
+        };
+        return quote! {
+            #scaffolded
+            #codecs
+        };
+    }
     let fragments = match fragments(kind, &attribute, &item) {
         Ok(fragments) => fragments,
         Err(message) => return compile_error(&message),
     };
-    if Build::current() == Build::SourceRecords && kind.wraps() {
-        return match immediate_lane(kind, &fragments, &item) {
-            Ok(lane) => quote! {
-                #scaffolded
-                #lane
-            },
-            Err(message) => compile_error(&message),
-        };
-    }
     let store = Store::find();
-    let expanded = match store.and_then(|store| store.resolve(&fragments)) {
+    let expanded = match store.as_ref().and_then(|store| store.resolve(&fragments)) {
         Some(resolution) => resolution.and_then(|resolution| {
             let expanded = finish(
                 kind,
@@ -228,6 +224,7 @@ pub(crate) fn start(kind: Kind, attribute: TokenStream, item: TokenStream) -> To
         }),
         None => immediate_lane(kind, &fragments, &item).map(|lane| {
             let stale = store
+                .as_ref()
                 .map(|store| store.stale_warning(&fragments))
                 .unwrap_or_default();
             let chain = step(kind, &attribute, &item, Vec::new(), lane_paths(&fragments));
@@ -253,6 +250,44 @@ enum Resolved {
     /// From the record store, with no chain to wait on, so every lane carries resolved
     /// entries.
     FromStore,
+}
+
+/// The codecs a records build gives a `#[data]` or `#[error]` type, so the crate's own code
+/// type-checks where it relies on them, such as a `CustomFfiConvertible` whose `FfiRepr`
+/// holds the type. Bindgen reads a records build only for its records and never runs it,
+/// so the codecs resolve no field type and their bodies are unreachable.
+fn records_build_codecs(item: &TokenStream) -> TokenStream {
+    let Ok(item) = syn::parse2::<syn::DeriveInput>(item.clone()) else {
+        return TokenStream::new();
+    };
+    let facade = capture::facade();
+    let name = &item.ident;
+    let (impl_generics, type_generics, where_clause) = item.generics.split_for_impl();
+    let never_runs = quote! { ::core::unreachable!("a BoltFFI records build never runs") };
+    quote! {
+        #[allow(deprecated)]
+        const _: () = {
+            impl #impl_generics #facade::__private::wire::WireEncode for #name #type_generics
+            #where_clause
+            {
+                fn wire_size(&self) -> usize {
+                    #never_runs
+                }
+
+                fn encode_to(&self, _: &mut [u8]) -> usize {
+                    #never_runs
+                }
+            }
+
+            impl #impl_generics #facade::__private::wire::WireDecode for #name #type_generics
+            #where_clause
+            {
+                fn decode_from(_: &[u8]) -> #facade::__private::wire::DecodeResult<Self> {
+                    #never_runs
+                }
+            }
+        };
+    }
 }
 
 const fn chains_before_lane(kind: Kind) -> bool {
@@ -397,6 +432,25 @@ fn lane_paths(fragments: &Fragments) -> Vec<TokenStream> {
         .collect()
 }
 
+/// Each distinct type the fragments' slots name, as written, in first-use order.
+fn spelled_slots(fragments: &Fragments) -> Vec<&SlotSource> {
+    let mut seen = HashSet::new();
+    fragments
+        .iter()
+        .flat_map(|(_, slots)| slots)
+        .filter(|slot| seen.insert(spelling(slot)))
+        .collect()
+}
+
+/// The type a slot names as written, generic arguments included, which is how a site
+/// spells it in a conversion. A lane is named by [`lane_path`], which drops them.
+fn spelling(slot: &SlotSource) -> String {
+    match slot {
+        SlotSource::Type(ty) => ty.to_token_stream().to_string(),
+        SlotSource::TraitValue(path) => path.to_token_stream().to_string(),
+    }
+}
+
 /// The name the invocation's own declaration goes by, when it declares a type.
 fn own_name(kind: Kind, item: &TokenStream) -> Option<syn::Ident> {
     let parsed = syn::parse2::<syn::Item>(item.clone()).ok();
@@ -444,17 +498,28 @@ pub(crate) struct Reached {
 
 impl Reference {
     fn through_lanes(fragments: &Fragments, resolved: &[Literal]) -> Result<Vec<Self>, String> {
-        lane_paths(fragments)
+        let lanes = lane_paths(fragments)
             .iter()
             .zip(resolved)
             .map(|(path, literal)| {
                 let lane = serde_json::from_str::<Lane>(&raw_text(literal)?)
                     .map_err(|error| error.to_string())?;
-                let path = path.to_string();
+                Ok((path.to_string(), lane))
+            })
+            .collect::<Result<HashMap<_, _>, String>>()?;
+        spelled_slots(fragments)
+            .into_iter()
+            .map(|slot| {
+                let lane_name = lane_path(slot).to_string();
+                let lane = lanes
+                    .get(&lane_name)
+                    .cloned()
+                    .ok_or_else(|| format!("no lane resolves `{lane_name}`"))?;
+                let path = spelling(slot);
                 Ok(Self {
                     descriptor: raw_json(serde_json::json!({ "id": lane.id }).to_string())?,
                     reached: vec![Reached {
-                        tag: format!("{path}!(@tag)"),
+                        tag: format!("{lane_name}!(@tag)"),
                         id: lane.id,
                         path: path.clone(),
                     }],
@@ -476,7 +541,7 @@ impl Reference {
         references: &'reference [Self],
         slot: &SlotSource,
     ) -> Result<&'reference Self, String> {
-        let path = lane_path(slot).to_string();
+        let path = spelling(slot);
         references
             .iter()
             .find(|reference| reference.path == path)
@@ -564,7 +629,7 @@ fn finish(
             };
             (reached.id.clone(), reach)
         })
-        .collect::<std::collections::HashMap<_, _>>();
+        .collect::<HashMap<_, _>>();
     let expanded = match kind {
         Kind::CustomFfi | Kind::CustomType | Kind::Pool => TokenStream::new(),
         _ => render(
@@ -752,7 +817,7 @@ fn render(
     selected: &[String],
     shallow: &HashSet<String>,
     item: Option<&syn::Item>,
-    customs: std::collections::HashMap<String, CustomReach>,
+    customs: HashMap<String, CustomReach>,
 ) -> Result<TokenStream, String> {
     let package = PackageInfo::new(
         crate_name()?,
@@ -1023,8 +1088,8 @@ struct CustomReach {
 /// that custom's associated representation type, keyed to the crate that declared it.
 fn reach_through_reprs(
     defs: &[boltffi_ast::CustomTypeDef],
-    mut reached: std::collections::HashMap<String, CustomReach>,
-) -> std::collections::HashMap<String, CustomReach> {
+    mut reached: HashMap<String, CustomReach>,
+) -> HashMap<String, CustomReach> {
     while let Some((id, reach)) = defs.iter().find_map(|custom| {
         let outer = reached.get(custom.id.as_str())?;
         let repr = match custom.converters.into_ffi {
@@ -1068,7 +1133,7 @@ fn reach_through_reprs(
 /// they resolve here no matter which module or crate declared them.
 fn convert_through_site_path(
     custom: &mut boltffi_ast::CustomTypeDef,
-    customs: &std::collections::HashMap<String, CustomReach>,
+    customs: &HashMap<String, CustomReach>,
 ) {
     let Some(CustomReach { path, tag }) = customs.get(custom.id.as_str()) else {
         return;

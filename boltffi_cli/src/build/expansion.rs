@@ -4,7 +4,7 @@ use boltffi_bindgen::cargo::LibraryCargoArgs;
 use boltffi_bindgen::generate::Generation;
 
 use crate::cargo::{Cargo, CargoMetadata, SelectedLibrary};
-use crate::cli::Result;
+use crate::cli::{CliError, Result};
 use crate::config::Config;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -86,6 +86,18 @@ impl BindingExpansion {
         Generation::new(self.manifest_path())
             .cargo_args(self.cargo_args.iter().cloned())
             .cargo_toolchain_selector(self.toolchain_selector().map(str::to_owned))
+    }
+
+    /// Prepares the record store builds of this crate read, so a build that runs before any
+    /// `boltffi generate`, such as the first `boltffi pack` of a fresh checkout, already
+    /// names types by any spelling.
+    pub fn prepare_record_store(&self) -> Result<()> {
+        self.generation()
+            .prepare_record_store()
+            .map_err(|error| CliError::CommandFailed {
+                command: format!("prepare the BoltFFI record store: {error}"),
+                status: None,
+            })
     }
 
     fn from_metadata(

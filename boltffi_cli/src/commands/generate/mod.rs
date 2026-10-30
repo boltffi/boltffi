@@ -422,6 +422,7 @@ enabled = true
 
     #[test]
     fn header_from_source_directory_supports_kmp_only_config() {
+        let _environment = crate::process_environment::hold();
         let output_directory = unique_temp_dir("boltffi-kmp-header-generate-test");
         let config = parse_config(
             r#"

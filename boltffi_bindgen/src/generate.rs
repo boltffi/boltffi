@@ -26,7 +26,7 @@ use boltffi_binding::{
 use thiserror::Error;
 
 use crate::library_symbols::{self, LibrarySymbolsError};
-use crate::metadata::{BindingMetadataBuild, BindingMetadataBuildError};
+use crate::metadata::{BindingMetadataBuild, BindingMetadataBuildError, SourceMetadata};
 use crate::target::Target;
 
 /// Drives one BoltFFI generation from a compiled crate's embedded metadata
@@ -835,15 +835,29 @@ impl Generation {
             .collect()
     }
 
-    fn bindings<S: Surface + SurfaceLower>(&self) -> Result<Bindings<S>, GenerationError> {
-        let build = self.metadata_build();
-        let source = build.read_source()?;
+    /// Runs the records build and keeps its records in Cargo's build directory, where later
+    /// builds of the crate read them to name types by any spelling.
+    ///
+    /// Generating bindings does this too. A caller that compiles the crate before it
+    /// generates, such as `boltffi pack`, prepares the store first, so the first build of a
+    /// fresh checkout already finds it.
+    pub fn prepare_record_store(&self) -> Result<(), GenerationError> {
+        self.records().map(|_| ())
+    }
+
+    fn records(&self) -> Result<SourceMetadata, GenerationError> {
+        let source = self.metadata_build().read_source()?;
         if source.source_records.is_empty() {
             return Err(GenerationError::NoSourceRecords);
         }
         source
             .write_record_store()
             .map_err(GenerationError::RecordStore)?;
+        Ok(source)
+    }
+
+    fn bindings<S: Surface + SurfaceLower>(&self) -> Result<Bindings<S>, GenerationError> {
+        let source = self.records()?;
         let seeds = seed_crates(&source.source_records, &source.local_packages);
         let contract = aggregate_records(&source.source_records, source.package)
             .map_err(GenerationError::SourceAggregation)?;

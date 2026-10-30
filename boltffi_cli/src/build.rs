@@ -166,6 +166,7 @@ impl<'a> Builder<'a> {
     }
 
     pub fn build_targets(&self, targets: &[RustTarget]) -> Result<Vec<BuildResult>> {
+        self.prepare_record_store()?;
         let android_toolchain = targets
             .iter()
             .any(|target| target.platform() == Platform::Android)
@@ -188,6 +189,7 @@ impl<'a> Builder<'a> {
     }
 
     pub fn build_host_with_native_link_metadata(&self) -> Result<native_link::NativeLinkMetadata> {
+        self.prepare_record_store()?;
         let mut command = self.native_link_metadata_command()?;
         let output = command.output().map_err(|source| CliError::CommandFailed {
             command: format!("cargo rustc --print=native-static-libs: {source}"),
@@ -208,6 +210,7 @@ impl<'a> Builder<'a> {
     }
 
     pub fn build_wasm_with_triple(&self, triple: &str) -> Result<Vec<BuildResult>> {
+        self.prepare_record_store()?;
         let command_args = self.cargo_build_command_args();
         let mut command = Command::new("cargo");
         self.apply_cargo_build_prefix(&mut command, &command_args);
@@ -223,6 +226,13 @@ impl<'a> Builder<'a> {
             triple: triple.to_string(),
             success,
         }])
+    }
+
+    fn prepare_record_store(&self) -> Result<()> {
+        match &self.options.selection {
+            BuildSelection::Expanded(expansion) => expansion.prepare_record_store(),
+            BuildSelection::Default { .. } => Ok(()),
+        }
     }
 
     fn native_link_metadata_command(&self) -> Result<Command> {
