@@ -15,6 +15,7 @@ use std::task::{Context, Poll};
 use std::time::Duration;
 
 const WAKER_THREAD_NAME: &str = "boltffi-demo-waker";
+static BLOCKING_VALUE_STARTED: AtomicBool = AtomicBool::new(false);
 
 struct WakeFromNativeThread {
     woken: Arc<AtomicBool>,
@@ -67,6 +68,21 @@ impl Future for WakeFromNativeThread {
 #[demo_bench_macros::benchmark_candidate(function, uniffi, wasm_bindgen)]
 pub async fn async_add(a: i32, b: i32) -> i32 {
     a + b
+}
+
+/// Blocks inside a Rust poll so the Swift cancellation runtime can exercise an in-flight poll.
+#[export]
+pub async fn async_blocking_value(milliseconds: u64) -> u64 {
+    BLOCKING_VALUE_STARTED.store(true, Ordering::Release);
+    std::thread::sleep(Duration::from_millis(milliseconds));
+    BLOCKING_VALUE_STARTED.store(false, Ordering::Release);
+    milliseconds
+}
+
+/// Reports whether `async_blocking_value` is currently inside its Rust poll.
+#[export]
+pub fn async_blocking_value_started() -> bool {
+    BLOCKING_VALUE_STARTED.load(Ordering::Acquire)
 }
 
 #[demo_bench_macros::demo_case(
