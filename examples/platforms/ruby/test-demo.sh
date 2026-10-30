@@ -3,8 +3,9 @@ set -euo pipefail
 
 # Builds the demo gem from the sources `boltffi pack ruby` wrote to dist/,
 # installs it into an empty gem home, and runs the Ruby demo tests against
-# the installed gem. The install compiles the C extension, so this proves the
-# package, not only the generated source.
+# the installed gem. The install builds the Rust crate with cargo and
+# compiles the C extension, so this proves the package, not only the
+# generated source.
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 dist_directory="$script_dir/dist"
@@ -48,6 +49,16 @@ export GEM_HOME="$work_directory/gems"
 GEM_PATH="$GEM_HOME:$("$ruby_command" -e 'print Gem.default_dir')"
 export GEM_PATH
 mkdir -p "$work_directory/home"
+
+# extconf.rb runs cargo with the empty HOME, outside the repository. So the
+# install keeps the cargo and rustup homes of the user and the toolchain of
+# the repository.
+export CARGO_HOME="${CARGO_HOME:-$HOME/.cargo}"
+export RUSTUP_HOME="${RUSTUP_HOME:-$HOME/.rustup}"
+if [[ -z "${RUSTUP_TOOLCHAIN:-}" ]] && command -v rustup >/dev/null 2>&1; then
+    RUSTUP_TOOLCHAIN="$(cd "$script_dir" && rustup show active-toolchain | cut -d ' ' -f 1)"
+    export RUSTUP_TOOLCHAIN
+fi
 
 (cd "$dist_directory" && "$ruby_command" -S gem build "$(basename "$gemspec")" --output "$work_directory/demo.gem")
 HOME="$work_directory/home" "$ruby_command" -S gem install --local --no-document "$work_directory/demo.gem"

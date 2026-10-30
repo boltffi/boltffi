@@ -17,9 +17,6 @@ pub struct RubyConfig {
     /// `MyLib::Native`. Defaults to the package name in `UpperCamelCase`.
     #[serde(default)]
     pub module_name: Option<String>,
-    /// Gem version. Defaults to the Cargo package version.
-    #[serde(default)]
-    pub version: Option<String>,
     /// Cargo arguments for every cargo invocation that builds this target.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub cargo_args: Vec<String>,
@@ -32,7 +29,6 @@ impl Default for RubyConfig {
             output: default_ruby_output(),
             gem_name: None,
             module_name: None,
-            version: None,
             cargo_args: Vec::new(),
         }
     }

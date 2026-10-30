@@ -11,8 +11,9 @@ use boltffi_backend::target::kotlin::{
     KotlinApiStyle as BackendKotlinApiStyle, KotlinDesktopLoader as BackendKotlinDesktopLoader,
     KotlinFactoryStyle as BackendKotlinFactoryStyle,
 };
-use boltffi_backend::target::ruby::RubyCExtHost;
+use boltffi_backend::target::ruby::{RubyCExtHost, name_style::extension_directory};
 use boltffi_backend::{CoverageMode, GeneratedOutput};
+use boltffi_bindgen::cargo::LibraryCargoArgs;
 use boltffi_bindgen::generate::{Generation, GenerationError};
 use boltffi_bindgen::target::Target;
 
@@ -537,9 +538,11 @@ fn generate_ruby(config: &Config, options: &GenerateOptions) -> Result<()> {
 
 /// Writes the Ruby gem sources for one binding expansion.
 ///
-/// `pack ruby` passes the expansion that it builds the static library from.
-/// The extension then calls only functions that the library exports: Ruby
-/// resolves a missing function only at its first call, which crashes.
+/// `pack ruby` passes the expansion that it copies the crate source for.
+/// `extconf.rb` builds that crate with the feature arguments of the
+/// generation build, so the extension calls only functions that the static
+/// library exports. Ruby resolves a missing function only at its first call,
+/// which crashes.
 pub(crate) fn render_ruby(
     config: &Config,
     expansion: &BindingExpansion,
@@ -550,10 +553,12 @@ pub(crate) fn render_ruby(
     let ruby = &config.targets.ruby;
     let host = RubyCExtHost::new()
         .native_library(expansion.artifact_name())
-        .version(ruby.version.clone())
+        .cargo_feature_arguments(ruby_feature_arguments(expansion.cargo_args()))
+        .cargo_toolchain(expansion.toolchain_selector())
         .gem_name(config.ruby_gem_name())
         .and_then(|host| host.module_name(ruby.module_name.as_deref()))
         .map_err(|error| generation_error(target.name(), GenerationError::Render(error)))?;
+    let extension_directory = PathBuf::from(extension_directory(config.ruby_gem_name()));
     expansion
         .generation()
         .coverage_mode(CoverageMode::Partial)
@@ -562,10 +567,84 @@ pub(crate) fn render_ruby(
         .map_err(|error| generation_error(target.name(), error))
         .and_then(|output| {
             print_coverage(target.name(), &output, deny_skipped)?;
-            Generation::write_output(output, output_directory)
-                .map(drop)
-                .map_err(|error| generation_error(target.name(), error))
+            write_ruby_output(
+                output,
+                output_directory,
+                &extension_directory,
+                expansion.manifest_path().parent(),
+            )
         })
+}
+
+/// Writes the files of a Ruby generation.
+///
+/// BoltFFI owns the extension directory. The write first deletes it, so no
+/// file from an earlier pack stays in the gem. The gemspec and the `lib/`
+/// entry file are starters. BoltFFI writes a starter only when it is missing.
+/// After that, the gem author owns it.
+fn write_ruby_output(
+    output: GeneratedOutput,
+    output_directory: &Path,
+    extension_directory: &Path,
+    crate_root: Option<&Path>,
+) -> Result<()> {
+    let extension_path = output_directory.join(extension_directory);
+    if extension_path.join("Cargo.toml").exists()
+        || crate_root
+            .and_then(|root| root.canonicalize().ok())
+            .zip(extension_path.canonicalize().ok())
+            .is_some_and(|(root, extension)| root.starts_with(&extension))
+    {
+        return Err(CliError::CommandFailed {
+            command: format!(
+                "the Ruby extension directory {} contains a Rust crate; set targets.ruby.output to another directory",
+                extension_path.display()
+            ),
+            status: None,
+        });
+    }
+    let (files, diagnostics, coverage) = output.into_parts();
+    let written = files
+        .into_iter()
+        .filter(|file| {
+            let path = file.path().as_path();
+            path.starts_with(extension_directory) || !output_directory.join(path).exists()
+        })
+        .collect();
+    remove_stale_generated_path(extension_path)?;
+    Generation::write_output(
+        GeneratedOutput::new(written, diagnostics).with_coverage(coverage),
+        output_directory,
+    )
+    .map(drop)
+    .map_err(|error| generation_error(Target::Ruby.name(), error))
+}
+
+/// The Cargo feature arguments in `arguments`, each in one word.
+///
+/// `extconf.rb` builds the copied crate outside the original package
+/// selection, so it keeps only `--features`, `-F`, `--no-default-features`,
+/// and `--all-features`.
+fn ruby_feature_arguments(arguments: &LibraryCargoArgs) -> Vec<String> {
+    let mut arguments = arguments.iter();
+    let mut feature_arguments = Vec::new();
+    while let Some(argument) = arguments.next() {
+        let features = match argument.as_str() {
+            "--no-default-features" | "--all-features" => {
+                feature_arguments.push(argument.clone());
+                continue;
+            }
+            "--features" | "-F" => arguments.next().map(String::as_str),
+            _ => argument
+                .strip_prefix("--features=")
+                .or_else(|| argument.strip_prefix("-F="))
+                .or_else(|| argument.strip_prefix("-F")),
+        };
+        if let Some(features) = features {
+            feature_arguments.push(format!("--features={features}"));
+        }
+    }
+    feature_arguments
 }
 
 fn generate_kotlin(config: &Config, options: &GenerateOptions) -> Result<()> {
@@ -973,16 +1052,18 @@ fn target_label(target: &GenerateTarget) -> &'static str {
 mod tests {
     use super::{
         GenerateOptions, GenerateTarget, generation_cargo_args, prepare_kmp_output_directory,
-        run_generation, run_java_generations, write_kmp_output,
+        ruby_feature_arguments, run_generation, run_java_generations, write_kmp_output,
+        write_ruby_output,
     };
     use crate::{
         cli::CliError,
         config::{Config, TargetSection},
     };
     use boltffi_backend::{FilePath, GeneratedFile, GeneratedOutput};
+    use boltffi_bindgen::cargo::LibraryCargoArgs;
     use boltffi_bindgen::generate::Generation;
     use std::fs;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use crate::commands::generate::java::TargetGeneration;
@@ -1388,5 +1469,113 @@ package = "com.boltffi.demo"
         if output_directory.exists() {
             fs::remove_dir_all(output_directory).expect("cleanup generated output");
         }
+    }
+
+    #[test]
+    fn ruby_output_replaces_boltffi_files_and_keeps_the_author_files() {
+        let output = tempfile::tempdir().expect("create output directory");
+        let root = output.path();
+        fs::create_dir_all(root.join("ext/demo/crate")).expect("create extension directory");
+        fs::create_dir_all(root.join("lib")).expect("create lib directory");
+        for (path, contents) in [
+            ("ext/demo/libdemo.a", "stale"),
+            ("ext/demo/crate/Cargo.toml", "stale"),
+            ("lib/demo.rb", "author"),
+        ] {
+            fs::write(root.join(path), contents).expect("write earlier file");
+        }
+        let generated = |path: &str| {
+            GeneratedFile::new(FilePath::new(path).expect("valid file path"), "generated")
+        };
+        let files = ["ext/demo/demo.c", "lib/demo.rb", "demo.gemspec"].map(generated);
+
+        write_ruby_output(
+            GeneratedOutput::new(files.into(), Vec::new()),
+            root,
+            Path::new("ext/demo"),
+            None,
+        )
+        .expect("write Ruby output");
+
+        assert!(!root.join("ext/demo/libdemo.a").exists());
+        assert!(!root.join("ext/demo/crate").exists());
+        for (path, contents) in [
+            ("ext/demo/demo.c", "generated"),
+            ("lib/demo.rb", "author"),
+            ("demo.gemspec", "generated"),
+        ] {
+            assert_eq!(
+                fs::read_to_string(root.join(path)).unwrap(),
+                contents,
+                "{path}"
+            );
+        }
+    }
+
+    #[test]
+    fn ruby_output_refuses_to_delete_a_crate_in_the_extension_directory() {
+        let output = tempfile::tempdir().expect("create output directory");
+        let root = output.path();
+        let crate_dir = root.join("ext/demo");
+        fs::create_dir_all(crate_dir.join("src")).expect("create crate directory");
+        fs::write(crate_dir.join("Cargo.toml"), "[package]\nname = \"demo\"\n")
+            .expect("write Cargo.toml");
+        fs::write(crate_dir.join("src/lib.rs"), "").expect("write lib.rs");
+        let file = GeneratedFile::new(
+            FilePath::new("ext/demo/demo.c").expect("valid file path"),
+            "generated",
+        );
+
+        let error = write_ruby_output(
+            GeneratedOutput::new(vec![file], Vec::new()),
+            root,
+            Path::new("ext/demo"),
+            Some(&crate_dir),
+        )
+        .expect_err("refuses extension directory containing a crate");
+
+        assert!(
+            error.to_string().contains("contains a Rust crate"),
+            "{error}"
+        );
+        assert!(crate_dir.join("Cargo.toml").is_file());
+        assert!(crate_dir.join("src/lib.rs").is_file());
+    }
+
+    #[test]
+    fn ruby_feature_arguments_keep_every_feature_form_and_drop_other_arguments() {
+        let arguments = LibraryCargoArgs::parse(
+            [
+                "--package",
+                "demo",
+                "--features",
+                "ffi,serde",
+                "--features=async",
+                "-F",
+                "spaced",
+                "-Fjoined",
+                "-F=equals",
+                "--no-default-features",
+                "--frozen",
+                "--profile",
+                "dist",
+                "--all-features",
+            ]
+            .map(str::to_owned),
+        )
+        .unwrap();
+
+        assert_eq!(
+            ruby_feature_arguments(&arguments),
+            [
+                "--features=ffi,serde",
+                "--features=async",
+                "--features=spaced",
+                "--features=joined",
+                "--features=equals",
+                "--no-default-features",
+                "--all-features",
+            ]
+        );
     }
 }

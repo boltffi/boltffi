@@ -1,7 +1,10 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use boltffi_backend::{CustomTypeMapping, target::python::PackageModule};
+use boltffi_backend::{
+    CustomTypeMapping,
+    target::{python::PackageModule, ruby::RubyCExtHost},
+};
 use boltffi_bindgen::target::Target;
 use serde::{Deserialize, Serialize};
 
@@ -245,6 +248,18 @@ impl Config {
                 "targets.python.module_name must be a valid Python identifier, got '{}'",
                 module_name
             )));
+        }
+
+        if self.is_ruby_enabled() {
+            RubyCExtHost::new()
+                .gem_name(self.ruby_gem_name())
+                .map_err(|error| {
+                    ConfigError::Validation(format!("targets.ruby.gem_name: {error}"))
+                })?
+                .module_name(self.targets.ruby.module_name.as_deref())
+                .map_err(|error| {
+                    ConfigError::Validation(format!("targets.ruby.module_name: {error}"))
+                })?;
         }
 
         if self.is_csharp_enabled() {
@@ -2631,6 +2646,25 @@ module_name = "demo-runtime"
             Err(ConfigError::Validation(message))
                 if message.contains("targets.python.module_name must be a valid Python identifier")
         ));
+    }
+
+    #[test]
+    fn rejects_invalid_ruby_names_on_load() {
+        for (key, value) in [("gem_name", "../evil"), ("module_name", "my_lib")] {
+            let parsed: Config = toml::from_str(&format!(
+                "[package]\nname = \"my-lib\"\n\n[targets.ruby]\nenabled = true\n{key} = \"{value}\"\n"
+            ))
+            .expect("toml parse failed");
+
+            assert!(
+                matches!(
+                    parsed.validate(),
+                    Err(ConfigError::Validation(message))
+                        if message.starts_with(&format!("targets.ruby.{key}: "))
+                ),
+                "{key}"
+            );
+        }
     }
 
     #[test]
