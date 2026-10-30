@@ -27,22 +27,6 @@ Span quality: 68 of 69 `BoltFFI:` errors point at the `#[export]` or `#[data]` a
 
 ## Priority findings
 
-### P0: memory safety, not a diagnostics gap
-
-`&mut` to a thread-safe class as a function parameter compiles, although a `&mut self` method on the same class is rejected:
-
-```rust
-#[export]
-pub struct Counter { items: Vec<u64> }
-
-#[export]
-pub fn push(c: &mut Counter) { c.items.push(1); }
-```
-
-The wrapper does an unlocked `&mut *(*handle).value.get()` (`wrapper/class.rs:233`), and the C header exposes the parameter as `const RaceCounter *`. Calling `push` from four threads corrupted the heap and crashed in `free` in 3 of 3 runs; one thread gives the correct length. No `unsafe` in user code.
-
-`examples/demo/src/classes/ownership.rs` exports `mutate_message(&mut OwnedMessage)` on a default class, so closing this hole changes demo behaviour and is a design decision, not a message edit.
-
 ### P1: the messages most users will hit
 
 | Mistake | Today | Should say |
@@ -77,6 +61,7 @@ These compile. The danger is that the user finds out late, or never.
 | Input | What happens | Likelihood | Relevance | Verdict |
 |---|---|---|---|---|
 | `#[boltffi::default("x")] a: i32` | Swift emits `a: Int32 = "x"`, which does not compile; Python emits `a: int = "x"`; Kotlin skips the function | Medium | High | Reject in macro |
+| `&mut` class parameter on a thread-safe class | Accepted, while a `&mut self` method on the same class is rejected | Medium | High | Apply the same rule (deferred) |
 | Private `fn` with `#[export]` | Exposed as `public` on every host | High | High | Reject (decided, deferred) |
 | Private or `pub(crate)` method in `#[export] impl` | Dropped silently | High | Medium | Document with the row above |
 | `#[export(fast)]` on a fn, `#[data(compact)]` | Ignored. `#[export(single_thread)]` on a struct is rejected, so behaviour is inconsistent | Medium | High | Reject unknown arguments |
@@ -156,16 +141,15 @@ Confirmed working, no action: `use dep::T`, full paths, renamed dependencies, `s
 Each step is one PR. Every message change re-records its cases, so the diff shows the improvement.
 
 1. **Land this harness** with today's output recorded, bad messages included, so every later step shows as a `.stderr` diff.
-2. **Decide `&mut Class`.** P0. Deferred by Henrik on 2026-10-30.
-3. **Replace the macro-lookup failure** with a BoltFFI message. Resolves most P1 rows.
-4. **Add a `scaffolding!()` hint.**
-5. **Remove internal ids** from `scan` messages.
-6. **Reword `binding IR` and `unsupported expansion` messages** for user reach.
-7. **Point spans at the offending item.** Carry spans through scan, starting with parameters.
-8. **Reject silent acceptance:** unknown arguments, default type mismatch, misplaced `#[ffi_stream]`, `#[data(impl)]` on trait impls.
-9. **Reject `#[export]` on private functions.** Decided 2026-10-30, scheduled later; breaking change.
-10. **Thiserror compatibility.**
-11. **Link-stage duplicates.** Detect same-named functions in the macro, or add a build-stage harness.
+2. **Replace the macro-lookup failure** with a BoltFFI message. Resolves most P1 rows.
+3. **Add a `scaffolding!()` hint.**
+4. **Remove internal ids** from `scan` messages.
+5. **Reword `binding IR` and `unsupported expansion` messages** for user reach.
+6. **Point spans at the offending item.** Carry spans through scan, starting with parameters.
+7. **Reject silent acceptance:** unknown arguments, default type mismatch, misplaced `#[ffi_stream]`, `#[data(impl)]` on trait impls.
+8. **Reject `#[export]` on private functions.** Decided 2026-10-30, scheduled later; breaking change.
+9. **Thiserror compatibility.**
+10. **Link-stage duplicates.** Detect same-named functions in the macro, or add a build-stage harness.
 
 Target: no recorded `.stderr` contains lane-internal text, internal ids, or `binding IR`, and `tests/accepted/` is empty or holds only deliberate choices. The probes were a one-off survey; 81 of them became cases, and the rest are not worth keeping.
 
