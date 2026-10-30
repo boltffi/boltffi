@@ -1,28 +1,26 @@
 ---
 title: "Migrating to 0.32"
-description: "Update a crate from BoltFFI 0.31 to 0.32: add scaffolding!(), declare classes on their type, and name custom types by their declared name."
+description: "Update a crate from BoltFFI 0.31 to 0.32: add scaffolding!(), declare classes on their type, and regenerate your bindings."
 ---
 
 # Migrating to 0.32
 
-In 0.32 each BoltFFI macro expands from the item it is attached to, and `boltffi generate` reads records compiled into your library instead of scanning source files. Items from `macro_rules!` and `include!` now export, `#[cfg]` on exported items is exact, and rust-analyzer expands `#[data]` and `#[error]` again.
-
-Every crate needs the first step. Crates with classes need the second. After updating, regenerate the bindings for every target, because the exported symbol names changed.
+Every crate needs the first step. Crates with classes need the second. When you're done, regenerate the bindings for every target.
 
 ## Add scaffolding!()
 
-Call `boltffi::scaffolding!()` once at the root of every crate that uses BoltFFI. A dependency that declares BoltFFI types needs it too.
+Call `boltffi::scaffolding!()` once at the root of every crate that uses BoltFFI, including dependencies that declare BoltFFI types.
 
 ```rust
 // src/lib.rs
 boltffi::scaffolding!();
 ```
 
-Without it, each annotated item fails with ``cannot find type `__BoltffiTag` in the crate root``.
+If it's missing, every annotated item fails with ``cannot find type `__BoltffiTag` in the crate root``.
 
 ## Declare classes on their struct or enum
 
-`#[export]` on the struct or enum declares the class. Each `#[export] impl` block adds methods to it. `single_threaded` and `#[deprecated]` move from the impl block to the type.
+Put `#[export]` on the struct or enum to declare the class, then add methods with `#[export] impl` blocks. `single_threaded` and `#[deprecated]` move from the impl block to the type.
 
 Before:
 
@@ -57,38 +55,19 @@ impl Counter {
 }
 ```
 
-An `#[export] impl` for a type without `#[export]` fails with `` `Counter` is not an exported class ``. An `#[export] impl` block takes no arguments, and the error says where `single_threaded` goes. A class can have any number of `#[export] impl` blocks, in any module of the crate. See [Classes](/docs/classes).
-
-## Name custom types by their declared name
-
-Signatures must use the name `custom_type!` declares, not the remote type.
-
-```rust
-custom_type! {
-    pub UtcDateTime,
-    remote = DateTime<Utc>,
-    // ...
-}
-
-#[export]
-pub fn now() -> UtcDateTime {
-    Utc::now()
-}
-```
-
-Writing `-> DateTime<Utc>` fails with `cannot find macro DateTime`. See [Custom Types](/docs/custom-types).
+An `#[export] impl` for a type without `#[export]` fails with `` `Counter` is not an exported class ``. `#[export] impl` takes no arguments, and if you pass `single_threaded` there, the error tells you where it goes. A class can have any number of `#[export] impl` blocks, in any module of the crate. See [Classes](/docs/classes).
 
 ## Rename types called Duration, SystemTime, Uuid or Url
 
-BoltFFI reads these four names as its builtin types wherever they appear. A `#[data]`, `#[error]`, class, callback or custom type declared with one of them is refused. Rename it.
+BoltFFI treats these four names as its builtin types. A `#[data]`, `#[error]`, class, callback or custom type with one of these names is refused, so rename it.
 
-## Rename same-named exports
+## Rename exports that share a name
 
-Exported symbols no longer include the module path. Two exports with the same name in one crate, such as `files::open` and `sockets::open`, fail to build. The same holds for declared types. Rename one of them.
+Two exports with the same name in one crate, such as `files::open` and `sockets::open`, no longer build. The same goes for declared types. Rename one of them.
 
-## Name path dependencies the library does not use
+## Name path dependencies your library doesn't use
 
-A path dependency's exports are compiled into that dependency, and the linker keeps them only when your crate uses it. If one is bound but never used, `boltffi generate` fails and lists the missing symbols. Name the crate once in `src/lib.rs`:
+If a path dependency's exports are bound but your crate never uses the dependency, `boltffi generate` fails and lists the missing symbols. Name the crate once in `src/lib.rs`:
 
 ```rust
 use shapes as _;
@@ -98,7 +77,7 @@ See [Types from other crates](/docs/getting-started#types-from-other-crates).
 
 ## Raise the recursion limit for large items
 
-Each declared type an item names adds two levels of macro expansion. An item that names 64 or more distinct declared types reaches rustc's default recursion limit. Raise it at the crate root:
+An item that names 64 or more distinct declared types can hit rustc's default recursion limit. Raise it at the crate root:
 
 ```rust
 #![recursion_limit = "256"]
@@ -106,6 +85,6 @@ Each declared type an item names adds two levels of macro expansion. An item tha
 
 ## Regenerate the bindings
 
-Symbols now length-prefix each part, as in `boltffi_function_4demo7add_i32` instead of `boltffi_function_demo_add_i32`. Bindings from `boltffi generate` and `boltffi pack` use the new names, so regenerate them for every target. Only code that calls the raw `boltffi_*` symbols by hand needs editing.
+Exported symbol names changed, for example `boltffi_function_4demo7add_i32` instead of `boltffi_function_demo_add_i32`. Regenerate the bindings for every target with `boltffi generate` or `boltffi pack`. Only code that calls the raw `boltffi_*` symbols directly needs editing.
 
-`boltffi generate` builds your crate for the host to read its records. A `build.target` in `.cargo/config.toml` no longer applies to that build.
+`boltffi generate` builds your crate for the host, so a `build.target` in `.cargo/config.toml` no longer applies to it.
