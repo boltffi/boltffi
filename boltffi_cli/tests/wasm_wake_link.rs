@@ -7,12 +7,12 @@
 //!
 //! This is only observable on a toolchain that does not pass
 //! `--allow-undefined` on a wasm cdylib link, which rustc stopped doing
-//! between 1.95 and 1.97. `rust-toolchain.toml` pins 1.95.0, so running this
-//! the ordinary way proves nothing; CI runs it again under `stable`, where the
-//! flag is gone and an undeclared import is a hard error.
+//! between 1.95 and 1.97. CI runs it again under `stable`, ahead of the release
+//! `rust-toolchain.toml` pins, so a link regression shows up before the pin
+//! moves.
 //!
-//! It is also why `examples/demo` never caught this. It exports async and
-//! streams and is packed for wasm in CI, but at the pinned toolchain.
+//! `examples/demo` exports async and streams and is packed for wasm in CI, but
+//! at the pinned toolchain, so it misses what only `stable` breaks.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
