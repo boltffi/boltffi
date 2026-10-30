@@ -27,7 +27,7 @@ boltffi_core = { path = "../../boltffi_core", features = ["chrono"] }
 chrono = { version = "0.4", default-features = false, features = ["std"] }
 demo_bench_macros = { path = "bench_macros" }
 demo_multicrate_session = { path = "multicrate_session" }
-syn = { version = "2.0", features = ["full", "parsing"] }
+syn = { version = "3.0", features = ["full", "parsing"] }
 serde = { version = "1.0", features = ["derive"], optional = true }
 serde-wasm-bindgen = { version = "0.6.5", optional = true }
 uniffi = { version = "0.31", optional = true }

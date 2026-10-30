@@ -116,7 +116,7 @@ impl Spec {
     }
 
     fn parse_trait_impl(item: &syn::ItemImpl) -> Result<Self, ScanError> {
-        let (_, trait_path, _) = item.trait_.as_ref().ok_or_else(|| {
+        let (trait_path, _) = item.trait_.as_ref().ok_or_else(|| {
             invalid_custom_type_message("custom_ffi marker requires a trait impl".to_owned())
         })?;
         if !is_custom_ffi_trait(trait_path) {
