@@ -61,13 +61,31 @@ An `#[export] impl` for a type without `#[export]` fails with `` `Counter` is no
 
 BoltFFI treats these four names as its builtin types. A `#[data]`, `#[error]`, class, callback or custom type with one of these names is refused, so rename it.
 
-## Rename exports that share a name
+## Give every export in a crate its own name
 
-Two exports with the same name in one crate, such as `files::open` and `sockets::open`, no longer build. The same goes for declared types. Rename one of them.
+Exported functions and types need names that are unique across the whole crate, not just within their module. These two functions no longer build together:
 
-## Name path dependencies your library doesn't use
+```rust
+mod files {
+    #[export]
+    pub fn open(path: String) -> u32 {
+        todo!()
+    }
+}
 
-If a path dependency's exports are bound but your crate never uses the dependency, `boltffi generate` fails and lists the missing symbols. Name the crate once in `src/lib.rs`:
+mod sockets {
+    #[export]
+    pub fn open(port: u16) -> u32 {
+        todo!()
+    }
+}
+```
+
+Rename one of them, for example `sockets::open` to `open_socket`. Types work the same way: two `#[data] struct Point` in different modules need different names.
+
+## Use every path dependency that has exports
+
+If your library depends on a crate by `path`, such as `shapes = { path = "../shapes" }`, and that crate has its own exports, your library's code has to use it somewhere. Otherwise its exports are left out of the library, and `boltffi generate` stops with a list of them. If your library doesn't use the crate yet, add this line to `src/lib.rs`:
 
 ```rust
 use shapes as _;
