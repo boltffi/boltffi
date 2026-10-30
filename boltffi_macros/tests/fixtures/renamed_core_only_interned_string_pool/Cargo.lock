@@ -49,7 +49,6 @@ dependencies = [
  "boltffi_ast",
  "proc-macro2",
  "quote",
- "serde",
  "serde_json",
  "syn",
 ]

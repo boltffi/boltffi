@@ -24,7 +24,7 @@ pub use capture::{
     capture_error_struct, capture_function, capture_interned_string_pool, capture_methods,
     capture_struct, capture_trait,
 };
-pub use cfg::ActiveCfg;
+pub(crate) use cfg::ActiveCfg;
 pub use error::ScanError;
 pub use items::class::ClassDeclaration;
 pub use repr::scan as scan_repr;

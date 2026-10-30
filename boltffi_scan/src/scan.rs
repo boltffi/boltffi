@@ -22,15 +22,7 @@ pub fn scan_file(file: syn::File, package: PackageInfo) -> Result<SourceContract
 
 fn scan_tree(source_tree: SourceTree, package: PackageInfo) -> Result<SourceContract, ScanError> {
     let marked = MarkedItems::collect(&source_tree)?;
-    let declared_types = DeclaredTypes::index(&source_tree, &marked)?;
-    scan_marked_with_declarations(&marked, &declared_types, package)
-}
-
-fn scan_marked_with_declarations(
-    marked: &MarkedItems<'_>,
-    declared_types: &DeclaredTypes,
-    package: PackageInfo,
-) -> Result<SourceContract, ScanError> {
+    let declared_types = &DeclaredTypes::index(&source_tree, &marked)?;
     let classes = items::class::scan(
         marked.classes(),
         marked.class_declarations(),
@@ -95,10 +87,6 @@ mod tests {
 
     fn scan(source: &str) -> SourceContract {
         try_scan(source).expect("scan")
-    }
-
-    fn source_tree(crate_name: &str, source: &str) -> SourceTree {
-        SourceTree::in_memory(crate_name, parse(source).items).expect("source tree")
     }
 
     /// Declaration ids are Rust paths, so the crate segment is the module name.
@@ -442,38 +430,30 @@ mod tests {
     }
 
     #[test]
-    fn explicit_import_resolves_dependency_type_reexported_through_bare_module_paths() {
+    fn explicit_import_resolves_type_reexported_through_bare_module_paths() {
         // A uniform-path re-export (`pub use camera::CameraUpdate;` naming a
         // sibling module without a `crate::`/`self::` prefix) is stored
         // unqualified, so resolution must qualify it with the module path.
-        let maplib = source_tree(
-            "maplib",
-            "mod camera { \
-                 mod update { #[data] pub struct CameraUpdate { pub zoom: f64 } } \
-                 pub use update::CameraUpdate; \
+        let contract = scan(
+            "pub mod maplib { \
+                 mod camera { \
+                     mod update { #[data] pub struct CameraUpdate { pub zoom: f64 } } \
+                     pub use update::CameraUpdate; \
+                 } \
+                 pub use camera::CameraUpdate; \
              } \
-             pub use camera::CameraUpdate;",
-        );
-        let root = source_tree(
-            "demo",
-            "use maplib::CameraUpdate; \
+             use maplib::CameraUpdate; \
              #[data] pub struct MapOptions { pub initial_camera: CameraUpdate }",
         );
-        let complete = SourceTree::combine([maplib, root.clone()]);
-        let root_marked = MarkedItems::collect(&root).expect("root marked items");
-        let complete_marked = MarkedItems::collect(&complete).expect("complete marked items");
-        let declared_types =
-            DeclaredTypes::index(&complete, &complete_marked).expect("declared types");
-        let contract = scan_marked_with_declarations(
-            &root_marked,
-            &declared_types,
-            PackageInfo::new("demo", None),
-        )
-        .expect("dependency reexport chain resolves");
+        let options = contract
+            .records
+            .iter()
+            .find(|record| record.id.as_str() == "demo::MapOptions")
+            .expect("root record");
 
         assert_eq!(
-            contract.records[0].fields[0].type_expr,
-            record("maplib::camera::update::CameraUpdate", "CameraUpdate")
+            options.fields[0].type_expr,
+            record("demo::maplib::camera::update::CameraUpdate", "CameraUpdate")
         );
     }
 

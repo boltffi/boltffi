@@ -16,16 +16,19 @@ pub struct ActiveCfg {
 }
 
 impl ActiveCfg {
+    #[cfg(test)]
     pub fn with_feature(mut self, feature: impl AsRef<str>) -> Self {
         self.features.insert(Self::feature_name(feature.as_ref()));
         self
     }
 
+    #[cfg(test)]
     pub fn with_name(mut self, name: impl AsRef<str>) -> Self {
         self.names.insert(Self::cfg_name(name.as_ref()));
         self
     }
 
+    #[cfg(test)]
     pub fn with_value(mut self, name: impl AsRef<str>, value: impl Into<String>) -> Self {
         self.values
             .entry(Self::cfg_name(name.as_ref()))

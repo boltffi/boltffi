@@ -8,24 +8,11 @@ pub(super) struct ModulePath {
     segments: Vec<String>,
 }
 
-/// The module a package is reachable under.
-///
-/// Segments of a path are Rust identifiers, and a package name is not one:
-/// cargo allows a hyphen where the module tree has an underscore. Ids are
-/// compared against this spelling in several places, so it has one definition.
-pub(crate) fn module_name(package: &str) -> String {
-    package.replace('-', "_")
-}
-
 impl ModulePath {
-    /// Root of a crate's module path.
-    ///
-    /// Dependencies arrive already normalised, through
-    /// `ExportedPackage::module_name`, so only the root reaches this with a
-    /// raw package name.
+    /// Root of a crate's module path, with a package name's hyphens as underscores.
     pub(super) fn root(crate_name: impl Into<String>) -> Self {
         Self {
-            segments: vec![module_name(&crate_name.into())],
+            segments: vec![crate_name.into().replace('-', "_")],
         }
     }
 
