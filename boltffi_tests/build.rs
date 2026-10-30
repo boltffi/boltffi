@@ -13,7 +13,7 @@ use boltffi_binding::{
     Bindings, Decl, EnumDecl, ExportedCallable, HandlePresence, IncomingParam, Native, RecordDecl,
     lower,
 };
-use boltffi_scan::{ScanInput, crate_scoped, scan_package};
+use boltffi_scan::{crate_scoped, scan_source};
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
@@ -45,7 +45,6 @@ fn main() {
 }
 
 struct BuildPaths {
-    manifest: PathBuf,
     source: PathBuf,
     src: PathBuf,
     out: PathBuf,
@@ -83,12 +82,7 @@ impl BuildPaths {
         let source = manifest.join("src").join("lib.rs");
         let src = manifest.join("src");
         let out = PathBuf::from(env::var("OUT_DIR").expect("out dir"));
-        Self {
-            manifest,
-            source,
-            src,
-            out,
-        }
+        Self { source, src, out }
     }
 }
 
@@ -2949,11 +2943,7 @@ fn source_contract(paths: &BuildPaths) -> SourceContract {
         env::var("CARGO_PKG_NAME").expect("package name"),
         env::var("CARGO_PKG_VERSION").ok(),
     );
-    crate_scoped(
-        scan_package(&ScanInput::new(&paths.source, package).with_manifest_dir(&paths.manifest))
-            .expect("scan test package")
-            .root_with_support(),
-    )
+    crate_scoped(scan_source(&paths.source, package).expect("scan test package"))
 }
 
 fn rust_type_name(name: &boltffi_binding::CanonicalName) -> String {
