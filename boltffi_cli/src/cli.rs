@@ -383,16 +383,10 @@ pub(crate) enum PackTargetArg {
         experimental: bool,
     },
     #[command(
-        about = "Build + package Ruby gem sources (experimental)",
-        long_about = "Build + package Ruby gem sources.\n\nOutputs:\n  - Gem sources: {targets.ruby.output}\n  - Static library: {targets.ruby.output}/ext/<stem>/lib<library>.a\n\nRun `gem build <gem>.gemspec` in the output directory to build the gem.\n"
+        about = "Package Ruby gem sources with the Rust crate source (experimental)",
+        long_about = "Package Ruby gem sources with the Rust crate source.\n\nOutputs:\n  - Gem sources: {targets.ruby.output}\n  - Crate source: {targets.ruby.output}/ext/<stem>/crate/\n\nThe gem carries no compiled Rust library. It builds the crate with cargo when it installs.\nRun `gem build <gem>.gemspec` in the output directory to build the gem.\n"
     )]
     Ruby {
-        #[arg(long)]
-        release: bool,
-
-        #[arg(long)]
-        no_build: bool,
-
         #[arg(long, help = "Enable experimental targets/features")]
         experimental: bool,
     },
@@ -689,15 +683,11 @@ pub(crate) fn execute_command(
                     ),
                     experimental,
                 }),
-                PackTargetArg::Ruby {
-                    release,
-                    no_build,
-                    experimental,
-                } => PackCommand::Ruby(PackRubyOptions {
+                PackTargetArg::Ruby { experimental } => PackCommand::Ruby(PackRubyOptions {
                     execution: pack_execution_options(
-                        release,
+                        false,
                         regenerate,
-                        no_build,
+                        false,
                         deny_skipped,
                         cargo_args,
                     ),

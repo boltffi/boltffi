@@ -26,6 +26,7 @@ cap-std = "=4.0.3"
 clap = { version = "4.4", features = ["derive"] }
 serde.workspace = true
 toml = "1.0"
+toml_edit = "0.25"
 thiserror.workspace = true
 which = "8.0"
 dirs = "6"

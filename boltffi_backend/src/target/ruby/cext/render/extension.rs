@@ -5,7 +5,7 @@ use askama::Template;
 use crate::{
     bridge::c::{Identifier, Literal},
     core::{GeneratedFile, Result},
-    target::ruby::syntax::ConstantPath,
+    target::ruby::{name_style::extension_directory, syntax::ConstantPath},
 };
 
 #[derive(Template)]
@@ -15,13 +15,8 @@ struct ExtensionTemplate {
     modules: Vec<Literal>,
 }
 
-/// The directory that holds the extension sources, such as `ext/my_lib`.
-pub fn directory(stem: &str) -> String {
-    format!("ext/{stem}")
-}
-
 /// Renders the extension source file, `<stem>.c`.
-pub fn render(stem: &str, module: &ConstantPath) -> Result<GeneratedFile> {
+pub fn render(gem: &str, stem: &str, module: &ConstantPath) -> Result<GeneratedFile> {
     let source = ExtensionTemplate {
         init: Identifier::parse(format!("Init_{stem}"))?,
         modules: module
@@ -31,5 +26,5 @@ pub fn render(stem: &str, module: &ConstantPath) -> Result<GeneratedFile> {
             .collect(),
     }
     .render()?;
-    super::file(format!("{}/{stem}.c", directory(stem)), source)
+    super::file(format!("{}/{stem}.c", extension_directory(gem)), source)
 }

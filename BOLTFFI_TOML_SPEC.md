@@ -615,10 +615,13 @@ The generated gem requires Ruby 3.3 or later.
   - Default: `false`
 - `output` (path): Gem source root.
   - Default: `dist/ruby`
-  - `generate ruby` writes `{output}/<gem>.gemspec`, `{output}/lib/<stem>.rb`, and
-    the extension sources under `{output}/ext/<stem>/`.
-  - `pack ruby` also copies the host static library and its link metadata into
-    `{output}/ext/<stem>/`.
+  - `generate ruby` deletes `{output}/ext/<stem>/`, then writes the extension
+    sources and `extconf.rb` there. It writes the starter files `{output}/<gem>.gemspec`
+    and `{output}/lib/<stem>.rb` only when they are missing. The gem author
+    owns the starter files after that.
+  - `pack ruby` also copies the crate folder into `{output}/ext/<stem>/crate/`.
+    A later `generate ruby` deletes that copy, so run `pack ruby` before
+    `gem build`.
 - `gem_name` (string, optional): Gem name in RubyGems syntax.
   - Default: `{package.name}`
   - The extension stem `<stem>` is the gem name in `snake_case`. It names
@@ -626,17 +629,31 @@ The generated gem requires Ruby 3.3 or later.
 - `module_name` (string, optional): Ruby module that the extension defines,
   such as `MyLib::Native`.
   - Default: the Cargo package name in `UpperCamelCase`.
-- `version` (string, optional): Gem version in RubyGems syntax.
-  - Default: the Cargo package version without build metadata. For example,
-    `1.2.3-rc.1+ci` becomes `1.2.3-rc.1`.
 
-`pack ruby` requires the `staticlib` crate type and builds for the current
-host, which must be macOS or Linux. The generated `extconf.rb` links the
-library that `pack ruby` copies, so run `pack ruby` before `gem build`.
+The starter gemspec uses the Cargo package version without build metadata.
+For example, `1.2.3-rc.1+ci` becomes `1.2.3-rc.1`. Edit the gemspec to change
+the version.
 
-`pack ruby --no-build` builds nothing. It checks that the recorded digest of
-the extension C source matches the current source. Missing or invalid link
-metadata or a source mismatch causes an error.
+The gem carries no compiled Rust library, so `gem build` makes one source gem
+for all platforms. `pack ruby` compiles the crate only to read its binding
+metadata. The generated `extconf.rb` builds the copied crate with
+`cargo rustc --locked --profile release --lib` when the gem installs. The
+install needs cargo, a C compiler, and macOS or Linux. Set the
+`BOLTFFI_CARGO_PROFILE` environment variable to use another Cargo profile, such
+as `dev` for a debug build. Set `CARGO_TARGET_DIR` to keep the Cargo build for
+the next install. The build uses the Cargo feature
+arguments of the `pack ruby` build: `--features`, `--no-default-features`, and
+`--all-features`. It also uses the rustup toolchain of the `pack ruby` build,
+such as `+nightly`.
+
+`pack ruby` requires the `staticlib` crate type and a `Cargo.lock` in the crate
+folder. A workspace member has no `Cargo.lock` of its own, so it cannot use
+`pack ruby` yet. `pack ruby` also refuses a Cargo `--target` or `build.target`,
+because the gem builds for the install host. The copy skips hidden files
+and folders, `target/` folders, `dist/`, and the Ruby output. If a path
+dependency is outside the crate folder, the copy gets its absolute path, and
+`pack ruby` prints a warning. That gem builds only on a machine with that
+folder.
 
 ## Dart
 
