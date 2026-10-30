@@ -30,14 +30,14 @@ custom_type! {
 
 The macro takes these parameters:
 
-- **name** - The name signatures use for the type. The macro defines it as an alias of the remote type (`pub type UtcDateTime = DateTime<Utc>;`), so values are still the remote type. It must be unique within your crate and cannot be a builtin name such as `Duration`.
+- **name** - The name the generated bindings use for the type. The macro defines it as an alias of the remote type (`pub type UtcDateTime = DateTime<Utc>;`), so values are still the remote type. It must be unique within your crate and cannot be a builtin name such as `Duration`.
 - **remote** - The external type you're wrapping. This is what your Rust code uses.
 - **repr** - The FFI-compatible representation. Must be a type BoltFFI already knows how to transfer: primitives, `String`, `Vec<T>`, or types marked with `#[data]`.
 - **into_ffi** - A closure that converts from the remote type to the repr. Takes a reference to the remote type.
 - **try_from_ffi** - A closure that converts from the repr back to the remote type. Returns `Result<Remote, Error>`.
 - **error** - (optional) The error type returned by `try_from_ffi`. Defaults to `CustomTypeConversionError`.
 
-Name the type by its declared name wherever it crosses the boundary:
+Signatures can name the type by its declared name or by the remote type:
 
 ```rust
 #[export]
@@ -51,7 +51,7 @@ impl EventLog {
         self.events.lock().unwrap().last().copied()
     }
 
-    pub fn record(&self, at: UtcDateTime) {
+    pub fn record(&self, at: DateTime<Utc>) {
         self.events.lock().unwrap().push(at);
     }
 }
@@ -59,7 +59,7 @@ impl EventLog {
 
 Consumers see the representation (`i64` here) in the generated bindings. The conversion is transparent.
 
-BoltFFI resolves every type in a signature through the compiler, and it can only find a custom type through the name `custom_type!` declared. Spelling the remote type instead (`DateTime<Utc>`) fails to compile with `cannot find macro DateTime`. When the declared name is the remote type's own name, as in `custom_type!(Stamp, remote = Stamp, ..)` for a local type, no alias is needed.
+The remote type, or a `type` alias of either name, works once `boltffi generate`, `boltffi build` or `boltffi pack` has run for the crate. Before that, a plain `cargo build` accepts only the declared name.
 
 ## The CustomFfiConvertible Trait
 
