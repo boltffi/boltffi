@@ -5,6 +5,8 @@
 //! two crates cannot share them without a dependency cycle, so `boltffi_tests` pins the
 //! round-trip between the const writer and this reader.
 
+use std::path::{Path, PathBuf};
+
 use boltffi_ast::PackageInfo;
 use serde::{Deserialize, Serialize};
 
@@ -218,15 +220,19 @@ impl std::fmt::Display for SourceRecordError {
 
 impl std::error::Error for SourceRecordError {}
 
-/// The source records of a package's last records build, kept in Cargo's build directory.
+/// The source records of a workspace's last records build, kept in Cargo's build directory.
 ///
 /// `boltffi generate` writes the store after its records build, into the build directory
-/// that ordinary builds of the package use. Later builds read it so an invocation learns
+/// that ordinary builds of the workspace use. Later builds read it so an invocation learns
 /// which declaration every type it names resolves to, as rustc resolved it, whatever
 /// spelling the signature uses.
+///
+/// Workspaces that share a build directory keep one store each, and a store lists the
+/// crates it covers, so a crate never reads the records of another workspace.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct RecordStore {
     version: u32,
+    crates: Vec<PathBuf>,
     records: Vec<StoredRecord>,
 }
 
@@ -240,15 +246,20 @@ struct StoredRecord {
 }
 
 impl RecordStore {
-    /// Where the store lives, relative to Cargo's build directory.
-    pub const RELATIVE_PATH: &'static str = "boltffi/records.json";
+    /// The directory of stores, one per workspace, relative to Cargo's build directory.
+    pub const DIRECTORY: &'static str = "boltffi/records";
 
-    const VERSION: u32 = 1;
+    const VERSION: u32 = 2;
 
-    /// Keeps the records of one records build.
-    pub fn new(records: &[RawSourceRecord]) -> Self {
+    /// Keeps the records of one records build for the crates whose canonical manifest
+    /// directories `crates` lists.
+    pub fn new(records: &[RawSourceRecord], crates: impl IntoIterator<Item = PathBuf>) -> Self {
+        let mut crates = crates.into_iter().collect::<Vec<_>>();
+        crates.sort();
+        crates.dedup();
         Self {
             version: Self::VERSION,
+            crates,
             records: records
                 .iter()
                 .map(|record| StoredRecord {
@@ -260,6 +271,25 @@ impl RecordStore {
                 })
                 .collect(),
         }
+    }
+
+    /// The file name of the store for the workspace whose canonical root is `workspace_root`.
+    pub fn file_name(workspace_root: &Path) -> String {
+        let hash = workspace_root
+            .to_string_lossy()
+            .bytes()
+            .fold(0xcbf2_9ce4_8422_2325_u64, |hash, byte| {
+                (hash ^ u64::from(byte)).wrapping_mul(0x0100_0000_01b3)
+            });
+        format!("{hash:016x}.json")
+    }
+
+    /// Returns whether the store holds the records of the crate whose canonical manifest
+    /// directory is `manifest_directory`.
+    pub fn covers(&self, manifest_directory: &Path) -> bool {
+        self.crates
+            .binary_search_by(|covered| covered.as_path().cmp(manifest_directory))
+            .is_ok()
     }
 
     /// Reads a store, or returns `None` when the text is not a store of this version.
@@ -301,7 +331,7 @@ mod tests {
             json: br#"{"function":{"id":"$self::norm"}}"#.to_vec(),
         }];
 
-        let store = RecordStore::new(&records);
+        let store = RecordStore::new(&records, [PathBuf::from("/work/demo-app")]);
         let read = RecordStore::from_json(&store.to_json().expect("store serializes"))
             .expect("a store of this version reads back");
 
@@ -310,9 +340,34 @@ mod tests {
 
     #[test]
     fn a_store_of_another_version_is_not_read() {
-        let text = r#"{"version":0,"records":[]}"#;
+        let text = r#"{"version":1,"records":[]}"#;
 
         assert!(RecordStore::from_json(text).is_none());
+    }
+
+    #[test]
+    fn a_store_covers_only_the_crates_it_lists() {
+        let store = RecordStore::new(
+            &[],
+            [
+                PathBuf::from("/work/app"),
+                PathBuf::from("/work/units"),
+                PathBuf::from("/work/app"),
+            ],
+        );
+
+        assert!(store.covers(Path::new("/work/app")));
+        assert!(store.covers(Path::new("/work/units")));
+        assert!(!store.covers(Path::new("/elsewhere/app")));
+    }
+
+    #[test]
+    fn each_workspace_keeps_its_own_store_file() {
+        let first = RecordStore::file_name(Path::new("/work/first"));
+
+        assert_eq!(first, RecordStore::file_name(Path::new("/work/first")));
+        assert_ne!(first, RecordStore::file_name(Path::new("/work/second")));
+        assert!(first.ends_with(".json"));
     }
 
     fn frame(package: &str, version: &str, module: &str, slots: &[&str], json: &[u8]) -> Vec<u8> {

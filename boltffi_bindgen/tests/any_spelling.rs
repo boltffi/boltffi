@@ -253,12 +253,20 @@ fn generated_bindings_let_every_spelling_cross() {
     let header = workspace.generate();
     let build = workspace.build();
 
+    let stores = workspace.target().join(RecordStore::DIRECTORY);
     assert!(
-        workspace
-            .target()
-            .join(RecordStore::RELATIVE_PATH)
+        stores
+            .join(RecordStore::file_name(
+                &fs::canonicalize(&workspace.root).expect("workspace root")
+            ))
             .is_file(),
-        "generation keeps the records in Cargo's build directory"
+        "generation keeps the workspace's records in Cargo's build directory, found {:?}",
+        fs::read_dir(&stores)
+            .map(|entries| entries
+                .flatten()
+                .map(|entry| entry.path())
+                .collect::<Vec<_>>())
+            .unwrap_or_default()
     );
     assert_eq!(
         workspace.project_files(),

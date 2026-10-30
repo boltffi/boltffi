@@ -17,6 +17,8 @@ use crate::capture::{self, Fragments};
 
 pub struct Store {
     path: PathBuf,
+    modified: SystemTime,
+    contents: RecordStore,
     records: Vec<RawSourceRecord>,
     by_fragment: HashMap<String, usize>,
     by_declaration: HashMap<String, usize>,
@@ -40,15 +42,27 @@ thread_local! {
 }
 
 impl Store {
+    /// The newest store in the build directory that covers the crate being compiled.
     pub fn find() -> Option<Rc<Self>> {
         if Build::current() == Build::SourceRecords {
             return None;
         }
-        Path::new(env!("OUT_DIR"))
+        let crate_directory =
+            std::fs::canonicalize(std::env::var_os("CARGO_MANIFEST_DIR")?).ok()?;
+        let directory = Path::new(env!("OUT_DIR"))
             .ancestors()
-            .map(|directory| directory.join(RecordStore::RELATIVE_PATH))
-            .find(|path| path.is_file())
-            .and_then(Self::load)
+            .map(|directory| directory.join(RecordStore::DIRECTORY))
+            .find(|directory| directory.is_dir())?;
+        std::fs::read_dir(directory)
+            .ok()?
+            .filter_map(|entry| entry.ok().map(|entry| entry.path()))
+            .filter(|path| {
+                path.extension()
+                    .is_some_and(|extension| extension == "json")
+            })
+            .filter_map(Self::load)
+            .filter(|store| store.contents.covers(&crate_directory))
+            .max_by_key(|store| store.modified)
     }
 
     fn load(path: PathBuf) -> Option<Rc<Self>> {
@@ -60,7 +74,7 @@ impl Store {
             match loaded.get(&path) {
                 Some(cached) if cached.modified == modified => cached.store.clone(),
                 _ => {
-                    let store = Self::read(path.clone()).map(Rc::new);
+                    let store = Self::read(path.clone(), modified).map(Rc::new);
                     let cached = Loaded {
                         modified,
                         store: store.clone(),
@@ -72,8 +86,9 @@ impl Store {
         })
     }
 
-    fn read(path: PathBuf) -> Option<Self> {
-        let records = RecordStore::from_json(&std::fs::read_to_string(&path).ok()?)?.records();
+    fn read(path: PathBuf, modified: SystemTime) -> Option<Self> {
+        let contents = RecordStore::from_json(&std::fs::read_to_string(&path).ok()?)?;
+        let records = contents.records();
         let by_fragment = records
             .iter()
             .enumerate()
@@ -86,6 +101,8 @@ impl Store {
             .collect();
         Some(Self {
             path,
+            modified,
+            contents,
             records,
             by_fragment,
             by_declaration,
@@ -319,7 +336,7 @@ fn crate_scoped(id: &str) -> String {
 #[cfg(test)]
 mod tests {
     use std::fs::{self, File};
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
     use std::rc::Rc;
     use std::time::{Duration, SystemTime};
 
@@ -338,7 +355,7 @@ mod tests {
     }
 
     fn write(path: &Path, records: &[RawSourceRecord], modified: SystemTime) {
-        let json = RecordStore::new(records)
+        let json = RecordStore::new(records, [PathBuf::from("/work/demo")])
             .to_json()
             .expect("the store serializes");
         fs::write(path, json).expect("the store is written");

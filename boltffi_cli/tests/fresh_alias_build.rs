@@ -14,9 +14,9 @@ fn fixture() -> PathBuf {
 #[test]
 fn a_fresh_checkout_builds_exports_that_name_types_through_aliases() {
     let build_directory = Path::new(env!("CARGO_TARGET_TMPDIR")).join("fresh_alias_build");
-    let record_store = build_directory.join(RecordStore::RELATIVE_PATH);
-    if record_store.exists() {
-        fs::remove_file(&record_store).expect("start from a checkout without a record store");
+    let record_stores = build_directory.join(RecordStore::DIRECTORY);
+    if record_stores.exists() {
+        fs::remove_dir_all(&record_stores).expect("start from a checkout without a record store");
     }
 
     let output = Command::new(env!("CARGO_BIN_EXE_boltffi"))
@@ -36,5 +36,8 @@ fn a_fresh_checkout_builds_exports_that_name_types_through_aliases() {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr),
     );
-    assert!(record_store.is_file(), "the build keeps the record store");
+    assert!(
+        fs::read_dir(&record_stores).is_ok_and(|mut stores| stores.next().is_some()),
+        "the build keeps the record store"
+    );
 }

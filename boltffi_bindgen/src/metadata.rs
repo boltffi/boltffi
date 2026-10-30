@@ -92,6 +92,7 @@ impl BindingMetadataBuild {
             &manifest,
             self.toolchain_selector.as_deref(),
             &self.cargo_environment,
+            cargo_args.target_directory(),
         )?;
         metadata.library_source(&manifest)?;
         let target = match &self.target {
@@ -116,6 +117,8 @@ impl BindingMetadataBuild {
             libraries,
             local_packages,
             build_directory: metadata.build_directory().map(Path::to_path_buf),
+            workspace_root: canonical(&metadata.workspace_root),
+            crate_directories: metadata.crate_directories(),
         })
     }
 }
@@ -136,6 +139,12 @@ pub struct SourceMetadata {
     /// Cargo's build directory for ordinary builds of the package, where the record store
     /// lives. `None` when cargo reported neither a build nor a target directory.
     pub build_directory: Option<PathBuf>,
+    /// Root of the workspace, canonical, which names its store among those sharing the
+    /// build directory.
+    pub workspace_root: PathBuf,
+    /// Canonical manifest directories of every crate the build compiled, which the store
+    /// covers.
+    pub crate_directories: Vec<PathBuf>,
 }
 
 impl SourceMetadata {
@@ -145,14 +154,14 @@ impl SourceMetadata {
     /// Later builds of the package read the store, so a signature naming a type through an
     /// alias or a remote path expands from the declaration rustc resolved it to.
     pub fn write_record_store(&self) -> std::io::Result<()> {
-        let Some(path) = self
-            .build_directory
-            .as_ref()
-            .map(|directory| directory.join(RecordStore::RELATIVE_PATH))
-        else {
+        let Some(path) = self.build_directory.as_ref().map(|directory| {
+            directory
+                .join(RecordStore::DIRECTORY)
+                .join(RecordStore::file_name(&self.workspace_root))
+        }) else {
             return Ok(());
         };
-        let json = RecordStore::new(&self.source_records)
+        let json = RecordStore::new(&self.source_records, self.crate_directories.clone())
             .to_json()
             .map_err(std::io::Error::other)?;
         if std::fs::read_to_string(&path).is_ok_and(|kept| kept == json) {
@@ -326,17 +335,25 @@ struct CargoMetadata {
     #[serde(default)]
     build_directory: Option<PathBuf>,
     #[serde(default)]
+    workspace_root: PathBuf,
+    #[serde(default)]
     resolve: Option<MetadataResolve>,
 }
 
 impl CargoMetadata {
+    /// Loads the metadata as a build with the same `target_directory` argument resolves
+    /// it, since that argument moves the build directory cargo derives from it.
     fn load(
         manifest: &CargoManifest,
         toolchain_selector: Option<&str>,
         cargo_environment: &[(OsString, OsString)],
+        target_directory: Option<&str>,
     ) -> Result<Self, BindingMetadataBuildError> {
         let mut command = Command::new(CargoProgram::from_env().into_os_string());
         command.envs(cargo_environment.iter().map(|(key, value)| (key, value)));
+        if let Some(target_directory) = target_directory {
+            command.env("CARGO_TARGET_DIR", target_directory);
+        }
         if let Some(toolchain_selector) = toolchain_selector {
             command.arg(toolchain_selector);
         }
@@ -375,6 +392,14 @@ impl CargoMetadata {
         self.build_directory
             .as_deref()
             .or_else(|| self.target_directory())
+    }
+
+    fn crate_directories(&self) -> Vec<PathBuf> {
+        self.packages
+            .iter()
+            .filter_map(|package| package.manifest_path.parent())
+            .map(canonical)
+            .collect()
     }
 
     fn package(
@@ -558,11 +583,7 @@ impl<'build> CargoBuild<'build> {
     /// alternation reruns `boltffi`'s build script and recompiles `boltffi`
     /// and every crate that depends on it.
     fn metadata_target_dir(&self) -> Option<PathBuf> {
-        if self
-            .cargo_args
-            .iter()
-            .any(|arg| arg.starts_with("--target-dir"))
-        {
+        if self.cargo_args.target_directory().is_some() {
             return None;
         }
         Some(self.target_directory?.join("boltffi-source-records"))
@@ -642,6 +663,18 @@ impl MetadataCargoArgs {
         self.arguments.iter()
     }
 
+    /// The directory a `--target-dir` argument names, in either spelling cargo accepts.
+    fn target_directory(&self) -> Option<&str> {
+        let arguments = self.iter().collect::<Vec<_>>();
+        arguments.iter().enumerate().find_map(|(index, argument)| {
+            match argument.strip_prefix("--target-dir") {
+                Some("") => arguments.get(index + 1).map(|value| value.as_str()),
+                Some(value) => value.strip_prefix('='),
+                None => None,
+            }
+        })
+    }
+
     fn without_owned_selectors(arguments: Vec<String>) -> Vec<String> {
         let mut skip_value = false;
         arguments
@@ -664,6 +697,12 @@ impl MetadataCargoArgs {
             })
             .collect()
     }
+}
+
+/// The path with symlinks resolved, so a crate reached through a symlinked directory names
+/// the same store as the build compiling it.
+fn canonical(path: &Path) -> PathBuf {
+    std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
 }
 
 fn is_rustup_toolchain_selector(argument: &str) -> bool {
@@ -848,11 +887,40 @@ mod tests {
     use boltffi_binding::{Decl, Native, Wasm32, linkage_anchor};
 
     use super::{
-        BindingMetadataBuild, BindingMetadataBuildError, CargoBuild, MetadataCargoArgs,
-        SOURCE_RECORDS_ENV, host_target,
+        BindingMetadataBuild, BindingMetadataBuildError, CargoBuild, CargoManifest, CargoMetadata,
+        MetadataCargoArgs, SOURCE_RECORDS_ENV, host_target,
     };
     use crate::artifact::BindingMetadataReader;
     use crate::cargo::LibraryCargoArgsError;
+
+    #[test]
+    fn a_target_dir_argument_names_its_directory_in_either_spelling() {
+        let separate = MetadataCargoArgs::new(["--target-dir".to_owned(), "out".to_owned()])
+            .expect("cargo arguments parse");
+        let joined =
+            MetadataCargoArgs::new(["--target-dir=out".to_owned()]).expect("cargo arguments parse");
+        let absent = MetadataCargoArgs::new(["--features".to_owned(), "ffi".to_owned()])
+            .expect("cargo arguments parse");
+
+        assert_eq!(separate.target_directory(), Some("out"));
+        assert_eq!(joined.target_directory(), Some("out"));
+        assert_eq!(absent.target_directory(), None);
+    }
+
+    #[test]
+    fn metadata_resolves_directories_with_the_build_target_dir() {
+        let fixture = FixtureCrate::with_boltffi_macros();
+        let target_directory = fixture.root.join("elsewhere");
+        let manifest = CargoManifest::new(&fixture.manifest).expect("fixture manifest");
+
+        let metadata = CargoMetadata::load(&manifest, None, &[], target_directory.to_str())
+            .expect("cargo metadata runs");
+
+        assert_eq!(
+            metadata.target_directory(),
+            Some(target_directory.as_path())
+        );
+    }
 
     #[test]
     fn metadata_build_tracks_rustup_toolchain_selector_separately() {
