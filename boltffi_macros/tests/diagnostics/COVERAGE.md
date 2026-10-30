@@ -1,161 +1,92 @@
-# Diagnostics coverage review
+# Diagnostics coverage
 
-The reference for improving BoltFFI's user-facing errors step by step. Update it in the same PR as any change to a case, a message, or a rule.
+This file tracks how good BoltFFI's compile errors are and which ones to fix next. Update it in any PR that changes a case, a message, or a rule.
 
-- **Baseline:** `main` at f0da5b12, rustc 1.97.1, macOS, 2026-10-30.
-- **Harness:** 111 `compile_fail` cases in this directory and 8 `pass` cases in `tests/accepted/`.
-- **Evidence:** 217 single-file probes compiled with `cargo check`, 14 ecosystem probes (dependency crates, thiserror, feature flags, renamed crates), and 50 accepted probes followed through `cargo build` and `boltffi generate` for Swift, Kotlin, Python, C#, C, and TypeScript.
+The findings come from `main` at f0da5b12 on rustc 1.97.1. Each "Today" entry is observed output. Likelihood and relevance are judgement calls.
 
-Every "today" entry below is observed compiler or generator output, not a reading of the source. Likelihood and relevance are judgement calls.
+## How the suite works
 
-## Scoreboard
+Each case in `diagnostics/<rule>/<what_the_user_did>.rs` must fail to compile, and its `.stderr` file records the output. There are 111 of these, and many record bad messages on purpose, so a fix shows up as a `.stderr` diff.
 
-Outcome of the 217 single-file probes:
+The 8 cases in `tests/accepted/` compile today and should not. When a rule lands, move its case to `diagnostics/` and record the error.
 
-| Outcome | Probes | Meaning |
+Re-record with `TRYBUILD=overwrite cargo test -p boltffi_macros --test diagnostics`, and re-record after a toolchain bump.
+
+Avoid cases where rustc quotes the standard library. CI has no `rust-src`, so the quoted snippet renders differently there.
+
+The suite runs `cargo check`, so it can't record link errors, `generate` failures, or anything that depends on Cargo features or dependency names.
+
+## Current state
+
+We compiled 217 small crates, one mistake or feature each:
+
+| Outcome | Crates | Example |
 |---|---:|---|
-| Clear BoltFFI or macro message | 45 | Says what is wrong in user terms |
-| Native rustc error | 13 | Mixed; some good, some name generated traits |
-| IR jargon | 23 | `cannot be represented in binding IR yet`, `unsupported expansion: …`, `unrecognized type` |
-| Lane internals | 34 | ``cannot find macro `Point` ``, ``cannot find `Rc` in `rc` ``, `__BoltffiTag`, `wrong source kind` |
-| Internal id leak | 4 | `method $slot:0::g`, `method $self::T::f` |
-| Accepted | 98 | 4 controls; many legitimate, some should be rejected (see Silent acceptance) |
+| Clear message | 45 | ``export can only be applied to const, enum, fn, impl, struct, or trait`` |
+| rustc error | 13 | `` `Rc<u32>` cannot be sent between threads safely `` |
+| Compiler internals | 23 | `cannot be represented in binding IR yet` |
+| Failed macro lookup | 34 | ``cannot find macro `Point` in this scope`` |
+| Internal id | 4 | ``method $slot:0::g cannot use generics`` |
+| Accepted | 98 | Most are valid code, the rest are in "Accepted mistakes" |
 
-Of the 119 rejected probes, 61 (51%) give a message a user cannot act on without knowing BoltFFI's internals.
+Of the 119 rejected crates, 61 print a message that users can't act on without knowing how BoltFFI works.
 
-Span quality: 68 of 69 `BoltFFI:` errors point at the `#[export]` or `#[data]` attribute, not at the offending parameter, field, or method. In a 20-method `impl` block the user has to guess which method is wrong.
+68 of the 69 `BoltFFI:` errors point at the `#[export]` or `#[data]` attribute instead of the parameter, field, or method at fault. In a large `impl` block, users have to guess which method is wrong.
 
-## Priority findings
+## Most common bad messages
 
-### P1: the messages most users will hit
+Most of these rows have one cause. When a type has no BoltFFI declaration, the lookup fails and rustc reports a missing macro. Replacing that error is the most valuable single fix.
 
 | Mistake | Today | Should say |
 |---|---|---|
-| Forgot `scaffolding!()` | ``cannot find type `__BoltffiTag` in the crate root``, no hint | add `boltffi::scaffolding!();` at the crate root |
-| Plain struct or trait in a signature | ``cannot find macro `Point` in this scope`` | `Point` is not declared; add `#[data]` or `#[export]` |
-| `char`, `i128` | ``cannot find macro `char` ``; rustc adds "`char` is in scope, but it is a builtin type" | `char` cannot cross the boundary; use `u32` or `String` |
-| `pub type Id = u64;` in a signature | ``cannot find macro `Id` `` | type aliases are not followed; spell the target type |
-| `HashSet`, `VecDeque`, `Rc`, `Cow`, `PathBuf` by full path | ``cannot find `HashSet` in `collections` ``, which is false | same as above, naming the type |
-| `std::io::Result<T>`, `Box<dyn Error>` | ``cannot find `Result` in `io` `` | error type must be `String`, `#[error]`, or `#[data]` |
-| `type Result<T> = …` | ``unsupported source type `Result<i32>` `` | names the alias and spells the fix |
-| Undeclared error type | ``cannot find macro `E` `` | add `#[error]` |
-| `Arc<Point>`, `Box<i32>`, `-> Arc<Self>` | `opaque Rust pointer container cannot be represented in binding IR yet` | classes cross by handle; return `Self` |
-| `[u8; 4]`, `-> !` | ``unsupported source type `unrecognized type` `` | names the type; suggests `Vec<u8>` for arrays |
-| `#[data]` record, no `derive(Clone, Copy)` | Four E0277 errors naming `boltffi::__private::wire::Blittable` | blittable records need `Clone, Copy` |
-| `#[data]` on an `impl` | Five E0119 conflicts on `Passable`, `Blittable` | use `#[data(impl)]` |
+| Forgot `scaffolding!()` | ``cannot find type `__BoltffiTag` in the crate root`` | Add `boltffi::scaffolding!();` at the crate root |
+| Undeclared struct or trait in a signature | ``cannot find macro `Point` in this scope`` | `Point` is not declared, add `#[data]` or `#[export]` |
+| `char` or `i128` | ``cannot find macro `char` in this scope`` | `char` can't cross the boundary, use `u32` or `String` |
+| `pub type Id = u64;` in a signature | ``cannot find macro `Id` in this scope`` | BoltFFI can't follow this alias, write `u64` |
+| `std::collections::HashSet` or another unsupported type by full path | ``cannot find `HashSet` in `collections` ``, which is false | `HashSet` can't cross the boundary, use `Vec` |
+| `std::io::Result<T>` | ``cannot find `Result` in `io` `` | The error type must be `String` or a declared type |
+| Undeclared error type | ``cannot find macro `E` in this scope`` | `E` is not declared, add `#[error]` |
+| `type Result<T> = ...` | ``unsupported source type `Result<i32>` `` | BoltFFI can't follow this alias |
+| `Arc<Point>`, `Box<i32>`, `-> Arc<Self>` | `opaque Rust pointer container cannot be represented in binding IR yet` | Name the type, and suggest `Self` for constructors |
+| `[u8; 4]` or `-> !` | ``unsupported source type `unrecognized type` `` | Name the type, and suggest `Vec<u8>` for arrays |
+| `#[data]` record that derives `Clone` but not `Copy` | Several E0277 errors naming `Blittable` | This record needs `#[derive(Clone, Copy)]` |
+| `#[data]` on an `impl` | Several E0119 errors naming `Passable` and `Blittable` | Use `#[data(impl)]` |
+| Generic method | ``method $slot:0::g cannot use generics`` | `g` can't be generic |
 
-Rule behind most of these rows: a failed lane lookup reaches the user as rustc's missing-macro error. That one mechanism accounts for most of the 34 lane-internal probes, so replacing it is the highest-leverage step here.
+`#[error]` from `use boltffi::*;` also conflicts with `#[derive(thiserror::Error)]`, and rustc reports ``E0659: `error` is ambiguous``. Importing names and writing `#[boltffi::error]` works. No case covers this yet because it needs `thiserror` as a dev-dependency.
 
-### P1: internal ids in messages
+## Accepted mistakes
 
-`scan` prints ids before the type is known: ``BoltFFI: `method $slot:0::g` cannot use generics``, ``BoltFFI: `method $self::T::f` cannot be unsafe``, ``stream $slot:0::s must return Arc<EventSubscription<T>>``. Render the method name.
+These compile, so users find out late or never.
 
-### P1: thiserror with a glob import
-
-`use boltffi::*;` with `#[error]` and `#[derive(thiserror::Error)]` fails with three errors, including ``E0659: `error` is ambiguous``. `use boltffi::{export, data};` with `#[boltffi::error]` works. Likely for anyone with an existing error enum. Needs a fix or a documented pattern. A harness case needs `thiserror` as a dev-dependency.
-
-## Silent acceptance
-
-These compile. The danger is that the user finds out late, or never.
-
-| Input | What happens | Likelihood | Relevance | Verdict |
+| Input | What happens | Likelihood | Relevance | Plan |
 |---|---|---|---|---|
-| `#[boltffi::default("x")] a: i32` | Swift emits `a: Int32 = "x"`, which does not compile; Python emits `a: int = "x"`; Kotlin skips the function | Medium | High | Reject in macro |
-| `&mut` class parameter on a thread-safe class | Accepted, while a `&mut self` method on the same class is rejected | Medium | High | Apply the same rule (deferred) |
-| Private `fn` with `#[export]` | Exposed as `public` on every host | High | High | Reject (decided, deferred) |
-| Private or `pub(crate)` method in `#[export] impl` | Dropped silently | High | Medium | Document with the row above |
-| `#[export(fast)]` on a fn, `#[data(compact)]` | Ignored. `#[export(single_thread)]` on a struct is rejected, so behaviour is inconsistent | Medium | High | Reject unknown arguments |
-| `#[ffi_stream]` on a free fn | Ignored; exported as a plain function | Low | Medium | Reject |
-| `#[boltffi::default(1)]` on a fn | Ignored | Low | Low | Reject if cheap |
-| `#[data(impl)] impl Default for Point` | Compiles, method missing from every host | Medium | Medium | Reject, as `#[export] impl Trait` is |
-| `#[data] union` | Compiles, nothing exported; `generate` then says the crate has no records | Low | Low | Reject |
-| `#[repr(u128)]` enum | Accepted | Very low | Low | Skip |
-| `#[repr(transparent)]`, `repr(Rust)` on a record | Accepted | Low | Low | Check layout claims, then skip |
-| Same `#[export] fn` name in two modules | `check` passes; `build` fails with ``symbol `boltffi_function_3st21f` is already defined`` | Medium | High | Detect in macro; trybuild cannot see link errors |
-| `&mut i32` parameter | Swift `generate` fails; Python and C# skip; others pass | Medium | Medium | Host gap, not a macro error |
-| Tuples, nested `Option`, `BTreeMap`, closures | `generate` exits 0 and skips per host (TS, C#, C) | Medium | Medium | Skip tables are easy to miss; consider a strict flag |
+| Private `fn` with `#[export]` | Public on every host | High | High | Reject, scheduled for later |
+| Same `#[export] fn` name in two modules | `check` passes, `build` fails with ``symbol ... is already defined`` | Medium | High | Detect it in the macro |
+| `#[boltffi::default("x")] a: i32` | Swift gets `a: Int32 = "x"`, Python gets `a: int = "x"`, Kotlin skips the function | Medium | High | Reject |
+| `#[export(fast)]`, `#[data(compact)]` | Ignored, although `#[export(single_thread)]` on a struct is rejected | Medium | High | Reject unknown arguments |
+| `&mut` class parameter on a thread-safe class | Accepted, although `&mut self` on the same class is rejected | Medium | High | Apply the same rule, scheduled for later |
+| Private method in `#[export] impl` | Left out of the bindings with no message | High | Medium | Document it |
+| `#[data(impl)] impl Default for Point` | Method missing on every host | Medium | Medium | Reject |
+| `#[ffi_stream]` on a free function | Ignored | Low | Medium | Reject |
+| `#[data] union` | Nothing exported, then `generate` reports no records | Low | Low | Reject |
+| `#[boltffi::default(1)]` on a function | Ignored | Low | Low | Reject if cheap |
 
-## Use-case coverage
+## Other messages to improve
 
-Each case records today's output, good or bad, so a fix shows up as a `.stderr` diff. Failing cases are `diagnostics/<rule>/<what_the_user_did>.rs`, 111 in total. Cases in `tests/accepted/` compile today and should not: when the rule lands, move the case to `diagnostics/` and record the error.
+A case records each of these.
 
-| Area | Cases | Today's text | Not covered |
-|---|---:|---|---|
-| Scaffolding | 6 | Poor: `__BoltffiTag` | |
-| Attribute placement | 8 | Mixed: `wrong source kind`, generated names | |
-| Undeclared types | 5 | Poor: macro lookup | Types from a dependency crate |
-| Builtin names | 4 | Good | |
-| Custom type naming | 3 | Poor: false message, broken rustc suggestion | |
-| Custom type declaration | 4 | Mixed: missing keys print two errors, bare E0308 | |
-| Same-name declarations | 2 | Good for records | Functions: link error, see Silent acceptance |
-| Classes | 14 | Mixed | |
-| Records | 11 | Mixed | |
-| Enums | 4 | Mixed | |
-| Errors | 4 | Poor | thiserror needs a dev-dependency |
-| Function items | 7 | Mostly good | |
-| Signatures | 18 | Poor to mixed | |
-| Callback traits | 11 | IR jargon, id leak | |
-| Streams | 3 | Id leak | |
-| Constants | 3 | Mixed | |
-| Default values | 1 | IR jargon | |
-| `cfg` | 2 | Mixed | |
-| Interned strings | 1 | Good | |
-| Silently accepted | 8 | Locked as passing | |
-
-Not reachable from this harness: feature flags (`chrono` off gives ``cannot find macro `DateTime` ``), a renamed `boltffi` dependency, link errors, and `generate` failures.
-
-Avoid cases where rustc quotes the standard library. CI has no `rust-src`, so the quoted snippet renders differently there. The output is also only as stable as the toolchain, so a toolchain bump re-records.
-
-## Corner cases
-
-| Case | Today | Likelihood | Relevance | Verdict |
+| Input | Today | Likelihood | Relevance | Fix |
 |---|---|---|---|---|
-| `-> Option<&str>` | ``unsupported source type `&str` ``, though `&str` works elsewhere | High | Medium | Improve text, add case |
-| `self` param on free fn | `free function cannot have a receiver` plus rustc | Medium | Low | Fine, add case |
-| `_: i32` parameter | `parameter pattern is not a plain name` | Medium | Medium | Clear enough, add case |
-| Trait with `fn f();` or `&mut self` | `callback method receiver cannot be represented…` | High | Medium | Say which receivers are allowed |
-| Trait `-> Self` | `Self in callback trait method…` | Low | Low | Reword with the rest |
-| `&dyn Trait` parameter | `borrowed callback parameter cannot be…` | Medium | Medium | Suggest `Box<dyn T>` or `Arc<dyn T>` |
-| `impl Fn` on a trait method | E0310 | Low | Low | Not object-safe in spirit; skip |
-| `Option<Box<dyn Fn>>` on a trait method | `unsupported expansion: outgoing closure parameter form` | Low | Medium | Reword |
-| Closure on a callback trait method | Compiles after #1030; Swift and Dart `generate` fail, most hosts skip | Medium | Medium | Host gap; not for this suite |
+| Trait with `fn f();` or `&mut self` | `callback method receiver cannot be represented...` | High | Medium | List the allowed receivers |
+| `Option<&str>` | ``unsupported source type `&str` ``, although `&str` works elsewhere | High | Medium | Name `Option<&str>` and suggest `Option<String>` |
+| `&dyn Trait` parameter | `borrowed callback parameter cannot be...` | Medium | Medium | Suggest `Box<dyn T>` or `Arc<dyn T>` |
 | `fn(i32) -> i32` parameter | `unsupported expansion: function-pointer closure parameter` | Medium | Medium | Suggest `impl Fn` |
-| `-> Vec<Self>` | `unsupported expansion: codec node` | Medium | Medium | Reword; the wording is purely internal |
-| `impl &Counter` | Three errors | Very low | Low | Skip |
-| `self: Arc<Self>` | `owned class receiver…` | Medium | Medium | Reword, keep case |
-| `#[export]` in a fn body | `cannot find function inner in module super` | Low | Medium | Reject with a real message |
-| `#[export]` on a method in a plain `impl` | Three errors about `use` and `mod` in impls | Medium | Medium | Suggest `#[export]` on the impl |
-| Empty `#[data] enum` | E0084 and E0004 on generated code | Low | Low | Reject in one line |
-| Recursive `Box<T>` field | `opaque Rust pointer container…` | Medium | Medium | Suggest `Vec` or `Option` handling |
-| Same `#[export] struct` in two modules | E0428 on `__boltffi_declared_C` | Low | Medium | Reuse the record duplicate rule |
-| Discriminant out of range | Native lint, clear | Low | Low | Fine, skip |
-| `Rc` field in thread-safe class | Native E0277, clear | Medium | High | Fine, add case |
-| `HashMap<Point, _>` | Native E0277 on `Eq`, `Hash`, clear | Low | Low | Fine, skip |
-| `boltffi` renamed in Cargo.toml | E0433 per macro | Low | Low | Document it |
-| Interned pool syntax error | Prefixed `invalid custom type declaration` | Very low | Low | Fix prefix when nearby |
-
-Confirmed working, no action: `use dep::T`, full paths, renamed dependencies, `self::` and `crate::` paths, `use a::P as Q`, `use a::*`, declaration after use, macro-generated `#[export]`, `cfg_attr(…, export)`, gated fields, variants, and methods, `Duration`, `SystemTime`, `Uuid`, and `Url` at default features.
-
-## Roadmap
-
-Each step is one PR. Every message change re-records its cases, so the diff shows the improvement.
-
-1. **Land this harness** with today's output recorded, bad messages included, so every later step shows as a `.stderr` diff.
-2. **Replace the macro-lookup failure** with a BoltFFI message. Resolves most P1 rows.
-3. **Add a `scaffolding!()` hint.**
-4. **Remove internal ids** from `scan` messages.
-5. **Reword `binding IR` and `unsupported expansion` messages** for user reach.
-6. **Point spans at the offending item.** Carry spans through scan, starting with parameters.
-7. **Reject silent acceptance:** unknown arguments, default type mismatch, misplaced `#[ffi_stream]`, `#[data(impl)]` on trait impls.
-8. **Reject `#[export]` on private functions.** Decided 2026-10-30, scheduled later; breaking change.
-9. **Thiserror compatibility.**
-10. **Link-stage duplicates.** Detect same-named functions in the macro, or add a build-stage harness.
-
-Target: no recorded `.stderr` contains lane-internal text, internal ids, or `binding IR`, and `tests/accepted/` is empty or holds only deliberate choices. The probes were a one-off survey; 81 of them became cases, and the rest are not worth keeping.
-
-## Limits of this review
-
-- `cargo check` on macOS only for this pass; the recorded `.stderr` files have not been rerun on Linux since the port.
-- `cfg(wasm32)` paths were probed only for callback closures.
-- Generated Swift, Kotlin, and Python were inspected as text and not compiled.
-- trybuild runs `check`, so it cannot lock link or `generate` failures.
+| `-> Vec<Self>` | `unsupported expansion: codec node` | Medium | Medium | Name the return type |
+| `self: Arc<Self>` | `owned class receiver...` | Medium | Medium | List the allowed receivers |
+| `#[export]` on a method in a plain `impl` | Three errors about `use` and `mod` in impls | Medium | Medium | Suggest `#[export]` on the `impl` |
+| Recursive `Box<T>` field | `opaque Rust pointer container...` | Medium | Medium | Say that the record can't contain itself by `Box` |
+| `Option<Box<dyn Fn>>` on a trait method | `unsupported expansion: outgoing closure parameter form` | Low | Medium | Say it is not supported |
+| `#[export]` inside a function | `cannot find function inner in module super` | Low | Medium | Say it must be at module level |
+| Same `#[export] struct` in two modules | E0428 on `__boltffi_declared_C` | Low | Medium | Report it like same-named records |
+| Empty `#[data] enum` | E0084 and E0004 on generated code | Low | Low | Print one error |
