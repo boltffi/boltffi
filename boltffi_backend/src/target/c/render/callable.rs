@@ -784,7 +784,7 @@ fn free_success_stmt(
     }
 }
 fn package_member(context: &RenderContext<Native>) -> String {
-    Name::new(context.bindings().package().name()).member()
+    Name::package(context).member()
 }
 fn unsupported<T>(shape: &'static str) -> Result<T> {
     Err(Error::UnsupportedTarget { target: "c", shape })

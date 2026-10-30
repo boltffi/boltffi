@@ -1,8 +1,8 @@
 //! C identifier and naming rules for the ergonomic C host layer.
 
-use boltffi_binding::CanonicalName;
+use boltffi_binding::{CanonicalName, NamePart, Native};
 
-use crate::core::name_case;
+use crate::core::{RenderContext, name_case};
 
 /// Stable C identifier casing for one source name.
 ///
@@ -12,7 +12,7 @@ use crate::core::name_case;
 /// constants use UPPER_SNAKE_CASE.
 #[derive(Clone, Debug)]
 pub struct Name {
-    source: CanonicalName,
+    pub(super) source: CanonicalName,
 }
 
 impl Name {
@@ -20,6 +20,21 @@ impl Name {
     pub fn new(source: &CanonicalName) -> Self {
         Self {
             source: source.clone(),
+        }
+    }
+
+    /// Creates the package name, reading `-` as a part separator because Cargo
+    /// package names allow it and C identifiers do not.
+    pub fn package(context: &RenderContext<Native>) -> Self {
+        let package = context.bindings().package().name();
+        let parts = package
+            .parts()
+            .iter()
+            .flat_map(|part| part.as_str().split('-'))
+            .map(NamePart::new)
+            .collect();
+        Self {
+            source: CanonicalName::new(parts),
         }
     }
 
