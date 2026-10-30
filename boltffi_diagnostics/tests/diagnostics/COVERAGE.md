@@ -10,7 +10,7 @@ Each case in `diagnostics/<rule>/<what_the_user_did>.rs` must fail to compile, a
 
 The 8 cases in `tests/accepted/` compile today and should not. When a rule lands, move its case to `diagnostics/` and record the error.
 
-Re-record with `TRYBUILD=overwrite cargo test -p boltffi_macros --test diagnostics`, and re-record after a toolchain bump.
+Re-record with `TRYBUILD=overwrite cargo test -p boltffi_diagnostics --test diagnostics`, and re-record after a toolchain bump.
 
 Avoid cases where rustc quotes the standard library. CI has no `rust-src`, so the quoted snippet renders differently there.
 

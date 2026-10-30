@@ -23,9 +23,5 @@ boltffi_scan.workspace = true
 serde.workspace = true
 serde_json = { workspace = true, features = ["raw_value"] }
 
-[dev-dependencies]
-boltffi = { path = "../boltffi" }
-trybuild = "1.0.121"
-
 [lints]
 workspace = true
