@@ -1,0 +1,15 @@
+error: cannot find macro `D` in this scope
+ --> tests/diagnostics/functions/impl_trait_of_an_undeclared_trait.rs:4:18
+  |
+4 | pub fn f(d: impl D) {}
+  |                  ^
+  |
+  = note: `D` is in scope, but it is a trait, not a macro
+
+warning: unused variable: `d`
+ --> tests/diagnostics/functions/impl_trait_of_an_undeclared_trait.rs:4:10
+  |
+4 | pub fn f(d: impl D) {}
+  |          ^ help: if this is intentional, prefix it with an underscore: `_d`
+  |
+  = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default

@@ -1,0 +1,23 @@
+error: BoltFFI: `enum E` cannot use generics
+ --> tests/diagnostics/errors/generic_error_enum.rs:2:1
+  |
+2 | #[boltffi::error]
+  | ^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `boltffi::error` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0107]: missing generics for enum `E`
+ --> tests/diagnostics/errors/generic_error_enum.rs:4:10
+  |
+4 | pub enum E<T> { A(T) }
+  |          ^ expected 1 generic argument
+  |
+note: enum defined here, with 1 generic parameter: `T`
+ --> tests/diagnostics/errors/generic_error_enum.rs:4:10
+  |
+4 | pub enum E<T> { A(T) }
+  |          ^ -
+help: add missing generic argument
+  |
+4 | pub enum E<T><T> { A(T) }
+  |           +++

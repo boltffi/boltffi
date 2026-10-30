@@ -1,0 +1,20 @@
+error[E0308]: mismatched types
+ --> tests/diagnostics/custom_types/try_from_ffi_not_returning_result.rs:3:1
+  |
+3 | boltffi::custom_type! { pub L, remote = R, repr = String, into_ffi = |s: &R| String::new(), try_from_ffi = |s: String| R, }
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  | |
+  | expected `Result<R, CustomTypeConversionError>`, found `R`
+  | expected `Result<R, CustomTypeConversionError>` because of return type
+  |
+  = note: expected enum `Result<R, CustomTypeConversionError>`
+           found struct `R`
+  = note: this error originates in the macro `boltffi::custom_type` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unused variable: `s`
+ --> tests/diagnostics/custom_types/try_from_ffi_not_returning_result.rs:3:71
+  |
+3 | boltffi::custom_type! { pub L, remote = R, repr = String, into_ffi = |s: &R| String::new(), try_from_ffi = |s: String| R, }
+  |                                                                       ^ help: if this is intentional, prefix it with an underscore: `_s`
+  |
+  = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default

@@ -3,7 +3,7 @@
 The reference for improving BoltFFI's user-facing errors step by step. Update it in the same PR as any change to a case, a message, or a rule.
 
 - **Baseline:** `main` at f0da5b12, rustc 1.97.1, macOS, 2026-10-30.
-- **Harness:** 38 trybuild cases in this directory.
+- **Harness:** 111 `compile_fail` cases in this directory and 8 `pass` cases in `tests/accepted/`.
 - **Evidence:** 217 single-file probes compiled with `cargo check`, 14 ecosystem probes (dependency crates, thiserror, feature flags, renamed crates), and 50 accepted probes followed through `cargo build` and `boltffi generate` for Swift, Kotlin, Python, C#, C, and TypeScript.
 
 Every "today" entry below is observed compiler or generator output, not a reading of the source. Likelihood and relevance are judgement calls.
@@ -92,33 +92,34 @@ These compile. The danger is that the user finds out late, or never.
 
 ## Use-case coverage
 
-Rating: **Good** = main mistakes locked with clear text. **Partial** = some locked, or locked with poor text. **None** = no case. Cases sum to 38. 11 of them lock lane-internal text on purpose and should change as step 3 lands.
+Each case records today's output, good or bad, so a fix shows up as a `.stderr` diff. Failing cases are `diagnostics/<rule>/<what_the_user_did>.rs`, 111 in total. Cases in `tests/accepted/` compile today and should not: when the rule lands, move the case to `diagnostics/` and record the error.
 
-| Area | Cases | Rating | Biggest gap |
+| Area | Cases | Today's text | Not covered |
 |---|---:|---|---|
-| Scaffolding | 3 | Partial | Two cases lock `__BoltffiTag`; no case for twice, or in a module |
-| Undeclared types | 5 | Partial | All lock the macro-lookup message |
-| Builtin names | 4 | Good | Low likelihood but cheap |
-| Custom type naming | 3 | Partial | Remote-path cases lock a false message and a broken rustc suggestion |
-| Custom type declaration | 0 | None | Missing keys print two errors; wrong closure gives bare E0308 |
-| Same-name declarations | 2 | Partial | Same-named classes and functions across modules |
-| Classes | 6 | Good | Missing `&mut Class`, `Arc<Self>` constructor, `impl &T` |
-| Records | 5 | Partial | Missing derive, `#[data]` on impl, lifetime, recursive box |
-| Enums | 0 | None | Empty enum, generic, recursive, non-literal discriminant |
-| Errors | 0 | None | Undeclared error type, thiserror, `io::Result`, `Box<dyn Error>` |
-| Function items | 2 | Partial | `async`, `extern`, `self`, nested in fn or impl |
-| Signatures | 4 | Partial | Primitives, std containers, aliases, arrays, fn pointers |
-| Callback traits | 1 | Partial | Receivers, generics, assoc items, supertraits, `Self`, `&dyn T` |
-| Closures | 0 | None | `fn` pointers, `Option<Box<dyn Fn>>` on traits, record fields |
-| Streams | 0 | None | Missing `item`, bad mode, wrong return |
-| Constants | 0 | None | Arrays, overflow, anonymous |
-| Default values | 0 | None | Wrong type, non-literal |
-| Attribute placement | 1 | Partial | `#[data]` on fn or trait prints `wrong source kind` |
-| Interned strings | 1 | Good | Low likelihood |
-| `cfg` | 1 | Partial | Gated type used by an ungated function |
-| Multi-crate | 0 | None | Undeclared type from a dependency |
-| Feature flags | 0 | None | `chrono` without the feature gives ``cannot find macro `DateTime` `` |
-| Renamed `boltffi` | 0 | None | ``cannot find `boltffi` in the list of imported crates`` on every macro |
+| Scaffolding | 6 | Poor: `__BoltffiTag` | |
+| Attribute placement | 8 | Mixed: `wrong source kind`, generated names | |
+| Undeclared types | 5 | Poor: macro lookup | Types from a dependency crate |
+| Builtin names | 4 | Good | |
+| Custom type naming | 3 | Poor: false message, broken rustc suggestion | |
+| Custom type declaration | 4 | Mixed: missing keys print two errors, bare E0308 | |
+| Same-name declarations | 2 | Good for records | Functions: link error, see Silent acceptance |
+| Classes | 14 | Mixed | |
+| Records | 11 | Mixed | |
+| Enums | 4 | Mixed | |
+| Errors | 4 | Poor | thiserror needs a dev-dependency |
+| Function items | 7 | Mostly good | |
+| Signatures | 18 | Poor to mixed | |
+| Callback traits | 11 | IR jargon, id leak | |
+| Streams | 3 | Id leak | |
+| Constants | 3 | Mixed | |
+| Default values | 1 | IR jargon | |
+| `cfg` | 2 | Mixed | |
+| Interned strings | 1 | Good | |
+| Silently accepted | 8 | Locked as passing | |
+
+Not reachable from this harness: feature flags (`chrono` off gives ``cannot find macro `DateTime` ``), a renamed `boltffi` dependency, link errors, and `generate` failures.
+
+Avoid cases where rustc quotes the standard library. CI has no `rust-src`, so the quoted snippet renders differently there. The output is also only as stable as the toolchain, so a toolchain bump re-records.
 
 ## Corner cases
 
@@ -154,24 +155,23 @@ Confirmed working, no action: `use dep::T`, full paths, renamed dependencies, `s
 
 Each step is one PR. Every message change re-records its cases, so the diff shows the improvement.
 
-1. **Land this harness** with the bad messages recorded as they are.
+1. **Land this harness** with today's output recorded, bad messages included, so every later step shows as a `.stderr` diff.
 2. **Decide `&mut Class`.** P0. Deferred by Henrik on 2026-10-30.
 3. **Replace the macro-lookup failure** with a BoltFFI message. Resolves most P1 rows.
 4. **Add a `scaffolding!()` hint.**
 5. **Remove internal ids** from `scan` messages.
-6. **Reword `binding IR` and `unsupported expansion` messages** for user reach; lock with cases in the empty areas above (enums, errors, streams, constants, default values, closures).
+6. **Reword `binding IR` and `unsupported expansion` messages** for user reach.
 7. **Point spans at the offending item.** Carry spans through scan, starting with parameters.
 8. **Reject silent acceptance:** unknown arguments, default type mismatch, misplaced `#[ffi_stream]`, `#[data(impl)]` on trait impls.
 9. **Reject `#[export]` on private functions.** Decided 2026-10-30, scheduled later; breaking change.
 10. **Thiserror compatibility.**
 11. **Link-stage duplicates.** Detect same-named functions in the macro, or add a build-stage harness.
 
-Target: no recorded `.stderr` contains lane-internal text, internal ids, or `binding IR`, with the empty areas above covered by about 40 to 50 new cases added alongside these steps. The probes were a one-off survey and are not meant to become cases.
+Target: no recorded `.stderr` contains lane-internal text, internal ids, or `binding IR`, and `tests/accepted/` is empty or holds only deliberate choices. The probes were a one-off survey; 81 of them became cases, and the rest are not worth keeping.
 
 ## Limits of this review
 
 - `cargo check` on macOS only for this pass; the recorded `.stderr` files have not been rerun on Linux since the port.
 - `cfg(wasm32)` paths were probed only for callback closures.
 - Generated Swift, Kotlin, and Python were inspected as text and not compiled.
-- Probe sources are not in the repository. Add a case here to keep one permanently.
 - trybuild runs `check`, so it cannot lock link or `generate` failures.

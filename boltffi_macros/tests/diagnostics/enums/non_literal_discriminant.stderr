@@ -1,0 +1,7 @@
+error: BoltFFI: enum discriminants must be integer literals
+ --> tests/diagnostics/enums/non_literal_discriminant.rs:3:1
+  |
+3 | #[boltffi::data]
+  | ^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `boltffi::data` (in Nightly builds, run with -Z macro-backtrace for more info)

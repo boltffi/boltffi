@@ -1,4 +1,6 @@
 #[test]
 fn compile_errors_match_the_recorded_diagnostics() {
-    trybuild::TestCases::new().compile_fail("tests/diagnostics/*/*.rs");
+    let cases = trybuild::TestCases::new();
+    cases.compile_fail("tests/diagnostics/*/*.rs");
+    cases.pass("tests/accepted/*.rs");
 }

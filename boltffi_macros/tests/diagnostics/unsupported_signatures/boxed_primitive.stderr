@@ -1,0 +1,7 @@
+error: BoltFFI: opaque Rust pointer container cannot be represented in binding IR yet
+ --> tests/diagnostics/unsupported_signatures/boxed_primitive.rs:2:1
+  |
+2 | #[boltffi::export]
+  | ^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `boltffi::export` (in Nightly builds, run with -Z macro-backtrace for more info)
