@@ -9,6 +9,7 @@ pub enum UnsupportedFeature {
     ExternFunctionPointer,
     VariadicFunctionPointer,
     HigherRankedFunctionPointer,
+    ReceiverKind,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -27,6 +28,7 @@ impl UnsupportedFeature {
         Self::ExternFunctionPointer,
         Self::VariadicFunctionPointer,
         Self::HigherRankedFunctionPointer,
+        Self::ReceiverKind,
     ];
 
     pub const fn info(self) -> UnsupportedInfo {
@@ -66,12 +68,21 @@ impl UnsupportedFeature {
                 example: "for<'a> fn(&'a str)",
                 message: "higher-ranked function pointer lifetimes cannot be represented as closure types",
             },
+            Self::ReceiverKind => UnsupportedInfo {
+                error: "receiver_kind",
+                example: "fn get(&pin mut self)",
+                message: "this receiver form is not supported",
+            },
         }
     }
 }
 
 pub(super) fn feature(feature: UnsupportedFeature) -> ScanError {
     ScanError::UnsupportedFeature { feature }
+}
+
+pub(crate) fn has_bound_modifier(bound: &syn::TraitBound) -> bool {
+    bound.maybe.is_some() || bound.modifiers.require_empty().is_err()
 }
 
 pub fn generics(generics: &syn::Generics, item: &str) -> Result<(), ScanError> {
@@ -86,7 +97,7 @@ pub fn generics(generics: &syn::Generics, item: &str) -> Result<(), ScanError> {
 pub fn safety(safety: &syn::Safety, item: &str) -> Result<(), ScanError> {
     match safety {
         syn::Safety::Unsafe(token) => unsafety(Some(token), item),
-        _ => Ok(()),
+        syn::Safety::Safe(_) | syn::Safety::Default => Ok(()),
     }
 }
 

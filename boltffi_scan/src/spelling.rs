@@ -22,14 +22,14 @@ pub(super) fn ty(ty: &syn::Type) -> String {
                 .collect::<Vec<_>>()
                 .join(" + ")
         ),
-        syn::Type::FnPtr(bare_fn) => {
-            let inputs = bare_fn
+        syn::Type::FnPtr(fn_ptr) => {
+            let inputs = fn_ptr
                 .inputs
                 .iter()
                 .map(|input| self::ty(&input.ty))
                 .collect::<Vec<_>>()
                 .join(", ");
-            match &bare_fn.output {
+            match &fn_ptr.output {
                 syn::ReturnType::Default => format!("fn({inputs})"),
                 syn::ReturnType::Type(_, output) => {
                     format!("fn({inputs}) -> {}", self::ty(output))

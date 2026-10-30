@@ -84,7 +84,7 @@ fn supertraits(
 }
 
 fn is_supported_supertrait(bound: &syn::TraitBound) -> bool {
-    bound.maybe.is_none()
+    !unsupported::has_bound_modifier(bound)
         && bound.lifetimes.is_none()
         && bound.path.segments.last().is_some_and(|segment| {
             matches!(

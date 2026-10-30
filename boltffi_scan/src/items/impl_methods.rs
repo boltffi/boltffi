@@ -253,6 +253,9 @@ mod tests {
                 pub fn shared(&self) {} \
                 pub fn exclusive(&mut self) {} \
                 pub fn consuming(self) {} \
+                pub fn rebinding(mut self) {} \
+                pub fn lifetime_exclusive(&'a mut self) {} \
+                pub fn boxed(self: Box<Self>) {} \
             }",
             "demo::Point",
             &DeclaredTypes::new(),
@@ -262,6 +265,9 @@ mod tests {
         assert_eq!(methods[0].receiver, Receiver::Shared);
         assert_eq!(methods[1].receiver, Receiver::Mutable);
         assert_eq!(methods[2].receiver, Receiver::Owned);
+        assert_eq!(methods[3].receiver, Receiver::Owned);
+        assert_eq!(methods[4].receiver, Receiver::Mutable);
+        assert_eq!(methods[5].receiver, Receiver::Owned);
     }
 
     #[test]

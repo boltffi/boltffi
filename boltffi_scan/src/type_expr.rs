@@ -41,7 +41,7 @@ impl<'a> Scanner<'a> {
             ));
         }
         match unwrapped {
-            syn::Type::FnPtr(bare_fn) => self.bare_fn(bare_fn),
+            syn::Type::FnPtr(fn_ptr) => self.fn_ptr(fn_ptr),
             syn::Type::ImplTrait(impl_trait) => self.impl_trait(impl_trait, ty),
             syn::Type::Slice(slice) => self.slice(slice),
             syn::Type::Path(type_path) => self.path(type_path, ty),
@@ -326,7 +326,7 @@ impl<'a> Scanner<'a> {
         &self,
         bound: &syn::TraitBound,
     ) -> Result<Option<AdditionalBound>, ScanError> {
-        if bound.maybe.is_some()
+        if crate::unsupported::has_bound_modifier(bound)
             || bound.lifetimes.is_some()
             || closure_bound(bound).is_some()
             || bound
@@ -349,7 +349,7 @@ impl<'a> Scanner<'a> {
     }
 
     fn base_trait(&self, bound: &syn::TraitBound) -> Result<Option<BaseTrait>, ScanError> {
-        if bound.maybe.is_some() || bound.lifetimes.is_some() {
+        if crate::unsupported::has_bound_modifier(bound) || bound.lifetimes.is_some() {
             return Ok(None);
         }
         if let Some((kind, arguments)) = closure_bound(bound) {
@@ -395,33 +395,33 @@ impl<'a> Scanner<'a> {
         }
     }
 
-    fn bare_fn(&self, bare_fn: &syn::TypeFnPtr) -> Result<TypeExpr, ScanError> {
-        if bare_fn.lifetimes.is_some() {
+    fn fn_ptr(&self, fn_ptr: &syn::TypeFnPtr) -> Result<TypeExpr, ScanError> {
+        if fn_ptr.lifetimes.is_some() {
             return Err(crate::unsupported::feature(
                 UnsupportedFeature::HigherRankedFunctionPointer,
             ));
         }
-        if bare_fn.unsafety.is_some() {
+        if fn_ptr.unsafety.is_some() {
             return Err(crate::unsupported::feature(
                 UnsupportedFeature::UnsafeFunctionPointer,
             ));
         }
-        if bare_fn.abi.is_some() {
+        if fn_ptr.abi.is_some() {
             return Err(crate::unsupported::feature(
                 UnsupportedFeature::ExternFunctionPointer,
             ));
         }
-        if bare_fn.variadic.is_some() {
+        if fn_ptr.variadic.is_some() {
             return Err(crate::unsupported::feature(
                 UnsupportedFeature::VariadicFunctionPointer,
             ));
         }
-        let parameters = bare_fn
+        let parameters = fn_ptr
             .inputs
             .iter()
             .map(|argument| self.scan(&argument.ty))
             .collect::<Result<Vec<_>, _>>()?;
-        let returns = self.scan_return(&bare_fn.output)?;
+        let returns = self.scan_return(&fn_ptr.output)?;
         Ok(TypeExpr::fn_ptr(FnSig::new(parameters, returns)))
     }
 
