@@ -5,12 +5,10 @@ mod const_expr;
 mod declared_types;
 mod error;
 mod impl_target;
-mod input;
 mod items;
 mod marked;
 mod marker;
 mod name;
-mod package_graph;
 mod path;
 mod repr;
 mod scan;
@@ -28,10 +26,9 @@ pub use capture::{
 };
 pub use cfg::ActiveCfg;
 pub use error::ScanError;
-pub use input::ScanInput;
 pub use items::class::ClassDeclaration;
 pub use repr::scan as scan_repr;
-pub use scan::{PackageScan, scan_file, scan_package, scan_source};
+pub use scan::{scan_file, scan_source};
 pub use type_expr::primitive_path;
 pub use unsupported::{UnsupportedFeature, UnsupportedInfo};
 

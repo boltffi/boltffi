@@ -16,7 +16,6 @@ proc-macro2.workspace = true
 boltffi_ast.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-walkdir.workspace = true
 
 [lints]
 workspace = true

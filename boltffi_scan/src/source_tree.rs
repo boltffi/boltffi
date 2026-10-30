@@ -39,6 +39,7 @@ impl SourceTree {
         .map(|modules| Self { modules })
     }
 
+    #[cfg(test)]
     pub fn combine(trees: impl IntoIterator<Item = Self>) -> Self {
         Self {
             modules: trees.into_iter().flat_map(|tree| tree.modules).collect(),

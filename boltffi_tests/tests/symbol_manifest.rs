@@ -12,7 +12,7 @@ use boltffi_binding::{
     OutOfRust, ParamPlan, Receive, RecordDecl, ReturnPlan, TypeRef, lower,
 };
 #[cfg(not(miri))]
-use boltffi_scan::{ScanInput, crate_scoped, scan_package};
+use boltffi_scan::{crate_scoped, scan_source};
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 struct PendingExpansion {
@@ -29,15 +29,11 @@ const PENDING_EXPANSIONS: &[PendingExpansion] = &[PendingExpansion {
 
 #[cfg(not(miri))]
 fn source_contract() -> boltffi_ast::SourceContract {
-    let manifest = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let source = manifest.join("src").join("lib.rs");
+    let source = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("src")
+        .join("lib.rs");
     crate_scoped(
-        scan_package(
-            &ScanInput::new(source, PackageInfo::new("boltffi_tests", None))
-                .with_manifest_dir(manifest),
-        )
-        .expect("scan test package")
-        .root_with_support(),
+        scan_source(source, PackageInfo::new("boltffi_tests", None)).expect("scan test package"),
     )
 }
 

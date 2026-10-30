@@ -222,10 +222,6 @@ impl DeclaredTypes {
             .map(|(path, values)| (path.as_str(), values.as_slice())))
     }
 
-    pub(super) fn paths(&self) -> impl Iterator<Item = &str> {
-        self.by_path.keys().map(String::as_str)
-    }
-
     pub(super) fn resolve_type_in_scope(
         &self,
         scope: &ModuleScope,
@@ -252,63 +248,6 @@ impl DeclaredTypes {
             }
         }
         Ok(SourceType::External(path))
-    }
-
-    pub(super) fn root_visible_path(
-        &self,
-        id: &str,
-        root_crate: &str,
-        direct_dependencies: &[String],
-    ) -> Option<String> {
-        let segments = id.split("::").collect::<Vec<_>>();
-        let root = segments.first().copied()?;
-        if root == root_crate
-            || direct_dependencies
-                .iter()
-                .any(|dependency| dependency == root)
-        {
-            return self.shallowest_public_path(&segments);
-        }
-        let leaf = segments.last().copied()?;
-        let mut candidates = direct_dependencies
-            .iter()
-            .filter_map(|dependency| {
-                let candidate = format!("{dependency}::{leaf}");
-                match self.source_types.resolve_public_path(candidate.clone()) {
-                    TypeResolution::Known(path) if path == id => Some(candidate),
-                    TypeResolution::Known(_)
-                    | TypeResolution::Ambiguous
-                    | TypeResolution::Unknown => None,
-                }
-            })
-            .collect::<Vec<_>>();
-        candidates.sort();
-        candidates.dedup();
-        match candidates.as_slice() {
-            [candidate] => Some(candidate.clone()),
-            [] | [_, ..] => None,
-        }
-    }
-
-    fn shallowest_public_path(&self, segments: &[&str]) -> Option<String> {
-        let (leaf, modules) = segments.split_last()?;
-        let id = segments.join("::");
-        (1..modules.len())
-            .map(|depth| {
-                modules[..depth]
-                    .iter()
-                    .copied()
-                    .chain(std::iter::once(*leaf))
-                    .collect::<Vec<_>>()
-                    .join("::")
-            })
-            .find(|candidate| {
-                matches!(
-                    self.source_types.resolve_public_path(candidate.clone()),
-                    TypeResolution::Known(path) if path == id
-                )
-            })
-            .or(Some(id))
     }
 
     pub(super) fn resolve_impl_target(
