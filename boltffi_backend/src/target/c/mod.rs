@@ -250,9 +250,13 @@ mod tests {
     };
 
     fn bindings(source: &str) -> Bindings<Native> {
+        bindings_for_package("demo", source)
+    }
+
+    fn bindings_for_package(package: &str, source: &str) -> Bindings<Native> {
         let source = boltffi_scan::scan_file(
             syn::parse_str(source).expect("valid source"),
-            PackageInfo::new("demo", None),
+            PackageInfo::new(package, None),
         )
         .expect("source should scan");
         lower::<Native>(&source).expect("source should lower")
@@ -540,6 +544,39 @@ mod tests {
             .render(&bindings)
             .expect_err("C names must remain unambiguous");
         assert!(error.to_string().contains("DemoStringView"));
+    }
+
+    #[test]
+    fn dashed_package_names_become_c_identifiers() {
+        let bindings = bindings_for_package(
+            "my-lib",
+            r#"
+            #[repr(C)]
+            #[data]
+            pub struct Point { pub x: f64 }
+
+            #[data]
+            pub enum Event {
+                Started,
+                Moved { name: String },
+            }
+
+            #[export]
+            pub const ANSWER: u32 = 42;
+
+            #[export]
+            pub fn flip(event: Event) -> Event { event }
+
+            #[export]
+            pub fn origin() -> Point { Point { x: 0.0 } }
+            "#,
+        );
+        let target = CHost::new().into_target(&bindings).expect("target");
+        let header = render_header(&target.render(&bindings).expect("render"));
+        assert!(header.contains("MyLibEvent my_lib_flip("));
+        assert!(header.contains("MY_LIB_ANSWER"));
+        assert!(header.contains("typedef ___Point MyLibPoint;"));
+        assert!(!header.contains("my-lib"));
     }
 
     #[test]
