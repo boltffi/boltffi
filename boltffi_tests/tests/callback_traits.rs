@@ -46,6 +46,14 @@ impl SyncValueCallback for Transformer {
     }
 }
 
+struct ClosureCaller;
+
+impl SyncClosureCallback for ClosureCaller {
+    fn with_closure(&self, closure: Box<dyn Fn(i32) -> i32>) -> i32 {
+        closure(10) * closure(20)
+    }
+}
+
 struct FixedProvider {
     points: Vec<FixturePoint>,
 }
@@ -765,4 +773,9 @@ mod async_factory_foreign_failure {
         let factory = unsafe { ForeignAsyncCallbackFactory::box_from_callback_handle(handle) };
         let _ = invoke_async_factory_impl(*factory, 5).await;
     }
+}
+
+#[test]
+fn callback_method_receives_boxed_closure() {
+    assert_eq!(invoke_sync_closure(Box::new(ClosureCaller), 1), 231);
 }
