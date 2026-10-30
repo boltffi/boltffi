@@ -83,6 +83,13 @@ pub fn generics(generics: &syn::Generics, item: &str) -> Result<(), ScanError> {
     Ok(())
 }
 
+pub fn safety(safety: &syn::Safety, item: &str) -> Result<(), ScanError> {
+    match safety {
+        syn::Safety::Unsafe(token) => unsafety(Some(token), item),
+        _ => Ok(()),
+    }
+}
+
 pub fn unsafety(unsafety: Option<&syn::token::Unsafe>, item: &str) -> Result<(), ScanError> {
     if unsafety.is_some() {
         return Err(ScanError::UnsupportedUnsafe {

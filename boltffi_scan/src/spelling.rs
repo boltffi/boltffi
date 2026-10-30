@@ -22,7 +22,7 @@ pub(super) fn ty(ty: &syn::Type) -> String {
                 .collect::<Vec<_>>()
                 .join(" + ")
         ),
-        syn::Type::BareFn(bare_fn) => {
+        syn::Type::FnPtr(bare_fn) => {
             let inputs = bare_fn
                 .inputs
                 .iter()
@@ -92,7 +92,7 @@ fn segment(segment: &syn::PathSegment) -> String {
             let inputs = arguments
                 .inputs
                 .iter()
-                .map(self::ty)
+                .map(|input| self::ty(&input.ty))
                 .collect::<Vec<_>>()
                 .join(", ");
             match &arguments.output {

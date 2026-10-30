@@ -41,7 +41,7 @@ impl<'a> Scanner<'a> {
             ));
         }
         match unwrapped {
-            syn::Type::BareFn(bare_fn) => self.bare_fn(bare_fn),
+            syn::Type::FnPtr(bare_fn) => self.bare_fn(bare_fn),
             syn::Type::ImplTrait(impl_trait) => self.impl_trait(impl_trait, ty),
             syn::Type::Slice(slice) => self.slice(slice),
             syn::Type::Path(type_path) => self.path(type_path, ty),
@@ -326,7 +326,7 @@ impl<'a> Scanner<'a> {
         &self,
         bound: &syn::TraitBound,
     ) -> Result<Option<AdditionalBound>, ScanError> {
-        if !matches!(bound.modifier, syn::TraitBoundModifier::None)
+        if bound.maybe.is_some()
             || bound.lifetimes.is_some()
             || closure_bound(bound).is_some()
             || bound
@@ -349,7 +349,7 @@ impl<'a> Scanner<'a> {
     }
 
     fn base_trait(&self, bound: &syn::TraitBound) -> Result<Option<BaseTrait>, ScanError> {
-        if !matches!(bound.modifier, syn::TraitBoundModifier::None) || bound.lifetimes.is_some() {
+        if bound.maybe.is_some() || bound.lifetimes.is_some() {
             return Ok(None);
         }
         if let Some((kind, arguments)) = closure_bound(bound) {
@@ -395,7 +395,7 @@ impl<'a> Scanner<'a> {
         }
     }
 
-    fn bare_fn(&self, bare_fn: &syn::TypeBareFn) -> Result<TypeExpr, ScanError> {
+    fn bare_fn(&self, bare_fn: &syn::TypeFnPtr) -> Result<TypeExpr, ScanError> {
         if bare_fn.lifetimes.is_some() {
             return Err(crate::unsupported::feature(
                 UnsupportedFeature::HigherRankedFunctionPointer,
@@ -433,7 +433,7 @@ impl<'a> Scanner<'a> {
         let parameters = arguments
             .inputs
             .iter()
-            .map(|input| self.scan(input))
+            .map(|input| self.scan(&input.ty))
             .collect::<Result<Vec<_>, _>>()?;
         let returns = self.scan_return(&arguments.output)?;
         Ok(FnTrait::new(kind, FnSig::new(parameters, returns)))

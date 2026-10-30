@@ -10,7 +10,7 @@ use crate::{ScanError, attributes, name, unsupported};
 
 pub(super) fn validate(signature: &syn::Signature, item: String) -> Result<(), ScanError> {
     unsupported::generics(&signature.generics, &item)?;
-    unsupported::unsafety(signature.unsafety.as_ref(), &item)?;
+    unsupported::safety(&signature.safety, &item)?;
     unsupported::extern_abi(signature.abi.as_ref(), &item)?;
     Ok(())
 }
@@ -82,13 +82,11 @@ pub(super) fn parameter(
 
 fn receiver(signature: &syn::Signature) -> Receiver {
     match signature.inputs.first() {
-        Some(syn::FnArg::Receiver(receiver)) => {
-            match (receiver.reference.is_some(), receiver.mutability.is_some()) {
-                (true, true) => Receiver::Mutable,
-                (true, false) => Receiver::Shared,
-                (false, _) => Receiver::Owned,
-            }
-        }
+        Some(syn::FnArg::Receiver(receiver)) => match &receiver.kind {
+            syn::ReceiverKind::Reference(_, _, Some(_)) => Receiver::Mutable,
+            syn::ReceiverKind::Reference(_, _, None) => Receiver::Shared,
+            _ => Receiver::Owned,
+        },
         _ => Receiver::None,
     }
 }
