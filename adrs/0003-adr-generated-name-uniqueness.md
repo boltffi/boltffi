@@ -71,7 +71,7 @@ generation and the error names both Rust declarations.
 pub struct Claim {
     scope: ScopeId,             // where the name must be unique
     name: String,
-    signature: Option<String>,  // the parameter list, for overloadable members
+    signature: Option<String>,  // the overload key, for overloadable members
     kind: ClaimKind,            // Declare, Shared or Reserve
     role: String,               // "P/Invoke wrapper for `values_subscribe`"
 }
@@ -82,16 +82,19 @@ member list, `NativeMethods`, and the generated files. The files scope compares
 names case-folded, because `Demo.cs` and `demo.cs` are one file on macOS and
 Windows.
 
-A member claim carries its parameter list, because overloads are legal.
-`NativeFoo(ulong)` and `NativeFoo(string)` do not collide. A claim without a
-parameter list, such as a property or a nested type, collides with every member
-of the same name.
+A member claim carries an overload key, because overloads are legal.
+`NativeFoo(ulong)` and `NativeFoo(string)` do not collide. The backend computes
+the key from its own overload rules, so it is not always the rendered parameter
+list. Java erases generics, so `f(List<String>)` and `f(List<Integer>)` get the
+same key, as they do in `ErasedSignature` today. A claim without a key, such as
+a property or a nested type, collides with every member of the same name.
 
 `ClaimKind` covers the three ways a name is used:
 
 - `Declare` emits the name. Two `Declare` claims on one key collide.
 - `Shared` is support code that many declarations emit identically, such as
-  `WireReader`. `Shared` claims never collide with each other.
+  `WireReader`. It carries a stable helper identity like `HelperId`. `Shared`
+  claims with the same identity do not collide. Different identities do.
 - `Reserve` keeps a name free without emitting it, for example a keyword,
   `NativeMethods`, or a type's own name inside its member list (CS0542).
 
@@ -111,11 +114,23 @@ Names the host emits outside any one declaration, such as the module class and
 `NativeMethods`, come from a new `HostBackend::host_claims` hook. Its default is
 empty, so a backend that has not migrated behaves as before.
 
+Claims cover names that hosts render. Bridges return `GeneratedOutput` from
+`render_bridge` and make no claims. C symbols are already unique because the
+binding IR length-prefixes their paths, and `Java_*` symbols derive from the JVM
+class and method names. A bridge that derives other names needs its own claim
+path before this check covers them.
+
 `Target::render_with_coverage` already renders every declaration before it calls
 `host.assemble`. The check goes between the two. The driver labels each claim
-with the declaration that produced it, using the Rust spelling. It collects all
-collisions, so one run reports all of them, and no file is written if there are
-any.
+with the declaration that produced it, using the Rust spelling. A claim from
+`host_claims` has no Rust declaration, so the driver labels it with the host
+setting or built-in name instead. The driver collects all collisions, so one run
+reports all of them, and no file is written if there are any.
+
+In partial mode, the C host drops declarations inside `assemble`, for example
+when a record has no C codec. A dropped declaration must not cause a collision,
+so that filtering moves to a new hook that runs before the check. Its default
+keeps every declaration.
 
 ```
 generated name collision in the csharp backend
@@ -124,6 +139,10 @@ generated name collision in the csharp backend
     - stream `Engine::values` (stream subscribe wrapper for `values`)
 rename one of the Rust declarations so the generated names differ
 ```
+
+When a collision involves a host name, the last line names the setting to change
+instead. A C# `module_class` of `NativeMethods` collides with the built-in class,
+and the fix is in the configuration, not the Rust code.
 
 ### 2.3 Rejected or renamed
 
@@ -140,7 +159,8 @@ helper locals that clash with parameter names such as `status`, and
 1. Core types, claims on `Emitted`, the `host_claims` hook, and the check in
    the driver, together with the C# migration. C# fails in six of the seven
    cases in #700, and #956's checks fold into claims.
-2. Java, Kotlin, Python and C. Their `*NameCollision` errors become claims.
+2. Java, Kotlin, Python and C. Their `*NameCollision` errors become claims, and
+   the C host moves its partial-mode filtering to the new hook.
 3. Swift, then the remaining backends.
 
 Each step is one PR with regression tests that compile the generated code.
@@ -160,10 +180,12 @@ language.
 
 ### 4.3 Check only at the file writer
 
-#992 rejects duplicate output paths in `Generation::write_output`. It is worth
-keeping as a final guard, but it only sees paths. It cannot see two types merged
-into one file, a member clash inside a file, or which Rust declarations caused
-the clash.
+#992, still open, proposes rejecting duplicate output paths in
+`Generation::write_output`. It only sees paths that reach the writer, and
+`GeneratedOutput::append` has already merged exact duplicates by then. It cannot
+see two types merged into one file, a member clash inside a file, or which Rust
+declarations caused the clash. This ADR does not depend on it, because the files
+scope covers the paths hosts generate.
 
 ### 4.4 Enforce claiming in the type system now
 
