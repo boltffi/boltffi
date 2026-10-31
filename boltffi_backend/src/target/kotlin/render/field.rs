@@ -7,7 +7,7 @@ use crate::{
         codec::{Reader, Sizer, Writer},
         name_style::KotlinPackage,
         name_style::Name,
-        render::{Documentation, type_name::KotlinType},
+        render::{Documentation, equality::Comparison, type_name::KotlinType},
         syntax::{Expression, Identifier, Statement, TypeName},
     },
 };
@@ -17,6 +17,7 @@ pub struct EncodedField {
     name: Identifier,
     documentation: Documentation,
     ty: TypeName,
+    comparison: Comparison,
     read: Expression,
     write: Statement,
     size: Expression,
@@ -83,6 +84,7 @@ impl EncodedField {
                 name: Self::identifier(field.key())?,
                 documentation: Documentation::new(field.meta().doc()),
                 ty,
+                comparison: KotlinType::comparison(field.ty(), context)?,
                 read: field.read().render_with(&mut reader)?.into_expression(),
                 write: write.clone(),
                 size: field
@@ -104,6 +106,10 @@ impl EncodedField {
 
     pub fn ty(&self) -> &TypeName {
         &self.ty
+    }
+
+    pub fn comparison(&self) -> &Comparison {
+        &self.comparison
     }
 
     pub(crate) fn requalified(mut self, ty: TypeName) -> Self {

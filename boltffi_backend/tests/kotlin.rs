@@ -1,3 +1,10 @@
+use std::{
+    env, fs,
+    path::{Path, PathBuf},
+    process::Command,
+    time::UNIX_EPOCH,
+};
+
 use boltffi_ast::PackageInfo;
 use boltffi_backend::target::kotlin::KotlinHost;
 use boltffi_binding::{Native, lower};
@@ -82,6 +89,105 @@ pub fn files_with_host(source: &str, host: KotlinHost) -> Vec<(String, String)> 
 
 pub fn fixture(name: &str) -> String {
     SourceFixture::one(name).read()
+}
+
+pub fn kotlin_compiler() -> Option<PathBuf> {
+    let compiler = if cfg!(windows) {
+        "kotlinc.bat"
+    } else {
+        "kotlinc"
+    };
+    env::split_paths(&env::var_os("PATH")?)
+        .find_map(|directory| directory.join(compiler).canonicalize().ok())
+        .filter(|compiler| {
+            Command::new(compiler)
+                .arg("-version")
+                .output()
+                .is_ok_and(|output| output.status.success())
+        })
+}
+
+pub fn run_with_generated_kotlin(
+    compiler: &Path,
+    label: &str,
+    files: Vec<(String, String)>,
+    caller_file: &str,
+    caller: &str,
+) {
+    let kotlin_home = env::var_os("KOTLIN_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            compiler
+                .parent()
+                .and_then(Path::parent)
+                .expect("Kotlin compiler installation directory")
+                .to_path_buf()
+        });
+    let coroutines = ["lib", "libexec/lib"]
+        .into_iter()
+        .map(|directory| {
+            kotlin_home
+                .join(directory)
+                .join("kotlinx-coroutines-core-jvm.jar")
+        })
+        .find(|path| path.is_file())
+        .expect("Kotlin installation must include kotlinx-coroutines-core-jvm.jar");
+    let directory = env::temp_dir().join(format!(
+        "boltffi-kotlin-{label}-{}-{}",
+        std::process::id(),
+        UNIX_EPOCH.elapsed().expect("system clock").as_nanos()
+    ));
+    fs::create_dir_all(&directory).expect("create Kotlin test directory");
+    let source_paths = files
+        .into_iter()
+        .filter(|(path, _)| path.ends_with(".kt"))
+        .map(|(path, source)| {
+            let path = directory.join(path);
+            fs::create_dir_all(path.parent().expect("generated Kotlin directory"))
+                .expect("create generated Kotlin directory");
+            fs::write(&path, source).expect("write generated Kotlin");
+            path
+        })
+        .collect::<Vec<_>>();
+    let caller_path = directory.join(caller_file);
+    fs::write(&caller_path, caller).expect("write Kotlin caller");
+    let jar = directory.join(format!("{label}.jar"));
+    let compilation = Command::new(compiler)
+        .arg("-classpath")
+        .arg(&coroutines)
+        .args(&source_paths)
+        .arg(caller_path)
+        .args(["-include-runtime", "-d"])
+        .arg(&jar)
+        .output()
+        .expect("run Kotlin compiler");
+    assert!(
+        compilation.status.success(),
+        "generated Kotlin failed to compile in {}:\n{}\n{}",
+        directory.display(),
+        String::from_utf8_lossy(&compilation.stdout),
+        String::from_utf8_lossy(&compilation.stderr)
+    );
+    let main_class = format!(
+        "com.boltffi.demo.{}Kt",
+        Path::new(caller_file)
+            .file_stem()
+            .and_then(|name| name.to_str())
+            .expect("Kotlin caller file name")
+    );
+    let execution = Command::new("java")
+        .arg("-classpath")
+        .arg(env::join_paths([&jar, &coroutines]).expect("Kotlin runtime classpath"))
+        .arg(main_class)
+        .output()
+        .expect("run Kotlin caller");
+    assert!(
+        execution.status.success(),
+        "Kotlin {label} assertions failed:\n{}\n{}",
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    fs::remove_dir_all(directory).expect("remove Kotlin test directory");
 }
 
 pub fn rendered_files(files: &[(String, String)]) -> String {
