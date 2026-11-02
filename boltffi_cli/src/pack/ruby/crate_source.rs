@@ -85,7 +85,7 @@ pub(super) fn copy(
     }
     let manifests = copy_files(&crate_root, destination, &files)?;
     let home = std::env::var_os("HOME").map(PathBuf::from);
-    copy_build_settings(&crate_root, destination, home.as_deref());
+    copy_build_settings(&crate_root, destination, home.as_deref())?;
     let destination = canonical(destination)?;
     let mut external: Vec<ExternalPathDependency> = Vec::new();
     for manifest in &manifests {
@@ -185,15 +185,7 @@ fn cargo_package_list(package: &Path) -> Result<Vec<PathBuf>> {
 
 /// The folders of the path dependencies that one manifest declares.
 fn path_dependency_folders(package: &Path) -> Result<Vec<PathBuf>> {
-    let manifest = package.join("Cargo.toml");
-    let text = fs::read_to_string(&manifest).map_err(|source| CliError::ReadFailed {
-        path: manifest.clone(),
-        source,
-    })?;
-    let mut document: DocumentMut = text.parse().map_err(|error| CliError::CommandFailed {
-        command: format!("parse {}: {error}", manifest.display()),
-        status: None,
-    })?;
+    let (_, mut document) = read_manifest(&package.join("Cargo.toml"))?;
     let mut folders = Vec::new();
     for dependencies in dependency_tables(document.as_table_mut()) {
         for (_, dependency) in dependencies.iter() {
@@ -265,61 +257,64 @@ fn copy_files(
 /// entry. A search with no repo root stops before the home folder. Settings
 /// above the repo root and settings in the home folder belong to the user
 /// or to a shared parent folder, so the gem must not ship them.
-fn copy_build_settings(crate_root: &Path, destination: &Path, home: Option<&Path>) {
-    if !destination.join("rust-toolchain.toml").exists()
-        && !destination.join("rust-toolchain").exists()
-    {
-        copy_nearest(
-            crate_root,
-            &["rust-toolchain.toml", "rust-toolchain"],
-            destination,
-            Path::new(""),
-            home,
-        );
+fn copy_build_settings(crate_root: &Path, destination: &Path, home: Option<&Path>) -> Result<()> {
+    for names in [
+        ["rust-toolchain.toml", "rust-toolchain"],
+        [".cargo/config.toml", ".cargo/config"],
+    ] {
+        if names.iter().any(|name| destination.join(name).exists()) {
+            continue;
+        }
+        let Some((source, name)) = nearest_setting(crate_root, &names, home) else {
+            continue;
+        };
+        let target = destination.join(name);
+        let parent = target.parent().expect("a setting file has a parent folder");
+        fs::create_dir_all(parent).map_err(|source| CliError::CreateDirectoryFailed {
+            path: parent.to_path_buf(),
+            source,
+        })?;
+        fs::copy(&source, &target).map_err(|error| CliError::CopyFailed {
+            from: source.clone(),
+            to: target.clone(),
+            source: error,
+        })?;
     }
-    if !destination.join(".cargo/config.toml").exists()
-        && !destination.join(".cargo/config").exists()
-    {
-        copy_nearest(
-            crate_root,
-            &[".cargo/config.toml", ".cargo/config"],
-            destination,
-            Path::new(".cargo"),
-            home,
-        );
-    }
+    Ok(())
 }
 
-fn copy_nearest(
+/// The nearest setting file with one of `names`, and the name it matched.
+fn nearest_setting<'name>(
     crate_root: &Path,
-    names: &[&str],
-    destination: &Path,
-    folder: &Path,
+    names: &[&'name str],
     home: Option<&Path>,
-) {
+) -> Option<(PathBuf, &'name str)> {
     for ancestor in crate_root.ancestors() {
         if home == Some(ancestor) {
-            break;
+            return None;
         }
-        for name in names {
-            let source = ancestor.join(name);
-            if source.is_file() {
-                let target = destination.join(folder).join(
-                    Path::new(name)
-                        .file_name()
-                        .expect("a setting file has a name"),
-                );
-                if let Some(parent) = target.parent() {
-                    let _ = fs::create_dir_all(parent);
-                }
-                let _ = fs::copy(&source, &target);
-                return;
-            }
-        }
-        if ancestor.join(".git").exists() {
-            break;
+        let found = names
+            .iter()
+            .map(|name| (ancestor.join(name), *name))
+            .find(|(source, _)| source.is_file());
+        if found.is_some() || ancestor.join(".git").exists() {
+            return found;
         }
     }
+    None
+}
+
+/// Reads and parses one manifest.
+fn read_manifest(manifest: &Path) -> Result<(String, DocumentMut)> {
+    let text = fs::read_to_string(manifest).map_err(|source| CliError::ReadFailed {
+        path: manifest.to_path_buf(),
+        source,
+    })?;
+    let document = text.parse().map_err(|error| CliError::CommandFailed {
+        command: format!("parse {}: {error}", manifest.display()),
+        status: None,
+    })?;
+    Ok((text, document))
 }
 
 /// Prepares one copied manifest for the gem build.
@@ -343,14 +338,7 @@ fn rewrite_manifest(
         .parent()
         .expect("a manifest has a parent folder")
         .to_path_buf();
-    let text = fs::read_to_string(&copied_manifest).map_err(|source| CliError::ReadFailed {
-        path: copied_manifest.clone(),
-        source,
-    })?;
-    let mut document: DocumentMut = text.parse().map_err(|error| CliError::CommandFailed {
-        command: format!("parse {}: {error}", copied_manifest.display()),
-        status: None,
-    })?;
+    let (text, mut document) = read_manifest(&copied_manifest)?;
     if manifest == Path::new("Cargo.toml") && !document.contains_key("workspace") {
         document.insert("workspace", Item::Table(Table::new()));
     }
@@ -751,7 +739,7 @@ shared = { path = "../outside" }
         );
         let destination = root.path().join("gem/crate");
 
-        copy_build_settings(&crate_root, &destination, None);
+        copy_build_settings(&crate_root, &destination, None).unwrap();
 
         assert!(destination.join(".cargo/config.toml").is_file());
         assert!(!destination.join("rust-toolchain.toml").exists());
@@ -778,7 +766,7 @@ shared = { path = "../outside" }
         );
         let destination = root.path().join("gem/crate");
 
-        copy_build_settings(&crate_root, &destination, Some(home));
+        copy_build_settings(&crate_root, &destination, Some(home)).unwrap();
 
         assert!(destination.join(".cargo/config.toml").is_file());
         assert_eq!(

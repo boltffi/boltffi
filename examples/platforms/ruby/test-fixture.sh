@@ -34,6 +34,9 @@ if ! command -v "$ruby_command" >/dev/null 2>&1; then
 fi
 
 rm -rf "$fixture_dir/dist"
+# The repository ignores Cargo.lock files. pack ruby needs one, and the
+# install builds with --locked, so the script writes the lockfile first.
+cargo generate-lockfile --manifest-path "$fixture_dir/Cargo.toml"
 (
     cd "$fixture_dir"
     cargo run -q --manifest-path "$repo_root/Cargo.toml" -p boltffi_cli -- pack ruby --experimental
