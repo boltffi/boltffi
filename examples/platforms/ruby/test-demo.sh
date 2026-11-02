@@ -50,17 +50,45 @@ GEM_PATH="$GEM_HOME:$("$ruby_command" -e 'print Gem.default_dir')"
 export GEM_PATH
 mkdir -p "$work_directory/home"
 
-# extconf.rb runs cargo with the empty HOME, outside the repository. So the
-# install keeps the cargo and rustup homes of the user and the toolchain of
-# the repository.
 export CARGO_HOME="${CARGO_HOME:-$HOME/.cargo}"
 export RUSTUP_HOME="${RUSTUP_HOME:-$HOME/.rustup}"
-if [[ -z "${RUSTUP_TOOLCHAIN:-}" ]] && command -v rustup >/dev/null 2>&1; then
-    RUSTUP_TOOLCHAIN="$(cd "$script_dir" && rustup show active-toolchain | cut -d ' ' -f 1)"
-    export RUSTUP_TOOLCHAIN
-fi
+# extconf.rb runs cargo with the empty HOME, outside the repository. So the
+# install keeps the cargo and rustup homes of the user. The pack copied the
+# nearest rust-toolchain.toml into the crate copy, so the install uses the
+# toolchain of the pack build. The script sets no RUSTUP_TOOLCHAIN.
 
 (cd "$dist_directory" && "$ruby_command" -S gem build "$(basename "$gemspec")" --output "$work_directory/demo.gem")
 HOME="$work_directory/home" "$ruby_command" -S gem install --local --no-document "$work_directory/demo.gem"
+
+# The extension exports only its entry point. Ruby loads extensions with
+# RTLD_GLOBAL, so an exported Rust symbol could bind to another extension.
+# A linker that ignores the hide flag still installs a working gem, so the
+# script reads the exports of the built file and fails on any extra symbol.
+extension_file="$(find "$GEM_HOME" -path '*/lib/demo/demo.*' -type f | head -n 1)"
+if [[ -z "$extension_file" ]]; then
+    printf 'No installed demo extension under %s\n' "$GEM_HOME" >&2
+    exit 1
+fi
+case "$(uname -s)" in
+    Darwin)
+        exports="$(nm -gU "$extension_file" | awk '{print $NF}' | sed 's/^_//')"
+        ;;
+    Linux)
+        exports="$(readelf --dyn-syms -W "$extension_file" | awk 'NR > 3 && $7 != "UND" {sub(/@.*/, "", $8); print $8}' | sed '/^$/d')"
+        ;;
+    *)
+        printf 'Unsupported platform for the export check: %s\n' "$(uname -s)" >&2
+        exit 1
+        ;;
+esac
+unexpected="$(printf '%s\n' "$exports" | grep -vx -e Init_demo -e ruby_abi_version -e '' || true)"
+if [[ -n "$unexpected" ]]; then
+    printf 'The demo extension exports extra symbols:\n%s\n' "$unexpected" >&2
+    exit 1
+fi
+if ! printf '%s\n' "$exports" | grep -qx Init_demo; then
+    printf 'The demo extension at %s does not export Init_demo. The export check read the wrong file or read no symbols.\n' "$extension_file" >&2
+    exit 1
+fi
 
 "$ruby_command" "$script_dir/run_tests.rb"

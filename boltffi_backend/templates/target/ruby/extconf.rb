@@ -8,10 +8,11 @@
 #
 # The build uses the `release` Cargo profile. Set BOLTFFI_CARGO_PROFILE to
 # use another profile, such as `dev` for a debug build. Set CARGO_TARGET_DIR
-# to keep the Cargo build for the next install.
+# to an absolute path to keep the Cargo build for the next install. A
+# relative path resolves against the extension folder. RubyGems runs this
+# script in that folder, so a relative path does not name a fixed folder.
 
 require "fileutils"
-require "json"
 require "mkmf"
 require "open3"
 require "shellwords"
@@ -34,7 +35,6 @@ module BoltFFIExtconf
 
   class << self
     def configure
-      abort("boltffi: #{EXTENSION} builds only on macOS and Linux") unless darwin? || linux?
       unless File.exist?(File.join(CRATE, "Cargo.toml"))
         abort("boltffi: no crate source in #{CRATE}; run boltffi pack ruby")
       end
@@ -47,8 +47,9 @@ module BoltFFIExtconf
         kind, path = entry.split("=", 2)
         kind, path = "all", entry unless path && LINK_SEARCH_KINDS.include?(kind)
         $LDFLAGS << " -L#{path.shellescape}" unless kind == "framework"
-        # Only Apple's linker reads -F. GNU ld reads -F as a different option.
-        $LDFLAGS << " -F#{path.shellescape}" if %w[framework all].include?(kind) && darwin?
+        # Only a framework path takes -F. A `-L` entry already covers the
+        # other kinds, and GNU ld reads -F as a different option.
+        $LDFLAGS << " -F#{path.shellescape}" if kind == "framework"
       end
       linked = $LIBS.split
       native = native_libraries.reject { |flag| flag.start_with?("-l") && linked.include?(flag) }
@@ -82,15 +83,32 @@ module BoltFFIExtconf
     # copy stays in the installed extension directory.
     # Cargo runs in the crate folder, because rustup reads the
     # `rust-toolchain.toml` of the working directory.
+    #
+    # The stderr of cargo goes to the stderr of the install as it arrives, so
+    # a long build shows progress. The script also keeps the text. It reads
+    # the `native-static-libs:` line from that text after the build.
     def build_crate_in(target_directory)
-      stdout, stderr, status = Open3.capture3(*cargo_command(target_directory), chdir: CRATE)
-      abort("boltffi: cargo could not build the #{EXTENSION} crate\n#{stderr}") unless status.success?
+      stderr_text = +""
+      status = nil
+      Open3.popen3(*cargo_command(target_directory), chdir: CRATE) do |stdin, out, err, wait_thread|
+        stdin.close
+        err_thread = Thread.new do
+          err.each_line do |line|
+            $stderr.write(line)
+            $stderr.flush
+            stderr_text << line
+          end
+        end
+        out.each_line { }
+        err_thread.value
+        status = wait_thread.value
+      end
+      abort("boltffi: cargo could not build the #{EXTENSION} crate") unless status.success?
 
-      messages = cargo_messages(stdout)
       archive = File.join(Dir.pwd, "lib#{ARTIFACT}.a")
-      FileUtils.cp(built_archive(messages), archive)
+      FileUtils.cp(built_archive(target_directory), archive)
       $distcleanfiles << File.basename(archive)
-      [archive, native_static_libraries(stderr), link_search_paths(messages)]
+      [archive, native_static_libraries(stderr_text), link_search_paths(target_directory)]
     end
 
     def cargo_command(target_directory)
@@ -99,25 +117,22 @@ module BoltFFIExtconf
         "--manifest-path", File.join(CRATE, "Cargo.toml"),
         "--target-dir", target_directory,
         "--locked", "--profile", PROFILE, "--lib", *FEATURE_ARGUMENTS,
-        "--message-format=json-render-diagnostics",
         "--", "--print=native-static-libs"
       ]
     end
 
-    def cargo_messages(stdout)
-      stdout.each_line.filter_map do |line|
-        JSON.parse(line)
-      rescue JSON::ParserError
-        nil
-      end
+    # The folder that cargo writes the profile artifacts to. The `dev`
+    # profile writes to `debug`. Every other profile writes to a folder with
+    # the profile name.
+    def profile_directory(target_directory)
+      File.join(target_directory, PROFILE == "dev" ? "debug" : PROFILE)
     end
 
-    def built_archive(messages)
-      messages
-        .select { |message| message["reason"] == "compiler-artifact" }
-        .flat_map { |message| message["filenames"] }
-        .find { |path| File.basename(path) == "lib#{ARTIFACT}.a" } ||
-        abort("boltffi: cargo built no lib#{ARTIFACT}.a")
+    def built_archive(target_directory)
+      archive = File.join(profile_directory(target_directory), "lib#{ARTIFACT}.a")
+      return archive if File.file?(archive)
+
+      abort("boltffi: cargo built no lib#{ARTIFACT}.a in #{profile_directory(target_directory)}")
     end
 
     # The system libraries that the Rust standard library needs.
@@ -131,33 +146,38 @@ module BoltFFIExtconf
     end
 
     # Build scripts add search paths for the native libraries that they link.
-    def link_search_paths(messages)
-      messages
-        .select { |message| message["reason"] == "build-script-executed" }
-        .flat_map { |message| message["linked_paths"] }
+    # Cargo writes the output of each build script to a file in the build
+    # folder. The file holds the `cargo:rustc-link-search=` lines of the
+    # script, so the script reads the paths from those files. A cached build
+    # script runs no code at install, and its file still holds the paths.
+    def link_search_paths(target_directory)
+      Dir[File.join(profile_directory(target_directory), "build", "*", "output")]
+        .sort
+        .flat_map { |file| File.readlines(file, chomp: true) }
+        .filter_map do |line|
+          line.sub(/\Acargo::?rustc-link-search=/, "") if line.start_with?("cargo:rustc-link-search=", "cargo::rustc-link-search=")
+        end
         .uniq
-    end
-
-    def darwin?
-      RbConfig::CONFIG["host_os"].include?("darwin")
-    end
-
-    def linux?
-      RbConfig::CONFIG["host_os"].include?("linux")
     end
 
     # Ruby loads extensions with RTLD_GLOBAL. Exported Rust symbols could then
     # bind to another extension's copy, so the extension exports only its
     # entry point and, on development Rubies, `ruby_abi_version`.
+    #
+    # Each probe treats a warning as a failure. A linker that accepts a flag
+    # with a warning and then ignores the flag would hide no symbol, and the
+    # install would still pass. The probe must fail in that case.
     def export_only_entry_point
       symbols = ["Init_#{EXTENSION}"]
       symbols << "ruby_abi_version" if have_macro("RUBY_DLN_CHECK_ABI", "ruby.h")
-      if darwin?
+      version_script = File.join(Dir.pwd, "#{EXTENSION}.map")
+      File.write(version_script, "{ global: #{symbols.join("; ")}; local: *; };\n")
+      if try_ldflags("-Wl,--version-script=#{version_script}", werror: true)
+        $DLDFLAGS << " -Wl,--version-script=#{version_script.shellescape}"
+      elsif try_ldflags("-Wl,-exported_symbol,_#{symbols.first}", werror: true)
         symbols.each { |symbol| $DLDFLAGS << " -Wl,-exported_symbol,_#{symbol}" }
       else
-        version_script = File.join(Dir.pwd, "#{EXTENSION}.map")
-        File.write(version_script, "{ global: #{symbols.join("; ")}; local: *; };\n")
-        $DLDFLAGS << " -Wl,--version-script=#{version_script.shellescape}"
+        abort("boltffi: the linker accepts neither --version-script nor -exported_symbol; #{EXTENSION} needs a GNU or Apple linker")
       end
     end
   end

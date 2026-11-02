@@ -3,14 +3,22 @@
 //! The gem builds the crate when it installs, so the gem carries the crate
 //! folder and its `Cargo.lock`. The copy keeps the folder layout, so a path
 //! dependency inside the crate folder keeps its relative path.
+//!
+//! The file list comes from `cargo package --list --allow-dirty` for the
+//! crate and for each path dependency inside the crate folder. The list
+//! follows `package.include`, `package.exclude`, and `.gitignore`, so the
+//! gem ships the files that `cargo package` ships.
 
 use std::{
+    collections::BTreeSet,
     fs,
     path::{Path, PathBuf},
+    process::Command,
 };
 
 use toml_edit::{DocumentMut, Item, Table, TableLike, Value};
-use walkdir::{DirEntry, WalkDir};
+#[cfg(test)]
+use walkdir::WalkDir;
 
 use crate::cli::{CliError, Result};
 
@@ -29,22 +37,28 @@ pub(super) struct ExternalPathDependency {
 
 /// Replaces `destination` with a copy of the crate folder at `crate_root`.
 ///
-/// The copy skips these entries:
+/// The copy uses the `cargo package --list --allow-dirty` file list of the
+/// crate and of each path dependency inside the crate folder. It skips each
+/// `skipped` folder and the `dist/` folder at the crate root. It also copies
+/// the nearest `rust-toolchain.toml` or `rust-toolchain` file and the
+/// nearest `.cargo/config.toml` or `.cargo/config` file from the crate
+/// folder and its parent folders. The install build then uses the same
+/// toolchain and Cargo config as the pack build.
 ///
-/// - hidden files and folders,
-/// - each `target/` folder beside a `Cargo.toml`,
-/// - the `dist/` folder at the crate root,
-/// - each `skipped` folder.
+/// A symlink in the file list gets the content of its target file, as
+/// `cargo package` does.
 ///
-/// A path dependency outside the copy gets an absolute path, so the
-/// gem builds only on a machine that has that folder. The function returns
-/// those dependencies.
+/// A path dependency outside the copy gets an absolute path, so the gem
+/// builds only on a machine that has that folder. The copy fails when
+/// `allow_external` is false. The function returns those dependencies.
 ///
 /// The crate must have its own `Cargo.lock`, so a workspace member fails.
+/// The function reads the full file list before it changes `destination`.
 pub(super) fn copy(
     crate_root: &Path,
     destination: &Path,
     skipped: &[&Path],
+    allow_external: bool,
 ) -> Result<Vec<ExternalPathDependency>> {
     let crate_root = canonical(crate_root)?;
     if !crate_root.join("Cargo.lock").is_file() {
@@ -61,6 +75,7 @@ pub(super) fn copy(
         .filter_map(|path| path.canonicalize().ok())
         .chain([crate_root.join("dist")])
         .collect();
+    let files = package_files(&crate_root, &skipped)?;
 
     if destination.exists() {
         fs::remove_dir_all(destination).map_err(|source| CliError::WriteFailed {
@@ -68,73 +83,243 @@ pub(super) fn copy(
             source,
         })?;
     }
-    let manifests = copy_files(&crate_root, destination, &skipped)?;
+    let manifests = copy_files(&crate_root, destination, &files)?;
+    let home = std::env::var_os("HOME").map(PathBuf::from);
+    copy_build_settings(&crate_root, destination, home.as_deref());
     let destination = canonical(destination)?;
-    manifests
+    let mut external: Vec<ExternalPathDependency> = Vec::new();
+    for manifest in &manifests {
+        external.extend(rewrite_manifest(&crate_root, &destination, manifest)?);
+    }
+    if !external.is_empty() && !allow_external {
+        let list = external
+            .iter()
+            .map(|dependency| {
+                format!(
+                    "{}: `{}` at {}",
+                    dependency.manifest.display(),
+                    dependency.name,
+                    dependency.path.display()
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        return Err(CliError::CommandFailed {
+            command: format!(
+                "path dependencies outside the crate folder ({list}) make the gem build only on this machine and leak its absolute paths; move the dependencies inside the crate folder or pass --allow-external-path-dependencies"
+            ),
+            status: None,
+        });
+    }
+    Ok(external)
+}
+
+/// The files that the copy carries, relative to the crate root.
+///
+/// The list is the union of the `cargo package` lists of the crate and of
+/// each path dependency inside the crate folder. `cargo package` writes
+/// `.cargo_vcs_info.json` and `Cargo.toml.orig` itself, so the list drops
+/// those names. The list also drops files that do not exist, such as a
+/// `Cargo.lock` that `cargo package` would write for a path dependency.
+fn package_files(crate_root: &Path, skipped: &[PathBuf]) -> Result<BTreeSet<PathBuf>> {
+    let mut files = BTreeSet::new();
+    let mut packages = vec![crate_root.to_path_buf()];
+    let mut seen = BTreeSet::new();
+    while let Some(package) = packages.pop() {
+        if !seen.insert(package.clone()) {
+            continue;
+        }
+        let prefix = package
+            .strip_prefix(crate_root)
+            .expect("a package stays inside the crate root")
+            .to_path_buf();
+        for listed in cargo_package_list(&package)? {
+            if listed
+                .file_name()
+                .is_some_and(|name| name == ".cargo_vcs_info.json" || name == "Cargo.toml.orig")
+            {
+                continue;
+            }
+            let relative = prefix.join(&listed);
+            if is_skipped_path(crate_root, &relative, skipped)
+                || !crate_root.join(&relative).is_file()
+            {
+                continue;
+            }
+            files.insert(relative);
+        }
+        for dependency in path_dependency_folders(&package)? {
+            if dependency.starts_with(crate_root) && dependency.join("Cargo.toml").is_file() {
+                packages.push(dependency);
+            }
+        }
+    }
+    Ok(files)
+}
+
+/// The file list of one package, relative to the package folder.
+fn cargo_package_list(package: &Path) -> Result<Vec<PathBuf>> {
+    let output = Command::new(std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into()))
+        .args(["package", "--list", "--allow-dirty", "--manifest-path"])
+        .arg(package.join("Cargo.toml"))
+        .output()
+        .map_err(|source| CliError::ReadFailed {
+            path: package.to_path_buf(),
+            source,
+        })?;
+    if !output.status.success() {
+        return Err(CliError::CommandFailed {
+            command: format!(
+                "cargo package --list for {}: {}",
+                package.display(),
+                String::from_utf8_lossy(&output.stderr).trim()
+            ),
+            status: output.status.code(),
+        });
+    }
+    Ok(String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .map(PathBuf::from)
+        .collect())
+}
+
+/// The folders of the path dependencies that one manifest declares.
+fn path_dependency_folders(package: &Path) -> Result<Vec<PathBuf>> {
+    let manifest = package.join("Cargo.toml");
+    let text = fs::read_to_string(&manifest).map_err(|source| CliError::ReadFailed {
+        path: manifest.clone(),
+        source,
+    })?;
+    let mut document: DocumentMut = text.parse().map_err(|error| CliError::CommandFailed {
+        command: format!("parse {}: {error}", manifest.display()),
+        status: None,
+    })?;
+    let mut folders = Vec::new();
+    for dependencies in dependency_tables(document.as_table_mut()) {
+        for (_, dependency) in dependencies.iter() {
+            if let Some(path) = dependency
+                .as_table_like()
+                .and_then(|table| table.get("path"))
+                .and_then(Item::as_value)
+                .and_then(Value::as_str)
+            {
+                folders.push(package.join(path));
+            }
+        }
+    }
+    folders
         .iter()
-        .try_fold(Vec::new(), |mut external, manifest| {
-            external.extend(rewrite_manifest(&crate_root, &destination, manifest)?);
-            Ok(external)
+        .map(|folder| {
+            folder
+                .canonicalize()
+                .map_err(|source| CliError::ReadFailed {
+                    path: folder.clone(),
+                    source,
+                })
         })
+        .collect()
+}
+
+fn is_skipped_path(crate_root: &Path, relative: &Path, skipped: &[PathBuf]) -> bool {
+    let absolute = crate_root.join(relative);
+    skipped.iter().any(|path| {
+        path.as_path() != crate_root && (absolute == *path || absolute.starts_with(path))
+    })
 }
 
 /// Copies the files and returns the copied manifests, relative to the root.
-fn copy_files(crate_root: &Path, destination: &Path, skipped: &[PathBuf]) -> Result<Vec<PathBuf>> {
+fn copy_files(
+    crate_root: &Path,
+    destination: &Path,
+    files: &BTreeSet<PathBuf>,
+) -> Result<Vec<PathBuf>> {
     let mut manifests = Vec::new();
-    let entries = WalkDir::new(crate_root)
-        .follow_links(true)
-        .into_iter()
-        .filter_entry(|entry| entry.depth() == 0 || !is_skipped(entry, skipped));
-    for entry in entries {
-        let entry = entry.map_err(|error| CliError::CommandFailed {
-            command: format!("walk the crate folder {}: {error}", crate_root.display()),
-            status: None,
-        })?;
-        let canonical_entry = canonical(entry.path())?;
-        if !canonical_entry.starts_with(crate_root) {
-            return Err(CliError::CommandFailed {
-                command: format!(
-                    "symlink {} points outside the crate folder {}",
-                    entry.path().display(),
-                    crate_root.display()
-                ),
-                status: None,
-            });
-        }
-        if !entry.file_type().is_file() {
-            continue;
-        }
-        let relative = entry
-            .path()
-            .strip_prefix(crate_root)
-            .expect("the walk stays inside the crate root");
+    for relative in files {
+        let source = crate_root.join(relative);
         let target = destination.join(relative);
         let parent = target.parent().expect("a copied file has a parent folder");
         fs::create_dir_all(parent).map_err(|source| CliError::CreateDirectoryFailed {
             path: parent.to_path_buf(),
             source,
         })?;
-        fs::copy(entry.path(), &target).map_err(|source| CliError::CopyFailed {
-            from: entry.path().to_path_buf(),
+        fs::copy(&source, &target).map_err(|error| CliError::CopyFailed {
+            from: source.clone(),
             to: target.clone(),
-            source,
+            source: error,
         })?;
-        if entry.file_name() == "Cargo.toml" {
-            manifests.push(relative.to_path_buf());
+        if relative
+            .file_name()
+            .is_some_and(|name| name == "Cargo.toml")
+        {
+            manifests.push(relative.clone());
         }
     }
     Ok(manifests)
 }
 
-fn is_skipped(entry: &DirEntry, skipped: &[PathBuf]) -> bool {
-    let name = entry.file_name().to_string_lossy();
-    let crate_target = entry.file_type().is_dir()
-        && name == "target"
-        && entry
-            .path()
-            .parent()
-            .is_some_and(|parent| parent.join("Cargo.toml").is_file());
-    name.starts_with('.') || crate_target || skipped.iter().any(|path| entry.path() == path)
+/// Copies the toolchain file and the Cargo config that the pack build uses.
+///
+/// Each search starts at the crate folder and goes to its parent folders.
+/// The first file wins. A file that the copy already carries stays. The
+/// search stops after the repo root, the first parent folder with a `.git`
+/// entry. A search with no repo root stops before the home folder. Settings
+/// above the repo root and settings in the home folder belong to the user
+/// or to a shared parent folder, so the gem must not ship them.
+fn copy_build_settings(crate_root: &Path, destination: &Path, home: Option<&Path>) {
+    if !destination.join("rust-toolchain.toml").exists()
+        && !destination.join("rust-toolchain").exists()
+    {
+        copy_nearest(
+            crate_root,
+            &["rust-toolchain.toml", "rust-toolchain"],
+            destination,
+            Path::new(""),
+            home,
+        );
+    }
+    if !destination.join(".cargo/config.toml").exists()
+        && !destination.join(".cargo/config").exists()
+    {
+        copy_nearest(
+            crate_root,
+            &[".cargo/config.toml", ".cargo/config"],
+            destination,
+            Path::new(".cargo"),
+            home,
+        );
+    }
+}
+
+fn copy_nearest(
+    crate_root: &Path,
+    names: &[&str],
+    destination: &Path,
+    folder: &Path,
+    home: Option<&Path>,
+) {
+    for ancestor in crate_root.ancestors() {
+        if home == Some(ancestor) {
+            break;
+        }
+        for name in names {
+            let source = ancestor.join(name);
+            if source.is_file() {
+                let target = destination.join(folder).join(
+                    Path::new(name)
+                        .file_name()
+                        .expect("a setting file has a name"),
+                );
+                if let Some(parent) = target.parent() {
+                    let _ = fs::create_dir_all(parent);
+                }
+                let _ = fs::copy(&source, &target);
+                return;
+            }
+        }
+        if ancestor.join(".git").exists() {
+            break;
+        }
+    }
 }
 
 /// Prepares one copied manifest for the gem build.
@@ -343,12 +528,13 @@ shared = { path = "../outside" }
         write(&crate_root.join(".git/config"), "");
         write(
             &outside.join("Cargo.toml"),
-            "[package]\nname = \"outside\"\n",
+            "[package]\nname = \"outside\"\n\n[features]\nx = []\n",
         );
+        write(&outside.join("src/lib.rs"), "");
         let destination = crate_root.join("ruby/ext/demo/crate");
         write(&destination.join("stale.rs"), "");
 
-        let external = copy(&crate_root, &destination, &[&crate_root.join("ruby")]).unwrap();
+        let external = copy(&crate_root, &destination, &[&crate_root.join("ruby")], true).unwrap();
 
         assert_eq!(
             files(&destination),
@@ -455,6 +641,7 @@ shared = { path = "../outside" }
             crate_root,
             &extension.join("crate"),
             &[crate_root, &extension],
+            false,
         )
         .unwrap();
 
@@ -476,6 +663,7 @@ shared = { path = "../outside" }
             &root.path().join("member"),
             &root.path().join("gem/crate"),
             &[],
+            false,
         )
         .err()
         .expect("a crate without Cargo.lock fails");
@@ -484,9 +672,125 @@ shared = { path = "../outside" }
         assert!(!root.path().join("gem/crate").exists());
     }
 
+    #[test]
+    fn an_outside_path_dependency_fails_without_the_opt_in() {
+        let root = tempfile::tempdir().unwrap();
+        let crate_root = root.path().join("demo");
+        write(
+            &crate_root.join("Cargo.toml"),
+            "[package]\nname = \"demo\"\n\n[dependencies]\noutside = { path = \"../outside\" }\n",
+        );
+        write(&crate_root.join("Cargo.lock"), "version = 4\n");
+        write(&crate_root.join("src/lib.rs"), "");
+        write(
+            &root.path().join("outside/Cargo.toml"),
+            "[package]\nname = \"outside\"\n",
+        );
+        write(&root.path().join("outside/src/lib.rs"), "");
+
+        let error = copy(&crate_root, &root.path().join("gem/crate"), &[], false)
+            .err()
+            .expect("an outside path dependency fails");
+
+        assert!(
+            error
+                .to_string()
+                .contains("--allow-external-path-dependencies"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn the_copy_uses_the_package_list_and_copies_build_settings() {
+        let root = tempfile::tempdir().unwrap();
+        let crate_root = root.path().join("demo");
+        write(
+            &crate_root.join("Cargo.toml"),
+            "[package]\nname = \"demo\"\nexclude = [\"local.txt\"]\n",
+        );
+        write(&crate_root.join("Cargo.lock"), "version = 4\n");
+        write(&crate_root.join("src/lib.rs"), "");
+        write(&crate_root.join("local.txt"), "local");
+        write(
+            &crate_root.join(".cargo/config.toml"),
+            "[build]\nrustflags = [\"--cfg\", \"demo\"]\n",
+        );
+        write(
+            &root.path().join("rust-toolchain.toml"),
+            "[toolchain]\nchannel = \"1.97.1\"\n",
+        );
+
+        copy(&crate_root, &root.path().join("gem/crate"), &[], false).unwrap();
+
+        assert_eq!(
+            files(&root.path().join("gem/crate")),
+            [
+                ".cargo/config.toml",
+                "Cargo.lock",
+                "Cargo.toml",
+                "rust-toolchain.toml",
+                "src/lib.rs"
+            ]
+        );
+    }
+
+    #[test]
+    fn build_settings_stop_at_the_repo_root() {
+        let root = tempfile::tempdir().unwrap();
+        let repo = root.path().join("repo");
+        let crate_root = repo.join("crates/demo");
+        fs::create_dir_all(crate_root.join("src")).unwrap();
+        fs::create_dir_all(repo.join(".git")).unwrap();
+        write(
+            &root.path().join("rust-toolchain.toml"),
+            "[toolchain]\nchannel = \"1.97.1\"\n",
+        );
+        write(
+            &repo.join(".cargo/config.toml"),
+            "[build]\nrustflags = [\"--cfg\", \"demo\"]\n",
+        );
+        let destination = root.path().join("gem/crate");
+
+        copy_build_settings(&crate_root, &destination, None);
+
+        assert!(destination.join(".cargo/config.toml").is_file());
+        assert!(!destination.join("rust-toolchain.toml").exists());
+    }
+
+    #[test]
+    fn build_settings_stop_before_the_home_folder() {
+        let root = tempfile::tempdir().unwrap();
+        let home = root.path();
+        let repo = home.join("repo");
+        let crate_root = repo.join("crates/demo");
+        fs::create_dir_all(crate_root.join("src")).unwrap();
+        write(
+            &home.join("rust-toolchain.toml"),
+            "[toolchain]\nchannel = \"1.97.1\"\n",
+        );
+        write(
+            &home.join(".cargo/config.toml"),
+            "[registries.example]\nindex = \"sparse+https://example.invalid/\"\n",
+        );
+        write(
+            &repo.join(".cargo/config.toml"),
+            "[build]\nrustflags = [\"--cfg\", \"demo\"]\n",
+        );
+        let destination = root.path().join("gem/crate");
+
+        copy_build_settings(&crate_root, &destination, Some(home));
+
+        assert!(destination.join(".cargo/config.toml").is_file());
+        assert_eq!(
+            fs::read_to_string(destination.join(".cargo/config.toml")).unwrap(),
+            "[build]\nrustflags = [\"--cfg\", \"demo\"]\n"
+        );
+        assert!(!destination.join("rust-toolchain.toml").exists());
+    }
+
     #[cfg(unix)]
     #[test]
-    fn a_symlink_outside_the_crate_folder_cannot_be_copied() {
+    fn a_symlink_gets_the_content_of_its_target_file() {
         let root = tempfile::tempdir().unwrap();
         let crate_root = root.path().join("demo");
         let secret = root.path().join("secret.txt");
@@ -499,15 +803,10 @@ shared = { path = "../outside" }
         write(&crate_root.join("src/lib.rs"), "");
         std::os::unix::fs::symlink(&secret, crate_root.join("secret.txt")).unwrap();
 
-        let error = copy(&crate_root, &root.path().join("gem/crate"), &[])
-            .err()
-            .expect("an external symlink fails");
+        copy(&crate_root, &root.path().join("gem/crate"), &[], false).unwrap();
 
-        assert!(
-            error
-                .to_string()
-                .contains("points outside the crate folder"),
-            "{error}"
-        );
+        let copied = root.path().join("gem/crate/secret.txt");
+        assert_eq!(fs::read_to_string(&copied).unwrap(), "secret");
+        assert!(!copied.is_symlink());
     }
 }

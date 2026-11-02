@@ -43,6 +43,11 @@ pub(crate) fn pack_ruby(
             "pack ruby generates the sources from the crate that it copies; remove '--regenerate false'",
         ));
     }
+    if options.execution.release || options.execution.no_build {
+        return Err(failed(
+            "pack ruby builds no Rust library and has no --release or --no-build flag; remove the flag and run pack ruby again",
+        ));
+    }
 
     let build_cargo_args =
         resolve_build_cargo_args(config, TargetSection::Ruby, &options.execution.cargo_args);
@@ -72,9 +77,33 @@ pub(crate) fn pack_ruby(
         ))
     })?;
 
+    // The copy runs before the generation. A failed copy then leaves the
+    // earlier gem sources as they are, and `gem build` cannot make a gem
+    // without the crate source. The copy goes to a staging folder in the
+    // output. The generation deletes the extension folder, so the pack moves
+    // the staging copy into it after the generation.
+    let output = config.ruby_output();
+    std::fs::create_dir_all(&output).map_err(|source| CliError::CreateDirectoryFailed {
+        path: output.clone(),
+        source,
+    })?;
+    let staging = tempfile::tempdir_in(&output).map_err(|source| CliError::WriteFailed {
+        path: output.clone(),
+        source,
+    })?;
+    let step = reporter.step("Copying the crate source into the gem");
+    // The extension folder is in the crate folder when the output is.
+    let extension = output.join(extension_directory(config.ruby_gem_name()));
+    let external = crate_source::copy(
+        crate_root,
+        &staging.path().join(CRATE_DIRECTORY),
+        &[binding_expansion.target_directory(), &output, &extension],
+        options.allow_external_path_dependencies,
+    )?;
+    step.finish_success();
+
     // The sources and the features in `extconf.rb` come from one expansion,
     // so `[cargo.command_args].generate` cannot add a feature the build lacks.
-    let output = config.ruby_output();
     let step = reporter.step("Generating Ruby bindings");
     render_ruby(
         config,
@@ -84,16 +113,19 @@ pub(crate) fn pack_ruby(
     )?;
     step.finish_success();
 
-    let step = reporter.step("Copying the crate source into the gem");
-    let extension = output.join(extension_directory(config.ruby_gem_name()));
     let destination = extension.join(CRATE_DIRECTORY);
-    // The extension folder is in the crate folder when the output is.
-    let external = crate_source::copy(
-        crate_root,
-        &destination,
-        &[binding_expansion.target_directory(), &output, &extension],
-    )?;
-    step.finish_success();
+    if destination.exists() {
+        std::fs::remove_dir_all(&destination).map_err(|source| CliError::WriteFailed {
+            path: destination.clone(),
+            source,
+        })?;
+    }
+    std::fs::rename(staging.path().join(CRATE_DIRECTORY), &destination).map_err(|source| {
+        CliError::WriteFailed {
+            path: destination.clone(),
+            source,
+        }
+    })?;
     external.iter().for_each(|dependency| {
         reporter.warning(&format!(
             "{}: path dependency `{}` is outside the crate folder. The gem builds only where {} exists.",

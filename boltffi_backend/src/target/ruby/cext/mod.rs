@@ -291,7 +291,7 @@ impl host::HostBackend for RubyCExtHost {
             feature_arguments: &self.feature_arguments,
             toolchain: self.toolchain.as_deref(),
         };
-        let mut files = vec![extension::render(&gem, &stem, &module)?];
+        let mut files = vec![extension::render(&gem, &module)?];
         files.extend(package.render()?);
         Ok(GeneratedOutput::new(files, Vec::new()))
     }

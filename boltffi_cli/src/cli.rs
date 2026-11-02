@@ -389,6 +389,18 @@ pub(crate) enum PackTargetArg {
     Ruby {
         #[arg(long, help = "Enable experimental targets/features")]
         experimental: bool,
+
+        #[arg(
+            long,
+            help = "Allow path dependencies outside the crate folder; the gem then builds only on this machine"
+        )]
+        allow_external_path_dependencies: bool,
+
+        #[arg(long, hide = true)]
+        release: bool,
+
+        #[arg(long, hide = true)]
+        no_build: bool,
     },
 }
 
@@ -683,15 +695,21 @@ pub(crate) fn execute_command(
                     ),
                     experimental,
                 }),
-                PackTargetArg::Ruby { experimental } => PackCommand::Ruby(PackRubyOptions {
+                PackTargetArg::Ruby {
+                    experimental,
+                    allow_external_path_dependencies,
+                    release,
+                    no_build,
+                } => PackCommand::Ruby(PackRubyOptions {
                     execution: pack_execution_options(
-                        false,
+                        release,
                         regenerate,
-                        false,
+                        no_build,
                         deny_skipped,
                         cargo_args,
                     ),
                     experimental,
+                    allow_external_path_dependencies,
                 }),
             };
             run_pack(&config, command, reporter)

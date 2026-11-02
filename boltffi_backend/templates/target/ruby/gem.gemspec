@@ -6,6 +6,11 @@
 # `boltffi pack ruby` rewrites the extension directory: the C extension, its
 # `extconf.rb`, and the Rust crate source. The install builds the crate with
 # cargo, so it needs cargo and a C compiler.
+crate_manifest = File.expand_path(File.join(File.dirname({{ extconf }}), "crate", "Cargo.toml"), __dir__)
+unless File.file?(crate_manifest)
+  raise "boltffi: no crate source at #{crate_manifest}; run `boltffi pack ruby` to copy the crate source into the gem"
+end
+
 Gem::Specification.new do |spec|
   spec.name = {{ gem }}
   spec.version = {{ version }}

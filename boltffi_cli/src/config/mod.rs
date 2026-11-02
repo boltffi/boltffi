@@ -2668,6 +2668,16 @@ module_name = "demo-runtime"
     }
 
     #[test]
+    fn rejects_the_removed_ruby_version_key() {
+        let error = toml::from_str::<Config>(
+            "[package]\nname = \"my-lib\"\n\n[targets.ruby]\nenabled = true\nversion = \"1.0.0\"\n",
+        )
+        .expect_err("the removed targets.ruby.version key fails");
+
+        assert!(error.to_string().contains("version"), "{error}");
+    }
+
+    #[test]
     fn accepts_legacy_python_pack_table_alias() {
         let config = parse_config(
             r#"

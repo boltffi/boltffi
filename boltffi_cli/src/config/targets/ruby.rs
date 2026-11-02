@@ -3,7 +3,12 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 /// `[targets.ruby]` configuration for the experimental Ruby target.
+///
+/// Unknown keys fail. BoltFFI 0.32 had a `version` key in this table. The
+/// source gem takes its version from the starter gemspec, so a `version`
+/// key now fails instead of doing nothing.
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct RubyConfig {
     #[serde(default)]
     pub enabled: bool,
