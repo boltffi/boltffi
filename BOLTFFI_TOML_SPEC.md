@@ -671,11 +671,14 @@ generation, so a failed copy leaves the earlier gem sources as they are.
 The install build names the host target with `--target`. A `build.target` or
 a `CARGO_BUILD_TARGET` on the install machine then has no effect on the gem.
 
-One limit applies until a later release. If an export names a type through a
-Rust `type` alias or a remote path, the gem fails at install. The install
-build has no record store for the copied crate, so the alias does not expand.
-`pack ruby` still succeeds for such a crate. Name the type directly in the
-export signature until then.
+An export can name a type through a Rust `type` alias or a remote path. The
+macro expands such an export from the BoltFFI record store. The install build
+runs in a new folder with a new build directory, which holds no store. So
+`pack ruby` writes a portable store into the crate copy as
+`boltffi-records.json`, and `extconf.rb` names that file in the
+`BOLTFFI_RECORD_STORE` variable for the build. The portable store lists only the
+crates inside the crate folder, as relative paths, so it names no folder of the
+pack machine.
 
 The file list of the copy comes from `cargo package --list --allow-dirty` for
 the crate and for each path dependency inside the crate folder. The list

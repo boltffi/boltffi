@@ -249,6 +249,15 @@ impl RecordStore {
     /// The directory of stores, one per workspace, relative to Cargo's build directory.
     pub const DIRECTORY: &'static str = "boltffi/records";
 
+    /// The file name of a portable store inside a copied crate folder.
+    pub const PORTABLE_FILE: &'static str = "boltffi-records.json";
+
+    /// The environment variable that names a portable store file for a build.
+    ///
+    /// A build of a copied crate has no store in its build directory, so a packager
+    /// ships a portable store with the crate and names it here.
+    pub const PORTABLE_ENV: &'static str = "BOLTFFI_RECORD_STORE";
+
     const VERSION: u32 = 2;
 
     /// Keeps the records of one records build for the crates whose canonical manifest
@@ -316,6 +325,39 @@ impl RecordStore {
             })
             .collect()
     }
+
+    /// The store for a copy of the crate folder at `root`.
+    ///
+    /// The store keeps every record. It keeps only the covered crates inside `root`, as
+    /// paths relative to `root`, so the store names no folder of the packing machine.
+    pub fn portable(&self, root: &Path) -> Self {
+        let crates = self
+            .crates
+            .iter()
+            .filter_map(|covered| covered.strip_prefix(root).ok())
+            .map(Path::to_path_buf)
+            .collect();
+        Self {
+            crates,
+            ..self.clone()
+        }
+    }
+
+    /// The store with each relative covered crate resolved against `base`.
+    ///
+    /// A portable store lists its crates relative to the copied crate folder. An absolute
+    /// entry stays as it is.
+    pub fn resolved_against(mut self, base: &Path) -> Self {
+        for covered in &mut self.crates {
+            if covered.is_relative() {
+                let joined = base.join(&*covered);
+                *covered = joined.canonicalize().unwrap_or(joined);
+            }
+        }
+        self.crates.sort();
+        self.crates.dedup();
+        self
+    }
 }
 
 #[cfg(test)]
@@ -359,6 +401,30 @@ mod tests {
         assert!(store.covers(Path::new("/work/app")));
         assert!(store.covers(Path::new("/work/units")));
         assert!(!store.covers(Path::new("/elsewhere/app")));
+    }
+
+    #[test]
+    fn a_portable_store_keeps_only_the_crates_inside_the_copy_and_covers_them_after_the_move() {
+        let store = RecordStore::new(
+            &[],
+            [
+                PathBuf::from("/work/app"),
+                PathBuf::from("/work/app/units"),
+                PathBuf::from("/home/me/.cargo/registry/src/dep-1.0.0"),
+            ],
+        );
+
+        let portable = store.portable(Path::new("/work/app"));
+        let text = portable.to_json().expect("the store serializes");
+        assert!(!text.contains("/home/me"), "{text}");
+        assert!(!text.contains("/work/app"), "{text}");
+
+        let moved = RecordStore::from_json(&text)
+            .expect("the portable store reads back")
+            .resolved_against(Path::new("/gems/app/crate"));
+        assert!(moved.covers(Path::new("/gems/app/crate")));
+        assert!(moved.covers(Path::new("/gems/app/crate/units")));
+        assert!(!moved.covers(Path::new("/work/app")));
     }
 
     #[test]

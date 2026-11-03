@@ -1,6 +1,7 @@
 //! The gem around the extension: `lib/`, `extconf.rb`, and the gemspec.
 
 use askama::Template;
+use boltffi_binding::RecordStore;
 
 use crate::{
     core::{GeneratedFile, Result},
@@ -26,6 +27,8 @@ struct ExtconfTemplate {
     artifact: Literal,
     feature_arguments: Vec<Literal>,
     toolchain_arguments: Vec<Literal>,
+    record_store_file: Literal,
+    record_store_env: Literal,
 }
 
 #[derive(Template)]
@@ -74,6 +77,8 @@ impl Package<'_> {
                         .map(|argument| Literal::string(argument))
                         .collect(),
                     toolchain_arguments: self.toolchain.map(Literal::string).into_iter().collect(),
+                    record_store_file: Literal::string(RecordStore::PORTABLE_FILE),
+                    record_store_env: Literal::string(RecordStore::PORTABLE_ENV),
                 }
                 .render()?,
             )?,

@@ -20,8 +20,8 @@ use boltffi_backend::target::{
 };
 use boltffi_backend::{CustomTypeMapping, GeneratedOutput, Target as BackendTarget};
 use boltffi_binding::{
-    Bindings, LowerError, Native, RawSourceRecord, SourceFragmentError, Surface, SurfaceLower,
-    Wasm32, aggregate_records, lower, reachable_from,
+    Bindings, LowerError, Native, RawSourceRecord, RecordStore, SourceFragmentError, Surface,
+    SurfaceLower, Wasm32, aggregate_records, lower, reachable_from,
 };
 use thiserror::Error;
 
@@ -843,6 +843,13 @@ impl Generation {
     /// fresh checkout already finds it.
     pub fn prepare_record_store(&self) -> Result<(), GenerationError> {
         self.records().map(|_| ())
+    }
+
+    /// The record store of this crate, the one that [`Self::prepare_record_store`]
+    /// writes. A packager ships it with a copy of the crate, whose own build directory
+    /// has no store.
+    pub fn record_store(&self) -> Result<RecordStore, GenerationError> {
+        self.records().map(|source| source.record_store())
     }
 
     fn records(&self) -> Result<SourceMetadata, GenerationError> {

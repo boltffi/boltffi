@@ -9,6 +9,7 @@ mod crate_source;
 
 use boltffi_backend::target::ruby::name_style::extension_directory;
 use boltffi_bindgen::target::Target;
+use boltffi_binding::RecordStore;
 
 use crate::{
     build::BindingExpansion,
@@ -113,6 +114,33 @@ pub(crate) fn pack_ruby(
         options.execution.deny_skipped,
     )?;
     step.finish_success();
+
+    // The install builds the copy in a new folder with a new build directory,
+    // which holds no record store. The copy carries a portable store, and
+    // `extconf.rb` names it, so an export that names a type through an alias
+    // still expands at install.
+    let store = binding_expansion
+        .generation()
+        .record_store()
+        .map_err(|error| failed(&format!("read the BoltFFI record store: {error}")))?;
+    let canonical_root = crate_root
+        .canonicalize()
+        .map_err(|source| CliError::ReadFailed {
+            path: crate_root.to_path_buf(),
+            source,
+        })?;
+    let store_path = staging
+        .path()
+        .join(CRATE_DIRECTORY)
+        .join(RecordStore::PORTABLE_FILE);
+    let json = store
+        .portable(&canonical_root)
+        .to_json()
+        .map_err(|error| failed(&format!("write the BoltFFI record store: {error}")))?;
+    std::fs::write(&store_path, json).map_err(|source| CliError::WriteFailed {
+        path: store_path.clone(),
+        source,
+    })?;
 
     let destination = extension.join(CRATE_DIRECTORY);
     if destination.exists() {
