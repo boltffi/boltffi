@@ -178,9 +178,12 @@ module BoltFFIExtconf
     # bind to another extension's copy, so the extension exports only its
     # entry point and, on development Rubies, `ruby_abi_version`.
     #
-    # Each probe treats a warning as a failure. A linker that accepts a flag
-    # with a warning and then ignores the flag would hide no symbol, and the
-    # install would still pass. The probe must fail in that case.
+    # Each probe trusts the exit status of the link. The Apple and GNU linkers
+    # reject the flag of the other linker with an error. A probe does not
+    # treat a warning as a failure, because the Apple linker warns about
+    # duplicate libraries in every mkmf link. The demo script reads the
+    # exports of the built extension, so CI catches a linker that ignores the
+    # flag.
     def export_only_entry_point
       symbols = ["Init_#{EXTENSION}"]
       symbols << "ruby_abi_version" if have_macro("RUBY_DLN_CHECK_ABI", "ruby.h")
@@ -188,9 +191,9 @@ module BoltFFIExtconf
       File.write(version_script, "{ global: #{symbols.join("; ")}; local: *; };\n")
       # The probe program defines only `main`, so the export probe names
       # `main`. The probe then tests the flag, not a symbol of the extension.
-      if try_ldflags("-Wl,--version-script=#{version_script.shellescape}", werror: true)
+      if try_ldflags("-Wl,--version-script=#{version_script.shellescape}")
         $DLDFLAGS << " -Wl,--version-script=#{version_script.shellescape}"
-      elsif try_ldflags("-Wl,-exported_symbol,_main", werror: true)
+      elsif try_ldflags("-Wl,-exported_symbol,_main")
         symbols.each { |symbol| $DLDFLAGS << " -Wl,-exported_symbol,_#{symbol}" }
       else
         abort("boltffi: the linker accepts neither --version-script nor -exported_symbol; #{EXTENSION} needs a GNU or Apple linker")

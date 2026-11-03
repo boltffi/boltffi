@@ -58,7 +58,12 @@ export RUSTUP_HOME="${RUSTUP_HOME:-$HOME/.rustup}"
 # toolchain of the pack build. The script sets no RUSTUP_TOOLCHAIN.
 
 (cd "$dist_directory" && "$ruby_command" -S gem build "$(basename "$gemspec")" --output "$work_directory/demo.gem")
-HOME="$work_directory/home" "$ruby_command" -S gem install --local --no-document "$work_directory/demo.gem"
+# A failed install hides the probe details in mkmf.log, so the script prints
+# that file before it exits.
+if ! HOME="$work_directory/home" "$ruby_command" -S gem install --local --no-document "$work_directory/demo.gem"; then
+    find "$GEM_HOME/extensions" -name mkmf.log -exec cat {} + >&2 || true
+    exit 1
+fi
 
 # The extension exports only its entry point. Ruby loads extensions with
 # RTLD_GLOBAL, so an exported Rust symbol could bind to another extension.
