@@ -1,0 +1,13 @@
+[package]
+name = "boltffi_ruby_fixture"
+version = "0.1.0"
+edition = "2021"
+
+
+[workspace]
+[lib]
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+boltffi = "0.32"
+itoa = "1"

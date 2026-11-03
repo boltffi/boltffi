@@ -1,0 +1,6 @@
+[package]
+name = "boltffi_ruby_fixture"
+
+[targets.ruby]
+enabled = true
+output = "dist"
