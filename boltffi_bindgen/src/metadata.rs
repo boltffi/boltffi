@@ -148,6 +148,11 @@ pub struct SourceMetadata {
 }
 
 impl SourceMetadata {
+    /// The record store of these records, for the crates the build compiled.
+    pub fn record_store(&self) -> RecordStore {
+        RecordStore::new(&self.source_records, self.crate_directories.clone())
+    }
+
     /// Writes the records to the [`RecordStore`] in the package's build directory, unless it
     /// already holds them.
     ///
@@ -161,7 +166,8 @@ impl SourceMetadata {
         }) else {
             return Ok(());
         };
-        let json = RecordStore::new(&self.source_records, self.crate_directories.clone())
+        let json = self
+            .record_store()
             .to_json()
             .map_err(std::io::Error::other)?;
         if std::fs::read_to_string(&path).is_ok_and(|kept| kept == json) {
