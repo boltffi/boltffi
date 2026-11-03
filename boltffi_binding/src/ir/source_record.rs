@@ -330,17 +330,18 @@ impl RecordStore {
     ///
     /// The store keeps every record. It keeps only the covered crates inside `root`, as
     /// paths relative to `root`, so the store names no folder of the packing machine.
-    pub fn portable(&self, root: &Path) -> Self {
-        let crates = self
+    /// The relative paths use `/`, so a store packed on Windows reads on other hosts.
+    pub fn portable(mut self, root: &Path) -> Self {
+        self.crates = self
             .crates
             .iter()
             .filter_map(|covered| covered.strip_prefix(root).ok())
-            .map(Path::to_path_buf)
+            .map(|relative| {
+                let parts: Vec<_> = relative.iter().map(|part| part.to_string_lossy()).collect();
+                PathBuf::from(parts.join("/"))
+            })
             .collect();
-        Self {
-            crates,
-            ..self.clone()
-        }
+        self
     }
 
     /// The store with each relative covered crate resolved against `base`.
