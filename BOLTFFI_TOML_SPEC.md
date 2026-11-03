@@ -681,16 +681,21 @@ The file list of the copy comes from `cargo package --list --allow-dirty` for
 the crate and for each path dependency inside the crate folder. The list
 follows `package.include`, `package.exclude`, and `.gitignore`. The copy skips
 the `dist/` folder at the crate root and the Ruby output. A symlink in the
-list gets the content of its target file, as `cargo package` does.
+list gets the content of its target file, as `cargo package` does. The copied
+root manifest drops `members`, `default-members`, and `exclude` from its
+`[workspace]` table, because the copy carries only the crate and its path
+dependencies. `[workspace.package]` and `[workspace.dependencies]` stay.
 
 The copy also carries build settings. It copies the nearest
-`rust-toolchain.toml` or `rust-toolchain` file and the nearest
+`rust-toolchain.toml` or `rust-toolchain` file and the
 `.cargo/config.toml` or `.cargo/config` file from the crate folder and its
 parent folders. The search stops after the repo root. The repo root is the
 first parent folder with a `.git` entry. A search with no repo root stops
 before the home folder. A file that the crate folder already has wins. The
 install build then uses the same toolchain and Cargo config as the pack
-build.
+build. Cargo merges every config file in the search, but the gem carries one
+config. So if the search finds more than one Cargo config, `pack ruby` fails.
+Move the settings into one file.
 
 If a path dependency is outside the crate folder, `pack ruby` fails. The
 copied manifest would hold an absolute path of the pack machine, and the gem

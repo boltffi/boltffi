@@ -261,20 +261,39 @@ fn copy_files(
 /// Copies the toolchain file and the Cargo config that the pack build uses.
 ///
 /// Each search starts at the crate folder and goes to its parent folders.
-/// The first file wins. A file that the copy already carries stays. The
-/// search stops after the repo root, the first parent folder with a `.git`
-/// entry. A search with no repo root stops before the home folder. Settings
-/// above the repo root and settings in the home folder belong to the user
-/// or to a shared parent folder, so the gem must not ship them.
+/// The search stops after the repo root, the first parent folder with a
+/// `.git` entry. A search with no repo root stops before the home folder.
+/// Settings above the repo root and settings in the home folder belong to the
+/// user or to a shared parent folder, so the gem must not ship them.
+///
+/// rustup uses the nearest toolchain file, so the copy carries that one.
+/// Cargo merges every config file in the search, and a config resolves its
+/// relative paths against its own folder. The gem carries one config, so the
+/// copy fails when the search finds more than one. A file that the copy
+/// already carries stays.
 fn copy_build_settings(crate_root: &Path, destination: &Path, home: Option<&Path>) -> Result<()> {
-    for names in [
-        ["rust-toolchain.toml", "rust-toolchain"],
-        [".cargo/config.toml", ".cargo/config"],
+    for (names, merged) in [
+        (["rust-toolchain.toml", "rust-toolchain"], false),
+        ([".cargo/config.toml", ".cargo/config"], true),
     ] {
+        let found = setting_files(crate_root, &names, home);
+        if merged && found.len() > 1 {
+            let files = found
+                .iter()
+                .map(|(source, _)| source.display().to_string())
+                .collect::<Vec<_>>()
+                .join(", ");
+            return Err(CliError::CommandFailed {
+                command: format!(
+                    "cargo merges the Cargo configs {files}, but the gem carries one config; move the settings into one file"
+                ),
+                status: None,
+            });
+        }
         if names.iter().any(|name| destination.join(name).exists()) {
             continue;
         }
-        let Some((source, name)) = nearest_setting(crate_root, &names, home) else {
+        let Some((source, name)) = found.into_iter().next() else {
             continue;
         };
         let target = destination.join(name);
@@ -292,25 +311,29 @@ fn copy_build_settings(crate_root: &Path, destination: &Path, home: Option<&Path
     Ok(())
 }
 
-/// The nearest setting file with one of `names`, and the name it matched.
-fn nearest_setting<'name>(
+/// The setting files with one of `names` in the search, nearest first, one
+/// per folder, with the name that each file matched.
+fn setting_files<'name>(
     crate_root: &Path,
     names: &[&'name str],
     home: Option<&Path>,
-) -> Option<(PathBuf, &'name str)> {
+) -> Vec<(PathBuf, &'name str)> {
+    let mut found = Vec::new();
     for ancestor in crate_root.ancestors() {
         if home == Some(ancestor) {
-            return None;
+            break;
         }
-        let found = names
-            .iter()
-            .map(|name| (ancestor.join(name), *name))
-            .find(|(source, _)| source.is_file());
-        if found.is_some() || ancestor.join(".git").exists() {
-            return found;
+        found.extend(
+            names
+                .iter()
+                .map(|name| (ancestor.join(name), *name))
+                .find(|(source, _)| source.is_file()),
+        );
+        if ancestor.join(".git").exists() {
+            break;
         }
     }
-    None
+    found
 }
 
 /// Reads and parses one manifest.
@@ -331,7 +354,11 @@ fn read_manifest(manifest: &Path) -> Result<(String, DocumentMut)> {
 /// Each path dependency outside the copy gets an absolute path. A relative
 /// path stays when it reaches the copied dependency from the copied
 /// manifest. The root manifest also gets a `[workspace]` table so cargo
-/// builds the copy as its own workspace.
+/// builds the copy as its own workspace. The copy carries no workspace member
+/// that is not a path dependency, so the root drops `members`,
+/// `default-members`, and `exclude`. The path dependencies inside the copy
+/// still join the workspace, and `[workspace.package]` and
+/// `[workspace.dependencies]` stay for inherited values.
 fn rewrite_manifest(
     crate_root: &Path,
     destination: &Path,
@@ -348,8 +375,15 @@ fn rewrite_manifest(
         .expect("a manifest has a parent folder")
         .to_path_buf();
     let (text, mut document) = read_manifest(&copied_manifest)?;
-    if manifest == Path::new("Cargo.toml") && !document.contains_key("workspace") {
-        document.insert("workspace", Item::Table(Table::new()));
+    if manifest == Path::new("Cargo.toml") {
+        let workspace = document
+            .entry("workspace")
+            .or_insert_with(|| Item::Table(Table::new()));
+        if let Some(workspace) = workspace.as_table_like_mut() {
+            for key in ["members", "default-members", "exclude"] {
+                workspace.remove(key);
+            }
+        }
     }
 
     let mut external = Vec::new();
@@ -805,6 +839,71 @@ shared = { path = "../outside" }
             "[build]\nrustflags = [\"--cfg\", \"demo\"]\n"
         );
         assert!(!destination.join("rust-toolchain.toml").exists());
+    }
+
+    #[test]
+    fn layered_cargo_configs_fail_the_copy() {
+        let root = tempfile::tempdir().unwrap();
+        let repo = root.path().join("repo");
+        let crate_root = repo.join("crate");
+        fs::create_dir_all(repo.join(".git")).unwrap();
+        write(
+            &repo.join(".cargo/config.toml"),
+            "[env]\nGREETING = \"hi\"\n",
+        );
+        write(
+            &crate_root.join(".cargo/config.toml"),
+            "[build]\njobs = 2\n",
+        );
+
+        let error = copy_build_settings(&crate_root, &root.path().join("gem/crate"), None)
+            .expect_err("two Cargo configs fail");
+
+        assert!(error.to_string().contains("into one file"), "{error}");
+    }
+
+    #[test]
+    fn the_copied_root_manifest_loads_without_its_unshipped_workspace_members() {
+        let root = tempfile::tempdir().unwrap();
+        let crate_root = root.path().join("demo");
+        write(
+            &crate_root.join("Cargo.toml"),
+            "[package]\nname = \"demo\"\nversion = \"0.1.0\"\n\n[workspace]\nmembers = [\"tools\"]\n\n[workspace.package]\nedition = \"2021\"\n",
+        );
+        write(&crate_root.join("Cargo.lock"), "version = 4\n");
+        write(&crate_root.join("src/lib.rs"), "");
+        write(
+            &crate_root.join("tools/Cargo.toml"),
+            "[package]\nname = \"tools\"\nversion = \"0.1.0\"\n",
+        );
+        write(&crate_root.join("tools/src/main.rs"), "fn main() {}\n");
+        let destination = root.path().join("gem/crate");
+
+        copy(&crate_root, &destination, &[], None, false).unwrap();
+
+        assert!(!destination.join("tools").exists());
+        let manifest: toml::Table =
+            toml::from_str(&fs::read_to_string(destination.join("Cargo.toml")).unwrap()).unwrap();
+        let workspace = manifest["workspace"].as_table().unwrap();
+        assert!(!workspace.contains_key("members"), "{workspace:?}");
+        assert!(workspace.contains_key("package"), "{workspace:?}");
+        let metadata = Command::new(std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into()))
+            .args([
+                "metadata",
+                "--no-deps",
+                "--offline",
+                "--format-version",
+                "1",
+                "--manifest-path",
+            ])
+            .arg(destination.join("Cargo.toml"))
+            .output()
+            .unwrap();
+        assert!(
+            metadata.status.success(),
+            "{}",
+            String::from_utf8_lossy(&metadata.stderr)
+        );
     }
 
     #[cfg(unix)]
