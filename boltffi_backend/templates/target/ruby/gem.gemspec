@@ -19,7 +19,8 @@ Gem::Specification.new do |spec|
   spec.required_ruby_version = ">= 3.3"
   spec.require_paths = ["lib"]
   spec.extensions = [{{ extconf }}]
+  # FNM_DOTMATCH keeps hidden crate files, such as `.cargo/config.toml`.
   spec.files = Dir.chdir(__dir__) do
-    Dir["lib/**/*.rb", {{ extension_files|join(", ") }}].select { |path| File.file?(path) }
+    Dir.glob(["lib/**/*.rb", {{ extension_files|join(", ") }}], File::FNM_DOTMATCH).select { |path| File.file?(path) }
   end
 end

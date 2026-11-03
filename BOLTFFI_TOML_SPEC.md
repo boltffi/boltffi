@@ -668,6 +668,15 @@ folder. A workspace member has no `Cargo.lock` of its own, so it cannot use
 because the gem builds for the install host. The copy runs before the
 generation, so a failed copy leaves the earlier gem sources as they are.
 
+The install build names the host target with `--target`. A `build.target` or
+a `CARGO_BUILD_TARGET` on the install machine then has no effect on the gem.
+
+One limit applies until a later release. If an export names a type through a
+Rust `type` alias or a remote path, the gem fails at install. The install
+build has no record store for the copied crate, so the alias does not expand.
+`pack ruby` still succeeds for such a crate. Name the type directly in the
+export signature until then.
+
 The file list of the copy comes from `cargo package --list --allow-dirty` for
 the crate and for each path dependency inside the crate folder. The list
 follows `package.include`, `package.exclude`, and `.gitignore`. The copy skips

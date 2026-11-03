@@ -111,21 +111,35 @@ module BoltFFIExtconf
       [archive, native_static_libraries(stderr_text), link_search_paths(target_directory)]
     end
 
+    # The build names the host target. A `build.target` or a
+    # `CARGO_BUILD_TARGET` on the install machine then cannot cross-compile
+    # the crate, and cargo writes the artifacts to one known folder.
     def cargo_command(target_directory)
       [
         CARGO, *TOOLCHAIN_ARGUMENTS, "rustc",
         "--manifest-path", File.join(CRATE, "Cargo.toml"),
         "--target-dir", target_directory,
+        "--target", host_target,
         "--locked", "--profile", PROFILE, "--lib", *FEATURE_ARGUMENTS,
         "--", "--print=native-static-libs"
       ]
+    end
+
+    # The host target triple, from `cargo -vV`. The pack build names the host
+    # target the same way.
+    def host_target
+      @host_target ||= begin
+        output, status = Open3.capture2(CARGO, *TOOLCHAIN_ARGUMENTS, "-vV", chdir: CRATE)
+        host = output[/^host: (\S+)$/, 1] if status.success?
+        host || abort("boltffi: cargo -vV printed no host target")
+      end
     end
 
     # The folder that cargo writes the profile artifacts to. The `dev`
     # profile writes to `debug`. Every other profile writes to a folder with
     # the profile name.
     def profile_directory(target_directory)
-      File.join(target_directory, PROFILE == "dev" ? "debug" : PROFILE)
+      File.join(target_directory, host_target, PROFILE == "dev" ? "debug" : PROFILE)
     end
 
     def built_archive(target_directory)
@@ -172,9 +186,11 @@ module BoltFFIExtconf
       symbols << "ruby_abi_version" if have_macro("RUBY_DLN_CHECK_ABI", "ruby.h")
       version_script = File.join(Dir.pwd, "#{EXTENSION}.map")
       File.write(version_script, "{ global: #{symbols.join("; ")}; local: *; };\n")
-      if try_ldflags("-Wl,--version-script=#{version_script}", werror: true)
+      # The probe program defines only `main`, so the export probe names
+      # `main`. The probe then tests the flag, not a symbol of the extension.
+      if try_ldflags("-Wl,--version-script=#{version_script.shellescape}", werror: true)
         $DLDFLAGS << " -Wl,--version-script=#{version_script.shellescape}"
-      elsif try_ldflags("-Wl,-exported_symbol,_#{symbols.first}", werror: true)
+      elsif try_ldflags("-Wl,-exported_symbol,_main", werror: true)
         symbols.each { |symbol| $DLDFLAGS << " -Wl,-exported_symbol,_#{symbol}" }
       else
         abort("boltffi: the linker accepts neither --version-script nor -exported_symbol; #{EXTENSION} needs a GNU or Apple linker")

@@ -58,6 +58,7 @@ pub(super) fn copy(
     crate_root: &Path,
     destination: &Path,
     skipped: &[&Path],
+    toolchain: Option<&str>,
     allow_external: bool,
 ) -> Result<Vec<ExternalPathDependency>> {
     let crate_root = canonical(crate_root)?;
@@ -75,7 +76,7 @@ pub(super) fn copy(
         .filter_map(|path| path.canonicalize().ok())
         .chain([crate_root.join("dist")])
         .collect();
-    let files = package_files(&crate_root, &skipped)?;
+    let files = package_files(&crate_root, &skipped, toolchain)?;
 
     if destination.exists() {
         fs::remove_dir_all(destination).map_err(|source| CliError::WriteFailed {
@@ -121,7 +122,11 @@ pub(super) fn copy(
 /// `.cargo_vcs_info.json` and `Cargo.toml.orig` itself, so the list drops
 /// those names. The list also drops files that do not exist, such as a
 /// `Cargo.lock` that `cargo package` would write for a path dependency.
-fn package_files(crate_root: &Path, skipped: &[PathBuf]) -> Result<BTreeSet<PathBuf>> {
+fn package_files(
+    crate_root: &Path,
+    skipped: &[PathBuf],
+    toolchain: Option<&str>,
+) -> Result<BTreeSet<PathBuf>> {
     let mut files = BTreeSet::new();
     let mut packages = vec![crate_root.to_path_buf()];
     let mut seen = BTreeSet::new();
@@ -133,7 +138,7 @@ fn package_files(crate_root: &Path, skipped: &[PathBuf]) -> Result<BTreeSet<Path
             .strip_prefix(crate_root)
             .expect("a package stays inside the crate root")
             .to_path_buf();
-        for listed in cargo_package_list(&package)? {
+        for listed in cargo_package_list(&package, toolchain)? {
             if listed
                 .file_name()
                 .is_some_and(|name| name == ".cargo_vcs_info.json" || name == "Cargo.toml.orig")
@@ -158,8 +163,12 @@ fn package_files(crate_root: &Path, skipped: &[PathBuf]) -> Result<BTreeSet<Path
 }
 
 /// The file list of one package, relative to the package folder.
-fn cargo_package_list(package: &Path) -> Result<Vec<PathBuf>> {
+///
+/// The rustup toolchain selector, such as `+nightly`, goes before
+/// `package`, as for every other cargo call of the pack.
+fn cargo_package_list(package: &Path, toolchain: Option<&str>) -> Result<Vec<PathBuf>> {
     let output = Command::new(std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into()))
+        .args(toolchain)
         .args(["package", "--list", "--allow-dirty", "--manifest-path"])
         .arg(package.join("Cargo.toml"))
         .output()
@@ -522,7 +531,14 @@ shared = { path = "../outside" }
         let destination = crate_root.join("ruby/ext/demo/crate");
         write(&destination.join("stale.rs"), "");
 
-        let external = copy(&crate_root, &destination, &[&crate_root.join("ruby")], true).unwrap();
+        let external = copy(
+            &crate_root,
+            &destination,
+            &[&crate_root.join("ruby")],
+            None,
+            true,
+        )
+        .unwrap();
 
         assert_eq!(
             files(&destination),
@@ -629,6 +645,7 @@ shared = { path = "../outside" }
             crate_root,
             &extension.join("crate"),
             &[crate_root, &extension],
+            None,
             false,
         )
         .unwrap();
@@ -651,6 +668,7 @@ shared = { path = "../outside" }
             &root.path().join("member"),
             &root.path().join("gem/crate"),
             &[],
+            None,
             false,
         )
         .err()
@@ -676,9 +694,15 @@ shared = { path = "../outside" }
         );
         write(&root.path().join("outside/src/lib.rs"), "");
 
-        let error = copy(&crate_root, &root.path().join("gem/crate"), &[], false)
-            .err()
-            .expect("an outside path dependency fails");
+        let error = copy(
+            &crate_root,
+            &root.path().join("gem/crate"),
+            &[],
+            None,
+            false,
+        )
+        .err()
+        .expect("an outside path dependency fails");
 
         assert!(
             error
@@ -708,7 +732,14 @@ shared = { path = "../outside" }
             "[toolchain]\nchannel = \"1.97.1\"\n",
         );
 
-        copy(&crate_root, &root.path().join("gem/crate"), &[], false).unwrap();
+        copy(
+            &crate_root,
+            &root.path().join("gem/crate"),
+            &[],
+            None,
+            false,
+        )
+        .unwrap();
 
         assert_eq!(
             files(&root.path().join("gem/crate")),
@@ -791,7 +822,14 @@ shared = { path = "../outside" }
         write(&crate_root.join("src/lib.rs"), "");
         std::os::unix::fs::symlink(&secret, crate_root.join("secret.txt")).unwrap();
 
-        copy(&crate_root, &root.path().join("gem/crate"), &[], false).unwrap();
+        copy(
+            &crate_root,
+            &root.path().join("gem/crate"),
+            &[],
+            None,
+            false,
+        )
+        .unwrap();
 
         let copied = root.path().join("gem/crate/secret.txt");
         assert_eq!(fs::read_to_string(&copied).unwrap(), "secret");

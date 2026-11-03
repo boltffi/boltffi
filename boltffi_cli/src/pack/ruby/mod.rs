@@ -98,6 +98,7 @@ pub(crate) fn pack_ruby(
         crate_root,
         &staging.path().join(CRATE_DIRECTORY),
         &[binding_expansion.target_directory(), &output, &extension],
+        binding_expansion.toolchain_selector(),
         options.allow_external_path_dependencies,
     )?;
     step.finish_success();

@@ -384,7 +384,7 @@ pub(crate) enum PackTargetArg {
     },
     #[command(
         about = "Package Ruby gem sources with the Rust crate source (experimental)",
-        long_about = "Package Ruby gem sources with the Rust crate source.\n\nOutputs:\n  - Gem sources: {targets.ruby.output}\n  - Crate source: {targets.ruby.output}/ext/<stem>/crate/\n\nThe gem carries no compiled Rust library. It builds the crate with cargo when it installs.\nRun `gem build <gem>.gemspec` in the output directory to build the gem.\n"
+        long_about = "Package Ruby gem sources with the Rust crate source.\n\nOutputs:\n  - Gem sources: {targets.ruby.output}\n  - Crate source: {targets.ruby.output}/ext/<stem>/crate/\n\nThe gem carries no compiled Rust library. It builds the crate with cargo when it installs.\nRun `gem build <gem>.gemspec` in the output directory to build the gem.\n\nLimit: an export that names a type through a `type` alias or a remote path fails at gem install.\n"
     )]
     Ruby {
         #[arg(long, help = "Enable experimental targets/features")]
