@@ -680,6 +680,15 @@ runs in a new folder with a new build directory, which holds no store. So
 crates inside the crate folder, as relative paths, so it names no folder of the
 pack machine.
 
+One limit applies. The store keeps each export type as the pack machine
+resolved it, and the install build checks each type against the store. Some
+aliases resolve to a different type on another target. For example,
+`std::ffi::c_char` is `i8` on macOS arm64 and `u8` on Linux arm64. If the
+install target resolves such a type differently, the install fails with a
+compile error that names the type. Pack the gem on a machine with the same
+type sizes as the install target, or name a fixed-size type such as `i8` in
+the export signature.
+
 The file list of the copy comes from `cargo package --list --allow-dirty` for
 the crate and for each path dependency inside the crate folder. The list
 follows `package.include`, `package.exclude`, and `.gitignore`. The copy skips
