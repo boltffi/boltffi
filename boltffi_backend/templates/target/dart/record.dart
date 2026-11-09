@@ -61,11 +61,24 @@ extension on {{ record.name() }} {
 {%- when None %}
 {%- endmatch %}
 
+{%- if record.trailing_padding() > 0 %}
+
+  factory {{ record.name() }}._m$wireDecode(_$$BoltWireDecoder _p$reader) {
+    final _l$value = {{ record.name() }}(
+{%- for field in record.fields() %}
+      {{ field.name() }}: {{ field.read() }},{% endfor %}
+    );
+    _p$reader.skip({{ record.trailing_padding() }});
+    return _l$value;
+  }
+{%- else %}
+
   factory {{ record.name() }}._m$wireDecode(_$$BoltWireDecoder _p$reader) =>
       {{ record.name() }}(
 {%- for field in record.fields() %}
         {{ field.name() }}: {{ field.read() }},{% endfor %}
       );
+{%- endif %}
 
   void _m$wireEncode(_$$BoltWireEncoder _p$writer) {
 {%- for field in record.fields() %}
@@ -73,6 +86,9 @@ extension on {{ record.name() }} {
     {{ write }}
 {%- endfor %}
 {%- endfor %}
+{%- if record.trailing_padding() > 0 %}
+    _p$writer.pad({{ record.trailing_padding() }});
+{%- endif %}
   }
 
   int _m$wireEncodedSize() => {{ record.encoded_size() }};
