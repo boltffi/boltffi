@@ -16,28 +16,46 @@ private final class BoltFFIFutureState<T>: @unchecked Sendable {
     }
 
     let handle: RustFutureHandle?
+    private let free: (RustFutureHandle?) -> Void
     private var continuationSlot: UInt64 = 0
+    // When cancellation finishes the call first, two parties still use the handle: the
+    // poll driver, whose poll can be running or queued, and the cancellation handler,
+    // which calls cancel. Each releases the handle once, and the last release frees it.
+    private var cancelledHandleUsers: UInt64 = 2
 
-    init(handle: RustFutureHandle?) {
+    init(handle: RustFutureHandle?, free: @escaping (RustFutureHandle?) -> Void) {
         self.handle = handle
+        self.free = free
     }
 
     func install(_ continuation: Continuation) -> Bool {
         let box = ContinuationBox(continuation)
         let raw = UInt64(UInt(bitPattern: Unmanaged.passRetained(box).toOpaque()))
-        let prior = withUnsafeMutablePointer(to: &continuationSlot) { slot in
-            boltffi_atomic_u64_exchange(slot, raw)
+        let installed = withUnsafeMutablePointer(to: &continuationSlot) { slot in
+            boltffi_atomic_u64_cas(slot, 0, raw)
         }
-        if prior == 0 {
+        if installed {
             return true
         }
         Unmanaged<ContinuationBox>.fromOpaque(UnsafeRawPointer(bitPattern: UInt(raw))!).release()
-        if prior != 1 {
-            withUnsafeMutablePointer(to: &continuationSlot) { slot in
-                _ = boltffi_atomic_u64_exchange(slot, prior)
+        return false
+    }
+
+    func releaseCancelledHandle() {
+        while true {
+            let users = withUnsafeMutablePointer(to: &cancelledHandleUsers) { count in
+                boltffi_atomic_u64_load(count)
+            }
+            let released = withUnsafeMutablePointer(to: &cancelledHandleUsers) { count in
+                boltffi_atomic_u64_cas(count, users, users - 1)
+            }
+            if released {
+                if users == 1 {
+                    free(handle)
+                }
+                return
             }
         }
-        return false
     }
 
     func canPoll() -> Bool {
@@ -66,17 +84,20 @@ private final class BoltFFIAsyncPollDriver: @unchecked Sendable {
     let poll: (RustFutureHandle?, UInt64, (@convention(c) (UInt64, Int8) -> Void)?) -> Int8
     let ready: () -> Void
     let canPoll: () -> Bool
+    let releaseCancelledHandle: () -> Void
 
     init(
         futureHandle: RustFutureHandle?,
         poll: @escaping (RustFutureHandle?, UInt64, (@convention(c) (UInt64, Int8) -> Void)?) -> Int8,
         ready: @escaping () -> Void,
-        canPoll: @escaping () -> Bool
+        canPoll: @escaping () -> Bool,
+        releaseCancelledHandle: @escaping () -> Void
     ) {
         self.futureHandle = futureHandle
         self.poll = poll
         self.ready = ready
         self.canPoll = canPoll
+        self.releaseCancelledHandle = releaseCancelledHandle
     }
 
     func start() {
@@ -95,6 +116,8 @@ private final class BoltFFIAsyncPollDriver: @unchecked Sendable {
                 await _Concurrency.Task.yield()
                 start()
             }
+        } else {
+            releaseCancelledHandle()
         }
     }
 }
@@ -110,10 +133,12 @@ func boltffiAsyncCall<T>(
     free: @escaping (RustFutureHandle?) -> Void,
     complete: @escaping (RustFutureHandle?, UnsafeMutablePointer<FfiStatus>?) throws -> T
 ) async throws -> T {
-    let state = BoltFFIFutureState<T>(handle: futureHandle)
+    let state = BoltFFIFutureState<T>(handle: futureHandle, free: free)
     return try await withTaskCancellationHandler {
         try await withCheckedThrowingContinuation { continuation in
             guard state.install(continuation) else {
+                // Cancellation finished the call before the first poll, so no poll will use the handle.
+                state.releaseCancelledHandle()
                 continuation.resume(throwing: CancellationError())
                 return
             }
@@ -123,6 +148,7 @@ func boltffiAsyncCall<T>(
                 ready: {
                     let finish = state.finish()
                     if case .finished = finish {
+                        state.releaseCancelledHandle()
                         return
                     }
                     var status = FfiStatus()
@@ -146,7 +172,8 @@ func boltffiAsyncCall<T>(
                         }
                     }
                 },
-                canPoll: { state.canPoll() }
+                canPoll: { state.canPoll() },
+                releaseCancelledHandle: { state.releaseCancelledHandle() }
             )
             driver.start()
         }
@@ -157,10 +184,10 @@ func boltffiAsyncCall<T>(
             break
         case .withoutContinuation:
             cancel(state.handle)
-            free(state.handle)
+            state.releaseCancelledHandle()
         case .withContinuation(let continuation):
             cancel(state.handle)
-            free(state.handle)
+            state.releaseCancelledHandle()
             continuation.resume(throwing: CancellationError())
         }
     }
