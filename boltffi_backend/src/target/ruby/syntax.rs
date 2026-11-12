@@ -1,5 +1,7 @@
 use std::fmt;
 
+use ruby_prism::StringQuery;
+
 use crate::{
     bridge::c,
     core::{Error, LanguageSyntax, Result, syntax::sealed},
@@ -32,57 +34,11 @@ pub struct ConstantPath(Vec<Constant>);
 pub struct Literal(String);
 
 impl LanguageSyntax for Syntax {
-    // The table lists the keyword tokens from Prism 1.9, the Ruby 4.1 grammar.
-    // The `ruby-prism` Rust API exposes only `parse`, not a keyword table.
-    // A parse per candidate name also adds a `bindgen` build step for all users.
+    // Prism decides which names are keywords, through `StringQuery::is_keyword`.
+    // The keyword set follows the `ruby-prism` version that this crate pins.
+    // The table holds the names that Ruby reserves beyond Prism's keywords.
     // `__END__` is not a keyword, but Ruby treats the marker as end of source.
-    // The table rejects `__END__` as an identifier name for that reason.
-    // Ruby adds keywords rarely, because a new keyword breaks valid programs.
-    // Update this table when BoltFFI raises the supported Ruby version.
-    const KEYWORDS: &'static [&'static str] = &[
-        "BEGIN",
-        "END",
-        "__ENCODING__",
-        "__END__",
-        "__FILE__",
-        "__LINE__",
-        "alias",
-        "and",
-        "begin",
-        "break",
-        "case",
-        "class",
-        "def",
-        "defined?",
-        "do",
-        "else",
-        "elsif",
-        "end",
-        "ensure",
-        "false",
-        "for",
-        "if",
-        "in",
-        "module",
-        "next",
-        "nil",
-        "not",
-        "or",
-        "redo",
-        "rescue",
-        "retry",
-        "return",
-        "self",
-        "super",
-        "then",
-        "true",
-        "undef",
-        "unless",
-        "until",
-        "when",
-        "while",
-        "yield",
-    ];
+    const KEYWORDS: &'static [&'static str] = &["__END__"];
 
     type Identifier = Identifier;
     type Type = c::TypeFragment;
@@ -90,6 +46,11 @@ impl LanguageSyntax for Syntax {
     type Stmt = c::Statement;
     type Literal = Literal;
     type Arguments = c::ArgumentList;
+
+    fn keyword(identifier: &str) -> bool {
+        Self::KEYWORDS.contains(&identifier)
+            || StringQuery::new(identifier.as_bytes()).is_keyword() == Ok(true)
+    }
 }
 
 impl sealed::LanguageSyntax for Syntax {}
