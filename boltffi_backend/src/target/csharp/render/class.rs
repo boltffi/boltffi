@@ -3,13 +3,14 @@ use boltffi_binding::{CanonicalName, ClassDecl, ConstantOwner, Native};
 
 use crate::{
     bridge::c::CBridgeContract,
-    core::{AuxChunk, Diagnostic, Emitted, Error, HelperId, RenderContext, Result},
+    core::{AuxChunk, Diagnostic, Emitted, Error, HelperId, Result},
 };
 
 use super::super::{
     name_style::{Name, Namespace},
     syntax::{Identifier, Literal, TypeFragment},
 };
+use super::Context;
 use super::{AssociatedConstants, Documentation, Function, handle_carrier_type};
 
 #[derive(Template)]
@@ -52,7 +53,7 @@ impl Class {
         declaration: &ClassDecl<Native>,
         namespace: Namespace,
         bridge: &CBridgeContract,
-        context: &RenderContext<Native>,
+        context: &Context,
     ) -> Result<Self> {
         let name = Name::new(declaration.name()).pascal()?;
         let mut initializers = Vec::new();

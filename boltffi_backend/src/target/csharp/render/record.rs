@@ -6,7 +6,7 @@ use boltffi_binding::{
 
 use crate::{
     bridge::c::{CBridgeContract, Type as CBridgeType},
-    core::{Diagnostic, Emitted, Error, RenderContext, Result},
+    core::{Diagnostic, Emitted, Error, Result},
 };
 
 use super::super::{
@@ -17,6 +17,7 @@ use super::super::{
     syntax::{Expression, Identifier, Statement, TypeFragment},
     type_name,
 };
+use super::Context;
 use super::{AssociatedConstants, Documentation, Function, Runtime, primitive_type};
 use super::{
     default_value::DefaultExpression,
@@ -63,7 +64,7 @@ impl Record {
         declaration: &RecordDecl<Native>,
         namespace: Namespace,
         bridge: &CBridgeContract,
-        context: &RenderContext<Native>,
+        context: &Context,
     ) -> Result<Self> {
         match declaration {
             RecordDecl::Direct(record) => Self::from_direct(record, namespace, bridge, context),
@@ -79,7 +80,7 @@ impl Record {
         declaration: &DirectRecordDecl<Native>,
         namespace: Namespace,
         bridge: &CBridgeContract,
-        context: &RenderContext<Native>,
+        context: &Context,
     ) -> Result<Self> {
         let c_record =
             bridge
@@ -216,7 +217,7 @@ impl Record {
         declaration: &EncodedRecordDecl<Native>,
         namespace: Namespace,
         bridge: &CBridgeContract,
-        context: &RenderContext<Native>,
+        context: &Context,
     ) -> Result<Self> {
         let name = Name::new(declaration.name()).pascal()?;
         let reader = Identifier::parse("reader")?;

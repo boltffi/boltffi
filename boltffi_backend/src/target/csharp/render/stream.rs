@@ -8,13 +8,13 @@ use crate::{
     core::{AuxChunk, Emitted, Error, HelperId, RenderContext, Result},
 };
 
-use super::super::CSharpFeatures;
 use super::super::{
     codec::{ReadExpression, Reader},
     name_style::Name,
     syntax::{Identifier, Literal, TypeFragment},
     type_name,
 };
+use super::Context;
 use super::{Documentation, FreeBufferTemplate, direct_type};
 use askama::Template;
 
@@ -52,8 +52,7 @@ impl Stream {
     pub(in crate::target::csharp) fn from_declaration(
         declaration: &StreamDecl<Native>,
         bridge: &CBridgeContract,
-        context: &RenderContext<Native>,
-        features: CSharpFeatures,
+        context: &Context,
     ) -> Result<Self> {
         let protocol =
             bridge
@@ -79,7 +78,7 @@ impl Stream {
             &format!("Native{qualified}PopBatch"),
         );
         Ok(Self {
-            interlocked_ulong: features.interlocked_ulong,
+            interlocked_ulong: context.features().interlocked_ulong,
             documentation: Documentation::summary(declaration.meta().doc(), "        "),
             runtime: Identifier::parse(format!("{qualified}StreamRuntime"))?,
             subscription: Identifier::parse(format!("{qualified}Subscription"))?,

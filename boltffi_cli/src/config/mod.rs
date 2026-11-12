@@ -2883,6 +2883,9 @@ runtime_identifiers = []
             "net10.0",
             "net8.0-windows",
             "netstandard2.0",
+            "net45",
+            "net452",
+            "net46",
             "net461",
             "net48",
         ] {
@@ -2891,7 +2894,7 @@ runtime_identifiers = []
             config.targets.csharp.target_framework = Some(framework.to_owned());
             config.validate().expect(framework);
         }
-        for framework in ["net40", "net46", "netcoreapp2.1", "monoandroid13.0"] {
+        for framework in ["net40", "net453", "netcoreapp2.1", "monoandroid13.0"] {
             let mut config = parse_config("[package]\nname = \"demo\"");
             config.targets.csharp.enabled = true;
             config.targets.csharp.target_framework = Some(framework.to_owned());

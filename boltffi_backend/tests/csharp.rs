@@ -760,6 +760,26 @@ const NET_FRAMEWORK_MISSING_APIS: &[&str] = &[
     "[^",
 ];
 
+const NET_FRAMEWORK_45_MISSING_APIS: &[&str] = &[
+    "Array.Empty",
+    "Marshal.SizeOf<",
+    "Marshal.PtrToStructure<",
+    "GetDelegateForFunctionPointer<",
+    "RunContinuationsAsynchronously",
+    "IAsyncEnumerable",
+    "EnumeratorCancellation",
+    "System.Memory",
+    "MemoryExtensions",
+    "MemoryMarshal",
+    "BinaryPrimitives",
+    "Unsafe.",
+    "Span<",
+    "ValueTask",
+    "Task.CompletedTask",
+    "Task.FromException",
+    "Task.FromCanceled",
+];
+
 fn net_framework_host(framework: &str) -> CSharpHost {
     CSharpHost::new()
         .native_library("demo_native")
@@ -800,54 +820,91 @@ fn csharp_net_framework_runtime_avoids_apis_missing_from_net_framework() {
     compile_csharp_for_net_framework_when_enabled(&output, "csharp-net461-runtime", "net461");
 }
 
-#[test]
-fn csharp_net_framework_compiles_generated_bindings() {
-    let fixtures = [
+const STATUS_FUNCTION: &str = "\n#[export]\npub fn report_progress(value: u64) {}\n";
+
+fn net_framework_fixtures() -> Vec<(&'static str, String)> {
+    let with_status = |source: &str| format!("{source}{STATUS_FUNCTION}");
+    vec![
         (
             "async",
-            include_str!("fixtures/source/exports/async_handles_and_callbacks.rs"),
+            include_str!("fixtures/source/exports/async_handles_and_callbacks.rs").to_owned(),
         ),
         (
             "async-class",
-            include_str!("fixtures/source/exports/async_class_methods.rs"),
+            include_str!("fixtures/source/exports/async_class_methods.rs").to_owned(),
         ),
         (
             "tuple",
-            include_str!("fixtures/source/exports/tuple_functions.rs"),
+            include_str!("fixtures/source/exports/tuple_functions.rs").to_owned(),
         ),
         (
             "map",
-            include_str!("fixtures/source/exports/map_functions.rs"),
+            include_str!("fixtures/source/exports/map_functions.rs").to_owned(),
         ),
         (
             "result",
-            include_str!("fixtures/source/exports/result_values.rs"),
+            include_str!("fixtures/source/exports/result_values.rs").to_owned(),
         ),
         (
             "closure",
-            include_str!("fixtures/source/exports/closure_parameter.rs"),
+            include_str!("fixtures/source/exports/closure_parameter.rs").to_owned(),
         ),
-        ("defaults", PARAMETER_DEFAULTS),
+        ("defaults", PARAMETER_DEFAULTS.to_owned()),
         (
             "direct-record",
-            include_str!("fixtures/source/exports/direct_records_and_c_style_enums.rs"),
+            include_str!("fixtures/source/exports/direct_records_and_c_style_enums.rs").to_owned(),
         ),
+        ("builtin-values", LEGACY_RUNTIME_VALUES.to_owned()),
         (
             "callback-vector",
-            include_str!("fixtures/source/callback/callback_direct_vector_parameter.rs"),
+            include_str!("fixtures/source/callback/callback_direct_vector_parameter.rs").to_owned(),
         ),
         (
             "callback-record",
-            include_str!("fixtures/source/callback/callback_record_return.rs"),
+            include_str!("fixtures/source/callback/callback_record_return.rs").to_owned(),
+        ),
+        (
+            "callback-encoded",
+            include_str!("fixtures/source/callback/callback_encoded_return.rs").to_owned(),
+        ),
+        (
+            "callback-handle",
+            include_str!("fixtures/source/callback/callback_handle_return.rs").to_owned(),
+        ),
+        (
+            "callback-status",
+            include_str!("fixtures/source/callback/callback_status_result.rs").to_owned(),
+        ),
+        (
+            "callback-async-string",
+            with_status(include_str!(
+                "fixtures/source/callback/async_callback_string_return.rs"
+            )),
+        ),
+        (
+            "callback-async-unit",
+            with_status(include_str!(
+                "fixtures/source/callback/async_callback_unit_result.rs"
+            )),
+        ),
+        (
+            "callback-async-shapes",
+            with_status(include_str!(
+                "fixtures/source/callback/async_callback_return_shapes.rs"
+            )),
         ),
         (
             "stream",
-            include_str!("fixtures/source/stream/protocol_functions.rs"),
+            include_str!("fixtures/source/stream/protocol_functions.rs").to_owned(),
         ),
-    ];
-    for (name, source) in fixtures {
+    ]
+}
+
+#[test]
+fn csharp_net_framework_compiles_generated_bindings() {
+    for (name, source) in net_framework_fixtures() {
         let output = target(net_framework_host("net461"))
-            .render(&bindings(source))
+            .render(&bindings(&source))
             .unwrap_or_else(|error| panic!("{name} renders: {error}"));
         let sources = all_sources(&output);
         for api in NET_FRAMEWORK_MISSING_APIS {
@@ -859,6 +916,109 @@ fn csharp_net_framework_compiles_generated_bindings() {
             "net461",
         );
     }
+}
+
+#[test]
+fn csharp_net_framework_45_compiles_generated_bindings() {
+    for (name, source) in net_framework_fixtures() {
+        let output = target(net_framework_host("net45"))
+            .render_partial(&bindings(&source))
+            .unwrap_or_else(|error| panic!("{name} renders: {error}"));
+        let sources = all_sources(&output);
+        for api in NET_FRAMEWORK_MISSING_APIS
+            .iter()
+            .chain(NET_FRAMEWORK_45_MISSING_APIS)
+        {
+            assert!(!sources.contains(api), "{name} output uses {api}");
+        }
+        compile_csharp_for_net_framework_when_enabled(
+            &output,
+            &format!("csharp-net45-{name}"),
+            "net45",
+        );
+    }
+}
+
+#[test]
+fn csharp_net_framework_45_runtime_avoids_apis_missing_from_net_framework_45() {
+    let output = target(net_framework_host("net45"))
+        .render(&bindings(LEGACY_RUNTIME_VALUES))
+        .expect("legacy runtime values render");
+    let sources = all_sources(&output);
+    for api in NET_FRAMEWORK_MISSING_APIS
+        .iter()
+        .chain(NET_FRAMEWORK_45_MISSING_APIS)
+    {
+        assert!(!sources.contains(api), "net45 output uses {api}");
+    }
+    insta::assert_snapshot!(
+        "csharp_net_framework_45_runtime",
+        file(&output, "Demo.cs").expect("module file")
+    );
+}
+
+#[test]
+fn csharp_net_framework_45_completes_async_callbacks_off_the_native_thread() {
+    let source = include_str!("fixtures/source/callback/async_callback_string_return.rs");
+    let bindings = bindings(&format!("{source}{STATUS_FUNCTION}"));
+    let output = target(net_framework_host("net45"))
+        .render(&bindings)
+        .expect("async callback renders");
+    let sources = all_sources(&output);
+    assert!(sources.contains("new BoltFFICompletionSource<string>()"));
+    assert!(sources.contains("internal sealed class BoltFFICompletionSource<T>"));
+    assert!(sources.contains("ThreadPool.QueueUserWorkItem"));
+    assert!(sources.contains("source.TrySetCanceled()"));
+    insta::assert_snapshot!(
+        "csharp_net_framework_45_async_callback",
+        ["Demo.cs", "Listener.cs"]
+            .map(|name| format!(
+                "===== {name} =====\n{}",
+                file(&output, name).expect("generated file")
+            ))
+            .join("\n")
+    );
+
+    let modern = target(CSharpHost::new().native_library("demo_native"))
+        .render(&bindings)
+        .expect("async callback renders for modern profiles");
+    let modern_sources = all_sources(&modern);
+    assert!(modern_sources.contains("TaskCreationOptions.RunContinuationsAsynchronously"));
+    assert!(!modern_sources.contains("BoltFFICompletionSource"));
+}
+
+#[test]
+fn csharp_net_framework_45_reports_streams_as_skipped() {
+    let bindings = bindings(include_str!("fixtures/source/stream/protocol_functions.rs"));
+    let output = target(net_framework_host("net45"))
+        .render_partial(&bindings)
+        .expect("streams are skipped in partial mode");
+    let sources = all_sources(&output);
+    assert!(!sources.contains("IAsyncEnumerable"));
+    assert!(!sources.contains("StreamRuntime"));
+    assert!(file(&output, "Engine.cs").is_some());
+    let unsupported = output.coverage().unsupported();
+    assert_eq!(unsupported.len(), 3);
+    for entry in unsupported {
+        assert!(entry.reason().contains("IAsyncEnumerable"), "{entry:?}");
+    }
+
+    let error = target(net_framework_host("net45"))
+        .render(&bindings)
+        .unwrap_err();
+    assert!(
+        matches!(
+            error,
+            boltffi_backend::BackendError::BindingCapability { .. }
+        ),
+        "{error}"
+    );
+
+    let supported = target(net_framework_host("net461"))
+        .render(&bindings)
+        .expect("streams render for the net461 profile");
+    assert!(supported.coverage().is_complete());
+    assert!(all_sources(&supported).contains("IAsyncEnumerable"));
 }
 
 #[test]
@@ -1024,7 +1184,7 @@ fn csharp_polyfills_are_emitted_only_for_legacy_profiles() {
             .expect("modern profile renders");
         assert!(file(&output, "Polyfills.cs").is_none(), "{framework}");
     }
-    for framework in ["net461", "net48", "netstandard2.0"] {
+    for framework in ["net45", "net452", "net461", "net48", "netstandard2.0"] {
         let output = target(net_framework_host(framework))
             .render(&bindings)
             .expect("legacy profile renders");
@@ -1036,7 +1196,7 @@ fn csharp_polyfills_are_emitted_only_for_legacy_profiles() {
 
 #[test]
 fn csharp_rejects_unsupported_target_frameworks() {
-    for framework in ["net40", "net46", "netcoreapp2.1", "monoandroid13.0"] {
+    for framework in ["net40", "net453", "netcoreapp2.1", "monoandroid13.0"] {
         let error = CSharpHost::new().target_framework(framework).unwrap_err();
         assert!(
             matches!(error, boltffi_backend::BackendError::CSharpTargetFramework { framework: ref name, .. } if name == framework)
@@ -1062,17 +1222,16 @@ fn compile_csharp_for_net_framework_when_enabled(
     if std::env::var_os("BOLTFFI_TEST_NET_FRAMEWORK").is_none() {
         return;
     }
-    compile_csharp_with_dotnet(
-        output,
-        prefix,
-        framework,
-        &[
+    let packages: &[(&str, &str)] = match framework {
+        "net45" => &[("System.ValueTuple", "4.5.0")],
+        _ => &[
             ("Microsoft.Bcl.AsyncInterfaces", "6.0.0"),
             ("System.Memory", "4.5.5"),
             ("System.Threading.Tasks.Extensions", "4.5.4"),
             ("System.ValueTuple", "4.5.0"),
         ],
-    );
+    };
+    compile_csharp_with_dotnet(output, prefix, framework, packages);
 }
 
 fn compile_csharp_with_dotnet(

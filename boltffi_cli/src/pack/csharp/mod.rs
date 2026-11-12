@@ -621,6 +621,7 @@ fn csharp_package_references(profile: CSharpProfile) -> &'static [(&'static str,
             ("System.Threading.Tasks.Extensions", "4.5.4"),
             ("System.ValueTuple", "4.5.0"),
         ],
+        CSharpProfile::NetFx45 => &[("System.ValueTuple", "4.5.0")],
         _ => &[],
     }
 }
@@ -1086,6 +1087,28 @@ mod tests {
                 )),
                 "missing {name}"
             );
+        }
+    }
+
+    #[test]
+    fn csharp_project_for_net_framework_45_omits_packages_it_cannot_use() {
+        let mut plan = csharp_packaging_plan(PathBuf::from("/tmp/dist/csharp"));
+        plan.target_framework = "net45".to_string();
+        plan.profile = CSharpProfile::NetFx45;
+
+        let project = render_csharp_project(&config(), &plan).expect("C# project should render");
+
+        assert!(project.contains("<TargetFramework>net45</TargetFramework>"));
+        assert!(project.contains("<LangVersion>latest</LangVersion>"));
+        assert!(
+            project.contains(r#"<PackageReference Include="System.ValueTuple" Version="4.5.0" />"#)
+        );
+        for name in [
+            "Microsoft.Bcl.AsyncInterfaces",
+            "System.Memory",
+            "System.Threading.Tasks.Extensions",
+        ] {
+            assert!(!project.contains(name), "unexpected {name}");
         }
     }
 

@@ -1,9 +1,9 @@
 use boltffi_binding::{
-    CanonicalName, CustomTypeId, DefaultValue, EnumDecl, FloatValue, Native, Primitive, TypeRef,
+    CanonicalName, CustomTypeId, DefaultValue, EnumDecl, FloatValue, Primitive, TypeRef,
 };
 
 use crate::core::{
-    RenderContext, Result,
+    Result,
     default_value::{Field as RepresentationField, Representation},
 };
 
@@ -12,6 +12,7 @@ use super::super::{
     syntax::{Expression, Literal},
     type_name,
 };
+use super::Context;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DefaultExpression {
@@ -25,7 +26,7 @@ impl DefaultExpression {
         ty: &TypeRef,
         value: &DefaultValue,
         namespace: Option<&Namespace>,
-        context: &RenderContext<Native>,
+        context: &Context,
     ) -> Result<Self> {
         if let TypeRef::Optional(inner) = ty {
             return match value {
@@ -79,7 +80,7 @@ impl DefaultExpression {
         custom_type: CustomTypeId,
         value: &DefaultValue,
         namespace: Option<&Namespace>,
-        context: &RenderContext<Native>,
+        context: &Context,
     ) -> Result<Self> {
         match Representation::resolve(custom_type, context)? {
             Representation::Transparent(representation) => {
@@ -114,7 +115,7 @@ impl DefaultExpression {
         ty: &TypeRef,
         variant_name: &CanonicalName,
         namespace: Option<&Namespace>,
-        context: &RenderContext<Native>,
+        context: &Context,
     ) -> Result<Self> {
         let TypeRef::Enum(id) = ty else {
             return super::super::unsupported("enum default type");

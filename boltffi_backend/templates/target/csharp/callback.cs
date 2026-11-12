@@ -18,13 +18,13 @@ namespace {{ callback.namespace }}
         internal {{ callback.proxy_name }}(BoltFFICallbackHandle handle)
         {
             this.handle = handle;
-            vtable = global::System.Runtime.InteropServices.Marshal.PtrToStructure<{{ callback.bridge_name }}.VTable>(handle.vtable);
+            vtable = {{ callback.vtable_read }};
         }
 
         internal BoltFFICallbackHandle CloneHandle()
         {
             if (handle.IsNull) return BoltFFICallbackHandle.Null;
-            var clone = global::System.Runtime.InteropServices.Marshal.GetDelegateForFunctionPointer<{{ callback.bridge_name }}.CloneFn>(vtable.clone);
+            var clone = {{ callback.clone_delegate }};
             ulong cloned = clone(handle.handle);
             return cloned == 0 ? BoltFFICallbackHandle.Null : new BoltFFICallbackHandle { handle = cloned, vtable = handle.vtable };
         }
@@ -37,7 +37,7 @@ namespace {{ callback.namespace }}
 {% endfor %}        private void Release()
         {
             if (handle.IsNull) return;
-            var free = global::System.Runtime.InteropServices.Marshal.GetDelegateForFunctionPointer<{{ callback.bridge_name }}.FreeFn>(vtable.free);
+            var free = {{ callback.free_delegate }};
             ulong released = handle.handle;
             handle = BoltFFICallbackHandle.Null;
             free(released);
@@ -66,7 +66,7 @@ namespace {{ callback.namespace }}
                 clone = global::System.Runtime.InteropServices.Marshal.GetFunctionPointerForDelegate(CloneDelegate),
 {% for method in callback.methods %}                {{ method.slot_name }} = global::System.Runtime.InteropServices.Marshal.GetFunctionPointerForDelegate({{ method.name }}Delegate){% if !loop.last %},{% endif %}
 {% endfor %}            };
-            VTablePointer = global::System.Runtime.InteropServices.Marshal.AllocHGlobal(global::System.Runtime.InteropServices.Marshal.SizeOf<VTable>());
+            VTablePointer = global::System.Runtime.InteropServices.Marshal.AllocHGlobal({{ callback.vtable_size }});
             global::System.Runtime.InteropServices.Marshal.StructureToPtr(table, VTablePointer, false);
             RegisterNative(VTablePointer);
         }

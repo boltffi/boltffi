@@ -16,7 +16,7 @@ pub(in crate::target::csharp) use enumeration::Enumeration;
 pub(in crate::target::csharp) use record::Record;
 pub(in crate::target::csharp) use stream::Stream;
 
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, ops::Deref};
 
 use askama::Template;
 use boltffi_binding::{
@@ -49,6 +49,33 @@ use documentation::Documentation;
 use parameter::{Overload, Parameter};
 
 const TARGET: &str = "csharp";
+
+/// Binding context together with the runtime features of the selected profile.
+pub(in crate::target::csharp) struct Context<'context, 'bindings> {
+    render: &'context RenderContext<'bindings, Native>,
+    features: CSharpFeatures,
+}
+
+impl<'context, 'bindings> Context<'context, 'bindings> {
+    pub(in crate::target::csharp) const fn new(
+        render: &'context RenderContext<'bindings, Native>,
+        features: CSharpFeatures,
+    ) -> Self {
+        Self { render, features }
+    }
+
+    pub(in crate::target::csharp) const fn features(&self) -> CSharpFeatures {
+        self.features
+    }
+}
+
+impl<'bindings> Deref for Context<'_, 'bindings> {
+    type Target = RenderContext<'bindings, Native>;
+
+    fn deref(&self) -> &Self::Target {
+        self.render
+    }
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct FunctionNames {
@@ -287,7 +314,7 @@ impl Runtime {
         Ok(match self {
             Self::Status => StatusTemplate.render()?,
             Self::Wire => WireTemplate { features }.render()?,
-            Self::Async => AsyncRuntimeTemplate.render()?,
+            Self::Async => AsyncRuntimeTemplate { features }.render()?,
             Self::Callback => CallbackRuntimeTemplate.render()?,
             Self::OwnedClosure => OwnedClosureTemplate.render()?,
         })
@@ -303,7 +330,9 @@ impl Runtime {
 
 #[derive(Template)]
 #[template(path = "target/csharp/async.cs", escape = "none")]
-struct AsyncRuntimeTemplate;
+struct AsyncRuntimeTemplate {
+    features: CSharpFeatures,
+}
 
 #[derive(Template)]
 #[template(path = "target/csharp/callback_runtime.cs", escape = "none")]
@@ -349,7 +378,7 @@ impl Function {
         symbol: &NativeSymbol,
         callable: &ExportedCallable<Native>,
         bridge: &CBridgeContract,
-        context: &RenderContext<Native>,
+        context: &Context,
     ) -> Result<Self> {
         let name = Name::new(name).pascal()?;
         let mut function = Self::from_callable(
@@ -375,7 +404,7 @@ impl Function {
         declaration: &FunctionDecl<Native>,
         type_namespace: Option<&Namespace>,
         bridge: &CBridgeContract,
-        context: &RenderContext<Native>,
+        context: &Context,
     ) -> Result<Self> {
         let name = Name::new(declaration.name()).pascal()?;
         Self::from_callable(
@@ -400,7 +429,7 @@ impl Function {
         extension: bool,
         type_namespace: Option<&Namespace>,
         bridge: &CBridgeContract,
-        context: &RenderContext<Native>,
+        context: &Context,
     ) -> Result<Self> {
         Self::from_associated(
             declaration.name(),
@@ -424,7 +453,7 @@ impl Function {
         carrier: native::HandleCarrier,
         type_namespace: Option<&Namespace>,
         bridge: &CBridgeContract,
-        context: &RenderContext<Native>,
+        context: &Context,
     ) -> Result<(Self, bool)> {
         let source_name = Name::new(declaration.name()).pascal()?;
         let primary = source_name.as_str() == "New"
@@ -464,7 +493,7 @@ impl Function {
         carrier: native::HandleCarrier,
         type_namespace: Option<&Namespace>,
         bridge: &CBridgeContract,
-        context: &RenderContext<Native>,
+        context: &Context,
     ) -> Result<Self> {
         let name = Name::new(declaration.name()).pascal()?;
         Self::from_callable(
@@ -491,7 +520,7 @@ impl Function {
         owner_name: &Identifier,
         namespace: &Namespace,
         bridge: &CBridgeContract,
-        context: &RenderContext<Native>,
+        context: &Context,
     ) -> Result<Self> {
         Self::from_associated(
             declaration.name(),
@@ -515,7 +544,7 @@ impl Function {
         extension: bool,
         type_namespace: Option<&Namespace>,
         bridge: &CBridgeContract,
-        context: &RenderContext<Native>,
+        context: &Context,
     ) -> Result<Self> {
         Self::from_associated(
             declaration.name(),
@@ -541,7 +570,7 @@ impl Function {
         write: &WritePlan,
         type_namespace: Option<&Namespace>,
         bridge: &CBridgeContract,
-        context: &RenderContext<Native>,
+        context: &Context,
     ) -> Result<Self> {
         Self::from_associated(
             declaration.name(),
@@ -569,7 +598,7 @@ impl Function {
         type_namespace: Option<&Namespace>,
         encoded_receiver: Option<EncodedReceiverPlan<'_>>,
         bridge: &CBridgeContract,
-        context: &RenderContext<Native>,
+        context: &Context,
     ) -> Result<Self> {
         let name = Name::new(declaration_name).pascal()?;
         let call_site = match extension {
@@ -607,7 +636,7 @@ impl Function {
         type_namespace: Option<&Namespace>,
         encoded_receiver: Option<EncodedReceiverPlan<'_>>,
         bridge: &CBridgeContract,
-        context: &RenderContext<Native>,
+        context: &Context,
     ) -> Result<Self> {
         let c_function = bridge_function(symbol, bridge)?;
         let (return_function, async_symbols) = match callable.execution() {
@@ -1071,7 +1100,10 @@ impl Function {
                             Expression::new(format!("(nuint){name}.Length"))
                         }
                         DirectVectorElementType::Record(_) => Expression::new(format!(
-                            "(nuint)({name}.Length * global::System.Runtime.InteropServices.Marshal.SizeOf<{element_type}>())"
+                            "(nuint)({name}.Length * {})",
+                            context
+                                .features()
+                                .marshal_size_of(&element_type.to_string())
                         )),
                         _ => return unsupported("direct-vector element type"),
                     });
@@ -1773,7 +1805,7 @@ fn lower_error(
     channel: ErrorChannel<'_, Native, OutOfRust>,
     type_namespace: Option<&Namespace>,
     c_function: &CFunction,
-    context: &RenderContext<Native>,
+    context: &Context,
 ) -> Result<Option<EncodedError>> {
     let ErrorChannel::Encoded {
         placement,
@@ -2160,7 +2192,7 @@ fn lower_encoded_receiver(
     plan: EncodedReceiverPlan<'_>,
     type_namespace: Option<&Namespace>,
     c_function: &CFunction,
-    context: &RenderContext<Native>,
+    context: &Context,
 ) -> Result<LoweredReceiver> {
     let (pointer, length, output) = match (receive, group) {
         (Receive::ByValue | Receive::ByRef, ParameterGroup::ByteSlice(group)) => {
@@ -2393,9 +2425,13 @@ impl<'module> Module<'module> {
                     "WireWriter",
                     "BoltException",
                     "BoltFFISingleBits",
+                    "BoltFFIEmptyArray",
                 ][..],
             ),
-            (Runtime::Async, &["BoltFFIAsync"][..]),
+            (
+                Runtime::Async,
+                &["BoltFFIAsync", "BoltFFICompletionSource"][..],
+            ),
             (Runtime::Callback, &["BoltFFICallbackHandle"][..]),
             (Runtime::OwnedClosure, &["BoltFFIOwnedClosure"][..]),
         ] {
