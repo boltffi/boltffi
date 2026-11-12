@@ -682,3 +682,31 @@ fn swift_target_renders_custom_type_mappings() {
         host
     ));
 }
+
+#[test]
+fn swift_wire_codecs_step_over_direct_record_padding() {
+    let rendered = rendered_fixture("records/padded_direct_record").replace("\r\n", "\n");
+    for expected in [
+        "let boltffiField0 = reader.readU16()\n        reader.skip(2)\n        let boltffiField1 = reader.readI32()",
+        "let boltffiField2 = reader.readU8()\n        reader.skip(3)\n        return Padded(tag: boltffiField0, value: boltffiField1, flag: boltffiField2)",
+        "writer.writeU16(self.tag)\n        writer.pad(2)\n        writer.writeI32(self.value)",
+        "writer.writeU8(self.flag)\n        writer.pad(3)",
+    ] {
+        assert!(
+            rendered.contains(expected),
+            "missing `{expected}` in:\n{rendered}"
+        );
+    }
+}
+
+#[test]
+fn swift_padded_decode_locals_do_not_shadow_the_reader() {
+    let rendered =
+        rendered_fixture("records/padded_direct_record_reader_field").replace("\r\n", "\n");
+    let expected = "let boltffiField0 = reader.readU8()\n        reader.skip(3)\n        let boltffiField1 = reader.readU32()\n        return Shadowing(reader: boltffiField0, value: boltffiField1)";
+    assert!(
+        rendered.contains(expected),
+        "missing `{expected}` in:\n{rendered}"
+    );
+    assert!(!rendered.contains("let reader ="));
+}

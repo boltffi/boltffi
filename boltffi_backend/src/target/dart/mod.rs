@@ -930,6 +930,30 @@ mod tests {
     }
 
     #[test]
+    fn dart_target_wire_codecs_step_over_direct_record_padding() {
+        let bindings = bindings(include_str!(
+            "../../../tests/fixtures/source/records/padded_direct_record.rs"
+        ));
+        let output = target(DartHost::new().package("demo"))
+            .render(&bindings)
+            .expect("padded direct record should render");
+        let source = file(&output, "demo/lib/demo.dart");
+        for expected in [
+            "tag: _p$reader.readU16(),",
+            "value: _p$reader.skip(2).readI32(),",
+            "flag: _p$reader.readU8(),",
+            "_p$reader.skip(3);",
+            "_p$writer.pad(2);",
+            "_p$writer.pad(3);",
+            "int _m$wireEncodedSize() => 2 + 2 + 4 + 1 + 3;",
+            "_$$BoltWireDecoder skip(int size)",
+            "void pad(int size)",
+        ] {
+            assert!(source.contains(expected), "missing `{expected}`");
+        }
+    }
+
+    #[test]
     fn dart_target_preserves_builtin_and_map_api_types() {
         let bindings = bindings(
             r#"

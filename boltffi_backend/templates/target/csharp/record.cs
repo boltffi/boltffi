@@ -22,17 +22,26 @@ namespace {{ record.namespace }}
         {
         }
 
-{% endfor %}{% if record.codec_payload %}        internal static {{ record.name }} Decode(WireReader reader) =>
+{% endfor %}{% if record.codec_payload %}{% if record.trailing_padding > 0 %}        internal static {{ record.name }} Decode(WireReader reader)
+        {
+            var value = new {{ record.name }}({% if !record.fields.is_empty() %}
+{% for field in record.fields %}                {{ field.read }}{% if !loop.last %},{% endif %}
+{% endfor %}            {% endif %});
+            reader.Skip({{ record.trailing_padding }});
+            return value;
+        }
+{% else %}        internal static {{ record.name }} Decode(WireReader reader) =>
             new {{ record.name }}({% if !record.fields.is_empty() %}
 {% for field in record.fields %}                {{ field.read }}{% if !loop.last %},{% endif %}
 {% endfor %}            {% endif %});
-
+{% endif %}
         internal void Encode(WireWriter writer)
         {
 {% for field in record.fields %}            {
 {% for statement in field.write %}{{ statement.indented(16) }}
 {% endfor %}            }
-{% endfor %}        }
+{% endfor %}{% if record.trailing_padding > 0 %}            writer.Pad({{ record.trailing_padding }});
+{% endif %}        }
 {% endif %}{% for constant in constants %}
 {{ constant }}
 {% endfor %}
