@@ -111,10 +111,6 @@ impl ModuleScope {
         self.spans.as_ref()?.source_span(span)
     }
 
-    pub(super) fn source_file(&self) -> Option<&SourceFile> {
-        self.spans.as_ref().map(SpanMap::source_file)
-    }
-
     pub(super) fn expand(&self, path: &syn::Path) -> PathExpansion {
         if path.leading_colon.is_some() {
             return PathExpansion::Unsupported;
@@ -250,10 +246,6 @@ impl SpanMap {
         let start = self.offset(span.start())?;
         let end = self.offset(span.end())?;
         (end >= start).then(|| SourceSpan::new(self.file.clone(), start, end))
-    }
-
-    fn source_file(&self) -> &SourceFile {
-        &self.file
     }
 
     fn offset(&self, location: LineColumn) -> Option<usize> {

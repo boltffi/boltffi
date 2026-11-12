@@ -16,24 +16,8 @@ pub struct ActiveCfg {
 }
 
 impl ActiveCfg {
-    pub fn from_cargo_env() -> Self {
-        std::env::vars().fold(Self::default(), |mut active, (name, value)| {
-            active.observe_cargo_env(&name, &value);
-            active
-        })
-    }
-
     pub fn with_feature(mut self, feature: impl AsRef<str>) -> Self {
         self.features.insert(Self::feature_name(feature.as_ref()));
-        self
-    }
-
-    pub fn with_features(mut self, features: impl IntoIterator<Item = impl AsRef<str>>) -> Self {
-        self.features.extend(
-            features
-                .into_iter()
-                .map(|feature| Self::feature_name(feature.as_ref())),
-        );
         self
     }
 
@@ -134,34 +118,6 @@ impl ActiveCfg {
             .filter_map(|(active, field)| active.then_some(field))
             .collect();
         Ok(())
-    }
-
-    fn observe_cargo_env(&mut self, name: &str, value: &str) {
-        if let Some(feature) = name.strip_prefix("CARGO_FEATURE_") {
-            self.features.insert(Self::feature_name(feature));
-            return;
-        }
-
-        if let Some(name) = name.strip_prefix("CARGO_CFG_") {
-            let name = Self::cfg_name(name);
-            if value.is_empty() {
-                self.names.insert(name);
-                return;
-            }
-
-            value
-                .split(',')
-                .filter(|value| !value.is_empty())
-                .for_each(|value| {
-                    if name == "feature" {
-                        self.features.insert(Self::feature_name(value));
-                    }
-                    self.values
-                        .entry(name.clone())
-                        .or_default()
-                        .insert(value.to_owned());
-                });
-        }
     }
 
     fn matches_attr(&self, attr: &Attribute) -> Result<bool, ScanError> {

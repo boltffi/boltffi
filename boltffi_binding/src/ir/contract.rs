@@ -469,23 +469,6 @@ pub enum BindingMetadataSurface {
 }
 
 impl BindingMetadataSurface {
-    /// Returns the stable metadata-build environment value for this surface.
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Native => "native",
-            Self::Wasm32 => "wasm32",
-        }
-    }
-
-    /// Parses a metadata-build environment value.
-    pub fn parse(value: &str) -> Option<Self> {
-        match value {
-            "native" => Some(Self::Native),
-            "wasm32" => Some(Self::Wasm32),
-            _ => None,
-        }
-    }
-
     /// Selects the surface a Cargo target triple compiles for.
     ///
     /// Any `wasm32*` triple resolves to [`Self::Wasm32`]; everything else,

@@ -70,6 +70,7 @@ pub use self::callbacks::has_local_protocol;
 pub use self::error::{DeclarationFamily, LowerError, LowerErrorKind, UnsupportedType};
 pub use self::records::direct_record_fields;
 pub use self::surface::SurfaceLower;
+pub use self::symbol::linkage_anchor;
 
 use self::{ids::DeclarationIds, index::Index, symbol::SymbolAllocator};
 

@@ -207,17 +207,13 @@ fn bindings_carry_the_exports_of_linked_dependencies() {
 fn a_dependency_the_library_never_links_is_refused_by_name() {
     let workspace = Workspace::write("unlinked", &["shapes", "other"], "");
 
-    let error = header(&workspace).expect_err("the unused crate's exports are not in the library");
+    let error = header(&workspace).expect_err("the unused crate is not in the library");
 
     assert!(
         matches!(
             &error,
-            GenerationError::LibrarySymbols(LibrarySymbolsError::Missing { missing, .. })
-                if missing == &[
-                    "boltffi_function_5other11other_hello".to_owned(),
-                    "boltffi_init_class_5other6Gadget3new".to_owned(),
-                    "boltffi_release_class_5other6Gadget".to_owned(),
-                ]
+            GenerationError::LibrarySymbols(LibrarySymbolsError::Unlinked { unlinked, .. })
+                if unlinked == &["other".to_owned()]
         ) && error.to_string().contains("`use <crate> as _;`"),
         "{error}"
     );
@@ -261,13 +257,9 @@ fn a_root_type_named_like_a_dependency_type_is_refused_with_both_crates() {
 fn refused_as_unlinked(error: &GenerationError, extension: &str) -> bool {
     matches!(
         error,
-        GenerationError::LibrarySymbols(LibrarySymbolsError::Missing { path, missing })
+        GenerationError::LibrarySymbols(LibrarySymbolsError::Unlinked { path, unlinked })
             if path.extension().is_some_and(|found| found == extension)
-                && missing == &[
-                    "boltffi_function_5other11other_hello".to_owned(),
-                    "boltffi_init_class_5other6Gadget3new".to_owned(),
-                    "boltffi_release_class_5other6Gadget".to_owned(),
-                ]
+                && unlinked == &["other".to_owned()]
     ) && error.to_string().contains("`use <crate> as _;`")
 }
 
@@ -296,4 +288,14 @@ fn typescript_bindings_refuse_a_dependency_the_wasm_module_never_links() {
         .expect_err("the unused crate's exports are not in the wasm module");
 
     assert!(refused_as_unlinked(&error, "wasm"), "{error}");
+}
+
+#[test]
+fn naming_a_dependency_links_it_into_the_wasm_module() {
+    let workspace = Workspace::write("wasm-used", &["shapes", "other"], "use other as _;\n");
+
+    let typescript = typescript(&workspace, Some("wasm32-unknown-unknown"))
+        .expect("a dependency named from the library crate is linked into the wasm module");
+
+    assert!(typescript.contains("otherHello"), "{typescript}");
 }

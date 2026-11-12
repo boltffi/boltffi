@@ -386,6 +386,18 @@ fn length_prefixed(segment: &str) -> String {
     format!("{}{segment}", segment.len())
 }
 
+/// Returns the symbol a records build exports from a crate's scaffolding.
+///
+/// A library exports it exactly when the crate is linked into the library, so
+/// generation can tell an unlinked dependency apart without building wrappers.
+///
+/// # Example
+///
+/// The crate `shapes` exports `boltffi_linked_6shapes`.
+pub fn linkage_anchor(crate_name: &str) -> String {
+    format!("{FFI_PREFIX}_linked_{}", symbol_path(crate_name))
+}
+
 pub fn wasm_callback_import_name(lane: &str, owner: &str, action: &str) -> String {
     format!("__{}_callback_{}_{}_{}", FFI_PREFIX, lane, owner, action)
 }
@@ -433,6 +445,15 @@ pub fn to_snake_case(name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn linkage_anchor_names_the_crate_like_every_other_symbol() {
+        assert_eq!(linkage_anchor("shapes"), "boltffi_linked_6shapes");
+        assert_eq!(
+            linkage_anchor("metadata_fixture"),
+            "boltffi_linked_16metadata_fixture"
+        );
+    }
 
     #[test]
     fn snake_case_lowercases_camel_words() {

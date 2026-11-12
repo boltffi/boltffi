@@ -15,7 +15,6 @@ use boltffi_backend::target::ruby::RubyCExtHost;
 use boltffi_backend::{CoverageMode, GeneratedOutput};
 use boltffi_bindgen::generate::{Generation, GenerationError};
 use boltffi_bindgen::target::Target;
-use boltffi_binding::BindingMetadataSurface;
 
 use crate::build::BindingExpansion;
 use crate::cargo::Cargo;
@@ -196,7 +195,6 @@ fn generate_dart_web(config: &Config, options: &GenerateOptions) -> Result<()> {
 
     expansion
         .generation()
-        .binding_surface(BindingMetadataSurface::Wasm32)
         .coverage_mode(CoverageMode::Partial)
         .dart_web_module(config.dart_web_module_name())
         .render(Target::DartWeb)
@@ -229,7 +227,6 @@ fn generate_typescript(config: &Config, options: &GenerateOptions) -> Result<()>
     expansion
         .generation()
         .triple(config.wasm_triple())
-        .binding_surface(BindingMetadataSurface::Wasm32)
         .coverage_mode(CoverageMode::Partial)
         .typescript_module(config.wasm_typescript_module_name())
         .typescript_runtime_package(config.wasm_runtime_package())

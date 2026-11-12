@@ -688,6 +688,9 @@ pub(crate) fn build_jvm_native_library(
     binding_expansion: Option<&BindingExpansion>,
     step: &Step,
 ) -> Result<JvmBuildArtifacts> {
+    if let Some(binding_expansion) = binding_expansion {
+        binding_expansion.prepare_record_store()?;
+    }
     let cargo_context = &packaging_target.cargo_context;
     let native_static_libraries = Arc::new(Mutex::new(Vec::<String>::new()));
     let captured_static_libraries = Arc::clone(&native_static_libraries);
@@ -734,9 +737,8 @@ pub(crate) fn build_jvm_native_library(
     packaging_target
         .toolchain
         .configure_cargo_build(&mut command);
-    if let Some(expansion) = binding_expansion {
+    if binding_expansion.is_some() {
         command.arg("--lib");
-        expansion.configure_rustc(&mut command)?;
     }
 
     if !run_command_streaming(&mut command, on_output.as_ref()) {
@@ -754,7 +756,7 @@ pub(crate) fn build_jvm_native_library(
 
     let native_static_libraries = if native_static_libraries.is_empty() {
         let static_library_filename = if cargo_context.library.builds_staticlib() {
-            resolve_static_library_filename(cargo_context, binding_expansion)?
+            resolve_static_library_filename(cargo_context)?
         } else {
             None
         };
@@ -767,8 +769,7 @@ pub(crate) fn build_jvm_native_library(
                 .as_ref()
                 .is_some_and(|staticlib_path| staticlib_path.exists())
         {
-            let link_metadata =
-                query_native_link_metadata(packaging_target, release, binding_expansion)?;
+            let link_metadata = query_native_link_metadata(packaging_target, release)?;
             native_link_search_paths = link_metadata.native_link_search_paths;
             link_metadata.native_static_libraries
         } else {
@@ -776,7 +777,7 @@ pub(crate) fn build_jvm_native_library(
         }
     } else {
         let static_library_filename = if cargo_context.library.builds_staticlib() {
-            resolve_static_library_filename(cargo_context, binding_expansion)?
+            resolve_static_library_filename(cargo_context)?
         } else {
             None
         };
@@ -790,15 +791,14 @@ pub(crate) fn build_jvm_native_library(
                 .is_some_and(|staticlib_path| staticlib_path.exists())
         {
             native_link_search_paths =
-                query_native_link_metadata(packaging_target, release, binding_expansion)?
-                    .native_link_search_paths;
+                query_native_link_metadata(packaging_target, release)?.native_link_search_paths;
         }
 
         native_static_libraries
     };
 
     let static_library_filename = if cargo_context.library.builds_staticlib() {
-        resolve_static_library_filename(cargo_context, binding_expansion)?
+        resolve_static_library_filename(cargo_context)?
     } else {
         None
     };
@@ -1368,7 +1368,6 @@ pub(crate) fn target_specific_java_include_env_key(rust_target_triple: &str) -> 
 pub(crate) fn query_native_link_metadata(
     packaging_target: &JvmPackagingTarget,
     release: bool,
-    binding_expansion: Option<&BindingExpansion>,
 ) -> Result<NativeLinkMetadata> {
     let cargo_context = &packaging_target.cargo_context;
     let crate_directory = std::env::current_dir().map_err(|source| CliError::CommandFailed {
@@ -1400,13 +1399,7 @@ pub(crate) fn query_native_link_metadata(
     packaging_target
         .toolchain
         .configure_cargo_build(&mut command);
-    match binding_expansion {
-        Some(expansion) => expansion.configure_rustc(&mut command)?,
-        None => {
-            command.arg("--");
-        }
-    }
-    command.arg("--print=native-static-libs");
+    command.arg("--").arg("--print=native-static-libs");
 
     let output = command.output().map_err(|source| CliError::CommandFailed {
         command: format!("cargo rustc --print=native-static-libs: {source}"),
@@ -1423,10 +1416,7 @@ pub(crate) fn query_native_link_metadata(
     NativeLinkMetadata::from_output(&output)
 }
 
-fn resolve_static_library_filename(
-    cargo_context: &JvmCargoContext,
-    binding_expansion: Option<&BindingExpansion>,
-) -> Result<Option<String>> {
+fn resolve_static_library_filename(cargo_context: &JvmCargoContext) -> Result<Option<String>> {
     let artifact_name = cargo_context.library.artifact_name();
 
     if cargo_context.host_target != JavaHostTarget::WindowsX86_64 {
@@ -1437,7 +1427,7 @@ fn resolve_static_library_filename(
         ));
     }
 
-    let filenames = query_library_filenames(cargo_context, binding_expansion)?;
+    let filenames = query_library_filenames(cargo_context)?;
     select_windows_static_library_filename(artifact_name, &filenames)
         .map(Some)
         .ok_or_else(|| CliError::CommandFailed {
@@ -1449,10 +1439,7 @@ fn resolve_static_library_filename(
         })
 }
 
-fn query_library_filenames(
-    cargo_context: &JvmCargoContext,
-    binding_expansion: Option<&BindingExpansion>,
-) -> Result<Vec<String>> {
+fn query_library_filenames(cargo_context: &JvmCargoContext) -> Result<Vec<String>> {
     let crate_directory = std::env::current_dir().map_err(|source| CliError::CommandFailed {
         command: format!("current_dir: {source}"),
         status: None,
@@ -1476,13 +1463,7 @@ fn query_library_filenames(
     }
 
     command.args(&cargo_context.cargo_command_args).arg("--lib");
-    match binding_expansion {
-        Some(expansion) => expansion.configure_rustc(&mut command)?,
-        None => {
-            command.arg("--");
-        }
-    }
-    command.arg("--print=file-names");
+    command.arg("--").arg("--print=file-names");
 
     let output = command.output().map_err(|source| CliError::CommandFailed {
         command: format!("cargo rustc --print=file-names: {source}"),

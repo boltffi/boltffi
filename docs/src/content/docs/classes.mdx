@@ -239,6 +239,12 @@ Methods with parameters that return `Self` become additional constructors. In Sw
 <CodeComparison
   title=""
   rust={`#[export]
+pub struct Database {
+    path: String,
+    read_only: bool,
+}
+
+#[export]
 impl Database {
     pub fn new() -> Self {
         Database { path: ":memory:".into(), read_only: false }
@@ -341,6 +347,12 @@ Methods with no parameters and a name other than `new` become factory methods.
 <CodeComparison
   title=""
   rust={`#[export]
+pub struct Config {
+    debug: bool,
+    timeout: u32,
+}
+
+#[export]
 impl Config {
     pub fn new() -> Self {
         Config::default_config()
@@ -428,7 +440,7 @@ impl Database {
         if !path_exists(path) {
             return Err(DbError::NotFound);
         }
-        Ok(Database { path: path.into() })
+        Ok(Database { path: path.into(), read_only: false })
     }
 }`}
   swift={`public class Database {
@@ -785,6 +797,11 @@ The C target does not generate async methods yet. In the other targets, marking 
 <CodeComparison
   title=""
   rust={`#[export]
+pub struct HttpClient {
+    client: reqwest::Client,
+}
+
+#[export]
 impl HttpClient {
     pub fn new() -> Self {
         HttpClient { client: reqwest::Client::new() }
@@ -881,13 +898,23 @@ Methods can accept or return other class instances.
 <CodeComparison
   title=""
   rust={`#[export]
+pub struct Session {
+    user_id: u64,
+}
+
+#[export]
+pub struct User {
+    id: u64,
+}
+
+#[export]
 impl Session {
     pub fn new(user: &User) -> Self {
         Session { user_id: user.id() }
     }
     
     pub fn user(&self) -> User {
-        User::find(self.user_id)
+        User { id: self.user_id }
     }
 }
 
@@ -971,9 +998,14 @@ Use `#[skip]` to exclude a method from FFI export. The method stays in Rust but 
 <CodeComparison
   title=""
   rust={`#[export]
+pub struct MyClass {
+    factor: i32,
+}
+
+#[export]
 impl MyClass {
     pub fn exported(&self) -> i32 {
-        self.helper() * 2
+        self.helper() * self.factor
     }
     
     #[skip]

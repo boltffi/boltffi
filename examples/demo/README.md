@@ -102,9 +102,9 @@ If you add an item that **does not** need cross-binder comparison, just use plai
 ## Adding a new demo surface
 
 1. Pick the right module under `src/` — for example, a new record goes in `src/records/`, a new class method in `src/classes/methods.rs`.
-2. Write the Rust code with the usual BoltFFI attributes (`#[export]`, `#[data]`, `#[data(impl)]`, derive `Object`, etc.).
+2. Write the Rust code with the usual BoltFFI attributes (`#[export]`, `#[data]`, `#[data(impl)]`, `#[error]`, etc.).
 3. Re-export from the parent `mod.rs` and, if needed, from `src/lib.rs` so host platforms see it.
-4. Regenerate bindings for whatever platforms you care about: `cargo run -p boltffi_cli -- pack <platform>` (or `just pack <platform>` for the benchmark overlay).
+4. Regenerate bindings for whatever platforms you care about: `cargo run --manifest-path ../../Cargo.toml -p boltffi_cli -- pack <platform>` (or `just pack <platform>` for the benchmark overlay).
 5. Exercise it from the corresponding `examples/platforms/<lang>` test or demo entry point.
 6. *(Optional)* If this surface should also be benchmarked against UniFFI / wasm-bindgen, add `#[benchmark_candidate(...)]`, register a case in [`benchmarks/scripts/benchmark_catalog.py`](../../benchmarks/scripts/benchmark_catalog.py), and wire the harness — see the [benchmarks README](../../benchmarks/README.md) for the full flow.
 
@@ -144,7 +144,7 @@ Per-platform entry points (all invoked for you by `verify-platform-demos.sh`):
 | Python   | `boltffi pack python --release && examples/platforms/python/test-demo.sh` |
 | C#       | `examples/platforms/csharp/test-demo.sh` (runs `boltffi pack csharp`) |
 
-Rust-side tests (the lib itself) still run via `cargo test -p demo` from this directory or `just test` from the repo root.
+Rust-side tests (the lib itself) run via `cargo test` from this directory; `just test` at the repo root does not include the demo.
 
 ## Role in the benchmark suite
 

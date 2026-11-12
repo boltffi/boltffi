@@ -440,6 +440,11 @@ Functions can accept class instances as parameters. The class reference passes a
 <CodeComparison
   title=""
   rust={`#[export]
+pub struct Logger {
+    prefix: String,
+}
+
+#[export]
 impl Logger {
     pub fn new(prefix: &str) -> Self {
         Logger { prefix: prefix.into() }

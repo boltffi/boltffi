@@ -14,9 +14,10 @@ impl<Tag> TypeInfo<Tag> for Point {
 }
 
 impl<Tag> TypeDesc<Tag> for Point {
-    const DESC: DescBuf = DescBuf::named(
+    const DESC: DescBuf = DescBuf::declared(
         <Point as TypeInfo<Tag>>::MODULE,
         <Point as TypeInfo<Tag>>::NAME,
+        "5f3c9a10e2b47d86",
     );
 }
 
@@ -47,7 +48,10 @@ fn const_written_records_decode_through_the_binding_reader() {
     assert_eq!(records[0].module, MODULE);
     assert_eq!(
         records[0].slots,
-        vec![r#"{"shape":"Vec","args":[{"id":"demo::geometry::Point"}]}"#.to_owned()],
+        vec![
+            r#"{"shape":"Vec","args":[{"id":"demo::geometry::Point","fingerprint":"5f3c9a10e2b47d86"}]}"#
+                .to_owned()
+        ],
         "the descriptor composed in const context matches the reader's grammar"
     );
     assert_eq!(records[0].json, JSON);

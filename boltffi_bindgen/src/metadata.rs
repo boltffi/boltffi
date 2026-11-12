@@ -5,7 +5,7 @@ use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus};
 
-use boltffi_binding::{BindingMetadataSurface, RawSourceRecord};
+use boltffi_binding::{RawSourceRecord, RecordStore};
 use serde::Deserialize;
 use thiserror::Error;
 
@@ -25,7 +25,6 @@ pub const SOURCE_RECORDS_ENV: &str = "BOLTFFI_SOURCE_RECORDS";
 pub struct BindingMetadataBuild {
     manifest_path: PathBuf,
     target: Option<String>,
-    surface: Option<BindingMetadataSurface>,
     toolchain_selector: Option<String>,
     cargo_args: Result<MetadataCargoArgs, LibraryCargoArgsError>,
     cargo_environment: Vec<(OsString, OsString)>,
@@ -37,7 +36,6 @@ impl BindingMetadataBuild {
         Self {
             manifest_path: manifest_path.into(),
             target: None,
-            surface: None,
             toolchain_selector: None,
             cargo_args: Ok(MetadataCargoArgs::default()),
             cargo_environment: Vec::new(),
@@ -48,19 +46,6 @@ impl BindingMetadataBuild {
     pub fn target(mut self, target: impl Into<String>) -> Self {
         self.target = Some(target.into());
         self
-    }
-
-    #[allow(missing_docs)]
-    pub fn surface(mut self, surface: BindingMetadataSurface) -> Self {
-        self.surface = Some(surface);
-        self
-    }
-
-    /// Whether the build's records describe the native surface its library exports.
-    pub fn surface_is_native(&self) -> bool {
-        self.surface
-            .unwrap_or_else(|| BindingMetadataSurface::from_target_triple(self.target.as_deref()))
-            == BindingMetadataSurface::Native
     }
 
     /// Passes Cargo build arguments to the metadata build.
@@ -107,6 +92,7 @@ impl BindingMetadataBuild {
             &manifest,
             self.toolchain_selector.as_deref(),
             &self.cargo_environment,
+            cargo_args.target_directory(),
         )?;
         metadata.library_source(&manifest)?;
         let target = match &self.target {
@@ -130,6 +116,9 @@ impl BindingMetadataBuild {
             artifacts,
             libraries,
             local_packages,
+            build_directory: metadata.build_directory().map(Path::to_path_buf),
+            workspace_root: canonical(&metadata.workspace_root),
+            crate_directories: metadata.crate_directories(),
         })
     }
 }
@@ -147,6 +136,42 @@ pub struct SourceMetadata {
     pub libraries: Vec<PathBuf>,
     /// The root and every path package its normal dependencies reach.
     pub local_packages: Vec<boltffi_ast::PackageInfo>,
+    /// Cargo's build directory for ordinary builds of the package, where the record store
+    /// lives. `None` when cargo reported neither a build nor a target directory.
+    pub build_directory: Option<PathBuf>,
+    /// Root of the workspace, canonical, which names its store among those sharing the
+    /// build directory.
+    pub workspace_root: PathBuf,
+    /// Canonical manifest directories of every crate the build compiled, which the store
+    /// covers.
+    pub crate_directories: Vec<PathBuf>,
+}
+
+impl SourceMetadata {
+    /// Writes the records to the [`RecordStore`] in the package's build directory, unless it
+    /// already holds them.
+    ///
+    /// Later builds of the package read the store, so a signature naming a type through an
+    /// alias or a remote path expands from the declaration rustc resolved it to.
+    pub fn write_record_store(&self) -> std::io::Result<()> {
+        let Some(path) = self.build_directory.as_ref().map(|directory| {
+            directory
+                .join(RecordStore::DIRECTORY)
+                .join(RecordStore::file_name(&self.workspace_root))
+        }) else {
+            return Ok(());
+        };
+        let json = RecordStore::new(&self.source_records, self.crate_directories.clone())
+            .to_json()
+            .map_err(std::io::Error::other)?;
+        if std::fs::read_to_string(&path).is_ok_and(|kept| kept == json) {
+            return Ok(());
+        }
+        if let Some(directory) = path.parent() {
+            std::fs::create_dir_all(directory)?;
+        }
+        std::fs::write(&path, json)
+    }
 }
 
 /// Failure while building a crate for embedded binding metadata.
@@ -305,18 +330,30 @@ struct CargoMetadata {
     /// any config override are already applied.
     #[serde(default)]
     target_directory: PathBuf,
+    /// Cargo's resolved build directory, which cargo versions before `build-dir` do not
+    /// report because they build in the target directory.
+    #[serde(default)]
+    build_directory: Option<PathBuf>,
+    #[serde(default)]
+    workspace_root: PathBuf,
     #[serde(default)]
     resolve: Option<MetadataResolve>,
 }
 
 impl CargoMetadata {
+    /// Loads the metadata as a build with the same `target_directory` argument resolves
+    /// it, since that argument moves the build directory cargo derives from it.
     fn load(
         manifest: &CargoManifest,
         toolchain_selector: Option<&str>,
         cargo_environment: &[(OsString, OsString)],
+        target_directory: Option<&str>,
     ) -> Result<Self, BindingMetadataBuildError> {
         let mut command = Command::new(CargoProgram::from_env().into_os_string());
         command.envs(cargo_environment.iter().map(|(key, value)| (key, value)));
+        if let Some(target_directory) = target_directory {
+            command.env("CARGO_TARGET_DIR", target_directory);
+        }
         if let Some(toolchain_selector) = toolchain_selector {
             command.arg(toolchain_selector);
         }
@@ -349,6 +386,20 @@ impl CargoMetadata {
             true => None,
             false => Some(&self.target_directory),
         }
+    }
+
+    fn build_directory(&self) -> Option<&Path> {
+        self.build_directory
+            .as_deref()
+            .or_else(|| self.target_directory())
+    }
+
+    fn crate_directories(&self) -> Vec<PathBuf> {
+        self.packages
+            .iter()
+            .filter_map(|package| package.manifest_path.parent())
+            .map(canonical)
+            .collect()
     }
 
     fn package(
@@ -532,11 +583,7 @@ impl<'build> CargoBuild<'build> {
     /// alternation reruns `boltffi`'s build script and recompiles `boltffi`
     /// and every crate that depends on it.
     fn metadata_target_dir(&self) -> Option<PathBuf> {
-        if self
-            .cargo_args
-            .iter()
-            .any(|arg| arg.starts_with("--target-dir"))
-        {
+        if self.cargo_args.target_directory().is_some() {
             return None;
         }
         Some(self.target_directory?.join("boltffi-source-records"))
@@ -616,6 +663,18 @@ impl MetadataCargoArgs {
         self.arguments.iter()
     }
 
+    /// The directory a `--target-dir` argument names, in either spelling cargo accepts.
+    fn target_directory(&self) -> Option<&str> {
+        let arguments = self.iter().collect::<Vec<_>>();
+        arguments.iter().enumerate().find_map(|(index, argument)| {
+            match argument.strip_prefix("--target-dir") {
+                Some("") => arguments.get(index + 1).map(|value| value.as_str()),
+                Some(value) => value.strip_prefix('='),
+                None => None,
+            }
+        })
+    }
+
     fn without_owned_selectors(arguments: Vec<String>) -> Vec<String> {
         let mut skip_value = false;
         arguments
@@ -638,6 +697,12 @@ impl MetadataCargoArgs {
             })
             .collect()
     }
+}
+
+/// The path with symlinks resolved, so a crate reached through a symlinked directory names
+/// the same store as the build compiling it.
+fn canonical(path: &Path) -> PathBuf {
+    std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
 }
 
 fn is_rustup_toolchain_selector(argument: &str) -> bool {
@@ -819,14 +884,43 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use boltffi_ast::PackageInfo;
-    use boltffi_binding::{BindingMetadataSurface, Decl, Native, Wasm32};
+    use boltffi_binding::{Decl, Native, Wasm32, linkage_anchor};
 
     use super::{
-        BindingMetadataBuild, BindingMetadataBuildError, CargoBuild, MetadataCargoArgs,
-        SOURCE_RECORDS_ENV, host_target,
+        BindingMetadataBuild, BindingMetadataBuildError, CargoBuild, CargoManifest, CargoMetadata,
+        MetadataCargoArgs, SOURCE_RECORDS_ENV, host_target,
     };
     use crate::artifact::BindingMetadataReader;
     use crate::cargo::LibraryCargoArgsError;
+
+    #[test]
+    fn a_target_dir_argument_names_its_directory_in_either_spelling() {
+        let separate = MetadataCargoArgs::new(["--target-dir".to_owned(), "out".to_owned()])
+            .expect("cargo arguments parse");
+        let joined =
+            MetadataCargoArgs::new(["--target-dir=out".to_owned()]).expect("cargo arguments parse");
+        let absent = MetadataCargoArgs::new(["--features".to_owned(), "ffi".to_owned()])
+            .expect("cargo arguments parse");
+
+        assert_eq!(separate.target_directory(), Some("out"));
+        assert_eq!(joined.target_directory(), Some("out"));
+        assert_eq!(absent.target_directory(), None);
+    }
+
+    #[test]
+    fn metadata_resolves_directories_with_the_build_target_dir() {
+        let fixture = FixtureCrate::with_boltffi_macros();
+        let target_directory = fixture.root.join("elsewhere");
+        let manifest = CargoManifest::new(&fixture.manifest).expect("fixture manifest");
+
+        let metadata = CargoMetadata::load(&manifest, None, &[], target_directory.to_str())
+            .expect("cargo metadata runs");
+
+        assert_eq!(
+            metadata.target_directory(),
+            Some(target_directory.as_path())
+        );
+    }
 
     #[test]
     fn metadata_build_tracks_rustup_toolchain_selector_separately() {
@@ -889,30 +983,6 @@ mod tests {
                 .iter()
                 .any(|(key, value)| *key == OsStr::new(SOURCE_RECORDS_ENV) && value.is_some()),
             "the metadata build asks every crate for its source records"
-        );
-    }
-
-    #[test]
-    fn wasm_bindings_build_the_metadata_artifact_for_the_host() {
-        let build = BindingMetadataBuild::new("/workspace/ffi/Cargo.toml")
-            .surface(BindingMetadataSurface::Wasm32);
-        let cargo_args = build.cargo_args.as_ref().unwrap();
-        let command = CargoBuild::new(
-            &build,
-            cargo_args,
-            "aarch64-apple-darwin",
-            Some(Path::new("/workspace/target")),
-        )
-        .plain_command();
-        let arguments = command
-            .get_args()
-            .map(|argument| argument.to_string_lossy().into_owned())
-            .collect::<Vec<_>>();
-
-        assert!(
-            arguments
-                .windows(2)
-                .any(|arguments| arguments == ["--target", "aarch64-apple-darwin"])
         );
     }
 
@@ -1165,11 +1235,8 @@ include!("included.rs");
             .iter()
             .map(|file| file.contents().to_owned())
             .collect::<String>();
-        let artifacts = source
-            .artifacts
-            .iter()
-            .map(|path| fs::read(path).expect("read built artifact"))
-            .collect::<Vec<_>>();
+        let library =
+            fs::read(fixture.ordinary_library(&[])).expect("read the ordinarily built library");
         for (name, symbol) in [
             ("plainAdd", "boltffi_function_16metadata_fixture9plain_add"),
             (
@@ -1191,9 +1258,9 @@ include!("included.rs");
         ] {
             assert!(swift.contains(name), "`{name}` is declared");
             assert!(
-                artifacts.iter().any(|bytes| bytes
+                library
                     .windows(symbol.len())
-                    .any(|window| window == symbol.as_bytes())),
+                    .any(|window| window == symbol.as_bytes()),
                 "`{symbol}` is exported"
             );
         }
@@ -1209,29 +1276,20 @@ include!("included.rs");
             .iter()
             .map(|arg| (*arg).to_owned())
             .collect::<Vec<_>>();
-        let source = BindingMetadataBuild::new(fixture.manifest())
-            .cargo_args(cargo_args.clone())
-            .read_source()
-            .expect("fixture compiles");
         let swift = crate::generate::Generation::new(fixture.manifest())
-            .cargo_args(cargo_args)
+            .cargo_args(cargo_args.clone())
             .render(crate::target::Target::Swift)
             .expect("fixture generates")
             .files()
             .iter()
             .map(|file| file.contents().to_owned())
             .collect::<String>();
-        let artifacts = source
-            .artifacts
-            .iter()
-            .map(|path| fs::read(path).expect("read built artifact"))
-            .collect::<Vec<_>>();
+        let library = fs::read(fixture.ordinary_library(&cargo_args))
+            .expect("read the ordinarily built library");
         let exported = |symbol: &str| {
-            artifacts.iter().any(|bytes| {
-                bytes
-                    .windows(symbol.len())
-                    .any(|window| window == symbol.as_bytes())
-            })
+            library
+                .windows(symbol.len())
+                .any(|window| window == symbol.as_bytes())
         };
         for (name, symbol) in present {
             assert!(swift.contains(name), "`{name}` is declared");
@@ -1604,32 +1662,64 @@ pub fn captured_value() -> u32 { 42 }
         }
 
         let fixture = FixtureCrate::with_boltffi_macros();
-        let target_dir = fixture.root.join("target");
-        let host = host_target(None, &[]).expect("cargo names its host");
-        let status = Command::new(std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into()))
-            .arg("build")
-            .arg("--quiet")
-            .arg("--target")
-            .arg(&host)
-            .arg("--manifest-path")
-            .arg(fixture.manifest())
-            .arg("--target-dir")
-            .arg(&target_dir)
-            .env_remove(SOURCE_RECORDS_ENV)
-            .status()
-            .expect("cargo runs");
-        assert!(status.success(), "the fixture builds without the records");
-
-        let library = target_dir
-            .join(host)
-            .join("debug")
-            .join("libmetadata_fixture.rlib");
+        let library = fixture.ordinary_library(&[]);
+        let bytes = fs::read(&library).expect("read the ordinarily built library");
+        let contains = |symbol: &str| {
+            bytes
+                .windows(symbol.len())
+                .any(|window| window == symbol.as_bytes())
+        };
         let records = BindingMetadataReader::new([library])
             .read_source_records()
             .expect("the library reads");
         assert!(
             records.is_empty(),
             "only the metadata build embeds source records"
+        );
+        assert!(
+            !contains(&linkage_anchor("metadata_fixture")),
+            "only the metadata build exports the linkage anchor"
+        );
+        assert!(
+            contains("boltffi_function_16metadata_fixture11range_width"),
+            "an ordinary build expands the wrappers"
+        );
+    }
+
+    #[test]
+    fn metadata_build_emits_records_and_a_linkage_anchor_without_wrappers() {
+        if cfg!(miri) {
+            return;
+        }
+
+        let fixture = FixtureCrate::with_boltffi_macros();
+        let source = BindingMetadataBuild::new(fixture.manifest())
+            .read_source()
+            .expect("fixture compiles");
+        let artifacts = source
+            .artifacts
+            .iter()
+            .map(|path| fs::read(path).expect("read built artifact"))
+            .collect::<Vec<_>>();
+        let contains = |symbol: &str| {
+            artifacts.iter().any(|bytes| {
+                bytes
+                    .windows(symbol.len())
+                    .any(|window| window == symbol.as_bytes())
+            })
+        };
+
+        assert!(
+            !source.source_records.is_empty(),
+            "the metadata build captures every invocation"
+        );
+        assert!(
+            contains(&linkage_anchor("metadata_fixture")),
+            "the crate exports its linkage anchor"
+        );
+        assert!(
+            !contains("boltffi_function_16metadata_fixture11range_width"),
+            "the metadata build expands no wrappers"
         );
     }
 
@@ -2263,6 +2353,32 @@ pub fn view() -> CoreFfi {
 
         fn manifest(&self) -> PathBuf {
             self.manifest.clone()
+        }
+
+        fn ordinary_library(&self, cargo_args: &[String]) -> PathBuf {
+            let target_dir = self.root.join("ordinary-target");
+            let host = host_target(None, &[]).expect("cargo names its host");
+            let status = Command::new(std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into()))
+                .arg("build")
+                .arg("--quiet")
+                .arg("--target")
+                .arg(&host)
+                .arg("--manifest-path")
+                .arg(self.manifest())
+                .arg("--target-dir")
+                .arg(&target_dir)
+                .args(cargo_args)
+                .env_remove(SOURCE_RECORDS_ENV)
+                .status()
+                .expect("cargo runs");
+            assert!(
+                status.success(),
+                "the fixture builds the way users build it"
+            );
+            target_dir
+                .join(host)
+                .join("debug")
+                .join("libmetadata_fixture.rlib")
         }
     }
 

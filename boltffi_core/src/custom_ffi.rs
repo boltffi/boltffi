@@ -41,6 +41,16 @@ pub trait ReprArg<const N: usize> {
     type Arg;
 }
 
+/// The type argument at position `N` of `Container`, written as a path.
+///
+/// A site names a declared type that a type alias holds inside a container this way, since
+/// the alias spells the container but not what it holds.
+///
+/// # Example
+///
+/// With `type Points = Vec<Point>`, `ReprArgOf<Points, 0>` is `Point`.
+pub type ReprArgOf<Container, const N: usize> = <Container as ReprArg<N>>::Arg;
+
 macro_rules! repr_arg {
     ($([$($param:ident),+] $container:ty => $index:literal: $arg:ident;)*) => {
         $(
@@ -92,7 +102,7 @@ tuple_repr_arg!(A, B, C, D, E, F, G, H, I, J, K, L);
 
 #[cfg(test)]
 mod tests {
-    use super::ReprArg;
+    use super::{ReprArg, ReprArgOf};
 
     fn arg_of<Repr: ReprArg<N>, const N: usize>() -> &'static str {
         std::any::type_name::<<Repr as ReprArg<N>>::Arg>()
@@ -106,5 +116,16 @@ mod tests {
         assert_eq!(arg_of::<Wide, 0>(), "u8");
         assert_eq!(arg_of::<Wide, 7>(), "i64");
         assert_eq!(arg_of::<Wide, 11>(), "char");
+    }
+
+    #[test]
+    fn an_alias_names_what_its_container_holds() {
+        type Readings = Vec<Option<(u8, String)>>;
+        type Label = ReprArgOf<ReprArgOf<ReprArgOf<Readings, 0>, 0>, 1>;
+
+        assert_eq!(
+            std::any::type_name::<Label>(),
+            std::any::type_name::<String>()
+        );
     }
 }
