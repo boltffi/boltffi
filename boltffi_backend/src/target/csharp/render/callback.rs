@@ -17,8 +17,8 @@ use super::super::{
     type_name,
 };
 use super::{
-    CallbackRuntimeTemplate, CopyBufferTemplate, FreeBufferTemplate, OwnedArgument,
-    OwnedCallTemplate, WireTemplate, direct_type, direct_vector_element_type, primitive_type,
+    CopyBufferTemplate, FreeBufferTemplate, OwnedArgument, OwnedCallTemplate, Runtime, direct_type,
+    direct_vector_element_type, primitive_type,
 };
 
 #[derive(Template)]
@@ -153,11 +153,10 @@ impl Callback {
     }
 
     pub(in crate::target::csharp) fn render(&self) -> Result<Emitted> {
-        let mut emitted = Emitted::primary(CallbackTemplate { callback: self }.render()?).with_aux(
-            AuxChunk::ForwardDecl(CallbackRuntimeTemplate.render()?.into()),
-        );
+        let mut emitted = Emitted::primary(CallbackTemplate { callback: self }.render()?)
+            .with_aux(Runtime::Callback.forward_decl());
         if self.requires_wire_runtime {
-            emitted = emitted.with_aux(AuxChunk::ForwardDecl(WireTemplate.render()?.into()));
+            emitted = emitted.with_aux(Runtime::Wire.forward_decl());
         }
         emitted = emitted
             .with_aux(AuxChunk::Helper {

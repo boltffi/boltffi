@@ -6,7 +6,7 @@ use boltffi_binding::{
 
 use crate::{
     bridge::c::{CBridgeContract, Type as CBridgeType},
-    core::{AuxChunk, Diagnostic, Emitted, Error, RenderContext, Result},
+    core::{Diagnostic, Emitted, Error, RenderContext, Result},
 };
 
 use super::super::{
@@ -15,7 +15,7 @@ use super::super::{
     syntax::{Expression, Identifier, Statement, TypeFragment},
     type_name,
 };
-use super::{AssociatedConstants, Documentation, Function, WireTemplate, primitive_type};
+use super::{AssociatedConstants, Documentation, Function, Runtime, primitive_type};
 
 #[derive(Template)]
 #[template(path = "target/csharp/enumeration.cs", escape = "none")]
@@ -359,7 +359,7 @@ impl Enumeration {
             .try_fold(emitted, |emitted, method| method.add_support(emitted))?;
         let mut emitted = self.constants.add_support(emitted)?;
         if !self.c_style {
-            emitted = emitted.with_aux(AuxChunk::ForwardDecl(WireTemplate.render()?.into()));
+            emitted = emitted.with_aux(Runtime::Wire.forward_decl());
         }
         Ok(emitted)
     }

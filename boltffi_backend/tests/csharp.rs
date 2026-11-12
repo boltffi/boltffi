@@ -2,8 +2,9 @@ use std::{fs, path::Path, process::Command, sync::Mutex, time::UNIX_EPOCH};
 
 use boltffi_ast::PackageInfo;
 use boltffi_backend::{
-    FilePath, GeneratedFile, GeneratedOutput, Target, bridge::c::CBridge,
-    target::csharp::CSharpHost,
+    FilePath, GeneratedFile, GeneratedOutput, Target,
+    bridge::c::CBridge,
+    target::csharp::{CSharpHost, CSharpProfile},
 };
 use boltffi_binding::{Bindings, Native, lower};
 
@@ -23,6 +24,8 @@ fn target(host: CSharpHost) -> Target<CSharpHost, CBridge> {
     host.into_target().expect("C# target")
 }
 
+const LEGACY_RUNTIME_VALUES: &str =
+    include_str!("fixtures/source/exports/legacy_runtime_values.rs");
 const CUSTOM_TYPE_DEFAULT: &str = include_str!("fixtures/source/records/custom_type_default.rs");
 const PARAMETER_DEFAULTS: &str = include_str!("fixtures/source/exports/parameter_defaults.rs");
 
@@ -745,7 +748,233 @@ fn csharp_target_renders_custom_type_defaults_through_representations() {
     compile_csharp_with_dotnet_when_available(&output, "csharp-custom-type-default");
 }
 
+const NET_FRAMEWORK_MISSING_APIS: &[&str] = &[
+    "PtrToStringUTF8",
+    "DateTime.UnixEpoch",
+    "bigEndian",
+    "SingleToInt32Bits",
+    "Int32BitsToSingle",
+    "stackalloc",
+    "[..",
+    "..]",
+    "[^",
+];
+
+fn net_framework_host(framework: &str) -> CSharpHost {
+    CSharpHost::new()
+        .native_library("demo_native")
+        .target_framework(framework)
+        .expect("supported target framework")
+}
+
+fn all_sources(output: &GeneratedOutput) -> String {
+    output
+        .files()
+        .iter()
+        .map(|file| file.contents())
+        .collect::<String>()
+}
+
+fn file<'output>(output: &'output GeneratedOutput, name: &str) -> Option<&'output str> {
+    output
+        .files()
+        .iter()
+        .find(|file| file.path().as_path() == Path::new(name))
+        .map(|file| file.contents())
+}
+
+#[test]
+fn csharp_net_framework_runtime_avoids_apis_missing_from_net_framework() {
+    let output = target(net_framework_host("net48"))
+        .render(&bindings(LEGACY_RUNTIME_VALUES))
+        .expect("legacy runtime values render");
+    let sources = all_sources(&output);
+    for api in NET_FRAMEWORK_MISSING_APIS {
+        assert!(!sources.contains(api), "net48 output uses {api}");
+    }
+    insta::assert_snapshot!(
+        "csharp_net_framework_runtime",
+        file(&output, "Demo.cs").expect("module file")
+    );
+    compile_csharp_for_net_framework_when_enabled(&output, "csharp-net48-runtime", "net48");
+    compile_csharp_for_net_framework_when_enabled(&output, "csharp-net461-runtime", "net461");
+}
+
+#[test]
+fn csharp_net_framework_compiles_generated_bindings() {
+    let fixtures = [
+        (
+            "async",
+            include_str!("fixtures/source/exports/async_handles_and_callbacks.rs"),
+        ),
+        (
+            "async-class",
+            include_str!("fixtures/source/exports/async_class_methods.rs"),
+        ),
+        (
+            "tuple",
+            include_str!("fixtures/source/exports/tuple_functions.rs"),
+        ),
+        (
+            "map",
+            include_str!("fixtures/source/exports/map_functions.rs"),
+        ),
+        (
+            "result",
+            include_str!("fixtures/source/exports/result_values.rs"),
+        ),
+        (
+            "closure",
+            include_str!("fixtures/source/exports/closure_parameter.rs"),
+        ),
+        ("defaults", PARAMETER_DEFAULTS),
+        (
+            "direct-record",
+            include_str!("fixtures/source/exports/direct_records_and_c_style_enums.rs"),
+        ),
+        (
+            "callback-vector",
+            include_str!("fixtures/source/callback/callback_direct_vector_parameter.rs"),
+        ),
+        (
+            "callback-record",
+            include_str!("fixtures/source/callback/callback_record_return.rs"),
+        ),
+        (
+            "stream",
+            include_str!("fixtures/source/stream/protocol_functions.rs"),
+        ),
+    ];
+    for (name, source) in fixtures {
+        let output = target(net_framework_host("net461"))
+            .render(&bindings(source))
+            .unwrap_or_else(|error| panic!("{name} renders: {error}"));
+        let sources = all_sources(&output);
+        for api in NET_FRAMEWORK_MISSING_APIS {
+            assert!(!sources.contains(api), "{name} output uses {api}");
+        }
+        compile_csharp_for_net_framework_when_enabled(
+            &output,
+            &format!("csharp-net461-{name}"),
+            "net461",
+        );
+    }
+}
+
+#[test]
+fn csharp_modern_profile_keeps_modern_runtime_apis() {
+    let modern = target(CSharpHost::new().native_library("demo_native"))
+        .render(&bindings(LEGACY_RUNTIME_VALUES))
+        .expect("modern runtime values render");
+    let explicit = target(
+        CSharpHost::new()
+            .native_library("demo_native")
+            .profile(CSharpProfile::Modern),
+    )
+    .render(&bindings(LEGACY_RUNTIME_VALUES))
+    .expect("explicit modern profile renders");
+    let sources = all_sources(&modern);
+    assert_eq!(sources, all_sources(&explicit));
+    for api in [
+        "Marshal.PtrToStringUTF8",
+        "BitConverter.Int32BitsToSingle",
+        "BitConverter.SingleToInt32Bits",
+        "DateTime.UnixEpoch",
+        "TryWriteBytes(bytes, bigEndian: true",
+    ] {
+        assert!(sources.contains(api), "modern output lost {api}");
+    }
+    assert!(file(&modern, "Polyfills.cs").is_none());
+    compile_csharp_with_dotnet_when_available(&modern, "csharp-modern-runtime");
+}
+
+#[test]
+fn csharp_batch_stream_handles_follow_the_profile() {
+    let bindings = bindings(include_str!("fixtures/source/stream/protocol_functions.rs"));
+    let modern = all_sources(
+        &target(CSharpHost::new().native_library("demo_native"))
+            .render(&bindings)
+            .expect("modern streams render"),
+    );
+    assert!(modern.contains("private ulong handle;"));
+    assert!(modern.contains("Interlocked.Exchange(ref handle, 0);"));
+    let legacy = all_sources(
+        &target(net_framework_host("net48"))
+            .render(&bindings)
+            .expect("legacy streams render"),
+    );
+    assert!(legacy.contains("private long handle;"));
+    assert!(legacy.contains(
+        "unchecked((ulong)global::System.Threading.Interlocked.Exchange(ref handle, 0))"
+    ));
+}
+
+#[test]
+fn csharp_polyfills_are_emitted_only_for_legacy_profiles() {
+    let bindings = bindings(LEGACY_RUNTIME_VALUES);
+    for framework in ["net5.0", "net10.0", "netcoreapp3.1", "netstandard2.1"] {
+        let output = target(net_framework_host(framework))
+            .render(&bindings)
+            .expect("modern profile renders");
+        assert!(file(&output, "Polyfills.cs").is_none(), "{framework}");
+    }
+    for framework in ["net461", "net48", "netstandard2.0"] {
+        let output = target(net_framework_host(framework))
+            .render(&bindings)
+            .expect("legacy profile renders");
+        let polyfills = file(&output, "Polyfills.cs").expect("legacy polyfills");
+        assert!(polyfills.contains("namespace System.Runtime.CompilerServices"));
+        assert!(polyfills.contains("internal static class IsExternalInit { }"));
+    }
+}
+
+#[test]
+fn csharp_rejects_unsupported_target_frameworks() {
+    for framework in ["net40", "net46", "netcoreapp2.1", "monoandroid13.0"] {
+        let error = CSharpHost::new().target_framework(framework).unwrap_err();
+        assert!(
+            matches!(error, boltffi_backend::BackendError::CSharpTargetFramework { framework: ref name, .. } if name == framework)
+        );
+        assert!(
+            error
+                .to_string()
+                .contains("targets.csharp.target_framework")
+        );
+    }
+}
+
 fn compile_csharp_with_dotnet_when_available(output: &GeneratedOutput, prefix: &str) {
+    compile_csharp_with_dotnet(output, prefix, "net10.0", &[]);
+}
+
+// Restoring the .NET Framework reference assemblies and compatibility packages needs NuGet access.
+fn compile_csharp_for_net_framework_when_enabled(
+    output: &GeneratedOutput,
+    prefix: &str,
+    framework: &str,
+) {
+    if std::env::var_os("BOLTFFI_TEST_NET_FRAMEWORK").is_none() {
+        return;
+    }
+    compile_csharp_with_dotnet(
+        output,
+        prefix,
+        framework,
+        &[
+            ("Microsoft.Bcl.AsyncInterfaces", "6.0.0"),
+            ("System.Memory", "4.5.5"),
+            ("System.Threading.Tasks.Extensions", "4.5.4"),
+            ("System.ValueTuple", "4.5.0"),
+        ],
+    );
+}
+
+fn compile_csharp_with_dotnet(
+    output: &GeneratedOutput,
+    prefix: &str,
+    framework: &str,
+    packages: &[(&str, &str)],
+) {
     let _dotnet_build_guard = DOTNET_BUILD_LOCK
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -771,16 +1000,27 @@ fn compile_csharp_with_dotnet_when_available(output: &GeneratedOutput, prefix: &
             .expect("create generated C# parent directory");
         fs::write(&path, file.contents()).expect("write generated C# source");
     }
+    let references = packages
+        .iter()
+        .map(|(name, version)| {
+            format!("    <PackageReference Include=\"{name}\" Version=\"{version}\" />\n")
+        })
+        .collect::<String>();
     fs::write(
         directory.join("Smoke.csproj"),
-        r#"<Project Sdk="Microsoft.NET.Sdk">
+        format!(
+            r#"<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework>{framework}</TargetFramework>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <LangVersion>latest</LangVersion>
   </PropertyGroup>
+  <ItemGroup>
+{references}  </ItemGroup>
 </Project>
-"#,
+"#
+        ),
     )
     .expect("write smoke csproj");
 

@@ -509,6 +509,8 @@ Controls npm package generation in `boltffi pack wasm`.
   - Default: `{package.name}`
 - `target_framework` (string, optional): Target framework for the generated NuGet package project.
   - Default: `net10.0`
+  - Also selects what the generated C# may rely on. `net5.0` and newer, `netcoreapp3.0`, `netcoreapp3.1` and `netstandard2.1` generate for modern .NET. `net461`, `net462`, `net47`, `net471`, `net472`, `net48`, `net481` and `netstandard2.0` generate for .NET Framework: the project references `Microsoft.Bcl.AsyncInterfaces`, `System.Memory`, `System.Threading.Tasks.Extensions` and `System.ValueTuple`, and a `Polyfills.cs` file is emitted.
+  - Other values are rejected.
 - `package_output` (path, optional): Directory where `boltffi pack csharp` writes `.nupkg` files.
   - Default: `{targets.csharp.output}/packages`
 - `runtime_identifiers` (array of strings, optional): Desired .NET native runtime asset outputs.

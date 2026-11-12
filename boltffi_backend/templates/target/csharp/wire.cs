@@ -26,9 +26,18 @@
         }
     }
 
-    internal sealed class WireReader
+{% if !features.bit_converter_single_bits %}    [StructLayout(LayoutKind.Explicit)]
+    internal struct BoltFFISingleBits
     {
-        private readonly nint pointer;
+        [FieldOffset(0)] internal int bits;
+        [FieldOffset(0)] internal float value;
+    }
+
+{% endif %}    internal sealed class WireReader
+    {
+{% if !features.unix_epoch %}        private static readonly global::System.DateTime UnixEpoch = new global::System.DateTime(1970, 1, 1, 0, 0, 0, global::System.DateTimeKind.Utc);
+
+{% endif %}        private readonly nint pointer;
         private readonly int length;
         private int position;
 
@@ -101,8 +110,9 @@
 
         internal ulong ReadU64() => unchecked((ulong)ReadI64());
 
-        internal float ReadF32() => global::System.BitConverter.Int32BitsToSingle(ReadI32());
-        internal double ReadF64() => global::System.BitConverter.Int64BitsToDouble(ReadI64());
+{% if features.bit_converter_single_bits %}        internal float ReadF32() => global::System.BitConverter.Int32BitsToSingle(ReadI32());
+{% else %}        internal float ReadF32() => new BoltFFISingleBits { bits = ReadI32() }.value;
+{% endif %}        internal double ReadF64() => global::System.BitConverter.Int64BitsToDouble(ReadI64());
         internal nint ReadNInt() => checked((nint)ReadI64());
         internal nuint ReadNUInt() => checked((nuint)ReadU64());
 
@@ -112,9 +122,12 @@
             if (count < 0) throw new global::System.InvalidOperationException("corrupt wire: negative string length");
             if (count == 0) return string.Empty;
             Require(count, "string payload");
-            string value = Marshal.PtrToStringUTF8(pointer + position, count)
+{% if features.marshal_utf8_strings %}            string value = Marshal.PtrToStringUTF8(pointer + position, count)
                 ?? throw new global::System.InvalidOperationException("corrupt wire: null string");
-            position += count;
+{% else %}            byte[] bytes = new byte[count];
+            Marshal.Copy(pointer + position, bytes, 0, count);
+            string value = global::System.Text.Encoding.UTF8.GetString(bytes);
+{% endif %}            position += count;
             return value;
         }
 
@@ -170,7 +183,7 @@
             int nanos = ReadI32();
             if (nanos < 0 || nanos >= 1_000_000_000)
                 throw new global::System.InvalidOperationException("corrupt wire: invalid date-time");
-            return global::System.DateTime.UnixEpoch.AddTicks(checked(
+            return {% if features.unix_epoch %}global::System.DateTime.UnixEpoch{% else %}UnixEpoch{% endif %}.AddTicks(checked(
                 seconds * global::System.TimeSpan.TicksPerSecond + nanos / 100));
         }
 
@@ -178,11 +191,23 @@
         {
             long mostSignificant = ReadI64();
             long leastSignificant = ReadI64();
-            global::System.Span<byte> bytes = stackalloc byte[16];
+{% if features.guid_big_endian %}            global::System.Span<byte> bytes = stackalloc byte[16];
             global::System.Buffers.Binary.BinaryPrimitives.WriteInt64BigEndian(bytes[..8], mostSignificant);
             global::System.Buffers.Binary.BinaryPrimitives.WriteInt64BigEndian(bytes[8..], leastSignificant);
             return new global::System.Guid(bytes, bigEndian: true);
-        }
+{% else %}            return new global::System.Guid(
+                unchecked((int)(mostSignificant >> 32)),
+                unchecked((short)(mostSignificant >> 16)),
+                unchecked((short)mostSignificant),
+                unchecked((byte)(leastSignificant >> 56)),
+                unchecked((byte)(leastSignificant >> 48)),
+                unchecked((byte)(leastSignificant >> 40)),
+                unchecked((byte)(leastSignificant >> 32)),
+                unchecked((byte)(leastSignificant >> 24)),
+                unchecked((byte)(leastSignificant >> 16)),
+                unchecked((byte)(leastSignificant >> 8)),
+                unchecked((byte)leastSignificant));
+{% endif %}        }
 
         internal global::System.Uri ReadUri() => new global::System.Uri(ReadString());
 
@@ -225,7 +250,9 @@
 
     internal sealed class WireWriter
     {
-        private byte[] buffer = new byte[64];
+{% if !features.unix_epoch %}        private static readonly global::System.DateTime UnixEpoch = new global::System.DateTime(1970, 1, 1, 0, 0, 0, global::System.DateTimeKind.Utc);
+
+{% endif %}        private byte[] buffer = new byte[64];
         private int position;
 
         internal byte[] ToArray()
@@ -294,8 +321,9 @@
             position += 8;
         }
 
-        internal void WriteF32(float value) => WriteI32(global::System.BitConverter.SingleToInt32Bits(value));
-        internal void WriteF64(double value) => WriteI64(global::System.BitConverter.DoubleToInt64Bits(value));
+{% if features.bit_converter_single_bits %}        internal void WriteF32(float value) => WriteI32(global::System.BitConverter.SingleToInt32Bits(value));
+{% else %}        internal void WriteF32(float value) => WriteI32(new BoltFFISingleBits { value = value }.bits);
+{% endif %}        internal void WriteF64(double value) => WriteI64(global::System.BitConverter.DoubleToInt64Bits(value));
         internal void WriteNInt(nint value) => WriteI64((long)value);
         internal void WriteNUInt(nuint value) => WriteU64((ulong)value);
 
@@ -329,7 +357,7 @@
         {
             if (value.Kind == global::System.DateTimeKind.Unspecified)
                 throw new global::System.ArgumentException("DateTime kind must not be unspecified", nameof(value));
-            long ticks = (value.ToUniversalTime() - global::System.DateTime.UnixEpoch).Ticks;
+            long ticks = (value.ToUniversalTime() - {% if features.unix_epoch %}global::System.DateTime.UnixEpoch{% else %}UnixEpoch{% endif %}).Ticks;
             long seconds = ticks / global::System.TimeSpan.TicksPerSecond;
             long subsecond = ticks % global::System.TimeSpan.TicksPerSecond;
             if (subsecond < 0)
@@ -343,12 +371,19 @@
 
         internal void WriteGuid(global::System.Guid value)
         {
-            global::System.Span<byte> bytes = stackalloc byte[16];
+{% if features.guid_big_endian %}            global::System.Span<byte> bytes = stackalloc byte[16];
             if (!value.TryWriteBytes(bytes, bigEndian: true, out _))
                 throw new global::System.InvalidOperationException("Guid conversion failed");
             WriteI64(global::System.Buffers.Binary.BinaryPrimitives.ReadInt64BigEndian(bytes[..8]));
             WriteI64(global::System.Buffers.Binary.BinaryPrimitives.ReadInt64BigEndian(bytes[8..]));
-        }
+{% else %}            byte[] bytes = value.ToByteArray();
+            WriteI64(unchecked(
+                ((long)bytes[3] << 56) | ((long)bytes[2] << 48) | ((long)bytes[1] << 40) | ((long)bytes[0] << 32) |
+                ((long)bytes[5] << 24) | ((long)bytes[4] << 16) | ((long)bytes[7] << 8) | bytes[6]));
+            WriteI64(unchecked(
+                ((long)bytes[8] << 56) | ((long)bytes[9] << 48) | ((long)bytes[10] << 40) | ((long)bytes[11] << 32) |
+                ((long)bytes[12] << 24) | ((long)bytes[13] << 16) | ((long)bytes[14] << 8) | bytes[15]));
+{% endif %}        }
 
         internal void WriteUri(global::System.Uri value) => WriteString(value.ToString());
 

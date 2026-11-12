@@ -39,6 +39,7 @@ use crate::{
 };
 
 use super::{
+    CSharpFeatures,
     codec::{ReadExpression, Reader, Writer, primitive_read_method, primitive_write_method},
     name_style::{Name, Namespace},
     syntax::{ArgumentList, Expression, Identifier, Literal, Statement, Syntax, TypeFragment},
@@ -229,7 +230,76 @@ struct StatusTemplate;
 
 #[derive(Template)]
 #[template(path = "target/csharp/wire.cs", escape = "none")]
-struct WireTemplate;
+struct WireTemplate {
+    features: CSharpFeatures,
+}
+
+#[derive(Template)]
+#[template(path = "target/csharp/polyfill.cs", escape = "none")]
+struct PolyfillTemplate {
+    features: CSharpFeatures,
+}
+
+/// Support source shared by every generated file of one module.
+///
+/// Renderers request a unit by marker and the module expands it for the
+/// profile it renders, so the text of each unit is chosen in one place.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum Runtime {
+    Status,
+    Wire,
+    Async,
+    Callback,
+    OwnedClosure,
+}
+
+impl Runtime {
+    const MARKER: &'static str = "//boltffi-runtime:";
+
+    pub(super) fn forward_decl(self) -> AuxChunk {
+        AuxChunk::ForwardDecl(format!("{}{}", Self::MARKER, self.name()).into())
+    }
+
+    fn name(self) -> &'static str {
+        match self {
+            Self::Status => "status",
+            Self::Wire => "wire",
+            Self::Async => "async",
+            Self::Callback => "callback",
+            Self::OwnedClosure => "owned-closure",
+        }
+    }
+
+    fn from_marker(text: &str) -> Option<Self> {
+        let name = text.strip_prefix(Self::MARKER)?;
+        [
+            Self::Status,
+            Self::Wire,
+            Self::Async,
+            Self::Callback,
+            Self::OwnedClosure,
+        ]
+        .into_iter()
+        .find(|runtime| runtime.name() == name)
+    }
+
+    fn render(self, features: CSharpFeatures) -> Result<String> {
+        Ok(match self {
+            Self::Status => StatusTemplate.render()?,
+            Self::Wire => WireTemplate { features }.render()?,
+            Self::Async => AsyncRuntimeTemplate.render()?,
+            Self::Callback => CallbackRuntimeTemplate.render()?,
+            Self::OwnedClosure => OwnedClosureTemplate.render()?,
+        })
+    }
+
+    fn expand(text: String, features: CSharpFeatures) -> Result<String> {
+        match Self::from_marker(&text) {
+            Some(runtime) => runtime.render(features),
+            None => Ok(text),
+        }
+    }
+}
 
 #[derive(Template)]
 #[template(path = "target/csharp/async.cs", escape = "none")]
@@ -1541,7 +1611,7 @@ impl Function {
         });
         if let Some(asynchronous) = &self.asynchronous {
             emitted = emitted
-                .with_aux(AuxChunk::ForwardDecl(AsyncRuntimeTemplate.render()?.into()))
+                .with_aux(Runtime::Async.forward_decl())
                 .with_aux(AuxChunk::Helper {
                     id: asynchronous.helper_id.clone(),
                     text: AsyncNativeTemplate { asynchronous }.render()?.into(),
@@ -1554,21 +1624,18 @@ impl Function {
             });
         }
         if !self.closure_helpers.is_empty() {
-            emitted =
-                emitted.with_aux(AuxChunk::ForwardDecl(OwnedClosureTemplate.render()?.into()));
+            emitted = emitted.with_aux(Runtime::OwnedClosure.forward_decl());
         }
         let emitted = match self.checks_status || self.asynchronous.is_some() {
-            true => emitted.with_aux(AuxChunk::ForwardDecl(StatusTemplate.render()?.into())),
+            true => emitted.with_aux(Runtime::Status.forward_decl()),
             false => emitted,
         };
         let emitted = match self.requires_wire_runtime {
-            true => emitted.with_aux(AuxChunk::ForwardDecl(WireTemplate.render()?.into())),
+            true => emitted.with_aux(Runtime::Wire.forward_decl()),
             false => emitted,
         };
         let emitted = match self.requires_callback_runtime {
-            true => emitted.with_aux(AuxChunk::ForwardDecl(
-                CallbackRuntimeTemplate.render()?.into(),
-            )),
+            true => emitted.with_aux(Runtime::Callback.forward_decl()),
             false => emitted,
         };
         let emitted = match &self.free_buffer_entry {
@@ -2207,6 +2274,7 @@ pub(super) struct Module<'module> {
     class_name: Identifier,
     library: Literal,
     copy_buffer_entry: Literal,
+    features: CSharpFeatures,
 }
 
 impl<'module> Module<'module> {
@@ -2215,12 +2283,14 @@ impl<'module> Module<'module> {
         class_name: Identifier,
         library: Literal,
         copy_buffer_entry: Literal,
+        features: CSharpFeatures,
     ) -> Self {
         Self {
             namespace,
             class_name,
             library,
             copy_buffer_entry,
+            features,
         }
     }
 
@@ -2285,7 +2355,7 @@ impl<'module> Module<'module> {
                             .or_insert_with(|| Statement::new(text.into_string()));
                     }
                     AuxChunk::ForwardDecl(forward) => {
-                        let forward = forward.into_string();
+                        let forward = Runtime::expand(forward.into_string(), self.features)?;
                         support
                             .entry(forward.clone())
                             .or_insert_with(|| Statement::new(forward));
@@ -2300,7 +2370,7 @@ impl<'module> Module<'module> {
             }
         }
 
-        let wire_runtime = WireTemplate.render()?;
+        let wire_runtime = Runtime::Wire.render(self.features)?;
         if support.contains_key(&wire_runtime) {
             native_functions
                 .entry(HelperId::new(CanonicalName::single("csharp_copy_buffer")))
@@ -2314,19 +2384,22 @@ impl<'module> Module<'module> {
 
         let native_functions = native_functions.into_values().collect::<Vec<_>>();
         for (source, names) in [
-            (StatusTemplate.render()?, &["FfiStatus"][..]),
+            (Runtime::Status, &["FfiStatus"][..]),
             (
-                WireTemplate.render()?,
-                &["FfiBuf", "WireReader", "WireWriter", "BoltException"][..],
+                Runtime::Wire,
+                &[
+                    "FfiBuf",
+                    "WireReader",
+                    "WireWriter",
+                    "BoltException",
+                    "BoltFFISingleBits",
+                ][..],
             ),
-            (AsyncRuntimeTemplate.render()?, &["BoltFFIAsync"][..]),
-            (
-                CallbackRuntimeTemplate.render()?,
-                &["BoltFFICallbackHandle"][..],
-            ),
-            (OwnedClosureTemplate.render()?, &["BoltFFIOwnedClosure"][..]),
+            (Runtime::Async, &["BoltFFIAsync"][..]),
+            (Runtime::Callback, &["BoltFFICallbackHandle"][..]),
+            (Runtime::OwnedClosure, &["BoltFFIOwnedClosure"][..]),
         ] {
-            if support.contains_key(&source)
+            if support.contains_key(&source.render(self.features)?)
                 && names.contains(&self.class_name.as_str().trim_start_matches('@'))
             {
                 return Err(Error::CSharpModuleClassCollision {
@@ -2347,6 +2420,15 @@ impl<'module> Module<'module> {
         .render()?;
         let path = FilePath::new(format!("{}.cs", self.class_name.as_str()))?;
         files.push(GeneratedFile::new(path, source));
+        if self.features.needs_polyfills() {
+            files.push(GeneratedFile::new(
+                FilePath::new("Polyfills.cs")?,
+                PolyfillTemplate {
+                    features: self.features,
+                }
+                .render()?,
+            ));
+        }
         Ok(GeneratedOutput::new(files, diagnostics))
     }
 }

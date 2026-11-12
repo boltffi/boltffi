@@ -28,7 +28,8 @@
   <ItemGroup>
     <Compile Include="src/**/*.cs" />
     <None Include="runtimes/**/*" Pack="true" PackagePath="%(Identity)" />
-{% if let Some(package_icon) = nuget.package_icon() %}    <None Include="{{ package_icon.include_path() }}" Pack="true" PackagePath="" />
+{% for (name, version) in package_references %}    <PackageReference Include="{{ name }}" Version="{{ version }}" />
+{% endfor %}{% if let Some(package_icon) = nuget.package_icon() %}    <None Include="{{ package_icon.include_path() }}" Pack="true" PackagePath="" />
 {% endif %}{% if let Some(package_readme_file) = nuget.package_readme_file() %}    <None Include="{{ package_readme_file.include_path() }}" Pack="true" PackagePath="" />
 {% endif %}
   </ItemGroup>

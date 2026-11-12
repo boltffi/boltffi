@@ -8,6 +8,7 @@ use crate::{
     core::{AuxChunk, Emitted, Error, HelperId, RenderContext, Result},
 };
 
+use super::super::CSharpFeatures;
 use super::super::{
     codec::{ReadExpression, Reader},
     name_style::Name,
@@ -33,6 +34,7 @@ pub(in crate::target::csharp) struct Stream {
     unsubscribe: String,
     free: String,
     free_buffer: Literal,
+    interlocked_ulong: bool,
 }
 
 struct StreamItem {
@@ -51,6 +53,7 @@ impl Stream {
         declaration: &StreamDecl<Native>,
         bridge: &CBridgeContract,
         context: &RenderContext<Native>,
+        features: CSharpFeatures,
     ) -> Result<Self> {
         let protocol =
             bridge
@@ -76,6 +79,7 @@ impl Stream {
             &format!("Native{qualified}PopBatch"),
         );
         Ok(Self {
+            interlocked_ulong: features.interlocked_ulong,
             documentation: Documentation::summary(declaration.meta().doc(), "        "),
             runtime: Identifier::parse(format!("{qualified}StreamRuntime"))?,
             subscription: Identifier::parse(format!("{qualified}Subscription"))?,
@@ -118,7 +122,7 @@ impl Stream {
             });
         if self.item.encoded {
             emitted = emitted
-                .with_aux(AuxChunk::ForwardDecl(super::WireTemplate.render()?.into()))
+                .with_aux(super::Runtime::Wire.forward_decl())
                 .with_aux(AuxChunk::Helper {
                     id: HelperId::new(CanonicalName::single("csharp_free_buffer")),
                     text: FreeBufferTemplate {
@@ -216,10 +220,24 @@ impl Stream {
             self.free_method(),
             indent(&self.item.read_batch, 12),
         );
+        let (handle_type, store_handle, load_handle, take_handle) = match self.interlocked_ulong {
+            true => (
+                "ulong",
+                "handle",
+                "handle",
+                "global::System.Threading.Interlocked.Exchange(ref handle, 0)",
+            ),
+            false => (
+                "long",
+                "unchecked((long)handle)",
+                "unchecked((ulong)handle)",
+                "unchecked((ulong)global::System.Threading.Interlocked.Exchange(ref handle, 0))",
+            ),
+        };
         let delivery = match self.mode {
             StreamMode::Async => String::new(),
             StreamMode::Batch => format!(
-                "\n\n        internal static {} Create({receiver_only}) => new {}({});\n    }}\n\n    public sealed class {} : global::System.IDisposable\n    {{\n        private ulong handle;\n        internal {}(ulong handle) => this.handle = handle;\n\n        public {item}[] PopBatch(nuint maxCount = 16) => handle == 0 ? global::System.Array.Empty<{item}>() : {}.ReadBatch(handle, maxCount);\n        public int Wait(uint timeoutMilliseconds) => handle == 0 ? -1 : NativeMethods.{}(handle, timeoutMilliseconds);\n        public void Unsubscribe() {{ if (handle != 0) NativeMethods.{}(handle); }}\n        public void Dispose()\n        {{\n            ulong released = global::System.Threading.Interlocked.Exchange(ref handle, 0);\n            if (released == 0) return;\n            NativeMethods.{}(released);\n            NativeMethods.{}(released);\n            global::System.GC.SuppressFinalize(this);\n        }}\n        ~{}() {{ if (handle != 0) NativeMethods.{}(handle); }}\n",
+                "\n\n        internal static {} Create({receiver_only}) => new {}({});\n    }}\n\n    public sealed class {} : global::System.IDisposable\n    {{\n        private {handle_type} handle;\n        internal {}(ulong handle) => this.handle = {store_handle};\n\n        public {item}[] PopBatch(nuint maxCount = 16) => handle == 0 ? global::System.Array.Empty<{item}>() : {}.ReadBatch({load_handle}, maxCount);\n        public int Wait(uint timeoutMilliseconds) => handle == 0 ? -1 : NativeMethods.{}({load_handle}, timeoutMilliseconds);\n        public void Unsubscribe() {{ if (handle != 0) NativeMethods.{}({load_handle}); }}\n        public void Dispose()\n        {{\n            ulong released = {take_handle};\n            if (released == 0) return;\n            NativeMethods.{}(released);\n            NativeMethods.{}(released);\n            global::System.GC.SuppressFinalize(this);\n        }}\n        ~{}() {{ if (handle != 0) NativeMethods.{}({load_handle}); }}\n",
                 self.subscription,
                 self.subscription,
                 self.subscribe_call(),

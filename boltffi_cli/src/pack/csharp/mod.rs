@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use askama::Template;
+use boltffi_backend::target::csharp::CSharpProfile;
 use boltffi_bindgen::cargo::LibraryCargoArgs;
 
 use crate::build::{
@@ -118,6 +119,7 @@ struct CSharpPackagingPlan {
     package_id: String,
     package_version: String,
     target_framework: String,
+    profile: CSharpProfile,
     artifact_name: String,
     source_directory: PathBuf,
     generation_cargo_args: Vec<String>,
@@ -245,12 +247,21 @@ impl CSharpPackagingPlan {
             root_directory,
         };
 
+        let target_framework = config.csharp_target_framework();
+        let profile = CSharpProfile::from_target_framework(&target_framework).map_err(|error| {
+            CliError::CommandFailed {
+                command: error.to_string(),
+                status: None,
+            }
+        })?;
+
         Ok(Self {
             package_id: config.csharp_package_id(),
             package_version: config
                 .package_version()
                 .unwrap_or_else(|| "0.1.0".to_string()),
-            target_framework: config.csharp_target_framework(),
+            target_framework,
+            profile,
             artifact_name,
             source_directory,
             generation_cargo_args: cargo_command_args,
@@ -443,6 +454,20 @@ fn sync_csharp_project(config: &Config, plan: &CSharpPackagingPlan) -> Result<()
         }
     })?;
 
+    if !plan.profile.features().needs_polyfills() {
+        let polyfills = plan.layout.source_directory.join("Polyfills.cs");
+        match std::fs::remove_file(&polyfills) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(source) => {
+                return Err(CliError::WriteFailed {
+                    path: polyfills,
+                    source,
+                });
+            }
+        }
+    }
+
     let project = render_csharp_project(config, plan)?;
     std::fs::write(&plan.layout.project_path, project).map_err(|source| CliError::WriteFailed {
         path: plan.layout.project_path.clone(),
@@ -454,6 +479,7 @@ fn sync_csharp_project(config: &Config, plan: &CSharpPackagingPlan) -> Result<()
 #[template(path = "BoltFFI.CSharp.csproj.xml", escape = "html")]
 struct CSharpProjectTemplate<'a> {
     target_framework: &'a str,
+    package_references: &'a [(&'a str, &'a str)],
     runtime_identifiers: &'a [CSharpRuntimeIdentifier],
     package_id: &'a str,
     package_version: &'a str,
@@ -587,6 +613,18 @@ impl CSharpPackageFile {
     }
 }
 
+fn csharp_package_references(profile: CSharpProfile) -> &'static [(&'static str, &'static str)] {
+    match profile {
+        CSharpProfile::NetFx46 => &[
+            ("Microsoft.Bcl.AsyncInterfaces", "6.0.0"),
+            ("System.Memory", "4.5.5"),
+            ("System.Threading.Tasks.Extensions", "4.5.4"),
+            ("System.ValueTuple", "4.5.0"),
+        ],
+        _ => &[],
+    }
+}
+
 fn render_csharp_project(config: &Config, plan: &CSharpPackagingPlan) -> Result<String> {
     let runtime_identifiers = plan
         .packaging_targets
@@ -597,6 +635,7 @@ fn render_csharp_project(config: &Config, plan: &CSharpPackagingPlan) -> Result<
 
     CSharpProjectTemplate {
         target_framework: &plan.target_framework,
+        package_references: csharp_package_references(plan.profile),
         runtime_identifiers: &runtime_identifiers,
         package_id: &plan.package_id,
         package_version: &plan.package_version,
@@ -715,7 +754,7 @@ mod tests {
     use super::{
         CSharpCargoContext, CSharpPackageLayout, CSharpPackagingPlan, CSharpPackagingTarget,
         csharp_no_build_config_args, pack_csharp, remove_stale_csharp_runtime_assets,
-        render_csharp_project,
+        render_csharp_project, sync_csharp_project,
     };
     use crate::build::CargoBuildProfile;
     use crate::cargo::{Cargo, CargoCrateType};
@@ -726,6 +765,7 @@ mod tests {
     };
     use crate::reporter::{Reporter, Verbosity};
     use crate::target::{CSharpRuntimeIdentifier, NativeHostPlatform};
+    use boltffi_backend::target::csharp::CSharpProfile;
     use std::path::{Path, PathBuf};
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -861,6 +901,7 @@ mod tests {
             package_id: "Demo.Runtime".to_string(),
             package_version: "1.2.3".to_string(),
             target_framework: "net10.0".to_string(),
+            profile: CSharpProfile::Modern,
             artifact_name: "demo".to_string(),
             source_directory: PathBuf::from("/tmp/demo"),
             generation_cargo_args: Vec::new(),
@@ -1004,6 +1045,62 @@ mod tests {
         assert!(project.contains("<Description>Demo &#60;runtime&#62;</Description>"));
         assert!(project.contains("<PackageLicenseExpression>MIT</PackageLicenseExpression>"));
         assert!(project.contains("<RepositoryUrl>https://example.com/demo</RepositoryUrl>"));
+    }
+
+    #[test]
+    fn csharp_project_references_no_packages_for_the_modern_profile() {
+        let plan = csharp_packaging_plan(PathBuf::from("/tmp/dist/csharp"));
+
+        let project = render_csharp_project(&config(), &plan).expect("C# project should render");
+
+        assert!(!project.contains("<PackageReference"));
+        assert!(project.contains("<LangVersion>latest</LangVersion>"));
+    }
+
+    #[test]
+    fn csharp_project_references_compatibility_packages_for_net_framework() {
+        let mut plan = csharp_packaging_plan(PathBuf::from("/tmp/dist/csharp"));
+        plan.target_framework = "net48".to_string();
+        plan.profile = CSharpProfile::NetFx46;
+
+        let project = render_csharp_project(&config(), &plan).expect("C# project should render");
+
+        assert!(project.contains("<TargetFramework>net48</TargetFramework>"));
+        assert!(project.contains("<LangVersion>latest</LangVersion>"));
+        for (name, version) in [
+            ("Microsoft.Bcl.AsyncInterfaces", "6.0.0"),
+            ("System.Memory", "4.5.5"),
+            ("System.Threading.Tasks.Extensions", "4.5.4"),
+            ("System.ValueTuple", "4.5.0"),
+        ] {
+            assert!(
+                project.contains(&format!(
+                    r#"<PackageReference Include="{name}" Version="{version}" />"#
+                )),
+                "missing {name}"
+            );
+        }
+    }
+
+    #[test]
+    fn syncing_the_project_removes_stale_polyfills_for_the_modern_profile() {
+        let root = unique_temp_dir("boltffi-csharp-polyfill-test");
+        let mut plan = csharp_packaging_plan(root.clone());
+        let polyfills = plan.layout.source_directory.join("Polyfills.cs");
+
+        plan.target_framework = "net48".to_string();
+        plan.profile = CSharpProfile::NetFx46;
+        sync_csharp_project(&config(), &plan).expect("sync legacy project");
+        std::fs::write(&polyfills, "").expect("write polyfills");
+        sync_csharp_project(&config(), &plan).expect("sync legacy project again");
+        assert!(polyfills.exists());
+
+        plan.target_framework = "net10.0".to_string();
+        plan.profile = CSharpProfile::Modern;
+        sync_csharp_project(&config(), &plan).expect("sync modern project");
+        assert!(!polyfills.exists());
+
+        std::fs::remove_dir_all(root).expect("cleanup polyfill test directory");
     }
 
     #[test]

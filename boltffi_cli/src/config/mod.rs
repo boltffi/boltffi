@@ -1,7 +1,10 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use boltffi_backend::{CustomTypeMapping, target::python::PackageModule};
+use boltffi_backend::{
+    CustomTypeMapping,
+    target::{csharp::CSharpProfile, python::PackageModule},
+};
 use boltffi_bindgen::target::Target;
 use serde::{Deserialize, Serialize};
 
@@ -299,6 +302,9 @@ impl Config {
                     "targets.csharp.target_framework must not be empty".to_string(),
                 ));
             }
+
+            CSharpProfile::from_target_framework(&self.csharp_target_framework())
+                .map_err(|error| ConfigError::Validation(error.to_string()))?;
 
             validate_optional_non_empty_string(
                 self.targets.csharp.nuget.title.as_deref(),
@@ -2846,6 +2852,32 @@ runtime_identifiers = []
             assert!(
                 matches!(config.validate(), Err(ConfigError::Validation(message))
                 if message.contains("targets.csharp.module_class must be a C# identifier"))
+            );
+        }
+    }
+
+    #[test]
+    fn validates_csharp_target_framework_against_supported_profiles() {
+        for framework in [
+            "net10.0",
+            "net8.0-windows",
+            "netstandard2.0",
+            "net461",
+            "net48",
+        ] {
+            let mut config = parse_config("[package]\nname = \"demo\"");
+            config.targets.csharp.enabled = true;
+            config.targets.csharp.target_framework = Some(framework.to_owned());
+            config.validate().expect(framework);
+        }
+        for framework in ["net40", "net46", "netcoreapp2.1", "monoandroid13.0"] {
+            let mut config = parse_config("[package]\nname = \"demo\"");
+            config.targets.csharp.enabled = true;
+            config.targets.csharp.target_framework = Some(framework.to_owned());
+            assert!(
+                matches!(config.validate(), Err(ConfigError::Validation(message))
+                if message.contains("targets.csharp.target_framework")),
+                "{framework}"
             );
         }
     }

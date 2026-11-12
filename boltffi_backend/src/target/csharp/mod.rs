@@ -3,6 +3,7 @@
 mod codec;
 mod lexical;
 mod name_style;
+mod profile;
 mod render;
 mod syntax;
 mod type_name;
@@ -27,6 +28,7 @@ use syntax::Literal;
 pub use crate::core::{
     CustomTypeConversion as CSharpCustomConversion, CustomTypeMapping as CSharpCustomMapping,
 };
+pub use profile::{CSharpFeatures, CSharpProfile};
 pub use syntax::{ArgumentList, Expression, Identifier, Statement, Syntax, TypeFragment};
 
 /// C# host renderer for direct P/Invoke calls into the BoltFFI C ABI.
@@ -36,6 +38,7 @@ pub struct CSharpHost {
     namespace: Option<Namespace>,
     module_class: Option<Identifier>,
     library: Option<String>,
+    profile: CSharpProfile,
     custom_mappings: crate::core::CustomTypeMappingSet,
 }
 
@@ -61,6 +64,17 @@ impl CSharpHost {
     pub fn native_library(mut self, library: impl Into<String>) -> Self {
         self.library = Some(library.into());
         self
+    }
+
+    /// Selects the runtime profile the generated C# has to compile against.
+    pub fn profile(mut self, profile: CSharpProfile) -> Self {
+        self.profile = profile;
+        self
+    }
+
+    /// Selects the runtime profile from a target framework moniker such as `net48`.
+    pub fn target_framework(self, framework: impl AsRef<str>) -> Result<Self> {
+        Ok(self.profile(CSharpProfile::from_target_framework(framework.as_ref())?))
     }
 
     /// Registers a C# API mapping for one custom type.
@@ -235,7 +249,8 @@ impl host::HostBackend for CSharpHost {
         bridge: &Self::Bridge,
         context: &RenderContext<Self::Surface>,
     ) -> Result<Emitted> {
-        let stream = render::Stream::from_declaration(decl, bridge, context)?;
+        let stream =
+            render::Stream::from_declaration(decl, bridge, context, self.profile.features())?;
         self.validate_module_class(context.bindings(), stream.namespace_type_names()?)?;
         stream.render()
     }
@@ -280,6 +295,7 @@ impl host::HostBackend for CSharpHost {
             self.module_class_for(bindings)?,
             Literal::string(&self.library_for(bindings)),
             Literal::string(bridge.support().buffer_from_bytes()?.name()),
+            self.profile.features(),
         )
         .render(declarations)
     }
