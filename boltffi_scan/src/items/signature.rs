@@ -6,11 +6,12 @@ use syn::spanned::Spanned;
 
 use crate::attributes::Attributes;
 use crate::type_expr::Scanner;
+use crate::unsupported::UnsupportedFeature;
 use crate::{ScanError, attributes, name, unsupported};
 
 pub(super) fn validate(signature: &syn::Signature, item: String) -> Result<(), ScanError> {
     unsupported::generics(&signature.generics, &item)?;
-    unsupported::unsafety(signature.unsafety.as_ref(), &item)?;
+    unsupported::safety(&signature.safety, &item)?;
     unsupported::extern_abi(signature.abi.as_ref(), &item)?;
     Ok(())
 }
@@ -35,7 +36,7 @@ pub(super) fn method(
     let mut method = MethodDef::new(
         MethodId::new(format!("{parent}::{ident}")),
         name::source(ident),
-        receiver(signature),
+        receiver(signature)?,
     );
     let metadata = Attributes::new(attrs, scanner);
     method.execution = execution(signature);
@@ -80,16 +81,15 @@ pub(super) fn parameter(
     Ok(parameter)
 }
 
-fn receiver(signature: &syn::Signature) -> Receiver {
+fn receiver(signature: &syn::Signature) -> Result<Receiver, ScanError> {
     match signature.inputs.first() {
-        Some(syn::FnArg::Receiver(receiver)) => {
-            match (receiver.reference.is_some(), receiver.mutability.is_some()) {
-                (true, true) => Receiver::Mutable,
-                (true, false) => Receiver::Shared,
-                (false, _) => Receiver::Owned,
-            }
-        }
-        _ => Receiver::None,
+        Some(syn::FnArg::Receiver(receiver)) => match &receiver.kind {
+            syn::ReceiverKind::Reference(_, _, Some(_)) => Ok(Receiver::Mutable),
+            syn::ReceiverKind::Reference(_, _, None) => Ok(Receiver::Shared),
+            syn::ReceiverKind::Value | syn::ReceiverKind::Typed(..) => Ok(Receiver::Owned),
+            _ => Err(unsupported::feature(UnsupportedFeature::ReceiverKind)),
+        },
+        _ => Ok(Receiver::None),
     }
 }
 
