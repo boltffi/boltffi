@@ -187,7 +187,7 @@ impl CSharpPackagingPlan {
                 })?;
         let current_host = NativeHostPlatform::current().ok_or_else(|| CliError::CommandFailed {
             command:
-                "C# packaging is only supported on osx-arm64, osx-x64, linux-x64, linux-arm64, win-x64, and win-arm64 hosts".to_string(),
+                "C# packaging is only supported on osx-arm64, osx-x64, linux-x64, linux-arm64, win-x86, win-x64, and win-arm64 hosts".to_string(),
             status: None,
         })?;
         let build_profile = resolve_build_profile(release, &build_cargo_args);
@@ -753,8 +753,8 @@ fn dotnet_pack(plan: &CSharpPackagingPlan, step: &Step) -> Result<PathBuf> {
 mod tests {
     use super::{
         CSharpCargoContext, CSharpPackageLayout, CSharpPackagingPlan, CSharpPackagingTarget,
-        csharp_no_build_config_args, pack_csharp, remove_stale_csharp_runtime_assets,
-        render_csharp_project, sync_csharp_project,
+        copy_csharp_native_asset, csharp_no_build_config_args, pack_csharp,
+        remove_stale_csharp_runtime_assets, render_csharp_project, sync_csharp_project,
     };
     use crate::build::CargoBuildProfile;
     use crate::cargo::{Cargo, CargoCrateType};
@@ -938,9 +938,9 @@ mod tests {
 
     fn unsupported_csharp_runtime_identifier() -> CSharpRuntimeIdentifier {
         match NativeHostPlatform::current().expect("supported host for C# packaging tests") {
-            NativeHostPlatform::WindowsX86_64 | NativeHostPlatform::WindowsAarch64 => {
-                CSharpRuntimeIdentifier::OsxArm64
-            }
+            NativeHostPlatform::WindowsX86
+            | NativeHostPlatform::WindowsX86_64
+            | NativeHostPlatform::WindowsAarch64 => CSharpRuntimeIdentifier::OsxArm64,
             _ => CSharpRuntimeIdentifier::WinX64,
         }
     }
@@ -956,6 +956,7 @@ mod tests {
             CSharpRuntimeIdentifier::OsxX64 => "x86_64-apple-darwin",
             CSharpRuntimeIdentifier::LinuxX64 => "x86_64-unknown-linux-gnu",
             CSharpRuntimeIdentifier::LinuxArm64 => "aarch64-unknown-linux-gnu",
+            CSharpRuntimeIdentifier::WinX86 => "i686-pc-windows-msvc",
             CSharpRuntimeIdentifier::WinX64 => "x86_64-pc-windows-msvc",
             CSharpRuntimeIdentifier::WinArm64 => "aarch64-pc-windows-msvc",
         }
@@ -1015,6 +1016,12 @@ mod tests {
         );
         assert_eq!(
             CSharpRuntimeIdentifier::WinArm64
+                .native_host_platform()
+                .shared_library_filename("demo"),
+            "demo.dll"
+        );
+        assert_eq!(
+            CSharpRuntimeIdentifier::WinX86
                 .native_host_platform()
                 .shared_library_filename("demo"),
             "demo.dll"
@@ -1245,6 +1252,62 @@ mod tests {
         );
 
         std::fs::remove_dir_all(project).expect("cleanup temp cdylib project");
+    }
+
+    #[test]
+    fn csharp_no_build_plan_maps_win_x86_to_the_i686_msvc_triple() {
+        let project = temp_cdylib_project();
+        let manifest_path = project.join("Cargo.toml");
+        let mut config = config();
+        config.targets.csharp.runtime_identifiers = Some(vec![
+            CSharpRuntimeIdentifier::WinX86,
+            CSharpRuntimeIdentifier::WinX64,
+        ]);
+
+        let plan = CSharpPackagingPlan::from_config(
+            &config,
+            false,
+            &cargo_args_for_manifest(&manifest_path),
+            true,
+        )
+        .expect("win-x86 should resolve without a build");
+
+        assert_eq!(
+            plan.packaging_targets
+                .iter()
+                .map(|target| (
+                    target.runtime_identifier.canonical_name(),
+                    target.cargo_context.rust_target_triple.as_str()
+                ))
+                .collect::<Vec<_>>(),
+            [
+                ("win-x86", "i686-pc-windows-msvc"),
+                ("win-x64", "x86_64-pc-windows-msvc")
+            ]
+        );
+
+        std::fs::remove_dir_all(project).expect("cleanup temp cdylib project");
+    }
+
+    #[test]
+    fn copies_win_x86_native_assets_under_their_runtime_directory() {
+        let root = unique_temp_dir("boltffi-csharp-win-x86-asset-test");
+        std::fs::create_dir_all(&root).expect("create asset test directory");
+        let library = root.join("demo.dll");
+        std::fs::write(&library, "dll").expect("write native library");
+        let plan = csharp_packaging_plan(root.clone());
+
+        let copied = copy_csharp_native_asset(
+            &plan.layout,
+            &packaging_target(CSharpRuntimeIdentifier::WinX86),
+            &library,
+        )
+        .expect("copy native asset");
+
+        assert_eq!(copied, root.join("runtimes/win-x86/native/demo.dll"));
+        assert!(copied.exists());
+
+        std::fs::remove_dir_all(root).expect("cleanup asset test directory");
     }
 
     #[test]

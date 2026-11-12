@@ -278,7 +278,7 @@ impl Stream {
             ""
         };
         format!(
-            "        [global::System.Runtime.InteropServices.DllImport(LibName, EntryPoint = \"{}\")]\n        internal static extern ulong {}({subscribe_parameters});\n\n{}\n\n        [global::System.Runtime.InteropServices.DllImport(LibName, EntryPoint = \"{}\")]\n        internal static extern int {}(ulong subscription, uint timeoutMilliseconds);\n\n        [global::System.Runtime.InteropServices.DllImport(LibName, EntryPoint = \"{}\")]\n        internal static extern void {}(ulong subscription);\n\n        [global::System.Runtime.InteropServices.DllImport(LibName, EntryPoint = \"{}\")]\n        internal static extern void {}(ulong subscription);",
+            "        [global::System.Runtime.InteropServices.DllImport(LibName, EntryPoint = \"{}\", CallingConvention = global::System.Runtime.InteropServices.CallingConvention.Cdecl)]\n        internal static extern ulong {}({subscribe_parameters});\n\n{}\n\n        [global::System.Runtime.InteropServices.DllImport(LibName, EntryPoint = \"{}\", CallingConvention = global::System.Runtime.InteropServices.CallingConvention.Cdecl)]\n        internal static extern int {}(ulong subscription, uint timeoutMilliseconds);\n\n        [global::System.Runtime.InteropServices.DllImport(LibName, EntryPoint = \"{}\", CallingConvention = global::System.Runtime.InteropServices.CallingConvention.Cdecl)]\n        internal static extern void {}(ulong subscription);\n\n        [global::System.Runtime.InteropServices.DllImport(LibName, EntryPoint = \"{}\", CallingConvention = global::System.Runtime.InteropServices.CallingConvention.Cdecl)]\n        internal static extern void {}(ulong subscription);",
             self.subscribe,
             self.subscribe_method(),
             self.pop_native_source(),
@@ -311,7 +311,7 @@ impl Stream {
         let method = self.pop_method();
         if self.item.encoded {
             format!(
-                "        [global::System.Runtime.InteropServices.DllImport(LibName, EntryPoint = \"{}\")]\n        internal static extern FfiBuf {method}(ulong subscription, nuint maxCount);",
+                "        [global::System.Runtime.InteropServices.DllImport(LibName, EntryPoint = \"{}\", CallingConvention = global::System.Runtime.InteropServices.CallingConvention.Cdecl)]\n        internal static extern FfiBuf {method}(ulong subscription, nuint maxCount);",
                 self.pop_batch,
             )
         } else {
@@ -321,7 +321,7 @@ impl Stream {
                 ""
             };
             format!(
-                "        [global::System.Runtime.InteropServices.DllImport(LibName, EntryPoint = \"{}\")]\n        internal static extern nuint {method}(ulong subscription, {marshal}[global::System.Runtime.InteropServices.Out] {}[] output, nuint outputCapacity);",
+                "        [global::System.Runtime.InteropServices.DllImport(LibName, EntryPoint = \"{}\", CallingConvention = global::System.Runtime.InteropServices.CallingConvention.Cdecl)]\n        internal static extern nuint {method}(ulong subscription, {marshal}[global::System.Runtime.InteropServices.Out] {}[] output, nuint outputCapacity);",
                 self.pop_batch, self.item.ty,
             )
         }

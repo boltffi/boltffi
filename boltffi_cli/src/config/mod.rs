@@ -2759,6 +2759,27 @@ runtime_identifiers = ["{runtime_identifier}"]
     }
 
     #[test]
+    fn csharp_configuration_parses_windows_x86_aliases() {
+        for runtime_identifier in ["win-x86", "windows-x86", "win-i686"] {
+            let config = parse_config(&format!(
+                r#"
+[package]
+name = "my-lib"
+
+[targets.csharp]
+enabled = true
+runtime_identifiers = ["{runtime_identifier}"]
+"#,
+            ));
+
+            assert_eq!(
+                config.csharp_requested_runtime_identifiers(),
+                &[crate::target::CSharpRuntimeIdentifier::WinX86]
+            );
+        }
+    }
+
+    #[test]
     fn csharp_configuration_supports_nuget_metadata() {
         let config = parse_config(
             r#"

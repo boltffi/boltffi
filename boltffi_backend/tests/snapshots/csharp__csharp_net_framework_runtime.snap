@@ -540,33 +540,33 @@ namespace Demo
     {
         internal const string LibName = "demo_native";
 
-        [DllImport(LibName, EntryPoint = "boltffi_buf_from_bytes")]
+        [DllImport(LibName, EntryPoint = "boltffi_buf_from_bytes", CallingConvention = global::System.Runtime.InteropServices.CallingConvention.Cdecl)]
         internal static extern FfiBuf BufFromBytes([In] byte[] bytes, nuint length);
-        [DllImport(LibName, EntryPoint = "boltffi_callback_error")]
+        [DllImport(LibName, EntryPoint = "boltffi_callback_error", CallingConvention = global::System.Runtime.InteropServices.CallingConvention.Cdecl)]
         internal static extern FfiBuf CallbackError([In] byte[] message, nuint length);
 
-        [DllImport(LibName, EntryPoint = "boltffi_free_buf")]
+        [DllImport(LibName, EntryPoint = "boltffi_free_buf", CallingConvention = global::System.Runtime.InteropServices.CallingConvention.Cdecl)]
         internal static extern void FreeBuf(FfiBuf buffer);
 
-        [DllImport(LibName, EntryPoint = "boltffi_function_4demo10echo_bytes")]
+        [DllImport(LibName, EntryPoint = "boltffi_function_4demo10echo_bytes", CallingConvention = global::System.Runtime.InteropServices.CallingConvention.Cdecl)]
         internal static extern FfiBuf NativeEchoBytes([In] byte[] valueBytes, nuint valueLength);
 
-        [DllImport(LibName, EntryPoint = "boltffi_function_4demo7echo_id")]
+        [DllImport(LibName, EntryPoint = "boltffi_function_4demo7echo_id", CallingConvention = global::System.Runtime.InteropServices.CallingConvention.Cdecl)]
         internal static extern FfiBuf NativeEchoId([In] byte[] valueBytes, nuint valueLength);
 
-        [DllImport(LibName, EntryPoint = "boltffi_function_4demo10echo_ratio")]
+        [DllImport(LibName, EntryPoint = "boltffi_function_4demo10echo_ratio", CallingConvention = global::System.Runtime.InteropServices.CallingConvention.Cdecl)]
         internal static extern float NativeEchoRatio(float value);
 
-        [DllImport(LibName, EntryPoint = "boltffi_function_4demo11echo_ratios")]
+        [DllImport(LibName, EntryPoint = "boltffi_function_4demo11echo_ratios", CallingConvention = global::System.Runtime.InteropServices.CallingConvention.Cdecl)]
         internal static extern FfiBuf NativeEchoRatios([In] float[] value, nuint valueLength);
 
-        [DllImport(LibName, EntryPoint = "boltffi_function_4demo9echo_span")]
+        [DllImport(LibName, EntryPoint = "boltffi_function_4demo9echo_span", CallingConvention = global::System.Runtime.InteropServices.CallingConvention.Cdecl)]
         internal static extern FfiBuf NativeEchoSpan([In] byte[] valueBytes, nuint valueLength);
 
-        [DllImport(LibName, EntryPoint = "boltffi_function_4demo9echo_text")]
+        [DllImport(LibName, EntryPoint = "boltffi_function_4demo9echo_text", CallingConvention = global::System.Runtime.InteropServices.CallingConvention.Cdecl)]
         internal static extern FfiBuf NativeEchoText([In] byte[] valueBytes, nuint valueLength);
 
-        [DllImport(LibName, EntryPoint = "boltffi_function_4demo9echo_time")]
+        [DllImport(LibName, EntryPoint = "boltffi_function_4demo9echo_time", CallingConvention = global::System.Runtime.InteropServices.CallingConvention.Cdecl)]
         internal static extern FfiBuf NativeEchoTime([In] byte[] valueBytes, nuint valueLength);
 
     }

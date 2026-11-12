@@ -561,8 +561,13 @@ runtime_identifiers = ["osx-arm64", "linux-x64", "win-x64", "win-arm64"]
 
 `runtime_identifiers` controls which native assets are built and bundled into the NuGet package.
 `current` resolves to the active host RID; canonical values are `osx-arm64`, `osx-x64`,
-`linux-x64`, `linux-arm64`, `win-x64`, and `win-arm64`. Windows hosts can build both
-Windows architectures when the corresponding Rust target and Visual Studio C++ components are installed.
+`linux-x64`, `linux-arm64`, `win-x86`, `win-x64`, and `win-arm64`. Windows hosts can build every
+Windows architecture when the corresponding Rust target and Visual Studio C++ components are installed.
+
+The bindings are generated once and shared by every runtime identifier, including 32-bit `win-x86`.
+This is safe because a record is only passed by value when its layout is identical under every
+supported ABI: records with pointer-sized fields, or with 64-bit fields that the 32-bit x86 ABI
+would align differently, are encoded instead. All native entry points use the `cdecl` calling convention.
 
 ### Output Structure
 

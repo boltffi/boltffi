@@ -105,7 +105,9 @@ impl CPackage {
             .partition(|library| {
                 matches!(
                     self.platform,
-                    NativeHostPlatform::WindowsX86_64 | NativeHostPlatform::WindowsAarch64
+                    NativeHostPlatform::WindowsX86
+                        | NativeHostPlatform::WindowsX86_64
+                        | NativeHostPlatform::WindowsAarch64
                 ) && library.starts_with('/')
             });
         let static_dependencies = Self::cmake_static_dependencies(&link_libraries)?;

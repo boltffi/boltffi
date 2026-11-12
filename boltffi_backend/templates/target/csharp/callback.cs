@@ -124,10 +124,10 @@ namespace {{ callback.namespace }}
 {% endif %}        internal delegate {{ method.native_return_type }} {{ method.name }}Fn({{ method.native_parameters }});
         private static readonly {{ method.name }}Fn {{ method.name }}Delegate = {{ method.name }};
 
-{% endfor %}        [global::System.Runtime.InteropServices.DllImport(NativeMethods.LibName, EntryPoint = "{{ callback.register_entry }}")]
+{% endfor %}        [global::System.Runtime.InteropServices.DllImport(NativeMethods.LibName, EntryPoint = "{{ callback.register_entry }}", CallingConvention = global::System.Runtime.InteropServices.CallingConvention.Cdecl)]
         private static extern void RegisterNative(nint vtable);
 
-        [global::System.Runtime.InteropServices.DllImport(NativeMethods.LibName, EntryPoint = "{{ callback.create_entry }}")]
+        [global::System.Runtime.InteropServices.DllImport(NativeMethods.LibName, EntryPoint = "{{ callback.create_entry }}", CallingConvention = global::System.Runtime.InteropServices.CallingConvention.Cdecl)]
         private static extern BoltFFICallbackHandle CreateNative(ulong handle);
     }
 }

@@ -405,14 +405,14 @@ mod tests {
             {
                 internal const string LibName = "demo_native";
 
-                [DllImport(LibName, EntryPoint = "boltffi_function_4demo3add")]
+                [DllImport(LibName, EntryPoint = "boltffi_function_4demo3add", CallingConvention = global::System.Runtime.InteropServices.CallingConvention.Cdecl)]
                 internal static extern int NativeAdd(int left, int right);
 
-                [DllImport(LibName, EntryPoint = "boltffi_function_4demo6negate")]
+                [DllImport(LibName, EntryPoint = "boltffi_function_4demo6negate", CallingConvention = global::System.Runtime.InteropServices.CallingConvention.Cdecl)]
                 [return: MarshalAs(UnmanagedType.I1)]
                 internal static extern bool NativeNegate([MarshalAs(UnmanagedType.I1)] bool enabled);
 
-                [DllImport(LibName, EntryPoint = "boltffi_function_4demo6notify")]
+                [DllImport(LibName, EntryPoint = "boltffi_function_4demo6notify", CallingConvention = global::System.Runtime.InteropServices.CallingConvention.Cdecl)]
                 internal static extern FfiStatus NativeNotify(ulong value);
 
             }

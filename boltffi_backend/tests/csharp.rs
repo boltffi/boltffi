@@ -862,6 +862,112 @@ fn csharp_net_framework_compiles_generated_bindings() {
 }
 
 #[test]
+fn csharp_native_entry_points_use_the_cdecl_calling_convention() {
+    let fixtures = [
+        include_str!("fixtures/source/exports/async_handles_and_callbacks.rs"),
+        include_str!("fixtures/source/exports/async_class_methods.rs"),
+        include_str!("fixtures/source/exports/class_handles_and_methods.rs"),
+        include_str!("fixtures/source/exports/closure_parameter.rs"),
+        include_str!("fixtures/source/exports/result_values.rs"),
+        include_str!("fixtures/source/callback/async_callback_return_shapes.rs"),
+        include_str!("fixtures/source/callback/callback_direct_vector_parameter.rs"),
+        include_str!("fixtures/source/callback/callback_record_return.rs"),
+        include_str!("fixtures/source/stream/protocol_functions.rs"),
+        LEGACY_RUNTIME_VALUES,
+    ];
+    let mut imports = 0;
+    let mut delegates = 0;
+    for host in [CSharpHost::new(), net_framework_host("net48")] {
+        for source in fixtures {
+            let output = target(host.clone().native_library("demo_native"))
+                .render(&bindings(source))
+                .expect("fixture renders");
+            for file in output.files() {
+                let lines = file.contents().lines().collect::<Vec<_>>();
+                for (index, line) in lines.iter().enumerate() {
+                    if line.contains("DllImport(") {
+                        imports += 1;
+                        assert!(
+                            line.contains("CallingConvention = global::System.Runtime.InteropServices.CallingConvention.Cdecl"),
+                            "{line}"
+                        );
+                    }
+                    if line.trim_start().starts_with("internal delegate ") {
+                        delegates += 1;
+                        let attribute = lines[..index]
+                            .iter()
+                            .rev()
+                            .find(|line| !line.trim_start().starts_with("[return:"))
+                            .expect("delegate attribute");
+                        assert!(
+                            attribute.contains("UnmanagedFunctionPointer(")
+                                && attribute.contains("CallingConvention.Cdecl"),
+                            "{line}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+    assert!(imports > 0 && delegates > 0);
+}
+
+#[test]
+fn csharp_direct_records_have_one_layout_on_every_runtime_identifier() {
+    let bindings = bindings(
+        r#"
+        #[data]
+        pub struct Narrow {
+            pub tag: u16,
+            pub value: i32,
+            pub flag: u8,
+        }
+
+        #[data]
+        pub struct Wide {
+            pub first: u64,
+            pub second: f64,
+        }
+
+        #[data]
+        pub struct Misaligned {
+            pub tag: u8,
+            pub wide: u64,
+        }
+
+        #[data]
+        pub struct PointerSized {
+            pub count: usize,
+        }
+
+        #[export]
+        pub fn echo_narrow(value: Narrow) -> Narrow { value }
+
+        #[export]
+        pub fn echo_wide(value: Wide) -> Wide { value }
+
+        #[export]
+        pub fn echo_misaligned(value: Misaligned) -> Misaligned { value }
+
+        #[export]
+        pub fn echo_pointer_sized(value: PointerSized) -> PointerSized { value }
+        "#,
+    );
+    let output = target(CSharpHost::new().native_library("demo_native"))
+        .render(&bindings)
+        .expect("records render");
+    let direct = |name: &str| {
+        file(&output, name)
+            .expect("record file")
+            .contains("[StructLayout(LayoutKind.Sequential)]")
+    };
+    assert!(direct("Narrow.cs"));
+    assert!(direct("Wide.cs"));
+    assert!(!direct("Misaligned.cs"));
+    assert!(!direct("PointerSized.cs"));
+}
+
+#[test]
 fn csharp_modern_profile_keeps_modern_runtime_apis() {
     let modern = target(CSharpHost::new().native_library("demo_native"))
         .render(&bindings(LEGACY_RUNTIME_VALUES))
