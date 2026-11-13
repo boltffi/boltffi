@@ -1597,7 +1597,7 @@ impl<'lowered> NativeOutgoingClosure<'lowered> {
             __boltffi_closure(#(#arguments),*)
         });
         let function_pointer_type = quote! {
-            extern "C" fn(*mut ::core::ffi::c_void #(, #ffi_parameter_types)*) #return_type
+            unsafe extern "C" fn(*mut ::core::ffi::c_void #(, #ffi_parameter_types)*) #return_type
         };
         let release_type = quote! {
             unsafe extern "C" fn(*mut ::core::ffi::c_void)

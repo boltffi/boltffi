@@ -1,0 +1,7 @@
+error: BoltFFI: unsupported expansion: outgoing closure parameter form
+ --> tests/diagnostics/callback_traits/optional_closure_parameter.rs:2:1
+  |
+2 | #[boltffi::export]
+  | ^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `boltffi::export` (in Nightly builds, run with -Z macro-backtrace for more info)

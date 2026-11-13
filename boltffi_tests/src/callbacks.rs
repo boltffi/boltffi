@@ -46,6 +46,11 @@ pub trait SyncMultiMethodCallback {
     fn method_c(&self) -> i32;
 }
 
+#[export]
+pub trait SyncClosureCallback {
+    fn with_closure(&self, closure: Box<dyn Fn(i32) -> i32>) -> i32;
+}
+
 struct OffsetCallback {
     base: i32,
 }
@@ -78,6 +83,11 @@ pub trait AsyncMultiMethod {
 #[export]
 pub fn invoke_sync_boxed(callback: Box<dyn SyncValueCallback>, input: i32) -> i32 {
     callback.on_value(input)
+}
+
+#[export]
+pub fn invoke_sync_closure(callback: Box<dyn SyncClosureCallback>, base: i32) -> i32 {
+    callback.with_closure(Box::new(move |value| base + value))
 }
 
 #[export]

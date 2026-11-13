@@ -1,0 +1,15 @@
+error[E0425]: cannot find type `__BoltffiTag` in the crate root
+ --> tests/diagnostics/scaffolding/declared_type_in_signature_without_scaffolding.rs:1:1
+  |
+1 | #[boltffi::data]
+  | ^^^^^^^^^^^^^^^^ not found in the crate root
+  |
+  = note: this error originates in the attribute macro `boltffi::data` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0425]: cannot find type `__BoltffiTag` in the crate root
+ --> tests/diagnostics/scaffolding/declared_type_in_signature_without_scaffolding.rs:8:1
+  |
+8 | #[boltffi::export]
+  | ^^^^^^^^^^^^^^^^^^ not found in the crate root
+  |
+  = note: this error originates in the attribute macro `boltffi::export` (in Nightly builds, run with -Z macro-backtrace for more info)

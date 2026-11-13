@@ -1,0 +1,5 @@
+error[E0433]: cannot find `Error` in `error`
+ --> tests/diagnostics/errors/boxed_dyn_error_return.rs:3:47
+  |
+3 | pub fn f() -> Result<i32, Box<dyn std::error::Error>> { Ok(1) }
+  |                                               ^^^^^ could not find `Error` in `error`

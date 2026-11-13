@@ -1,0 +1,7 @@
+error: BoltFFI: tuple structs are not represented by the record AST
+ --> tests/diagnostics/unsupported_items/tuple_struct_record.rs:3:1
+  |
+3 | #[boltffi::data]
+  | ^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `boltffi::data` (in Nightly builds, run with -Z macro-backtrace for more info)

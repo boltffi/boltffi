@@ -1,0 +1,8 @@
+error: FfiType requires #[repr(C)]
+ --> tests/diagnostics/unsupported_items/ffi_type_without_repr_c.rs:2:1
+  |
+2 | / pub struct Point {
+3 | |     pub x: f64,
+4 | |     pub y: f64,
+5 | | }
+  | |_^

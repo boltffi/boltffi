@@ -3,6 +3,7 @@ pub mod apple;
 pub mod c;
 pub mod csharp;
 pub mod dart;
+pub mod dart_web;
 pub mod java;
 pub mod kmp;
 pub mod python;

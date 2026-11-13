@@ -1,0 +1,11 @@
+error[E0428]: the name `__boltffi_declared_C` is defined multiple times
+ --> tests/diagnostics/classes/same_class_in_two_modules.rs:9:5
+  |
+3 |     #[boltffi::export]
+  |     ------------------ previous definition of the macro `__boltffi_declared_C` here
+...
+9 |     #[boltffi::export]
+  |     ^^^^^^^^^^^^^^^^^^ `__boltffi_declared_C` redefined here
+  |
+  = note: `__boltffi_declared_C` must be defined only once in the macro namespace of this module
+  = note: this error originates in the attribute macro `boltffi::export` (in Nightly builds, run with -Z macro-backtrace for more info)

@@ -60,13 +60,16 @@ An identifier field cannot accept an expression.
 Each fragment owns its casing and escaping, and the template prints the fragment.
 `LanguageSyntax::keyword` checks reserved names against the `KEYWORDS` table.
 Each language owns one static table in its `syntax.rs` file.
+A language can also override `keyword` to ask a parser.
 
-Ruby copies its table from the Prism 1.9 keyword tokens, the Ruby 4.1 grammar.
-The `ruby-prism` Rust API exposes only `parse`, not a keyword table.
-A parse per candidate name costs about 0.26 microseconds per name on a laptop.
-The parse path also forces a `bindgen` build step on every backend user.
-The static table avoids both costs and matches the other targets.
-Update the Ruby table when BoltFFI raises the supported Ruby version.
+Ruby asks Prism through `ruby_prism::StringQuery::is_keyword`, which Prism 2.0 added.
+The keyword set then follows the `ruby-prism` version that the backend pins.
+One check takes about 26 nanoseconds and parses no program.
+`ruby-prism-sys` ships pregenerated bindings, so the build needs no `bindgen` or `libclang`.
+The build compiles Prism's vendored C sources with `cc`, which the CLI already uses for `zstd`.
+The Ruby `KEYWORDS` table holds only `__END__`.
+Prism does not call `__END__` a keyword, but Ruby treats the marker as the end of the source.
+Update `ruby-prism` when BoltFFI raises the supported Ruby version.
 
 `HostBackend`, `BridgeBackend`, `BridgeContract`, and `LanguageSyntax` are all sealed inside `boltffi_backend`. An in-crate target implements the matching `sealed` marker alongside the public trait, otherwise the first build fails with a private-bound error that reads like the trait does not exist. One line per impl settles it.
 
