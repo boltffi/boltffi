@@ -1,0 +1,7 @@
+error: BoltFFI: unsupported source type `unrecognized type`
+ --> tests/diagnostics/unsupported_signatures/raw_pointer_parameter.rs:3:1
+  |
+3 | #[boltffi::export]
+  | ^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `boltffi::export` (in Nightly builds, run with -Z macro-backtrace for more info)

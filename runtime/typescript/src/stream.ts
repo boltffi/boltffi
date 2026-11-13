@@ -33,6 +33,12 @@ export class StreamPollManager {
     });
   }
 
+  close(handle: number): void {
+    const pending = this.pending.get(handle);
+    this.pending.delete(handle);
+    pending?.resolve(StreamPollResult.Closed);
+  }
+
   wake(handle: number, result: number): void {
     const pending = this.pending.get(handle);
     if (pending === undefined) {
@@ -62,6 +68,8 @@ export class StreamSession<T> implements AsyncIterable<T> {
     this.closed = handle === 0;
   }
 
+  get isClosed(): boolean { return this.closed; }
+
   popBatch(maxCount = 16): T[] {
     return this.closed || this.handle === 0 ? [] : this.batch(this.handle, maxCount);
   }
@@ -83,8 +91,12 @@ export class StreamSession<T> implements AsyncIterable<T> {
     }
     this.closed = true;
     if (this.handle !== 0) {
-      this.unsubscribe();
-      this.freeHandle(this.handle);
+      this.polls.close(this.handle);
+      try {
+        this.unsubscribe();
+      } finally {
+        this.freeHandle(this.handle);
+      }
     }
   }
 
@@ -93,7 +105,10 @@ export class StreamSession<T> implements AsyncIterable<T> {
       while (!this.closed) {
         const items = this.popBatch();
         if (items.length !== 0) {
-          yield* items;
+          for (const item of items) {
+            if (this.closed) return;
+            yield item;
+          }
           continue;
         }
         const result = await this.polls.poll(this.handle, this.pollHandle);
@@ -103,7 +118,10 @@ export class StreamSession<T> implements AsyncIterable<T> {
         if (result === StreamPollResult.Closed) {
           let remaining = this.popBatch();
           while (remaining.length !== 0) {
-            yield* remaining;
+            for (const item of remaining) {
+              if (this.closed) return;
+              yield item;
+            }
             remaining = this.popBatch();
           }
           return;
@@ -117,6 +135,20 @@ export class StreamSession<T> implements AsyncIterable<T> {
 
 export class StreamCancellable<T> {
   readonly done: Promise<void>;
+  private paused?: Promise<void>;
+  private resumePaused?: () => void;
+
+  pause(): void {
+    if (this.paused !== undefined) return;
+    this.paused = new Promise((resolve) => { this.resumePaused = resolve; });
+  }
+
+  resume(): void {
+    const resolve = this.resumePaused;
+    this.paused = undefined;
+    this.resumePaused = undefined;
+    resolve?.();
+  }
 
   constructor(
     private readonly session: StreamSession<T>,
@@ -126,6 +158,7 @@ export class StreamCancellable<T> {
   }
 
   cancel(): void {
+    this.resume();
     this.session.dispose();
   }
 
@@ -134,7 +167,10 @@ export class StreamCancellable<T> {
     try {
       let next = await iterator.next();
       while (!next.done) {
+        if (this.paused !== undefined) await this.paused;
+        if (this.session.isClosed) break;
         callback(next.value);
+        if (this.paused !== undefined) await this.paused;
         next = await iterator.next();
       }
     } finally {

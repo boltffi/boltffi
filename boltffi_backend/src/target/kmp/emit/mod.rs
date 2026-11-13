@@ -959,7 +959,13 @@ mod tests {
         let paths = output
             .files()
             .iter()
-            .map(|file| file.path().as_path().display().to_string())
+            .map(|file| {
+                file.path()
+                    .as_path()
+                    .display()
+                    .to_string()
+                    .replace('\\', "/")
+            })
             .collect::<Vec<_>>();
 
         assert_eq!(

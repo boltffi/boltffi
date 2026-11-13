@@ -1,0 +1,5 @@
+error: export can only be applied to const, enum, fn, impl, struct, or trait
+ --> tests/diagnostics/attributes/export_on_a_module.rs:3:1
+  |
+3 | pub mod m {}
+  | ^^^^^^^^^^^^

@@ -1,0 +1,7 @@
+error: BoltFFI: unsupported expansion: codec node
+ --> tests/diagnostics/classes/vec_of_self_return.rs:6:1
+  |
+6 | #[boltffi::export]
+  | ^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the macro `::boltffi::__private::lane_resume` (in Nightly builds, run with -Z macro-backtrace for more info)

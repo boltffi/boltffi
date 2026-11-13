@@ -816,6 +816,7 @@ mod tests {
     fn options() -> PackCSharpOptions {
         PackCSharpOptions {
             execution: PackExecutionOptions {
+                wasm_prepared: false,
                 release: false,
                 regenerate: true,
                 no_build: false,

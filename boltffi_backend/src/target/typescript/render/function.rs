@@ -1950,8 +1950,11 @@ impl<'plan> ParamPlanRender<'plan, Wasm32, IntoRust> for ParameterRenderer<'_> {
         ty: &'plan TypeRef,
         codec: &'plan boltffi_binding::WritePlan,
         shape: wasm32::BufferShape,
-        _receive: Receive,
+        receive: Receive,
     ) -> Self::Output {
+        if matches!(receive, Receive::ByMutRef) {
+            return Err(Function::unsupported("mutable encoded parameter"));
+        }
         match shape {
             wasm32::BufferShape::Slice => {
                 Parameter::encoded(self.name.clone(), ty, codec, self.context)

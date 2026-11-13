@@ -1,0 +1,7 @@
+error: BoltFFI: borrowed callback parameter cannot be represented in binding IR yet
+ --> tests/diagnostics/callback_traits/borrowed_dyn_parameter.rs:4:1
+  |
+4 | #[boltffi::export]
+  | ^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the macro `::boltffi::__private::lane_resume` (in Nightly builds, run with -Z macro-backtrace for more info)
