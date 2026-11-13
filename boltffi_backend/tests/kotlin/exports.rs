@@ -357,6 +357,168 @@ fn kotlin_target_qualifies_shadowed_data_enum_payloads() {
 }
 
 #[test]
+fn kotlin_target_renders_transparent_enums_as_sealed_interfaces() {
+    insta::assert_snapshot!(rendered_fixture("enums/transparent"));
+}
+
+#[test]
+fn kotlin_transparent_enums_compile_with_defaults_and_async_initializers() {
+    let Some(compiler) = kotlin_compiler() else {
+        return;
+    };
+    let source = format!(
+        "{}\n{}",
+        fixture("enums/transparent"),
+        r#"
+        #[data(impl)]
+        impl Reply {
+            pub fn offset(&self, step: i32) -> i32 { step }
+            pub fn async_offset(&self) -> u32 { 0 }
+        }
+
+        #[data]
+        pub enum Outer {
+            Envelope { value: u32 },
+            Empty,
+        }
+
+        #[data(impl)]
+        impl Outer {
+            pub fn echo(&self, value: Envelope) -> Envelope { value }
+            pub async fn async_echo(&self, value: Envelope) -> Envelope { value }
+            pub fn echo_optional(&self, value: Option<Envelope>) -> Option<Envelope> { value }
+            pub fn echo_many(&self, values: Vec<Envelope>) -> Vec<Envelope> { values }
+        }
+        "#,
+    );
+    run_with_generated_kotlin(
+        &compiler,
+        "transparent",
+        super::files(&source),
+        "Transparent.kt",
+        include_str!("../fixtures/kotlin/transparent.kt"),
+    );
+}
+
+#[test]
+fn kotlin_target_wraps_conflicting_transparent_members() {
+    [
+        ("#[data(impl)] impl Reply { pub fn offset(&self, step: u32) -> u32 { step } }", true),
+        ("#[data(impl)] impl Ping { pub fn offset(&self, step: u32) -> u32 { self.sequence + step } }", false),
+        ("#[data(impl)] impl Envelope { pub fn inspect(&self, value: Ping) -> u32 { value.sequence } }
+          #[data(impl)] impl Reply { pub fn inspect(&self, value: Ping) -> u32 { value.sequence } }", true),
+        ("#[data(impl)] impl Envelope { pub fn inspect(&self, values: Vec<String>) -> u32 { values.len() as u32 } }
+          #[data(impl)] impl Reply { pub fn inspect(&self, values: Vec<Ping>) -> u32 { values.len() as u32 } }", true),
+        ("#[data(impl)] impl Envelope { pub fn get_sequence(&self) -> u32 { 99 } }", false),
+        ("#[data(impl)] impl Envelope { pub fn copy(&self, sequence: u32) -> Self { Self::Ping(Ping { sequence }) } }", false),
+    ]
+    .into_iter()
+    .for_each(|(conflict, both_enums)| {
+        let source = format!("{}\n{conflict}", fixture("enums/transparent"));
+        let expected = if both_enums {
+            source.replace("#[boltffi::transparent]", "")
+        } else {
+            source.replacen("#[boltffi::transparent]", "", 2)
+        };
+        assert!(super::files(&source) == super::files(&expected), "ordinary variants must be used for {conflict}");
+    });
+}
+
+#[test]
+fn kotlin_reports_actual_enum_name_collisions_with_or_without_transparency() {
+    [
+        "#[data(impl)] impl Envelope { pub fn wire_size(&self) -> u32 { 0 } }",
+        "#[data(impl)] impl Envelope { pub fn component1(&self) -> u32 { 99 } }",
+    ]
+    .into_iter()
+    .for_each(|conflict| {
+        let source = format!("{}\n{conflict}", fixture("enums/transparent"));
+        [&source, &source.replace("#[boltffi::transparent]", "")]
+            .into_iter()
+            .for_each(|source| {
+                let bindings = super::bindings(source);
+                let error = KotlinHost::new("com.boltffi.demo", "Demo")
+                    .expect("Kotlin host")
+                    .into_target()
+                    .expect("Kotlin target")
+                    .render(&bindings)
+                    .expect_err("generated enum members must have distinct names");
+                assert!(
+                    matches!(error, Error::KotlinNameCollision { scope, .. } if scope == "Envelope")
+                );
+            });
+    });
+}
+
+#[test]
+fn kotlin_target_omits_inheritance_for_wrapped_and_pruned_enums() {
+    for source in [
+        r#"
+        use boltffi::InternedString;
+
+        boltffi::interned_string_pool! {
+            pub BrowserName {
+                Chrome = "Chrome",
+            }
+        }
+
+        #[data]
+        pub struct Ping {
+            sequence: u32,
+        }
+
+        #[data]
+        pub enum Envelope {
+            #[boltffi::transparent]
+            Ping(Ping),
+            Name(InternedString<BrowserName>),
+        }
+        "#,
+        r#"
+        #[data]
+        pub struct Ping {
+            sequence: u32,
+        }
+
+        #[error]
+        pub enum Envelope {
+            #[boltffi::transparent]
+            Ping(Ping),
+            Ack,
+        }
+
+        #[export]
+        pub fn try_ping() -> Result<u32, Envelope> {
+            Ok(1)
+        }
+        "#,
+    ] {
+        let files = super::partial_files(source);
+        let (_, contents) = files
+            .iter()
+            .find(|(path, _)| path.ends_with(".kt"))
+            .expect("Kotlin target should render a Kotlin source file");
+
+        assert!(
+            !contents.contains("interface Envelope"),
+            "pruned transparent enum reached the rendered source:\n{contents}"
+        );
+        assert!(
+            contents.contains("data class Ping(\n"),
+            "payload record was pruned alongside its transparent enum:\n{contents}"
+        );
+        assert!(
+            !contents
+                .split("sealed class Envelope")
+                .next()
+                .expect("record declarations")
+                .contains(": Envelope"),
+            "payload record conformed to a pruned transparent enum:\n{contents}"
+        );
+    }
+}
+
+#[test]
 fn kotlin_target_qualifies_kotlin_primitive_names_shadowed_by_a_sibling_variant() {
     insta::assert_snapshot!(rendered_fixture("enums/primitive_shadow"));
 }

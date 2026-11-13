@@ -75,6 +75,9 @@ pub struct VariantDef {
     pub discriminant: Option<i128>,
     /// Payload shape written by the variant.
     pub payload: VariantPayload,
+    /// Whether the variant was marked `#[boltffi::transparent]`.
+    #[serde(default, skip_serializing_if = "core::ops::Not::not")]
+    pub transparent: bool,
     /// Documentation attached to the variant.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub doc: Option<DocComment>,
@@ -100,6 +103,7 @@ impl VariantDef {
             name: name.into(),
             discriminant: None,
             payload: VariantPayload::Unit,
+            transparent: false,
             doc: None,
             user_attrs: Vec::new(),
             source: Source::exported(),

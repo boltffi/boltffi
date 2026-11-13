@@ -1,5 +1,7 @@
+use std::collections::{BTreeSet, HashMap, hash_map::Entry};
+
 use boltffi_binding::{
-    ConstantOwner, DirectFieldDecl, DirectRecordDecl, EncodedFieldDecl, EncodedRecordDecl,
+    ConstantOwner, DirectFieldDecl, DirectRecordDecl, EncodedFieldDecl, EncodedRecordDecl, EnumId,
     ExportedMethodDecl, FieldKey, InitializerDecl, Native, NativeSymbol, Receive,
 };
 
@@ -15,8 +17,8 @@ use crate::{
 };
 
 use super::{
-    AssociatedCallable, ConstantStub, Documentation, NameScope, default_value::DefaultExpression,
-    type_hint::TypeHint,
+    AssociatedCallable, ConstantStub, Documentation, EnumClass, NameScope,
+    default_value::DefaultExpression, type_hint::TypeHint,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -28,6 +30,12 @@ pub struct RecordClass {
     pub fields: Vec<RecordField>,
     pub constants: Vec<ConstantStub>,
     pub wire: RecordWire,
+    /// The enum classes of the transparent enums this record is a payload
+    /// of; the record class inherits them.
+    pub bases: Vec<Identifier>,
+    /// Extension factory that creates a conforming direct record's type with
+    /// its bases; unused when the record has none.
+    pub type_factory: Identifier,
     pub constructors: Vec<AssociatedCallable>,
     pub static_methods: Vec<AssociatedCallable>,
     pub instance_methods: Vec<AssociatedCallable>,
@@ -63,6 +71,8 @@ impl RecordClass {
                 record.fields(),
                 record.layout(),
             )?),
+            bases: package.transparent_conformances(record.id())?,
+            type_factory: symbols.type_factory().clone(),
             constructors: Self::constructors(record.initializers(), &symbols, package)?,
             static_methods: Self::static_methods(record.methods(), &symbols, package)?,
             instance_methods: Self::instance_methods(record.methods(), &symbols, package)?,
@@ -92,6 +102,8 @@ impl RecordClass {
             fields,
             constants: package.constants_for_owner(ConstantOwner::Record(record.id()))?,
             wire: RecordWire::Fields(wire_fields),
+            bases: package.transparent_conformances(record.id())?,
+            type_factory: symbols.type_factory().clone(),
             constructors: Self::constructors(record.initializers(), &symbols, package)?,
             static_methods: Self::static_methods(record.methods(), &symbols, package)?,
             instance_methods: Self::instance_methods(record.methods(), &symbols, package)?,
@@ -113,18 +125,39 @@ impl RecordClass {
     }
 
     pub fn validate_names(&self) -> Result<()> {
-        NameScope::new(format!("record `{}`", self.class_name))
-            .insert_all(self.fields.iter().map(RecordField::field_name))
-            .and_then(|scope| {
-                scope.insert_all(self.constants.iter().map(ConstantStub::member_name))
-            })
-            .and_then(|scope| {
-                scope.insert_all(self.callables().map(AssociatedCallable::member_name))
-            })
-            .map(|_| ())?;
+        NameScope::new(format!("record `{}`", self.class_name)).insert_all(self.member_names())?;
         RecordField::validate_default_order(&self.fields, "record default before required field")?;
         self.callables()
             .try_for_each(|callable| callable.validate_names(&self.class_name))
+    }
+
+    pub fn wrapped_enum_bases(&self, enums: &[(EnumId, EnumClass)]) -> BTreeSet<EnumId> {
+        let mut names = self
+            .member_names()
+            .map(|(name, _)| (name, None))
+            .collect::<HashMap<_, Option<EnumId>>>();
+        let mut wrapped = BTreeSet::new();
+        enums
+            .iter()
+            .filter(|(_, enumeration)| self.bases.contains(&enumeration.class_name))
+            .for_each(|(id, enumeration)| {
+                enumeration
+                    .callables()
+                    .map(AssociatedCallable::member_name)
+                    .chain(enumeration.constants.iter().map(ConstantStub::member_name))
+                    .for_each(|(name, _)| match names.entry(name) {
+                        Entry::Vacant(entry) => {
+                            entry.insert(Some(*id));
+                        }
+                        Entry::Occupied(entry) => {
+                            wrapped.insert(*id);
+                            if let Some(previous) = entry.get() {
+                                wrapped.insert(*previous);
+                            }
+                        }
+                    });
+            });
+        wrapped
     }
 
     pub fn top_level_name(&self) -> (String, String) {
@@ -148,6 +181,14 @@ impl RecordClass {
             .iter()
             .chain(&self.static_methods)
             .chain(&self.instance_methods)
+    }
+
+    fn member_names(&self) -> impl Iterator<Item = (String, String)> + '_ {
+        self.fields
+            .iter()
+            .map(RecordField::field_name)
+            .chain(self.constants.iter().map(ConstantStub::member_name))
+            .chain(self.callables().map(AssociatedCallable::member_name))
     }
 
     fn constructors(

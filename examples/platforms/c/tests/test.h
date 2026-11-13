@@ -49,6 +49,7 @@ bool test_custom_types(void);
 
 bool test_shapes(void);
 bool test_messages(void);
+bool test_transparent_enums(void);
 
 bool test_animals(void);
 bool test_filters(void);

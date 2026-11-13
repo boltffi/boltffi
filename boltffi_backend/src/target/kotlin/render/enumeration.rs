@@ -18,7 +18,7 @@ use crate::{
             AssociatedConstants, Documentation,
             field::EncodedField,
             function::{ExportedCall, ExportedCallRenderer, ReceiverCarrier, ReceiverMutation},
-            signature::validate_exception_fields,
+            signature::{validate_exception_fields, validate_reserved_members},
         },
         syntax::{ArgumentList, Expression, Identifier, Literal, Statement, TypeName},
     },
@@ -53,6 +53,12 @@ enum Body {
     Data {
         variants: Vec<DataVariant>,
         wire_size_type: TypeName,
+        /// Whether any variant renders as its payload record. A transparent
+        /// enum renders as a sealed interface whose codec lives on the
+        /// companion, because the variant tag depends on which enum a shared
+        /// payload record is written through and so cannot be a member of
+        /// the payload.
+        transparent: bool,
     },
 }
 
@@ -130,6 +136,13 @@ pub struct DataVariant {
     read: Expression,
     size: Expression,
     tag_write: Statement,
+    transparent: bool,
+    /// The type the companion codec dispatch matches with `is`: the payload
+    /// record for a transparent variant, the nested variant class otherwise.
+    subject: TypeName,
+    /// The payload write statements of the companion codec dispatch, after
+    /// the tag write.
+    payload_writes: Vec<Statement>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -207,6 +220,16 @@ impl Enumeration {
 
     pub fn data(&self) -> bool {
         matches!(&self.body, Body::Data { .. })
+    }
+
+    pub fn transparent(&self) -> bool {
+        matches!(
+            &self.body,
+            Body::Data {
+                transparent: true,
+                ..
+            }
+        )
     }
 
     pub fn value_type(&self) -> Option<&TypeName> {
@@ -298,7 +321,21 @@ impl Enumeration {
         value: Expression,
         writer: Identifier,
         context: &RenderContext<Native>,
+        package: Option<&KotlinPackage>,
     ) -> Result<Statement> {
+        // A transparent enum keeps its codec on the companion: the payload
+        // record cannot carry a `writeTo` member because the tag it must
+        // write depends on which enum it is written through.
+        if Self::is_transparent(id, context)? {
+            let ty = Self::qualified_name_from_id(id, context, package)?;
+            return Ok(Statement::expression(Expression::call(
+                ty,
+                Identifier::parse("writeTo")?,
+                [value, Expression::identifier(writer)]
+                    .into_iter()
+                    .collect::<ArgumentList>(),
+            )));
+        }
         Self::type_name_from_id(id, context).and_then(|_| {
             Ok(Statement::expression(Expression::call(
                 value,
@@ -314,13 +351,45 @@ impl Enumeration {
         id: EnumId,
         value: Expression,
         context: &RenderContext<Native>,
+        package: Option<&KotlinPackage>,
     ) -> Result<Expression> {
+        if Self::is_transparent(id, context)? {
+            let ty = Self::qualified_name_from_id(id, context, package)?;
+            return Ok(Expression::call(
+                ty,
+                Identifier::parse("wireSize")?,
+                [value].into_iter().collect::<ArgumentList>(),
+            ));
+        }
         Self::type_name_from_id(id, context).and_then(|_| {
             Ok(Expression::call(
                 value,
                 Identifier::parse("wireSize")?,
                 ArgumentList::default(),
             ))
+        })
+    }
+
+    fn is_transparent(id: EnumId, context: &RenderContext<Native>) -> Result<bool> {
+        match context
+            .enumeration(id)
+            .ok_or(KotlinHost::broken_bridge_contract(
+                "enum type was not found in render context",
+            ))? {
+            EnumDecl::Data(_) => Ok(context.enum_is_transparent(id)),
+            _ => Ok(false),
+        }
+    }
+
+    fn qualified_name_from_id(
+        id: EnumId,
+        context: &RenderContext<Native>,
+        package: Option<&KotlinPackage>,
+    ) -> Result<TypeName> {
+        let ty = Self::type_name_from_id(id, context)?;
+        Ok(match package {
+            Some(package) => TypeName::qualified(package, ty),
+            None => ty,
         })
     }
 
@@ -387,24 +456,69 @@ impl Enumeration {
         package: Option<&KotlinPackage>,
     ) -> Result<Self> {
         let error = enumeration.is_error_payload();
+        let transparent = context.enum_is_transparent(enumeration.id());
         let name = Name::new(enumeration.name()).type_name();
+        let member_names = enumeration
+            .methods()
+            .iter()
+            .filter(|method| {
+                method.callable().receiver().is_some() && method.callable().params().is_empty()
+            })
+            .map(|method| Name::new(method.name()).function())
+            .collect::<Result<Vec<_>>>()?;
+        if !member_names.is_empty() {
+            let mut reserved = ["wireSize", "toByteArray", "hashCode", "toString"]
+                .map(str::to_owned)
+                .to_vec();
+            let max_fields = enumeration
+                .variants()
+                .iter()
+                .map(|variant| variant.payload().fields().len())
+                .max()
+                .unwrap_or(0);
+            reserved.extend((1..=max_fields).map(|index| format!("component{index}")));
+            validate_reserved_members(
+                &name,
+                &reserved.iter().map(String::as_str).collect::<Vec<_>>(),
+                member_names.iter(),
+            )?;
+        }
         let buffer = WireBuffer::new(&Name::new(enumeration.name()))?;
         let writer = buffer.writer().clone();
+        // The codec of a transparent enum lives on the companion, so the
+        // receiver encodes through `X.wireSize(this)` / `X.writeTo(this, w)`
+        // instead of member calls.
         let receiver = Receiver {
-            carrier: ReceiverCarrier::encoded(buffer.write_statements(
-                Expression::call(
-                    Expression::this(),
-                    Identifier::parse("wireSize")?,
-                    ArgumentList::default(),
-                ),
-                vec![Statement::expression(Expression::call(
-                    Expression::this(),
-                    Identifier::parse("writeTo")?,
-                    [Expression::identifier(writer)]
-                        .into_iter()
-                        .collect::<ArgumentList>(),
-                ))],
-            )?),
+            carrier: ReceiverCarrier::encoded(match transparent {
+                true => buffer.write_statements(
+                    Expression::call(
+                        name.clone(),
+                        Identifier::parse("wireSize")?,
+                        [Expression::this()].into_iter().collect::<ArgumentList>(),
+                    ),
+                    vec![Statement::expression(Expression::call(
+                        name.clone(),
+                        Identifier::parse("writeTo")?,
+                        [Expression::this(), Expression::identifier(writer)]
+                            .into_iter()
+                            .collect::<ArgumentList>(),
+                    ))],
+                )?,
+                false => buffer.write_statements(
+                    Expression::call(
+                        Expression::this(),
+                        Identifier::parse("wireSize")?,
+                        ArgumentList::default(),
+                    ),
+                    vec![Statement::expression(Expression::call(
+                        Expression::this(),
+                        Identifier::parse("writeTo")?,
+                        [Expression::identifier(writer)]
+                            .into_iter()
+                            .collect::<ArgumentList>(),
+                    ))],
+                )?,
+            }),
             writeback: Some(name.clone()),
         };
         let variant_names = enumeration
@@ -424,6 +538,13 @@ impl Enumeration {
                 .map(|call| call.requalify_types(&|ty| qualify_shadowed(ty, &shadowed)))
                 .collect::<Vec<_>>()
         };
+        // In the classic sealed class the codec methods are members, so the
+        // field expressions hang off `this`; the transparent companion
+        // dispatches over a `value` parameter instead.
+        let current = match transparent {
+            true => Expression::identifier(Identifier::parse("value")?),
+            false => Expression::this(),
+        };
         Ok(Self {
             documentation: Documentation::new(enumeration.meta().doc()),
             body: Body::Data {
@@ -432,9 +553,15 @@ impl Enumeration {
                     .iter()
                     .map(|variant| {
                         let mut variant = DataVariant::from_declaration(
-                            variant, host, context, package, &shadowed,
+                            variant,
+                            enumeration.id(),
+                            host,
+                            context,
+                            package,
+                            &shadowed,
+                            current.clone(),
                         )?;
-                        if error {
+                        if error && !variant.transparent() {
                             let scope = TypeName::qualified(
                                 &name,
                                 TypeName::new(variant.name().to_string()),
@@ -451,6 +578,7 @@ impl Enumeration {
                     })
                     .collect::<Result<Vec<_>>>()?,
                 wire_size_type,
+                transparent,
             },
             constants: AssociatedConstants::from_owner(
                 ConstantOwner::Enum(enumeration.id()),
@@ -671,27 +799,50 @@ impl DataVariant {
         self.fields.is_empty()
     }
 
+    pub fn transparent(&self) -> bool {
+        self.transparent
+    }
+
+    pub fn subject(&self) -> &TypeName {
+        &self.subject
+    }
+
+    pub fn payload_writes(&self) -> &[Statement] {
+        &self.payload_writes
+    }
+
     fn from_declaration(
         variant: &DataVariantDecl,
+        enumeration: EnumId,
         host: &KotlinHost,
         context: &RenderContext<Native>,
         package: Option<&KotlinPackage>,
         shadowed: &[String],
+        current: Expression,
     ) -> Result<Self> {
         let name = Name::new(variant.name()).variant()?;
         let tag = Expression::unsigned(variant.tag().get());
-        let fields = Self::payload_fields(variant.payload(), host, context, package, shadowed)?;
-        let read = Self::read_expression(name.clone(), &fields);
-        let size = fields
-            .iter()
-            .map(|field| field.size().clone())
-            .fold(Expression::integer(4), Expression::add);
+        let fields =
+            Self::payload_fields(variant.payload(), host, context, package, shadowed, current)?;
         let tag_write = Statement::expression(Expression::call(
             Expression::identifier(Identifier::parse("writer")?),
             Identifier::parse("writeU32")?,
             [tag.clone()].into_iter().collect::<ArgumentList>(),
         ));
+        if context.enum_is_transparent(enumeration) && variant.transparent() {
+            return Self::from_transparent(variant, name, tag, tag_write, fields);
+        }
+        let read = Self::read_expression(name.clone(), &fields);
+        let size = fields
+            .iter()
+            .map(|field| field.size().clone())
+            .fold(Expression::integer(4), Expression::add);
+        let payload_writes = fields
+            .iter()
+            .map(|field| field.write().clone())
+            .collect::<Vec<_>>();
         Ok(Self {
+            subject: TypeName::new(name.to_string()),
             name,
             documentation: Documentation::new(variant.meta().doc()),
             tag,
@@ -700,6 +851,54 @@ impl DataVariant {
             read,
             size,
             tag_write,
+            transparent: false,
+            payload_writes,
+        })
+    }
+
+    /// A transparent variant has no class of its own: dispatch matches the
+    /// payload record type, the payload writes itself, and reads produce the
+    /// payload directly. Lowering pinned the payload to exactly one record,
+    /// so the record codec methods are the whole wire shape.
+    fn from_transparent(
+        variant: &DataVariantDecl,
+        name: Identifier,
+        tag: Expression,
+        tag_write: Statement,
+        fields: Vec<EncodedField>,
+    ) -> Result<Self> {
+        let [field] = fields.as_slice() else {
+            return Err(KotlinHost::broken_bridge_contract(
+                "transparent variant was not lowered with exactly one payload field",
+            ));
+        };
+        let subject = field.ty().clone();
+        let payload = Expression::identifier(Identifier::parse("value")?);
+        Ok(Self {
+            subject,
+            documentation: Documentation::new(variant.meta().doc()),
+            read: field.read().clone(),
+            size: Expression::add(
+                Expression::integer(4),
+                Expression::call(
+                    payload.clone(),
+                    Identifier::parse("wireSize")?,
+                    ArgumentList::default(),
+                ),
+            ),
+            payload_writes: vec![Statement::expression(Expression::call(
+                payload,
+                Identifier::parse("writeTo")?,
+                [Expression::identifier(Identifier::parse("writer")?)]
+                    .into_iter()
+                    .collect::<ArgumentList>(),
+            ))],
+            name,
+            tag,
+            fields,
+            tag_write,
+            error_message: None,
+            transparent: true,
         })
     }
 
@@ -709,10 +908,10 @@ impl DataVariant {
         context: &RenderContext<Native>,
         package: Option<&KotlinPackage>,
         shadowed: &[String],
+        current: Expression,
     ) -> Result<Vec<EncodedField>> {
         let reader = Identifier::parse("reader")?;
         let writer = Identifier::parse("writer")?;
-        let current = Expression::this();
         match payload {
             DataVariantPayload::Unit => Ok(Vec::new()),
             DataVariantPayload::Tuple(fields) | DataVariantPayload::Struct(fields) => fields

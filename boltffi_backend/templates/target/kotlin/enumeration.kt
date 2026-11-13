@@ -149,6 +149,86 @@
 {%- endfor %}
 }
 {%- endif %}
+{%- else if enumeration.transparent() %}
+{{ enumeration.documentation() }}sealed interface {{ enumeration.name() }} {
+{% for variant in enumeration.data_variants() %}
+{%- if variant.transparent() %}
+{%- else if variant.unit() %}
+{{ variant.documentation().indented("    ") }}    object {{ variant.name() }} : {{ enumeration.name() }}
+{%- else %}
+{{ variant.documentation().indented("    ") }}    data class {{ variant.name() }}(
+{%- for field in variant.fields() %}
+{{ field.documentation().indented("        ") }}        val {{ field.name() }}: {{ field.ty() }}{% if !loop.last %},{% endif %}
+{%- endfor %}
+    ) : {{ enumeration.name() }}
+{%- endif %}
+{%- endfor %}
+
+    companion object {
+        internal fun wireSize(value: {{ enumeration.name() }}): {{ enumeration.wire_size_type() }} {
+            return when (value) {
+{%- for variant in enumeration.data_variants() %}
+                is {{ variant.subject() }} -> {{ variant.size() }}
+{%- endfor %}
+            }
+        }
+
+        internal fun writeTo(value: {{ enumeration.name() }}, writer: WireWriter) {
+            when (value) {
+{%- for variant in enumeration.data_variants() %}
+                is {{ variant.subject() }} -> {
+                    {{ variant.tag_write() }}
+{%- for write in variant.payload_writes() %}
+                    {{ write }}
+{%- endfor %}
+                }
+{%- endfor %}
+            }
+        }
+
+        internal fun toByteArray(value: {{ enumeration.name() }}): ByteArray {
+            val buffer = WireWriterPool.acquire(wireSize(value))
+            val writer = buffer.writer
+            try {
+                writeTo(value, writer)
+                return buffer.bytes()
+            } finally {
+                buffer.close()
+            }
+        }
+
+        internal fun fromReader(reader: WireReader): {{ enumeration.name() }} {
+            val tag = reader.readU32()
+            return when (tag) {
+{%- for variant in enumeration.data_variants() %}
+                {{ variant.tag() }} -> {{ variant.read() }}
+{%- endfor %}
+                else -> {{ enumeration.unknown_tag() }}
+            }
+        }
+
+        internal fun fromByteArray(bytes: ByteArray): {{ enumeration.name() }} {
+            val reader = WireReader(bytes)
+            return fromReader(reader)
+        }
+{%- for constant in constants %}
+
+{{ constant }}
+{%- endfor %}
+{%- for initializer in enumeration.initializers() %}
+
+{% call functions::exported_call(initializer, "        ") %}{% endcall %}
+{%- endfor %}
+{%- for method in enumeration.static_methods() %}
+
+{% call functions::exported_call(method, "        ") %}{% endcall %}
+{%- endfor %}
+    }
+{%- for method in enumeration.instance_methods() %}
+
+{% call functions::exported_call(method, "    ") %}{% endcall %}
+{%- endfor %}
+}
 {%- else if enumeration.data() %}
 {{ enumeration.documentation() }}sealed class {{ enumeration.name() }}{% if enumeration.error() %} : Exception(){% endif %} {
     internal abstract fun wireSize(): {{ enumeration.wire_size_type() }}
