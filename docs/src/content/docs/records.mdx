@@ -965,11 +965,9 @@ demo_string_free(&description);`}
 
 ### Transparent variants
 
-A variant whose payload is exactly one record can be marked
-`#[boltffi::transparent]`. The bindings then drop the wrapper class for that
-variant: the payload record itself becomes the variant, so reading the enum
-means one less allocation and one less field hop, and a type check against
-the payload record smart-casts directly.
+Mark a variant with `#[boltffi::transparent]` when its only payload is a
+record to let Kotlin and Python use that record as the variant without a
+separate wrapper
 
 ```rust
 #[data]
@@ -987,8 +985,8 @@ pub enum Envelope {
 }
 ```
 
-In Kotlin the enum renders as a sealed interface and the payload record
-implements it; the codec lives on the companion:
+In Kotlin the enum becomes a sealed interface and the payload record
+implements it
 
 ```kotlin
 sealed interface Envelope {
@@ -1002,14 +1000,14 @@ data class Ping(
 ) : Envelope
 
 when (val message = envelope) {
-    is Ping -> message.label   // the record itself, no `.value`
+    is Ping -> message.label
     is Envelope.Raw -> message.field0
     Envelope.Unset -> ""
 }
 ```
 
 In Python the payload record inherits the enum class, so `isinstance` and
-`match` work against the record directly:
+`match` work against the record directly
 
 ```python
 match envelope:
@@ -1018,31 +1016,28 @@ match envelope:
     case EnvelopeUnset(): ...
 ```
 
-A record may be a transparent payload of several enums at once — it
-implements each enum's interface, and the codec recovers the right variant
-tag from which enum it is written through.
+The same record can represent a variant in more than one enum because each
+enum keeps its own variant tag
 
-Constraints, checked at generate time:
+Two rules apply to the annotation
 
-- The payload must be exactly one record. Unit variants, scalar payloads,
-  and multi-field payloads keep their wrapper classes (mixing transparent
-  and wrapped variants in one enum is fine).
-- No two transparent variants of one enum may carry the same payload
-  record: encode recovers the tag from the payload's concrete type, which a
-  shared record would make ambiguous. Note the flip side: adding a second
-  field of an existing payload type to an enum is representable only by
-  leaving the new variant wrapped.
-- Error enums (`#[error]`) cannot have transparent variants — the sealed
-  interface cannot extend `Exception`.
+- A marked variant must have exactly one payload field and that field must
+  be a record
+- Each transparent variant in one enum must use a different record so its
+  type identifies a single variant
 
-A record containing only fixed-width primitives is a C-native class in
-Python; as a transparent payload its type is built during package import,
-with the enum classes as its bases, instead of at extension init. It is
-therefore not an attribute of the extension module itself — reach it through
-the package, as you would any other record.
+Unmarked variants keep their normal representation, so an enum can mix
+transparent and wrapped variants
 
-Transparent variants are currently supported by the Kotlin and Python
-backends; the other backends reject them at generate time.
+Kotlin and Python keep ordinary variants for error enums and for enums
+whose inherited members would conflict with the record or another enum,
+while allowing the record to remain transparent in other enums that do
+not conflict
+
+Swift, Java, C#, Dart and TypeScript accept the annotation and keep their
+usual enum representation
+
+The attribute does not change the Rust type or the FFI encoding
 
 ## Methods and constructors
 
