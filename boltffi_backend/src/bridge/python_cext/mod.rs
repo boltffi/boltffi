@@ -106,13 +106,15 @@ mod tests {
             .map(|(_, contents)| contents)
             .expect("CPython extension file");
 
-        assert!(header.contains("int32_t boltffi_function_demo_add(int32_t left, int32_t right);"));
+        assert!(
+            header.contains("int32_t boltffi_function_4demo3add(int32_t left, int32_t right);")
+        );
         assert!(extension.contains("#include \"boltffi.h\""));
         assert!(extension.contains("boltffi_python_boltffi_free_buf"));
         assert!(extension.contains(
-            "typedef int32_t (*boltffi_python_boltffi_function_demo_add_fn)(int32_t, int32_t);"
+            "typedef int32_t (*boltffi_python_boltffi_function_4demo3add_fn)(int32_t, int32_t);"
         ));
-        assert!(extension.contains("boltffi_python_boltffi_function_demo_add = (boltffi_python_boltffi_function_demo_add_fn)dlsym(boltffi_python_library_handle, \"boltffi_function_demo_add\");"));
+        assert!(extension.contains("boltffi_python_boltffi_function_4demo3add = (boltffi_python_boltffi_function_4demo3add_fn)dlsym(boltffi_python_library_handle, \"boltffi_function_4demo3add\");"));
         assert!(extension.contains("static PyObject *boltffi_python_initialize_loader"));
         assert!(extension.contains("static void boltffi_python_free_module"));
         assert!(!extension.contains("static PyMethodDef"));
@@ -156,8 +158,8 @@ mod tests {
             .map(|(_, contents)| contents)
             .expect("CPython extension file");
 
-        assert!(extension.contains("boltffi_create_callback_demo_listener"));
-        assert!(extension.contains("boltffi_register_callback_demo_listener"));
+        assert!(extension.contains("boltffi_create_callback_4demo8Listener"));
+        assert!(extension.contains("boltffi_register_callback_4demo8Listener"));
     }
 
     #[test]

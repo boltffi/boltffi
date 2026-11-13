@@ -40,6 +40,7 @@ experimental = ["typescript.async_streams"]
 Experimental targets:
 - `dart`
 - `kotlin_multiplatform`
+- `ruby`
 
 Experimental features:
 - `typescript.async_streams`
@@ -47,7 +48,7 @@ Experimental features:
 ### `[package]` (required)
 
 - `name` (string): Logical name used for default module/class naming.
-- `crate` (string, optional): Rust crate name to scan/build if different from `name`.
+- `crate` (string, optional): Rust crate name to build if different from `name`.
 - `version` (string, optional): Package version.
   - Default: read from `Cargo.toml`
 - `description` (string, optional): Package description.
@@ -76,6 +77,7 @@ Each `[targets.<name>]` table listed below also accepts `cargo_args` (array of s
 | `[targets.python]` | `generate python`, `pack python` |
 | `[targets.csharp]` | `generate csharp`, `pack csharp` |
 | `[targets.c]` | `generate c`, `pack c` |
+| `[targets.ruby]` | `generate ruby`, `pack ruby` |
 
 `generate all`, `build all`, `pack all`, and `release` apply each target's `cargo_args` to that target only.
 
@@ -152,7 +154,7 @@ Each mapping is a table with:
 Example:
 ```toml
 [targets.apple.swift.type_mappings]
-Uuid = { type = "UUID", conversion = "uuid_string" }
+ItemId = { type = "UUID", conversion = "uuid_string" }
 ```
 
 ### `[targets.apple.xcframework]` (optional)
@@ -267,7 +269,7 @@ Maps custom types to native Kotlin/Java types. Same structure as `[targets.apple
 Example:
 ```toml
 [targets.android.kotlin.type_mappings]
-Uuid = { type = "java.util.UUID", conversion = "uuid_string" }
+ItemId = { type = "java.util.UUID", conversion = "uuid_string" }
 ```
 
 ### `[targets.android.header]` (optional)
@@ -279,6 +281,17 @@ Uuid = { type = "java.util.UUID", conversion = "uuid_string" }
 
 - `output` (path, optional): Where `boltffi pack android` writes the `jniLibs/` folder.
   - Default: `{targets.android.output}/jniLibs`
+
+### `[targets.android.link]` (optional)
+
+How `boltffi pack android` links each ABI's JNI library.
+
+- `extra_args` (array of strings): Extra arguments for that link, e.g. `["-Wl,-z,max-page-size=16384"]`.
+  - Default: `[]`
+- `export_c_symbols` (bool): Export the library's `boltffi_*` C symbols beside its JNI entry points.
+  Off, it exports only `Java_*`, `JNI_OnLoad` and `JNI_OnUnload`, and the linker drops whatever
+  those don't reach.
+  - Default: `true`
 
 ### `[targets.android.debug_symbols]` (optional)
 
@@ -424,7 +437,7 @@ Maps custom types to native TypeScript types. Same structure as `[targets.apple.
 Example:
 ```toml
 [targets.wasm.typescript.type_mappings]
-Uuid = { type = "string", conversion = "uuid_string" }
+ItemId = { type = "string", conversion = "uuid_string" }
 ```
 
 ### `[targets.wasm.npm]` (optional)
@@ -590,6 +603,41 @@ See [C linking and ownership](https://www.boltffi.dev/docs/c) for consumption an
 [experimental C limits](https://www.boltffi.dev/docs/experimental#c) for the
 remaining API restrictions.
 
+## Ruby
+
+### `[targets.ruby]` (experimental, optional)
+
+Enable Ruby with `--experimental` or `experimental = ["ruby"]` at the top level.
+
+The generated gem requires Ruby 3.3 or later.
+
+- `enabled` (bool): Whether Ruby generation and packaging are active.
+  - Default: `false`
+- `output` (path): Gem source root.
+  - Default: `dist/ruby`
+  - `generate ruby` writes `{output}/<gem>.gemspec`, `{output}/lib/<stem>.rb`, and
+    the extension sources under `{output}/ext/<stem>/`.
+  - `pack ruby` also copies the host static library and its link metadata into
+    `{output}/ext/<stem>/`.
+- `gem_name` (string, optional): Gem name in RubyGems syntax.
+  - Default: `{package.name}`
+  - The extension stem `<stem>` is the gem name in `snake_case`. It names
+    `lib/<stem>.rb`, `ext/<stem>/`, and the `Init_<stem>` entry point.
+- `module_name` (string, optional): Ruby module that the extension defines,
+  such as `MyLib::Native`.
+  - Default: the Cargo package name in `UpperCamelCase`.
+- `version` (string, optional): Gem version in RubyGems syntax.
+  - Default: the Cargo package version without build metadata. For example,
+    `1.2.3-rc.1+ci` becomes `1.2.3-rc.1`.
+
+`pack ruby` requires the `staticlib` crate type and builds for the current
+host, which must be macOS or Linux. The generated `extconf.rb` links the
+library that `pack ruby` copies, so run `pack ruby` before `gem build`.
+
+`pack ruby --no-build` builds nothing. It checks that the recorded digest of
+the extension C source matches the current source. Missing or invalid link
+metadata or a source mismatch causes an error.
+
 ## Dart
 
 ### `[targets.dart]` (optional)
@@ -599,3 +647,5 @@ remaining API restrictions.
   - Default: `dist/dart`
 - `native_targets` (array of strings, optional): Dart native build targets.
   - Default: `["android:arm64", "android:armv7", "android:x86_64", "ios:arm64", "ios_sim:arm64", "ios_sim:x86_64", "linux:arm64", "linux:x86_64", "macos:arm64", "macos:x86_64", "windows:x86_64", "windows:arm64"]`.
+- `standalone` (bool): Emit a pubspec without `resolution: workspace`, for consumers that depend on the package through a bare path/git dependency outside any pub workspace.
+  - Default: `false`

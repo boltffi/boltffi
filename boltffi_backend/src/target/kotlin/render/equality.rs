@@ -2,7 +2,10 @@ use askama::Template as AskamaTemplate;
 
 use crate::{
     core::Result,
-    target::kotlin::syntax::{Expression, Identifier, TypeName},
+    target::kotlin::{
+        KotlinHost,
+        syntax::{Expression, Identifier, Statement, TypeName},
+    },
 };
 
 #[derive(AskamaTemplate)]
@@ -17,23 +20,69 @@ pub enum Comparison {
     /// `==`, as the data class would.
     Value,
     /// Boxed `equals`, the total order a data class uses for `Float` and `Double`.
-    Float { nullable: bool },
+    Float {
+        nullable: bool,
+    },
     /// `contentEquals`, which also accepts nullable arrays.
     Array,
     /// Element-wise over a `List` whose elements compare by content.
     List(Box<Comparison>),
-    /// Entry-wise over a `Map` whose values compare by content; keys use `==`.
-    Map(Box<Comparison>),
-    /// Null-safe `List` or `Map` comparison.
+    Map {
+        key: Box<Comparison>,
+        value: Box<Comparison>,
+    },
+    Tuple(Vec<(Identifier, Comparison)>),
+    Result {
+        ok: Box<Comparison>,
+        error: Box<Comparison>,
+    },
     Nullable(Box<Comparison>),
 }
 
 impl Comparison {
-    /// Wraps an element comparison in a container one, or `Value` when the element needs no content comparison.
-    pub fn container(element: Self, container: fn(Box<Self>) -> Self) -> Self {
-        match element.by_content() {
-            true => container(Box::new(element)),
-            false => Self::Value,
+    pub fn map(key: Self, value: Self) -> Self {
+        if key.by_content() || value.by_content() {
+            Self::Map {
+                key: Box::new(key),
+                value: Box::new(value),
+            }
+        } else {
+            Self::Value
+        }
+    }
+
+    pub fn sequence(element: Self) -> Self {
+        if element.by_content() {
+            Self::List(Box::new(element))
+        } else {
+            Self::Value
+        }
+    }
+
+    pub fn tuple(fields: Vec<(Identifier, Self)>) -> Self {
+        if fields.iter().any(|(_, comparison)| comparison.by_content()) {
+            Self::Tuple(fields)
+        } else {
+            Self::Value
+        }
+    }
+
+    pub fn result(ok: Self, error: Self) -> Self {
+        if ok.by_content() || error.by_content() {
+            Self::Result {
+                ok: Box::new(ok),
+                error: Box::new(error),
+            }
+        } else {
+            Self::Value
+        }
+    }
+
+    pub fn optional(self) -> Self {
+        match self {
+            Self::Value | Self::Array => self,
+            Self::Float { .. } => Self::Float { nullable: true },
+            comparison => Self::Nullable(Box::new(comparison)),
         }
     }
 
@@ -181,46 +230,164 @@ impl StructuralEquality {
                     ),
                 )
             }
-            Comparison::Map(value) => {
+            Comparison::Map {
+                key: key_comparison,
+                value,
+            } => {
                 let size = Identifier::parse("size")?;
                 let entries = Identifier::parse("entries")?;
                 let entry = Expression::identifier(name("entry")?);
                 let key = Expression::property(entry.clone(), Identifier::parse("key")?);
                 let hash = name("hash")?;
-                let (value_equals, value_hash) = Self::property(
-                    Expression::property(entry.clone(), Identifier::parse("value")?),
+                let candidate = Expression::identifier(name("candidate")?);
+                let other_value = if key_comparison.by_content() {
+                    Expression::property(candidate.clone(), Identifier::parse("value")?)
+                } else {
                     Expression::call(
                         other.clone(),
                         Identifier::parse("getValue")?,
                         [key.clone()].into_iter().collect(),
-                    ),
+                    )
+                };
+                let (value_equals, value_hash) = Self::property(
+                    Expression::property(entry.clone(), Identifier::parse("value")?),
+                    other_value,
                     value,
                     depth + 1,
                 )?;
+                let (key_equals, key_hash) = Self::property(
+                    key.clone(),
+                    Expression::property(candidate, Identifier::parse("key")?),
+                    key_comparison,
+                    depth + 1,
+                )?;
+                let entries_equal = if key_comparison.by_content() {
+                    let unmatched_name = name("unmatchedEntries")?;
+                    let unmatched = Expression::identifier(unmatched_name.clone());
+                    let candidates_name = name("candidates")?;
+                    let candidates = Expression::identifier(candidates_name.clone());
+                    let index_name = name("matchedIndex")?;
+                    let index = Expression::identifier(index_name.clone());
+                    let matches = key_equals.and(value_equals);
+                    Expression::run(
+                        vec![Statement::value(
+                            unmatched_name,
+                            Expression::property(other.clone(), entries.clone()).group_by_to(
+                                Expression::invoke("mutableMapOf", [].into_iter().collect()),
+                                name("entry")?,
+                                key_hash.clone(),
+                            ),
+                        )],
+                        Expression::property(this.clone(), entries.clone()).all(
+                            name("entry")?,
+                            unmatched.index(key_hash.clone()).let_or_else(
+                                candidates_name,
+                                Expression::run(
+                                    vec![Statement::value(
+                                        index_name,
+                                        candidates
+                                            .clone()
+                                            .index_of_first(name("candidate")?, matches),
+                                    )],
+                                    Expression::conditional(
+                                        index.clone().not_equal(Expression::integer(-1)),
+                                        Expression::run(
+                                            vec![Statement::expression(Expression::call(
+                                                candidates,
+                                                Identifier::parse("removeAt")?,
+                                                [index].into_iter().collect(),
+                                            ))],
+                                            Expression::bool(true),
+                                        ),
+                                        Expression::bool(false),
+                                    ),
+                                ),
+                                Expression::bool(false),
+                            ),
+                        ),
+                    )
+                } else {
+                    Expression::property(this.clone(), entries.clone()).all(
+                        name("entry")?,
+                        Expression::call(
+                            other.clone(),
+                            Identifier::parse("containsKey")?,
+                            [key].into_iter().collect(),
+                        )
+                        .and(value_equals),
+                    )
+                };
                 (
                     Expression::property(this.clone(), size.clone())
                         .equal(Expression::property(other.clone(), size))
-                        .and(
-                            Expression::property(this.clone(), entries.clone()).all(
-                                name("entry")?,
-                                Expression::call(
-                                    other,
-                                    Identifier::parse("containsKey")?,
-                                    [key.clone()].into_iter().collect(),
-                                )
-                                .and(value_equals),
-                            ),
-                        ),
+                        .and(entries_equal),
                     Expression::property(this, entries).fold(
                         Expression::integer(0),
                         hash.clone(),
                         name("entry")?,
                         Expression::identifier(hash).add(Expression::call(
-                            key.convert(hash_code),
+                            key_hash,
                             Identifier::parse("xor")?,
                             [value_hash].into_iter().collect(),
                         )),
                     ),
+                )
+            }
+            Comparison::Tuple(fields) => fields
+                .iter()
+                .map(|(field, comparison)| {
+                    Self::property(
+                        Expression::property(this.clone(), field.clone()),
+                        Expression::property(other.clone(), field.clone()),
+                        comparison,
+                        depth,
+                    )
+                })
+                .collect::<Result<Vec<_>>>()?
+                .into_iter()
+                .reduce(|(equals, hash), (next_equals, next_hash)| {
+                    (
+                        equals.and(next_equals),
+                        Expression::integer(31)
+                            .multiply(hash.parenthesized())
+                            .add(next_hash),
+                    )
+                })
+                .map(|(equals, hash)| (equals.parenthesized(), hash.parenthesized()))
+                .ok_or_else(|| KotlinHost::unsupported("tuple comparison without fields"))?,
+            Comparison::Result { ok, error } => {
+                let ok_name = name("ok")?;
+                let error_name = name("error")?;
+                let other_name = name("otherResult")?;
+                let other_result = Expression::identifier(other_name.clone());
+                let (ok_equals, ok_hash) = Self::property(
+                    Expression::identifier(ok_name.clone()),
+                    Expression::property(other_result.clone(), Identifier::parse("value")?),
+                    ok,
+                    depth + 1,
+                )?;
+                let (error_equals, error_hash) = Self::property(
+                    Expression::identifier(error_name.clone()),
+                    Expression::property(other_result.clone(), Identifier::parse("error")?),
+                    error,
+                    depth + 1,
+                )?;
+                (
+                    Expression::run(
+                        vec![Statement::value(other_name, other)],
+                        this.clone().result_fold(
+                            ok_name.clone(),
+                            other_result
+                                .clone()
+                                .type_check(TypeName::new("BoltFFIResult.Ok"))
+                                .and(ok_equals),
+                            error_name.clone(),
+                            other_result
+                                .type_check(TypeName::new("BoltFFIResult.Err"))
+                                .and(error_equals),
+                        ),
+                    ),
+                    this.result_fold(ok_name, ok_hash, error_name, error_hash),
                 )
             }
             Comparison::Nullable(inner) => {

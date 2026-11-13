@@ -287,6 +287,7 @@ pub fn lower_exported_method<S: SurfaceLower>(
     method: &MethodDef,
     start_symbol_name: &str,
 ) -> Result<ExportedCallable<S>, LowerError> {
+    allocator.enter_callable(start_symbol_name);
     let receiver = lower_receiver(method.receiver);
     let parameters = params::lower::<S, IntoRust>(
         index,
@@ -529,7 +530,7 @@ fn lower_closure_out_of_rust_parts<S: SurfaceLower>(
         error,
         ExecutionDecl::synchronous(),
     )?;
-    let shape = S::outgoing_closure_registration(allocator, closure.signature)?;
+    let shape = S::outgoing_closure_registration(allocator)?;
     #[allow(clippy::let_unit_value)]
     let receive = <OutOfRust as Direction>::receive_from(Receive::ByValue);
     let registration = ClosureRegistration::<S, OutOfRust>::new(shape, receive);
@@ -605,6 +606,7 @@ pub fn lower_function<S: SurfaceLower>(
     function: &FunctionDef,
     start_symbol_name: &str,
 ) -> Result<ExportedCallable<S>, LowerError> {
+    allocator.enter_callable(start_symbol_name);
     let owner = CallableOwner::Function;
     let parameters = params::lower::<S, IntoRust>(
         index,
@@ -644,7 +646,9 @@ pub fn lower_constant_accessor<S: SurfaceLower>(
     allocator: &mut SymbolAllocator,
     owner: CallableOwner<'_>,
     type_expr: &boltffi_ast::TypeExpr,
+    accessor_symbol_name: &str,
 ) -> Result<ExportedCallable<S>, LowerError> {
+    allocator.enter_callable(accessor_symbol_name);
     let return_def = boltffi_ast::ReturnDef::value(type_expr.clone());
     let (returns, error) = returns::lower::<S, _>(
         index,

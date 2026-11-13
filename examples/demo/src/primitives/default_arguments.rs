@@ -6,6 +6,7 @@ use boltffi::*;
 
 use crate::callbacks::sync_traits::ValueCallback;
 use crate::custom_types::Email;
+use crate::records::default_values::Timeout;
 
 #[demo_bench_macros::demo_case(
     "primitives.default_arguments.should_keep_required_arguments_after_defaults",
@@ -85,10 +86,12 @@ pub fn apply_optional_closure(
 }
 
 /// A counter whose start and step both have defaults.
+#[export]
 pub struct DefaultedCounter {
     start: i32,
 }
 
+#[export]
 pub struct DefaultedWideCounter {
     value: i64,
 }
@@ -322,7 +325,7 @@ pub fn default_limit(#[boltffi::default(None)] limit: DefaultLimit) -> Option<u3
     exclude(c, reason = ExclusionReason::ImplementationGap, details = "C has no default arguments.")
 )]
 #[export]
-pub fn default_timeout_seconds(#[boltffi::default(1.5)] timeout: chrono::TimeDelta) -> f64 {
+pub fn default_timeout_seconds(#[boltffi::default(1.5)] timeout: Timeout) -> f64 {
     timeout.num_milliseconds() as f64 / 1_000.0
 }
 

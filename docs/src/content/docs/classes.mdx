@@ -1,6 +1,6 @@
 ---
 title: "Classes"
-description: "Expose Rust structs as BoltFFI classes with #[export] impl blocks, including constructors, methods, ownership, thread safety, and lifecycle management."
+description: "Expose Rust structs and enums as BoltFFI classes with #[export] on the type and its impl blocks, including constructors, methods, ownership, thread safety, and lifecycle management."
 ---
 
 import CodeComparison from "../../components/CodeComparisonWrapper.astro";
@@ -14,18 +14,19 @@ BoltFFI has two ways to expose a struct: as data or as a class.
 
 Data (`#[data]`) is for plain values. A `Point { x, y }` or a `User { id, name, email }`. Data is copied when it crosses the boundary. The target language gets a struct or record with public fields. You can also attach methods, constructors, and [associated constants](/docs/constants#associated-constants) with `#[data(impl)]`. See [Records](/docs/records#methods-and-constructors).
 
-Classes (`#[export] impl`) are for objects with behavior. A `DatabaseConnection` or a `HttpClient`. The object lives in Rust, the target language holds a reference to it. Methods operate on that reference. The object is not copied - there's one instance, and both sides point to it. The exported impl may also define [associated constants](/docs/constants#associated-constants).
+Classes (`#[export]` on a struct and its impl blocks) are for objects with behavior. A `DatabaseConnection` or a `HttpClient`. The object lives in Rust, the target language holds a reference to it. Methods operate on that reference. The object is not copied - there's one instance, and both sides point to it. The exported impl may also define [associated constants](/docs/constants#associated-constants).
 
 Use data when you're passing values around. Use classes when you're managing state or resources.
 
 ## Defining a class
 
-Put `#[export]` on the impl block, not the struct. The struct stays private; only the methods you define in the impl block are exposed.
+Put `#[export]` on the struct and on the impl block. The struct declares the class and its fields stay private; only the methods in `#[export] impl` blocks are exposed.
 
 <CodeComparison
   title=""
   rust={`use std::sync::Mutex;
 
+#[export]
 pub struct Counter {
     value: Mutex<i32>,
 }
@@ -117,6 +118,67 @@ printf("%d\\n", demo_counter_get(&counter));
 demo_counter_free(&counter);`}
 />
 
+### More than one impl block
+
+A class can have any number of `#[export] impl` blocks. Each adds its methods, constructors, constants and streams to the class its struct or enum declares. A block can sit in any module of the crate, above or below the struct, and name the class by any path or `use` alias.
+
+```rust
+#[export]
+pub struct Counter {
+    value: Mutex<i32>,
+}
+
+#[export]
+impl Counter {
+    pub fn new() -> Self {
+        Counter { value: Mutex::new(0) }
+    }
+}
+
+mod mutation {
+    #[export]
+    impl super::Counter {
+        pub fn increment(&self) {
+            *self.value.lock().unwrap() += 1;
+        }
+    }
+}
+```
+
+Thread safety belongs to the struct or enum that declares the class, so `#[export(single_threaded)]` goes there and an `#[export] impl` block takes no arguments. `#[deprecated]` goes there too. The class's doc comment comes from that struct or enum, or, when it has none, from the first documented `#[export] impl` block.
+
+A block cannot implement a trait or take generic parameters.
+
+### Enums as classes
+
+`#[export]` on an enum declares a class the same way. The variants stay in Rust, and the target language sees only the methods.
+
+```rust
+#[export]
+pub enum TrafficLight {
+    Red,
+    Green { seconds: u32 },
+}
+
+#[export]
+impl TrafficLight {
+    pub fn new() -> Self {
+        Self::Red
+    }
+
+    pub fn seconds_left(&self) -> u32 {
+        match self {
+            Self::Red => 0,
+            Self::Green { seconds } => *seconds,
+        }
+    }
+}
+```
+
+To pass the variants themselves across, make it a [`#[data]` enum](/docs/records#enums) instead. An enum is either one or the other.
+
+An `#[export] impl` for a struct or enum without `#[export]` fails with `` `Counter` is not an exported class ``, next to ``cannot find macro `Counter` ``.
+
 ## Constructors
 
 Methods that return `Self` become constructors. How they appear in the target language depends on the method name and parameters.
@@ -177,6 +239,12 @@ Methods with parameters that return `Self` become additional constructors. In Sw
 <CodeComparison
   title=""
   rust={`#[export]
+pub struct Database {
+    path: String,
+    read_only: bool,
+}
+
+#[export]
 impl Database {
     pub fn new() -> Self {
         Database { path: ":memory:".into(), read_only: false }
@@ -279,6 +347,12 @@ Methods with no parameters and a name other than `new` become factory methods.
 <CodeComparison
   title=""
   rust={`#[export]
+pub struct Config {
+    debug: bool,
+    timeout: u32,
+}
+
+#[export]
 impl Config {
     pub fn new() -> Self {
         Config::default_config()
@@ -366,7 +440,7 @@ impl Database {
         if !path_exists(path) {
             return Err(DbError::NotFound);
         }
-        Ok(Database { path: path.into() })
+        Ok(Database { path: path.into(), read_only: false })
     }
 }`}
   swift={`public class Database {
@@ -470,6 +544,7 @@ Because the target language can call your methods from any thread at any time, B
   title=""
   rust={`use std::sync::Mutex;
 
+#[export]
 pub struct Account {
     balance: Mutex<i64>,
 }
@@ -621,14 +696,7 @@ impl Counter {
 ```
 
 ```
-error: BoltFFI: `&mut self` methods are not thread-safe in FFI contexts
-
-Two threads calling `&mut self` on the same instance = undefined behavior.
-
-Options:
-1. Use `&self` with interior mutability (Mutex, RefCell, etc.) [recommended]
-2. Add #[export(single_threaded)] ONLY if you enforce thread safety in the target
-   language and want to avoid synchronization overhead you don't need
+error: BoltFFI: a `&mut self` method needs `#[export(single_threaded)]` on its class's struct or enum, since a thread-safe class can be borrowed from many threads at once
 ```
 
 Use `&self` instead, and move the synchronization inside your struct. `Mutex`, `RwLock`, atomics, channels, or any other mechanism that makes concurrent access safe:
@@ -636,6 +704,7 @@ Use `&self` instead, and move the synchronization inside your struct. `Mutex`, `
 ```rust
 use std::sync::Mutex;
 
+#[export]
 pub struct Counter {
     value: Mutex<i32>,
 }
@@ -728,6 +797,11 @@ The C target does not generate async methods yet. In the other targets, marking 
 <CodeComparison
   title=""
   rust={`#[export]
+pub struct HttpClient {
+    client: reqwest::Client,
+}
+
+#[export]
 impl HttpClient {
     pub fn new() -> Self {
         HttpClient { client: reqwest::Client::new() }
@@ -824,13 +898,23 @@ Methods can accept or return other class instances.
 <CodeComparison
   title=""
   rust={`#[export]
+pub struct Session {
+    user_id: u64,
+}
+
+#[export]
+pub struct User {
+    id: u64,
+}
+
+#[export]
 impl Session {
     pub fn new(user: &User) -> Self {
         Session { user_id: user.id() }
     }
     
     pub fn user(&self) -> User {
-        User::find(self.user_id)
+        User { id: self.user_id }
     }
 }
 
@@ -914,9 +998,14 @@ Use `#[skip]` to exclude a method from FFI export. The method stays in Rust but 
 <CodeComparison
   title=""
   rust={`#[export]
+pub struct MyClass {
+    factor: i32,
+}
+
+#[export]
 impl MyClass {
     pub fn exported(&self) -> i32 {
-        self.helper() * 2
+        self.helper() * self.factor
     }
     
     #[skip]
@@ -979,12 +1068,13 @@ If your struct contains types that aren't thread-safe (like `RefCell`, `Rc`, or 
 
 1. Make it thread-safe using synchronization primitives like `Mutex`, `RwLock`, or atomics. For shared ownership across threads, combine with `Arc` (e.g., `Arc<Mutex<T>>`).
 
-2. Add `#[export(single_threaded)]`. This disables the `Send + Sync` check, but you're responsible for ensuring the class is only used from a single thread.
+2. Add `#[export(single_threaded)]` to the struct or enum. This disables the `Send + Sync` check, but you're responsible for ensuring the class is only used from a single thread.
 
 <CodeComparison
   title=""
   rust={`use std::sync::atomic::{AtomicI32, Ordering};
 
+#[export]
 pub struct SafeCounter {
     value: AtomicI32,
 }
@@ -1091,11 +1181,12 @@ But synchronization has a cost. If you control thread access in the target langu
 `#[export(single_threaded)]` disables both checks:
 
 ```rust
+#[export(single_threaded)]
 pub struct FastCounter {
     value: i32,
 }
 
-#[export(single_threaded)]
+#[export]
 impl FastCounter {
     pub fn new() -> Self {
         FastCounter { value: 0 }

@@ -42,7 +42,7 @@ public let greeting: String = "hello"
 public let defaultMode: Mode = Mode.fast
 
 public var magic: Data {
-    let boltffiResult = boltffi_const_demo_magic()
+    let boltffiResult = boltffi_const_4demo5MAGIC()
     defer { boltffi_free_buf(boltffiResult) }
     return boltffiDecodeOwnedBuf(boltffiResult.ptr, Int(boltffiResult.len)) { boltffiReader in boltffiReader.readBytes() }
 }

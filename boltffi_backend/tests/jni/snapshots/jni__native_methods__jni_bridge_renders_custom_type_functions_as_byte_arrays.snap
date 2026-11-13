@@ -4,7 +4,7 @@ expression: "rendered_fixture(\"exports/custom_type_functions\")"
 ---
 ===== jni/demo.h =====
 <c abi support declarations>
-FfiBuf_u8 boltffi_function_demo_keep_timestamp(const uint8_t *value_ptr, uintptr_t value_len);
+FfiBuf_u8 boltffi_function_4demo14keep_timestamp(const uint8_t *value_ptr, uintptr_t value_len);
 
 ===== jni/jni_glue.c =====
 <jni source includes>
@@ -36,7 +36,7 @@ static bool boltffi_jni_direct_buffer_address(JNIEnv *env, jobject buffer, jlong
     return true;
 }
 
-JNIEXPORT jbyteArray JNICALL Java_com_boltffi_demo_Native_boltffi_1function_1demo_1keep_1timestamp(JNIEnv *env, jclass cls, jobject value, jint __boltffi_value_len) {
+JNIEXPORT jbyteArray JNICALL Java_com_boltffi_demo_Native_boltffi_1function_14demo14keep_1timestamp(JNIEnv *env, jclass cls, jobject value, jint __boltffi_value_len) {
     (void)cls;
 
     void *__boltffi_value_ptr = NULL;
@@ -46,7 +46,7 @@ JNIEXPORT jbyteArray JNICALL Java_com_boltffi_demo_Native_boltffi_1function_1dem
     }
 
     (void)env;
-    FfiBuf_u8 __boltffi_result = boltffi_function_demo_keep_timestamp((const uint8_t *)__boltffi_value_ptr, (uintptr_t)__boltffi_value_len);
+    FfiBuf_u8 __boltffi_result = boltffi_function_4demo14keep_timestamp((const uint8_t *)__boltffi_value_ptr, (uintptr_t)__boltffi_value_len);
 
     return boltffi_jni_buffer_to_byte_array(env, __boltffi_result);
 __boltffi_error:

@@ -1,0 +1,15 @@
+error: unexpected end of input, custom_type!: missing `repr = ...`
+ --> tests/diagnostics/custom_types/missing_repr.rs:2:1
+  |
+2 | boltffi::custom_type! { pub L, remote = String, into_ffi = |s: &String| s.clone(), try_from_ffi = |s: String| Ok(s), }
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the macro `boltffi::custom_type` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error: BoltFFI: invalid custom type declaration: missing `repr = ...`
+ --> tests/diagnostics/custom_types/missing_repr.rs:2:1
+  |
+2 | boltffi::custom_type! { pub L, remote = String, into_ffi = |s: &String| s.clone(), try_from_ffi = |s: String| Ok(s), }
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the macro `boltffi::custom_type` (in Nightly builds, run with -Z macro-backtrace for more info)

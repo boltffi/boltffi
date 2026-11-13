@@ -290,16 +290,16 @@ mod tests {
 
     #[test]
     fn processing_preserves_local_callback_exports() {
-        let original = wat::parse_str(r#"(module (func (export "__boltffi_local_demo_listener_on_event") (param i32) (result i32) local.get 0))"#).unwrap();
+        let original = wat::parse_str(r#"(module (func (export "__boltffi_local_4demo8Listener8on_event") (param i32) (result i32) local.get 0))"#).unwrap();
         let original = Module::parse(&original).unwrap();
         [
             r#"(module)"#,
-            r#"(module (func (export "__boltffi_local_demo_listener_on_event") (param i64) (result i64) local.get 0))"#,
+            r#"(module (func (export "__boltffi_local_4demo8Listener8on_event") (param i64) (result i64) local.get 0))"#,
         ]
         .into_iter()
         .for_each(|processed| {
             let processed = wat::parse_str(processed).unwrap();
-            assert!(matches!(original.validate_interface(&Module::parse(&processed).unwrap()), Err(Error::ExportChanged { name }) if name == "__boltffi_local_demo_listener_on_event"));
+            assert!(matches!(original.validate_interface(&Module::parse(&processed).unwrap()), Err(Error::ExportChanged { name }) if name == "__boltffi_local_4demo8Listener8on_event"));
         });
         original.validate_interface(&original).unwrap();
     }

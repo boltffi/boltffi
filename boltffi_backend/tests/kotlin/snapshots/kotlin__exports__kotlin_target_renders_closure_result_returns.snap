@@ -8,7 +8,7 @@ expression: "rendered_fixture(\"exports/closure_result_return\")"
 package com.boltffi.demo
 @Suppress("FunctionName")
 private object Native {
-    @JvmStatic external fun boltffi_function_demo_apply(callback: Long, value: Int): Int
+    @JvmStatic external fun boltffi_function_4demo5apply(callback: Long, value: Int): Int
     @JvmStatic external fun boltffi_success_i32(returnOut: Long, value: Int): Unit
 }
 
@@ -52,5 +52,5 @@ sealed class MathError(val value: Int) : Exception() {
 }
 
 fun apply(callback: ClosureI32ToResultI32ErrMathError, value: Int): Int {
-    return try { Native.boltffi_function_demo_apply(ClosureI32ToResultI32ErrDemoMathErrorCallbacks.insert(callback), value) } catch (__boltffi_error: BoltFfiErrorBufferException) { run { val __boltffi_error_reader = WireReader(__boltffi_error.bytes); throw MathError.fromValue(__boltffi_error_reader.readI32()) } }
+    return try { Native.boltffi_function_4demo5apply(ClosureI32ToResultI32ErrDemoMathErrorCallbacks.insert(callback), value) } catch (__boltffi_error: BoltFfiErrorBufferException) { run { val __boltffi_error_reader = WireReader(__boltffi_error.bytes); throw MathError.fromValue(__boltffi_error_reader.readI32()) } }
 }

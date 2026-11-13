@@ -50,17 +50,17 @@ public struct DefaultAmount: Hashable, Equatable, Sendable {
     }
 
     public static func withScaledValue(value: Int32 = 2) -> DefaultAmount {
-        return DefaultAmount(fromC: boltffi_init_record_demo_default_amount_with_scaled_value(value))
+        return DefaultAmount(fromC: boltffi_init_record_4demo13DefaultAmount17with_scaled_value(value))
     }
 
     public static func tryScaledValue(value: Int32 = 2) -> DefaultAmount? {
-        let boltffiResult = boltffi_method_record_demo_default_amount_try_scaled_value(value)
+        let boltffiResult = boltffi_method_record_4demo13DefaultAmount16try_scaled_value(value)
         defer { boltffi_free_buf(boltffiResult) }
         return boltffiDecodeOwnedBuf(boltffiResult.ptr, Int(boltffiResult.len)) { boltffiReader in boltffiReader.readOptional { boltffiReader in DefaultAmount.decode(from: &boltffiReader) } }
     }
 
     public func offset(step: Int32 = 2) -> Int32 {
-        return boltffi_method_record_demo_default_amount_offset(self.cValue, step)
+        return boltffi_method_record_4demo13DefaultAmount6offset(self.cValue, step)
     }
 }
 
@@ -80,18 +80,18 @@ public struct NamedAmount: Hashable, Equatable, Sendable {
     }
 
     public static func empty() -> NamedAmount {
-        return NamedAmount(fromC: boltffi_init_record_demo_named_amount_empty())
+        return NamedAmount(fromC: boltffi_init_record_4demo11NamedAmount5empty())
     }
 
     public static func load(value: Int32 = 6) async throws -> NamedAmount {
-        let boltffiFuture = boltffi_init_record_demo_named_amount_load(value)
+        let boltffiFuture = boltffi_init_record_4demo11NamedAmount4load(value)
         return try await boltffiAsyncCall(
             futureHandle: boltffiFuture,
-            poll: boltffi_async_init_record_demo_named_amount_load_poll,
-            cancel: boltffi_async_init_record_demo_named_amount_load_cancel,
-            free: boltffi_async_init_record_demo_named_amount_load_free
+            poll: boltffi_async_init_record_4demo11NamedAmount4load_poll,
+            cancel: boltffi_async_init_record_4demo11NamedAmount4load_cancel,
+            free: boltffi_async_init_record_4demo11NamedAmount4load_free
         ) { boltffiFuture, boltffiStatus in
-            let boltffiResult = boltffi_async_init_record_demo_named_amount_load_complete(boltffiFuture, boltffiStatus)
+            let boltffiResult = boltffi_async_init_record_4demo11NamedAmount4load_complete(boltffiFuture, boltffiStatus)
             let boltffiStatusCode = boltffiStatus!.pointee.code
             guard boltffiStatusCode == 0 else {
                 throw FfiError(message: "FFI failed in async completion with code \(boltffiStatusCode)")
@@ -101,7 +101,7 @@ public struct NamedAmount: Hashable, Equatable, Sendable {
     }
 
     public init(withValue value: Int32 = 5) {
-        self = NamedAmount(fromC: boltffi_init_record_demo_named_amount_with_value(value))
+        self = NamedAmount(fromC: boltffi_init_record_4demo11NamedAmount10with_value(value))
     }
 }
 
@@ -206,22 +206,22 @@ public enum DefaultMode: UInt8, Hashable, Sendable, CaseIterable {
     }
 
     public static func withMode(mode: DefaultMode = DefaultMode.loud) -> DefaultMode {
-        return DefaultMode(fromC: boltffi_init_enum_demo_default_mode_with_mode(mode.cValue))
+        return DefaultMode(fromC: boltffi_init_enum_4demo11DefaultMode9with_mode(mode.cValue))
     }
 
     public init(mode: DefaultMode = DefaultMode.quiet) {
-        self = DefaultMode(fromC: boltffi_init_enum_demo_default_mode_new(mode.cValue))
+        self = DefaultMode(fromC: boltffi_init_enum_4demo11DefaultMode3new(mode.cValue))
     }
 
     public static func load(mode: DefaultMode = DefaultMode.quiet) async throws -> DefaultMode {
-        let boltffiFuture = boltffi_init_enum_demo_default_mode_load(mode.cValue)
+        let boltffiFuture = boltffi_init_enum_4demo11DefaultMode4load(mode.cValue)
         return try await boltffiAsyncCall(
             futureHandle: boltffiFuture,
-            poll: boltffi_async_init_enum_demo_default_mode_load_poll,
-            cancel: boltffi_async_init_enum_demo_default_mode_load_cancel,
-            free: boltffi_async_init_enum_demo_default_mode_load_free
+            poll: boltffi_async_init_enum_4demo11DefaultMode4load_poll,
+            cancel: boltffi_async_init_enum_4demo11DefaultMode4load_cancel,
+            free: boltffi_async_init_enum_4demo11DefaultMode4load_free
         ) { boltffiFuture, boltffiStatus in
-            let boltffiResult = boltffi_async_init_enum_demo_default_mode_load_complete(boltffiFuture, boltffiStatus)
+            let boltffiResult = boltffi_async_init_enum_4demo11DefaultMode4load_complete(boltffiFuture, boltffiStatus)
             let boltffiStatusCode = boltffiStatus!.pointee.code
             guard boltffiStatusCode == 0 else {
                 throw FfiError(message: "FFI failed in async completion with code \(boltffiStatusCode)")
@@ -231,7 +231,7 @@ public enum DefaultMode: UInt8, Hashable, Sendable, CaseIterable {
     }
 
     public func matches(mode: DefaultMode = DefaultMode.quiet) -> Bool {
-        return boltffi_method_enum_demo_default_mode_matches(self.cValue, mode.cValue)
+        return boltffi_method_enum_4demo11DefaultMode7matches(self.cValue, mode.cValue)
     }
 }
 
@@ -253,22 +253,22 @@ public final class Server {
 
     deinit {
         let handle = __boltffiTakeHandle()
-        if handle != 0 { boltffi_release_class_demo_server(handle) }
+        if handle != 0 { boltffi_release_class_4demo6Server(handle) }
     }
 
     public init(port: UInt16 = 8080) {
-        self.handle = boltffi_init_class_demo_server_new(port)
+        self.handle = boltffi_init_class_4demo6Server3new(port)
     }
 
     public static func start(port: UInt16, first: Handler? = nil, second: Handler? = nil) async throws -> Server {
-        let boltffiFuture = boltffi_init_class_demo_server_start(port, first.map { boltffiCallback in HandlerBridge.create(boltffiCallback) } ?? BoltFFICallbackHandle(handle: 0, vtable: nil), second.map { boltffiCallback in HandlerBridge.create(boltffiCallback) } ?? BoltFFICallbackHandle(handle: 0, vtable: nil))
+        let boltffiFuture = boltffi_init_class_4demo6Server5start(port, first.map { boltffiCallback in HandlerBridge.create(boltffiCallback) } ?? BoltFFICallbackHandle(handle: 0, vtable: nil), second.map { boltffiCallback in HandlerBridge.create(boltffiCallback) } ?? BoltFFICallbackHandle(handle: 0, vtable: nil))
         return try await boltffiAsyncCall(
             futureHandle: boltffiFuture,
-            poll: boltffi_async_init_class_demo_server_start_poll,
-            cancel: boltffi_async_init_class_demo_server_start_cancel,
-            free: boltffi_async_init_class_demo_server_start_free
+            poll: boltffi_async_init_class_4demo6Server5start_poll,
+            cancel: boltffi_async_init_class_4demo6Server5start_cancel,
+            free: boltffi_async_init_class_4demo6Server5start_free
         ) { boltffiFuture, boltffiStatus in
-            let boltffiResult = boltffi_async_init_class_demo_server_start_complete(boltffiFuture, boltffiStatus)
+            let boltffiResult = boltffi_async_init_class_4demo6Server5start_complete(boltffiFuture, boltffiStatus)
             let boltffiStatusCode = boltffiStatus!.pointee.code
             guard boltffiStatusCode == 0 else {
                 throw FfiError(message: "FFI failed in async completion with code \(boltffiStatusCode)")
@@ -278,7 +278,7 @@ public final class Server {
     }
 
     public func port(mapped: Bool = false) -> UInt16 {
-        return boltffi_method_class_demo_server_port(self.handle, mapped)
+        return boltffi_method_class_4demo6Server4port(self.handle, mapped)
     }
 }
 
@@ -300,41 +300,41 @@ public final class DefaultCounter {
 
     deinit {
         let handle = __boltffiTakeHandle()
-        if handle != 0 { boltffi_release_class_demo_default_counter(handle) }
+        if handle != 0 { boltffi_release_class_4demo14DefaultCounter(handle) }
     }
 
     public static func fromText(value: String = "40") -> Self {
         let boltffiValueBytes = boltffiEncode { boltffiValueWriter in boltffiValueWriter.writeString(value) }
         return boltffiValueBytes.withUnsafeBufferPointer { boltffiValueBuffer in
-            return Self(handle: boltffi_init_class_demo_default_counter_from_text(boltffiValueBuffer.baseAddress!, UInt(boltffiValueBuffer.count)))
+            return Self(handle: boltffi_init_class_4demo14DefaultCounter9from_text(boltffiValueBuffer.baseAddress!, UInt(boltffiValueBuffer.count)))
         }
     }
 
     public init(start: Int32 = 10) {
-        self.handle = boltffi_init_class_demo_default_counter_new(start)
+        self.handle = boltffi_init_class_4demo14DefaultCounter3new(start)
     }
 
     public init(withOffset start: Int32 = 20, offset: Int32) {
-        self.handle = boltffi_init_class_demo_default_counter_with_offset(start, offset)
+        self.handle = boltffi_init_class_4demo14DefaultCounter11with_offset(start, offset)
     }
 
     public static func sum(left: Int32 = 1, right: Int32 = 2) -> Int32 {
-        return boltffi_method_class_demo_default_counter_sum(left, right)
+        return boltffi_method_class_4demo14DefaultCounter3sum(left, right)
     }
 
     public func offset(step: Int32 = 1) -> Int32 {
-        return boltffi_method_class_demo_default_counter_offset(self.handle, step)
+        return boltffi_method_class_4demo14DefaultCounter6offset(self.handle, step)
     }
 
     public func asyncOffset(step: Int32 = 3) async throws -> Int32 {
-        let boltffiFuture = boltffi_method_class_demo_default_counter_async_offset(self.handle, step)
+        let boltffiFuture = boltffi_method_class_4demo14DefaultCounter12async_offset(self.handle, step)
         return try await boltffiAsyncCall(
             futureHandle: boltffiFuture,
-            poll: boltffi_async_method_class_demo_default_counter_async_offset_poll,
-            cancel: boltffi_async_method_class_demo_default_counter_async_offset_cancel,
-            free: boltffi_async_method_class_demo_default_counter_async_offset_free
+            poll: boltffi_async_method_class_4demo14DefaultCounter12async_offset_poll,
+            cancel: boltffi_async_method_class_4demo14DefaultCounter12async_offset_cancel,
+            free: boltffi_async_method_class_4demo14DefaultCounter12async_offset_free
         ) { boltffiFuture, boltffiStatus in
-            let boltffiResult = boltffi_async_method_class_demo_default_counter_async_offset_complete(boltffiFuture, boltffiStatus)
+            let boltffiResult = boltffi_async_method_class_4demo14DefaultCounter12async_offset_complete(boltffiFuture, boltffiStatus)
             let boltffiStatusCode = boltffiStatus!.pointee.code
             guard boltffiStatusCode == 0 else {
                 throw FfiError(message: "FFI failed in async completion with code \(boltffiStatusCode)")
@@ -378,14 +378,14 @@ private var boltffiHandlerVtable: ___HandlerVTable = {
 
 private enum HandlerBridge {
     private static let register: Void = {
-        boltffi_register_callback_demo_handler(&boltffiHandlerVtable)
+        boltffi_register_callback_4demo7Handler(&boltffiHandlerVtable)
     }()
 
     static func create(_ impl: Handler) -> BoltFFICallbackHandle {
         _ = register
         let wrapper = HandlerWrapper(impl)
         let handle = UInt64(UInt(bitPattern: Unmanaged.passRetained(wrapper).toOpaque()))
-        return boltffi_create_callback_demo_handler(handle)
+        return boltffi_create_callback_4demo7Handler(handle)
     }
 }
 
@@ -423,14 +423,14 @@ private var boltffiDefaultHandlerVtable: ___DefaultHandlerVTable = {
 
 private enum DefaultHandlerBridge {
     private static let register: Void = {
-        boltffi_register_callback_demo_default_handler(&boltffiDefaultHandlerVtable)
+        boltffi_register_callback_4demo14DefaultHandler(&boltffiDefaultHandlerVtable)
     }()
 
     static func create(_ impl: DefaultHandler) -> BoltFFICallbackHandle {
         _ = register
         let wrapper = DefaultHandlerWrapper(impl)
         let handle = UInt64(UInt(bitPattern: Unmanaged.passRetained(wrapper).toOpaque()))
-        return boltffi_create_callback_demo_default_handler(handle)
+        return boltffi_create_callback_4demo14DefaultHandler(handle)
     }
 }
 
@@ -453,7 +453,7 @@ public func greet(
             return boltffiSuffixBytes.withUnsafeBufferPointer { boltffiSuffixBuffer in
                 let boltffiLimitBytes = boltffiEncode { boltffiLimitWriter in boltffiLimitWriter.writeOptional(limit) { writer, value in writer.writeU16(value) } }
                 return boltffiLimitBytes.withUnsafeBufferPointer { boltffiLimitBuffer in
-                    let boltffiResult = boltffi_function_demo_greet(
+                    let boltffiResult = boltffi_function_4demo5greet(
                         boltffiNameBuffer.baseAddress!,
                         UInt(boltffiNameBuffer.count),
                         boltffiGreetingBuffer.baseAddress!,
@@ -491,7 +491,7 @@ public func formatDefaults(
         return boltffiGreetingBytes.withUnsafeBufferPointer { boltffiGreetingBuffer in
             let boltffiWeightBytes = boltffiEncode { boltffiWeightWriter in boltffiWeightWriter.writeOptional(weight) { writer, value in writer.writeF64(value) } }
             return boltffiWeightBytes.withUnsafeBufferPointer { boltffiWeightBuffer in
-                let boltffiResult = boltffi_function_demo_format_defaults(
+                let boltffiResult = boltffi_function_4demo15format_defaults(
                     boltffiNameBuffer.baseAddress!,
                     UInt(boltffiNameBuffer.count),
                     boltffiGreetingBuffer.baseAddress!,
@@ -511,14 +511,14 @@ public func formatDefaults(
 }
 
 public func asyncDefault(value: UInt32 = 9) async throws -> UInt32 {
-    let boltffiFuture = boltffi_function_demo_async_default(value)
+    let boltffiFuture = boltffi_function_4demo13async_default(value)
     return try await boltffiAsyncCall(
         futureHandle: boltffiFuture,
-        poll: boltffi_async_function_demo_async_default_poll,
-        cancel: boltffi_async_function_demo_async_default_cancel,
-        free: boltffi_async_function_demo_async_default_free
+        poll: boltffi_async_function_4demo13async_default_poll,
+        cancel: boltffi_async_function_4demo13async_default_cancel,
+        free: boltffi_async_function_4demo13async_default_free
     ) { boltffiFuture, boltffiStatus in
-        let boltffiResult = boltffi_async_function_demo_async_default_complete(boltffiFuture, boltffiStatus)
+        let boltffiResult = boltffi_async_function_4demo13async_default_complete(boltffiFuture, boltffiStatus)
         let boltffiStatusCode = boltffiStatus!.pointee.code
         guard boltffiStatusCode == 0 else {
             throw FfiError(message: "FFI failed in async completion with code \(boltffiStatusCode)")
@@ -537,7 +537,7 @@ public func applyOptionalClosure(value: Int32, callback: ((Int32) -> Int32)? = n
         guard let context = context else { return }
         Unmanaged<BoltFFIClosureBox<(Int32) -> Int32>>.fromOpaque(context).release()
     }
-    return boltffi_function_demo_apply_optional_closure(
+    return boltffi_function_4demo22apply_optional_closure(
         value,
         boltffiCallbackContext != nil ? boltffiCallbackCall : nil,
         boltffiCallbackContext,
@@ -548,37 +548,37 @@ public func applyOptionalClosure(value: Int32, callback: ((Int32) -> Int32)? = n
 public func defaultAmount(amount: Amount = DefaultAmount(value: 5)) -> Amount {
     let boltffiAmountBytes = boltffiEncode { boltffiAmountWriter in amount.encode(to: &boltffiAmountWriter) }
     return boltffiAmountBytes.withUnsafeBufferPointer { boltffiAmountBuffer in
-        let boltffiResult = boltffi_function_demo_default_amount(boltffiAmountBuffer.baseAddress!, UInt(boltffiAmountBuffer.count))
+        let boltffiResult = boltffi_function_4demo14default_amount(boltffiAmountBuffer.baseAddress!, UInt(boltffiAmountBuffer.count))
         defer { boltffi_free_buf(boltffiResult) }
         return boltffiDecodeOwnedBuf(boltffiResult.ptr, Int(boltffiResult.len)) { boltffiReader in DefaultAmount.decode(from: &boltffiReader) }
     }
 }
 
 public func span(start: Int64 = -9223372036854775808, end: UInt64 = 18446744073709551615) -> UInt64 {
-    return boltffi_function_demo_span(start, end)
+    return boltffi_function_4demo4span(start, end)
 }
 
 public func throttle(limit: Limit = nil) -> Limit {
     let boltffiLimitBytes = boltffiEncode { boltffiLimitWriter in boltffiLimitWriter.writeOptional(limit) { boltffiLimitWriter, boltffiValue0 in boltffiLimitWriter.writeU32(boltffiValue0) } }
     return boltffiLimitBytes.withUnsafeBufferPointer { boltffiLimitBuffer in
-        let boltffiResult = boltffi_function_demo_throttle(boltffiLimitBuffer.baseAddress!, UInt(boltffiLimitBuffer.count))
+        let boltffiResult = boltffi_function_4demo8throttle(boltffiLimitBuffer.baseAddress!, UInt(boltffiLimitBuffer.count))
         defer { boltffi_free_buf(boltffiResult) }
         return boltffiDecodeOwnedBuf(boltffiResult.ptr, Int(boltffiResult.len)) { boltffiReader in boltffiReader.readOptional { boltffiReader in boltffiReader.readU32() } }
     }
 }
 
 public func defaultFloatBits(value: Float = Float(bitPattern: 0x80000000)) -> UInt32 {
-    return boltffi_function_demo_default_float_bits(value)
+    return boltffi_function_4demo18default_float_bits(value)
 }
 
 public func defaultDoubleBits(value: Double = Double(bitPattern: 0x8000000000000000)) -> UInt64 {
-    return boltffi_function_demo_default_double_bits(value)
+    return boltffi_function_4demo19default_double_bits(value)
 }
 
 public func defaultEmail(email: Email = "mailto:ada@example.com") -> Email {
     let boltffiEmailBytes = boltffiEncode { boltffiEmailWriter in boltffiEmailWriter.writeString(email) }
     return boltffiEmailBytes.withUnsafeBufferPointer { boltffiEmailBuffer in
-        let boltffiResult = boltffi_function_demo_default_email(boltffiEmailBuffer.baseAddress!, UInt(boltffiEmailBuffer.count))
+        let boltffiResult = boltffi_function_4demo13default_email(boltffiEmailBuffer.baseAddress!, UInt(boltffiEmailBuffer.count))
         defer { boltffi_free_buf(boltffiResult) }
         return boltffiDecodeOwnedBuf(boltffiResult.ptr, Int(boltffiResult.len)) { boltffiReader in boltffiReader.readString() }
     }
@@ -587,7 +587,7 @@ public func defaultEmail(email: Email = "mailto:ada@example.com") -> Email {
 public func defaultIdentifier(identifier: Identifier = "01234567-89ab-cdef-0123-456789abcdef") -> Identifier {
     let boltffiIdentifierBytes = boltffiEncode { boltffiIdentifierWriter in boltffiIdentifierWriter.writeString(identifier) }
     return boltffiIdentifierBytes.withUnsafeBufferPointer { boltffiIdentifierBuffer in
-        let boltffiResult = boltffi_function_demo_default_identifier(boltffiIdentifierBuffer.baseAddress!, UInt(boltffiIdentifierBuffer.count))
+        let boltffiResult = boltffi_function_4demo18default_identifier(boltffiIdentifierBuffer.baseAddress!, UInt(boltffiIdentifierBuffer.count))
         defer { boltffi_free_buf(boltffiResult) }
         return boltffiDecodeOwnedBuf(boltffiResult.ptr, Int(boltffiResult.len)) { boltffiReader in boltffiReader.readString() }
     }
@@ -596,7 +596,7 @@ public func defaultIdentifier(identifier: Identifier = "01234567-89ab-cdef-0123-
 public func defaultOptionalEmail(email: Email? = "mailto:ada@example.com") -> Email? {
     let boltffiEmailBytes = boltffiEncode { boltffiEmailWriter in boltffiEmailWriter.writeOptional(email) { boltffiEmailWriter, boltffiValue0 in boltffiEmailWriter.writeString(boltffiValue0) } }
     return boltffiEmailBytes.withUnsafeBufferPointer { boltffiEmailBuffer in
-        let boltffiResult = boltffi_function_demo_default_optional_email(boltffiEmailBuffer.baseAddress!, UInt(boltffiEmailBuffer.count))
+        let boltffiResult = boltffi_function_4demo22default_optional_email(boltffiEmailBuffer.baseAddress!, UInt(boltffiEmailBuffer.count))
         defer { boltffi_free_buf(boltffiResult) }
         return boltffiDecodeOwnedBuf(boltffiResult.ptr, Int(boltffiResult.len)) { boltffiReader in boltffiReader.readOptional { boltffiReader in boltffiReader.readString() } }
     }

@@ -2,6 +2,7 @@ use boltffi::*;
 
 use crate::records::blittable::Point;
 
+#[export]
 pub struct MathUtils {
     precision: u32,
 }

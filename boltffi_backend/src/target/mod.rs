@@ -3,11 +3,14 @@
 pub mod c;
 pub mod csharp;
 pub mod dart;
+#[allow(missing_docs)]
+pub mod dart_web;
 pub mod java;
 pub mod jvm;
 pub mod kmp;
 pub mod kotlin;
 pub mod python;
+pub mod ruby;
 pub mod swift;
 #[allow(missing_docs)]
 pub mod typescript;

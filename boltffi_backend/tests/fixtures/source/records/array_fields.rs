@@ -21,6 +21,26 @@ pub struct Nested {
 }
 
 #[data]
+pub struct ByteKeyMap {
+    pub entries: HashMap<Vec<u8>, String>,
+}
+
+#[data]
+pub struct ArrayWrappers {
+    pub pair: (Vec<u8>, u32),
+    pub triple: (Option<Vec<u8>>, f64, bool),
+    pub outcome: Result<Vec<u8>, Vec<u8>>,
+    pub optional_pair: Option<(Vec<u8>, u32)>,
+    pub optional_outcome: Option<Result<Vec<u8>, Vec<u8>>>,
+    pub outcomes: Vec<Result<Vec<u8>, Vec<u8>>>,
+}
+
+#[data]
+pub struct WrappedKeyMap {
+    pub entries: HashMap<(Vec<u8>, u32), Result<Vec<u8>, Vec<u8>>>,
+}
+
+#[data]
 pub struct Label {
     pub name: String,
 }
@@ -31,6 +51,10 @@ pub enum Frame {
     Data { payload: Vec<u8> },
     Tagged(u32, Vec<i64>),
     Named { name: String },
+    Wrapped {
+        pair: (Vec<u8>, u32),
+        outcome: Result<Vec<u8>, Vec<u8>>,
+    },
 }
 
 #[error]

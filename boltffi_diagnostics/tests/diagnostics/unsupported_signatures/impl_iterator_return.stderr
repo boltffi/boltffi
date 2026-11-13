@@ -1,0 +1,7 @@
+error: BoltFFI: unsupported source type `impl Iterator<Item = i32>`
+ --> tests/diagnostics/unsupported_signatures/impl_iterator_return.rs:2:1
+  |
+2 | #[boltffi::export]
+  | ^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `boltffi::export` (in Nightly builds, run with -Z macro-backtrace for more info)

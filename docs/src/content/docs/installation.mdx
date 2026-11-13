@@ -83,6 +83,12 @@ C packaging requires both `staticlib` and `cdylib`. Include `cdylib` for a stand
 crate-type = ["staticlib", "cdylib"]
 ```
 
+Call `boltffi::scaffolding!()` once at the root of `src/lib.rs`:
+
+```rust
+boltffi::scaffolding!();
+```
+
 ## Verify installation
 
 ```bash

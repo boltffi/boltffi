@@ -308,6 +308,7 @@ where
             require_callback_receiver(method.receiver)?;
             let slot = CallbackSlot::from_source_name(&method.name);
             let surface = surface_for(allocator, method, &slot)?;
+            allocator.enter_callable(&slot.imported_method_name(source_trait.id.as_str()));
             let callable_decl = callable::lower_imported_method::<S>(
                 index,
                 ids,

@@ -207,6 +207,7 @@ const sections: Section[] = [
     ]
   },
   { id: "tutorial", label: "Tutorial", icon: GraduationCap },
+  { id: "migrating", label: "Migrating to 0.32", icon: RefreshCw },
 ];
 
 export default function Sidebar({ activeSection }: SidebarProps) {

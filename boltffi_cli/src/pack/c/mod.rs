@@ -246,6 +246,7 @@ mod tests {
                 .expect("config");
         let options = PackCOptions {
             execution: PackExecutionOptions {
+                wasm_prepared: false,
                 release: false,
                 regenerate: false,
                 no_build: true,

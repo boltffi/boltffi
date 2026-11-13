@@ -1830,7 +1830,6 @@ mod tests {
     use std::ffi::OsString;
     use std::fs;
     use std::path::PathBuf;
-    use std::sync::{LazyLock, Mutex};
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use super::{
@@ -1845,8 +1844,6 @@ mod tests {
     use crate::build::CargoBuildProfile;
     use crate::cargo::{Cargo, fixture::CargoMetadataFixture};
     use crate::target::{Architecture, Platform};
-
-    static ENV_TEST_MUTEX: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
     struct EnvVarGuard {
         name: &'static str,
@@ -2143,7 +2140,7 @@ version = "0.1.0"
 
     #[test]
     fn explicit_cargo_config_debug_override_beats_profile_env_override() {
-        let _env_lock = ENV_TEST_MUTEX.lock().expect("lock env test mutex");
+        let _environment = crate::process_environment::hold();
         let temp_root = temporary_directory("boltffi-debug-symbol-precedence");
         fs::create_dir_all(&temp_root).expect("create temp root");
         let manifest_path = temp_root.join("Cargo.toml");
@@ -2183,7 +2180,7 @@ version = "0.1.0"
 
     #[test]
     fn config_release_debug_applies_to_manifest_inherited_profile() {
-        let _env_lock = ENV_TEST_MUTEX.lock().expect("lock env test mutex");
+        let _environment = crate::process_environment::hold();
         let profile_name = "boltffi-debug-symbols-cross-source";
         let temp_root = temporary_directory("boltffi-debug-symbol-inherited-config");
         let cargo_config_dir = temp_root.join(".cargo");
@@ -2232,7 +2229,7 @@ debug = true
 
     #[test]
     fn package_profile_override_does_not_apply_to_whole_artifact_validation() {
-        let _env_lock = ENV_TEST_MUTEX.lock().expect("lock env test mutex");
+        let _environment = crate::process_environment::hold();
         let temp_root = temporary_directory("boltffi-debug-symbol-package-profile");
         fs::create_dir_all(&temp_root).expect("create temp root");
         let manifest_path = temp_root.join("Cargo.toml");
@@ -2284,7 +2281,7 @@ debug = true
 
     #[test]
     fn manifest_profile_inheriting_dev_keeps_default_debuginfo() {
-        let _env_lock = ENV_TEST_MUTEX.lock().expect("lock env test mutex");
+        let _environment = crate::process_environment::hold();
         let profile_name = "boltffi-fast-debug";
         let temp_root = temporary_directory("boltffi-debug-symbol-dev-inherit");
         fs::create_dir_all(&temp_root).expect("create temp root");
@@ -2324,7 +2321,7 @@ inherits = "dev"
 
     #[test]
     fn customized_dev_profile_can_disable_debuginfo_and_strip_symbols() {
-        let _env_lock = ENV_TEST_MUTEX.lock().expect("lock env test mutex");
+        let _environment = crate::process_environment::hold();
         let temp_root = temporary_directory("boltffi-debug-symbol-dev-profile");
         fs::create_dir_all(&temp_root).expect("create temp root");
         let manifest_path = temp_root.join("Cargo.toml");
@@ -2375,7 +2372,7 @@ strip = "debuginfo"
 
     #[test]
     fn rustflags_split_debuginfo_marks_debug_info_as_externalized() {
-        let _env_lock = ENV_TEST_MUTEX.lock().expect("lock env test mutex");
+        let _environment = crate::process_environment::hold();
         let rust_target_triple = "x86_64-unknown-linux-gnu";
         let temp_root = temporary_directory("boltffi-debug-symbol-rustflags-split-debuginfo");
         fs::create_dir_all(&temp_root).expect("create temp root");
@@ -2415,7 +2412,7 @@ debug = true
 
     #[test]
     fn rustflags_enable_debuginfo_for_target_validation() {
-        let _env_lock = ENV_TEST_MUTEX.lock().expect("lock env test mutex");
+        let _environment = crate::process_environment::hold();
         let rust_target_triple = "x86_64-unknown-linux-gnu";
         let temp_root = temporary_directory("boltffi-debug-symbol-rustflags-debug");
         fs::create_dir_all(&temp_root).expect("create temp root");
@@ -2452,7 +2449,7 @@ version = "0.1.0"
 
     #[test]
     fn release_defaults_to_strip_when_only_rustflags_enable_debuginfo() {
-        let _env_lock = ENV_TEST_MUTEX.lock().expect("lock env test mutex");
+        let _environment = crate::process_environment::hold();
         let rust_target_triple = "x86_64-unknown-linux-gnu";
         let temp_root = temporary_directory("boltffi-debug-symbol-rustflags-release-strip");
         fs::create_dir_all(&temp_root).expect("create temp root");
@@ -2489,7 +2486,7 @@ version = "0.1.0"
 
     #[test]
     fn target_rustflags_strip_override_marks_symbols_as_stripped() {
-        let _env_lock = ENV_TEST_MUTEX.lock().expect("lock env test mutex");
+        let _environment = crate::process_environment::hold();
         let rust_target_triple = "x86_64-unknown-linux-gnu";
         let temp_root = temporary_directory("boltffi-debug-symbol-rustflags-strip");
         fs::create_dir_all(&temp_root).expect("create temp root");

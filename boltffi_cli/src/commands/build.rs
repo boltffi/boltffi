@@ -1,12 +1,22 @@
-use boltffi_binding::BindingMetadataSurface;
-
 use crate::build::{
     BindingExpansion, BuildOptions, BuildResult, BuildSelection, Builder, all_successful,
     count_successful, failed_targets, resolve_build_profile,
 };
 use crate::cli::Result;
-use crate::config::{Config, TargetSection};
+use crate::config::{Config, TargetSection, WasmProfile};
 use crate::pack::{PackError, resolve_build_cargo_args};
+
+// Matches `pack_wasm`'s own `requested_wasm_profile` resolution: an explicit
+// `--release` always wins, otherwise the wasm artifact profile follows
+// `targets.wasm.profile` (which defaults to release), not this command's own
+// `release` flag. Building wasm off the raw `release` bool here would let
+// `boltffi build dart`/`build wasm` (debug by default) and a later `pack
+// dart --no-build`/`pack wasm --no-build` (release by default) disagree on
+// which profile directory holds the artifact, so `pack`'s `--no-build` step
+// would look for a wasm build that was never produced.
+fn wasm_build_is_release(config: &Config, release: bool) -> bool {
+    release || matches!(config.wasm_profile(), WasmProfile::Release)
+}
 
 pub enum BuildPlatform {
     Apple,
@@ -60,7 +70,7 @@ pub fn run_build(config: &Config, options: BuildCommandOptions) -> Result<Vec<Bu
             }
             let cargo_args = cargo_args(TargetSection::Wasm);
             println!("Building for wasm ({})...", profile_for(&cargo_args));
-            wasm_builder(config, release, cargo_args)?
+            expanded_builder(config, wasm_build_is_release(config, release), cargo_args)?
                 .build_wasm_with_triple(config.wasm_triple())?
         }
         BuildPlatform::Dart => {
@@ -69,7 +79,18 @@ pub fn run_build(config: &Config, options: BuildCommandOptions) -> Result<Vec<Bu
             }
             let cargo_args = cargo_args(TargetSection::Dart);
             println!("Building for dart ({})...", profile_for(&cargo_args));
-            build_dart(config, release, &cargo_args)?
+            let mut results = build_dart(config, release, &cargo_args)?;
+            if config.is_dart_web_enabled() {
+                results.extend(
+                    expanded_builder(
+                        config,
+                        wasm_build_is_release(config, release),
+                        resolve_build_cargo_args(config, TargetSection::Wasm, &cli_cargo_args),
+                    )?
+                    .build_wasm_with_triple(config.wasm_triple())?,
+                );
+            }
+            results
         }
         BuildPlatform::All => {
             println!("Building all targets...");
@@ -86,10 +107,16 @@ pub fn run_build(config: &Config, options: BuildCommandOptions) -> Result<Vec<Bu
                         .build_android(&config.android_targets())?,
                 );
             }
-            if config.is_wasm_enabled() {
+            if config.is_wasm_enabled()
+                || (config.is_dart_enabled() && config.is_dart_web_enabled())
+            {
                 all_results.extend(
-                    wasm_builder(config, release, cargo_args(TargetSection::Wasm))?
-                        .build_wasm_with_triple(config.wasm_triple())?,
+                    expanded_builder(
+                        config,
+                        wasm_build_is_release(config, release),
+                        cargo_args(TargetSection::Wasm),
+                    )?
+                    .build_wasm_with_triple(config.wasm_triple())?,
                 );
             }
             if config.is_dart_enabled() {
@@ -124,13 +151,8 @@ fn build_dart(config: &Config, release: bool, cargo_args: &[String]) -> Result<V
     crate::pack::dart::build_dart_targets(config, release, cargo_args, false)
 }
 
-// Cargo only sets CARGO_FEATURE_* for build scripts, so every platform here
-// must build as a binding expansion for the #[data]/#[error] macros to see
-// active features -- a plain `cargo build` silently drops feature-gated
-// modules from the FFI surface (same bug fixed for `pack dart` and, before
-// that, `pack python` in 8bd6ab4a). resolve_preferred keeps the configured/
-// default artifact selected even when the package has more than one
-// FFI-capable cargo target.
+// resolve_preferred keeps the configured/default artifact selected even when
+// the package has more than one FFI-capable cargo target.
 fn expanded_builder(
     config: &Config,
     release: bool,
@@ -142,28 +164,6 @@ fn expanded_builder(
         config,
         expanded_build_options(expansion, release),
     ))
-}
-
-// Wasm needs its own surface: `pack wasm` and wasm binding generation both
-// resolve with `BindingMetadataSurface::Wasm32`, and the macro picks
-// surface-specific lowering off it. The generic `expanded_builder` above
-// defaults to `Native`, which would compile the wrong ABI for a wasm32
-// target.
-fn wasm_builder(config: &Config, release: bool, cargo_args: Vec<String>) -> Result<Builder<'_>> {
-    let expansion = wasm_expansion(config, &cargo_args)?;
-    Ok(Builder::new(
-        config,
-        expanded_build_options(expansion, release),
-    ))
-}
-
-fn wasm_expansion(config: &Config, cargo_args: &[String]) -> Result<BindingExpansion> {
-    BindingExpansion::resolve_preferred_for_surface(
-        config,
-        cargo_args,
-        BindingMetadataSurface::Wasm32,
-        &config.crate_artifact_name(),
-    )
 }
 
 fn expanded_build_options(expansion: BindingExpansion, release: bool) -> BuildOptions {
@@ -214,17 +214,11 @@ mod tests {
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    use boltffi_binding::BindingMetadataSurface;
-
     use super::{
-        BindingExpansion, BuildSelection, expanded_build_options, expanded_builder, wasm_builder,
-        wasm_expansion,
+        BindingExpansion, BuildSelection, expanded_build_options, expanded_builder,
+        wasm_build_is_release,
     };
     use crate::config::Config;
-
-    fn demo_manifest_path() -> PathBuf {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../examples/demo/Cargo.toml")
-    }
 
     fn parse_config(input: &str) -> Config {
         let parsed: Config = toml::from_str(input).expect("toml parse failed");
@@ -275,10 +269,8 @@ mod tests {
         ]
     }
 
-    /// `boltffi build` (apple/android/wasm/dart/all) must go through the same
-    /// binding expansion `pack` does, or the #[data]/#[error] macros never
-    /// see active features and silently drop feature-gated modules from the
-    /// FFI surface.
+    /// `boltffi build` (apple/android/wasm/dart/all) selects the library the
+    /// same way `pack` does.
     #[test]
     fn build_command_uses_a_binding_expansion() {
         let expansion = BindingExpansion::fixture(
@@ -290,24 +282,6 @@ mod tests {
         let options = expanded_build_options(expansion, false);
 
         assert!(matches!(options.selection, BuildSelection::Expanded(_)));
-    }
-
-    /// `boltffi build wasm` must resolve with the wasm32 surface, not the
-    /// generic builder's `Native` default -- `pack wasm` and wasm binding
-    /// generation both use `Wasm32`, and the macro's surface-specific
-    /// lowering has to agree with the TypeScript bindings the wasm build
-    /// will be paired with.
-    #[test]
-    fn wasm_build_resolves_the_wasm32_surface() {
-        let config = parse_config("[package]\nname = \"demo\"\n");
-        let cargo_args = vec![
-            "--manifest-path".to_string(),
-            demo_manifest_path().display().to_string(),
-        ];
-
-        let expansion = wasm_expansion(&config, &cargo_args).expect("wasm expansion resolves");
-
-        assert_eq!(expansion.surface(), BindingMetadataSurface::Wasm32);
     }
 
     /// A crate whose only other FFI-capable target is a cdylib example must
@@ -326,15 +300,26 @@ mod tests {
         assert!(builder.is_ok(), "{:?}", builder.err());
     }
 
+    /// `targets.wasm.profile` defaults to release, so a `boltffi build
+    /// dart`/`build wasm` with no `--release` flag must still resolve the
+    /// wasm build as release -- otherwise it builds debug while `pack
+    /// dart --no-build`/`pack wasm --no-build` (which follows the same
+    /// config default) looks for a release artifact that was never
+    /// produced.
     #[test]
-    fn wasm_builder_prefers_the_configured_artifact_over_an_ambiguous_ffi_target_set() {
-        let crate_dir = write_multi_ffi_target_fixture();
-        let config = multi_ffi_target_config();
-        let cargo_args = multi_ffi_target_cargo_args(&crate_dir);
+    fn wasm_build_follows_the_configured_default_profile_when_not_explicitly_released() {
+        let config = parse_config("[package]\nname = \"demo\"\n");
 
-        let builder = wasm_builder(&config, false, cargo_args);
+        assert!(wasm_build_is_release(&config, false));
+        assert!(wasm_build_is_release(&config, true));
+    }
 
-        std::fs::remove_dir_all(&crate_dir).expect("cleanup temp dir");
-        assert!(builder.is_ok(), "{:?}", builder.err());
+    #[test]
+    fn wasm_build_respects_an_explicit_debug_profile_override() {
+        let config =
+            parse_config("[package]\nname = \"demo\"\n\n[targets.wasm]\nprofile = \"debug\"\n");
+
+        assert!(!wasm_build_is_release(&config, false));
+        assert!(wasm_build_is_release(&config, true));
     }
 }

@@ -8,22 +8,22 @@ expression: "rendered_fixture(\"direct_vector/primitive_vector_return\")"
 package com.boltffi.demo
 @Suppress("FunctionName")
 private object Native {
-    @JvmStatic external fun boltffi_function_demo_echo_values(values: IntArray): ByteArray?
-    @JvmStatic external fun boltffi_function_demo_echo_words(values: IntArray): ByteArray?
-    @JvmStatic external fun boltffi_function_demo_make_ratios(): ByteArray?
+    @JvmStatic external fun boltffi_function_4demo11echo_values(values: IntArray): ByteArray?
+    @JvmStatic external fun boltffi_function_4demo10echo_words(values: IntArray): ByteArray?
+    @JvmStatic external fun boltffi_function_4demo11make_ratios(): ByteArray?
 }
 
 fun echoValues(values: IntArray): IntArray {
-    val __boltffi_result = Native.boltffi_function_demo_echo_values(values) ?: throw IllegalStateException("null buffer returned")
+    val __boltffi_result = Native.boltffi_function_4demo11echo_values(values) ?: throw IllegalStateException("null buffer returned")
     return DirectVectorCodec.readIntArray(__boltffi_result)
 }
 
 fun echoWords(values: UIntArray): UIntArray {
-    val __boltffi_result = Native.boltffi_function_demo_echo_words(values.asIntArray()) ?: throw IllegalStateException("null buffer returned")
+    val __boltffi_result = Native.boltffi_function_4demo10echo_words(values.asIntArray()) ?: throw IllegalStateException("null buffer returned")
     return DirectVectorCodec.readUIntArray(__boltffi_result)
 }
 
 fun makeRatios(): DoubleArray {
-    val __boltffi_result = Native.boltffi_function_demo_make_ratios() ?: throw IllegalStateException("null buffer returned")
+    val __boltffi_result = Native.boltffi_function_4demo11make_ratios() ?: throw IllegalStateException("null buffer returned")
     return DirectVectorCodec.readDoubleArray(__boltffi_result)
 }

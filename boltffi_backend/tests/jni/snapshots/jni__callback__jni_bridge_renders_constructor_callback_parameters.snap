@@ -9,11 +9,11 @@ typedef struct {
     uint64_t (*clone)(uint64_t);
     void (*notify)(uint64_t, uint32_t);
 } ___NotifierVTable;
-void boltffi_register_callback_demo_notifier(const ___NotifierVTable *vtable);
-BoltFFICallbackHandle boltffi_create_callback_demo_notifier(uint64_t handle);
-void boltffi_release_class_demo_engine(uint64_t handle);
-uint64_t boltffi_init_class_demo_engine_new(BoltFFICallbackHandle notifier);
-uint32_t boltffi_method_class_demo_engine_ping(uint64_t receiver);
+void boltffi_register_callback_4demo8Notifier(const ___NotifierVTable *vtable);
+BoltFFICallbackHandle boltffi_create_callback_4demo8Notifier(uint64_t handle);
+void boltffi_release_class_4demo6Engine(uint64_t handle);
+uint64_t boltffi_init_class_4demo6Engine3new(BoltFFICallbackHandle notifier);
+uint32_t boltffi_method_class_4demo6Engine4ping(uint64_t receiver);
 
 ===== jni/jni_glue.c =====
 <jni source includes>
@@ -177,7 +177,7 @@ static bool boltffi_jni_load____NotifierVTable_callbacks(JNIEnv *env) {
     if (!boltffi_jni_lookup_static_method_with_diagnostic(env, g____NotifierVTable_class, "com/boltffi/demo/NotifierCallbacks", "notify", "notify", "(JI)V", "(JI)V", &g____NotifierVTable_notify_method)) {
         goto fail;
     }
-    boltffi_register_callback_demo_notifier(&g____NotifierVTable_vtable);
+    boltffi_register_callback_4demo8Notifier(&g____NotifierVTable_vtable);
     return true;
 fail:
     (*env)->DeleteGlobalRef(env, g____NotifierVTable_class);
@@ -229,29 +229,29 @@ JNIEXPORT void JNICALL JNI_OnUnload(JavaVM *vm, void *reserved) {
     boltffi_jni_native_class = NULL;
 }
 
-JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1release_1class_1demo_1engine(JNIEnv *env, jclass cls, jlong handle) {
+JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1release_1class_14demo6Engine(JNIEnv *env, jclass cls, jlong handle) {
     (void)cls;
 
     (void)env;
-    boltffi_release_class_demo_engine(handle);
+    boltffi_release_class_4demo6Engine(handle);
 
     return;
 }
 
-JNIEXPORT jlong JNICALL Java_com_boltffi_demo_Native_boltffi_1init_1class_1demo_1engine_1new(JNIEnv *env, jclass cls, jlong notifier) {
+JNIEXPORT jlong JNICALL Java_com_boltffi_demo_Native_boltffi_1init_1class_14demo6Engine3new(JNIEnv *env, jclass cls, jlong notifier) {
     (void)cls;
 
     (void)env;
-    uint64_t __boltffi_result = boltffi_init_class_demo_engine_new(boltffi_jni_callback_parameter((uint64_t)notifier, boltffi_create_callback_demo_notifier));
+    uint64_t __boltffi_result = boltffi_init_class_4demo6Engine3new(boltffi_jni_callback_parameter((uint64_t)notifier, boltffi_create_callback_4demo8Notifier));
 
     return (jlong)__boltffi_result;
 }
 
-JNIEXPORT jint JNICALL Java_com_boltffi_demo_Native_boltffi_1method_1class_1demo_1engine_1ping(JNIEnv *env, jclass cls, jlong receiver) {
+JNIEXPORT jint JNICALL Java_com_boltffi_demo_Native_boltffi_1method_1class_14demo6Engine4ping(JNIEnv *env, jclass cls, jlong receiver) {
     (void)cls;
 
     (void)env;
-    uint32_t __boltffi_result = boltffi_method_class_demo_engine_ping(receiver);
+    uint32_t __boltffi_result = boltffi_method_class_4demo6Engine4ping(receiver);
 
     return (jint)__boltffi_result;
 }

@@ -1,0 +1,13 @@
+error[E0425]: cannot find type `__BoltffiTag` in the crate root
+  --> tests/diagnostics/scaffolding/custom_type_without_scaffolding.rs:5:1
+   |
+ 5 | / boltffi::custom_type!(
+ 6 | |     pub LengthMeters,
+ 7 | |     remote = units::Length,
+ 8 | |     repr = f64,
+ 9 | |     into_ffi = |length: &units::Length| length.0,
+10 | |     try_from_ffi = |meters: f64| Ok(units::Length(meters)),
+11 | | );
+   | |_^ not found in the crate root
+   |
+   = note: this error originates in the macro `boltffi::custom_type` (in Nightly builds, run with -Z macro-backtrace for more info)

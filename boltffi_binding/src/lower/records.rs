@@ -31,6 +31,7 @@ pub fn lower<S: SurfaceLower>(
     index
         .records()
         .iter()
+        .filter(|record| index.lowers(record.id.as_str()))
         .map(|record| lower_one(index, ids, allocator, record))
         .collect()
 }
@@ -160,28 +161,32 @@ fn lower_encoded<S: SurfaceLower>(
     initializers: Vec<InitializerDecl<S>>,
     record_methods: Vec<ExportedMethodDecl<S, NativeSymbol>>,
 ) -> Result<EncodedRecordDecl<S>, LowerError> {
-    let fields = record
-        .fields
-        .iter()
-        .map(|field| {
-            let key = FieldKey::from(field);
-            let value = ValueRef::self_value().field(key.clone());
-            let ty = types::lower(ids, &field.type_expr)?;
-            let codec = codecs::plan(index, ids, &field.type_expr, value)?;
-            Ok(EncodedFieldDecl::new(
-                key,
-                ty,
-                codec,
-                metadata::value_meta(
-                    index,
-                    &field.type_expr,
-                    field.doc.as_ref(),
-                    None,
-                    field.default.as_ref(),
-                )?,
-            ))
-        })
-        .collect::<Result<Vec<_>, LowerError>>()?;
+    let fields = if index.is_shallow(record.id.as_str()) {
+        Vec::new()
+    } else {
+        record
+            .fields
+            .iter()
+            .map(|field| {
+                let key = FieldKey::from(field);
+                let value = ValueRef::self_value().field(key.clone());
+                let ty = types::lower(ids, &field.type_expr)?;
+                let codec = codecs::plan(index, ids, &field.type_expr, value)?;
+                Ok(EncodedFieldDecl::new(
+                    key,
+                    ty,
+                    codec,
+                    metadata::value_meta(
+                        index,
+                        &field.type_expr,
+                        field.doc.as_ref(),
+                        None,
+                        field.default.as_ref(),
+                    )?,
+                ))
+            })
+            .collect::<Result<Vec<_>, LowerError>>()?
+    };
 
     Ok(EncodedRecordDecl::new(
         ids.record(&record.id)?,
@@ -376,6 +381,51 @@ mod tests {
         ));
 
         encoded_record(&bindings);
+    }
+
+    #[test]
+    fn a_lookup_record_classifies_like_its_resolved_copy() {
+        let slot = TypeExpr::record(
+            format!("{}0", crate::SLOT_ID_PREFIX).into(),
+            SourcePath::single("Other"),
+        );
+        let resolved = [
+            TypeExpr::record("demo::Other".into(), SourcePath::single("Other")),
+            TypeExpr::enumeration("demo::Other".into(), SourcePath::single("Other")),
+            TypeExpr::class("demo::Other".into(), SourcePath::single("Other")),
+        ];
+        let with = |type_expr: TypeExpr| {
+            record(
+                "demo::Pair",
+                "pair",
+                vec![
+                    field("x", TypeExpr::Primitive(Primitive::F64)),
+                    field("other", type_expr),
+                ],
+            )
+        };
+
+        resolved.into_iter().for_each(|type_expr| {
+            assert_eq!(
+                super::is_direct(&with(slot.clone())),
+                super::is_direct(&with(type_expr))
+            );
+        });
+        let data_enum = |type_expr: TypeExpr| {
+            let mut enumeration = EnumDef::new("demo::Shape".into(), name("shape"));
+            enumeration.variants = vec![VariantDef {
+                payload: VariantPayload::Tuple(vec![type_expr]),
+                ..VariantDef::unit(name("holds"))
+            }];
+            enumeration
+        };
+        assert_eq!(
+            crate::lower::enums::is_c_style(&data_enum(slot.clone())),
+            crate::lower::enums::is_c_style(&data_enum(TypeExpr::record(
+                "demo::Other".into(),
+                SourcePath::single("Other"),
+            )))
+        );
     }
 
     #[test]
@@ -620,7 +670,7 @@ mod tests {
         assert_eq!(methods[0].name().parts().len(), 1);
         assert_eq!(
             methods[0].target().name().as_str(),
-            "boltffi_method_record_demo_point_translate"
+            "boltffi_method_record_4demo5Point9translate"
         );
 
         let callable = methods[0].callable();
@@ -659,7 +709,7 @@ mod tests {
         assert_eq!(initializers.len(), 1);
         assert_eq!(
             initializers[0].symbol().name().as_str(),
-            "boltffi_init_record_demo_point_new"
+            "boltffi_init_record_4demo5Point3new"
         );
         assert_eq!(initializers[0].callable().receiver(), None);
         assert_eq!(initializers[0].callable().params().len(), 2);
@@ -681,7 +731,7 @@ mod tests {
         assert_eq!(initializers.len(), 1);
         assert_eq!(
             initializers[0].symbol().name().as_str(),
-            "boltffi_init_record_demo_point_from_xy"
+            "boltffi_init_record_4demo5Point7from_xy"
         );
     }
 
@@ -702,7 +752,7 @@ mod tests {
         assert!(record_decl_methods(&bindings).is_empty());
         assert_eq!(
             initializers[0].symbol().name().as_str(),
-            "boltffi_init_record_demo_point_try_new"
+            "boltffi_init_record_4demo5Point7try_new"
         );
         assert_eq!(
             initializers[0].callable().returns().plan(),
@@ -773,7 +823,7 @@ mod tests {
 
         assert_eq!(
             start_symbol.name().as_str(),
-            "boltffi_method_record_demo_point_compute"
+            "boltffi_method_record_4demo5Point7compute"
         );
         match callable.execution() {
             ExecutionDecl::Asynchronous(native::AsyncProtocol::PollHandle {
@@ -787,23 +837,23 @@ mod tests {
                 assert_eq!(handle, &native::HandleCarrier::U64);
                 assert_eq!(
                     poll.name().as_str(),
-                    "boltffi_async_method_record_demo_point_compute_poll"
+                    "boltffi_async_method_record_4demo5Point7compute_poll"
                 );
                 assert_eq!(
                     complete.name().as_str(),
-                    "boltffi_async_method_record_demo_point_compute_complete"
+                    "boltffi_async_method_record_4demo5Point7compute_complete"
                 );
                 assert_eq!(
                     cancel.name().as_str(),
-                    "boltffi_async_method_record_demo_point_compute_cancel"
+                    "boltffi_async_method_record_4demo5Point7compute_cancel"
                 );
                 assert_eq!(
                     free.name().as_str(),
-                    "boltffi_async_method_record_demo_point_compute_free"
+                    "boltffi_async_method_record_4demo5Point7compute_free"
                 );
                 assert_eq!(
                     panic_message.name().as_str(),
-                    "boltffi_async_method_record_demo_point_compute_panic_message"
+                    "boltffi_async_method_record_4demo5Point7compute_panic_message"
                 );
             }
             other => panic!("expected native PollHandle protocol, got {other:?}"),
@@ -831,23 +881,23 @@ mod tests {
                 assert_eq!(handle, &wasm32::HandleCarrier::U32);
                 assert_eq!(
                     poll_sync.name().as_str(),
-                    "boltffi_async_method_record_demo_point_compute_poll_sync"
+                    "boltffi_async_method_record_4demo5Point7compute_poll_sync"
                 );
                 assert_eq!(
                     complete.name().as_str(),
-                    "boltffi_async_method_record_demo_point_compute_complete"
+                    "boltffi_async_method_record_4demo5Point7compute_complete"
                 );
                 assert_eq!(
                     cancel.name().as_str(),
-                    "boltffi_async_method_record_demo_point_compute_cancel"
+                    "boltffi_async_method_record_4demo5Point7compute_cancel"
                 );
                 assert_eq!(
                     free.name().as_str(),
-                    "boltffi_async_method_record_demo_point_compute_free"
+                    "boltffi_async_method_record_4demo5Point7compute_free"
                 );
                 assert_eq!(
                     panic_message.name().as_str(),
-                    "boltffi_async_method_record_demo_point_compute_panic_message"
+                    "boltffi_async_method_record_4demo5Point7compute_panic_message"
                 );
             }
             other => panic!("expected wasm32 PollHandle protocol, got {other:?}"),
@@ -867,12 +917,12 @@ mod tests {
             .map(|symbol| symbol.name().as_str())
             .collect();
 
-        assert!(names.contains(&"boltffi_method_record_demo_point_compute"));
-        assert!(names.contains(&"boltffi_async_method_record_demo_point_compute_poll"));
-        assert!(names.contains(&"boltffi_async_method_record_demo_point_compute_complete"));
-        assert!(names.contains(&"boltffi_async_method_record_demo_point_compute_cancel"));
-        assert!(names.contains(&"boltffi_async_method_record_demo_point_compute_free"));
-        assert!(names.contains(&"boltffi_async_method_record_demo_point_compute_panic_message"));
+        assert!(names.contains(&"boltffi_method_record_4demo5Point7compute"));
+        assert!(names.contains(&"boltffi_async_method_record_4demo5Point7compute_poll"));
+        assert!(names.contains(&"boltffi_async_method_record_4demo5Point7compute_complete"));
+        assert!(names.contains(&"boltffi_async_method_record_4demo5Point7compute_cancel"));
+        assert!(names.contains(&"boltffi_async_method_record_4demo5Point7compute_free"));
+        assert!(names.contains(&"boltffi_async_method_record_4demo5Point7compute_panic_message"));
     }
 
     #[test]
@@ -889,8 +939,8 @@ mod tests {
             .map(|symbol| symbol.name().as_str())
             .collect();
 
-        assert!(names.contains(&"boltffi_async_method_record_demo_point_compute_poll"));
-        assert!(names.contains(&"boltffi_method_record_demo_point_compute_poll"));
+        assert!(names.contains(&"boltffi_async_method_record_4demo5Point7compute_poll"));
+        assert!(names.contains(&"boltffi_method_record_4demo5Point12compute_poll"));
     }
 
     #[test]
@@ -908,7 +958,7 @@ mod tests {
 
         assert_eq!(
             initializers[0].symbol().name().as_str(),
-            "boltffi_init_record_demo_point_new"
+            "boltffi_init_record_4demo5Point3new"
         );
         match initializers[0].callable().execution() {
             ExecutionDecl::Asynchronous(native::AsyncProtocol::PollHandle {
@@ -921,23 +971,23 @@ mod tests {
             }) => {
                 assert_eq!(
                     poll.name().as_str(),
-                    "boltffi_async_init_record_demo_point_new_poll"
+                    "boltffi_async_init_record_4demo5Point3new_poll"
                 );
                 assert_eq!(
                     complete.name().as_str(),
-                    "boltffi_async_init_record_demo_point_new_complete"
+                    "boltffi_async_init_record_4demo5Point3new_complete"
                 );
                 assert_eq!(
                     cancel.name().as_str(),
-                    "boltffi_async_init_record_demo_point_new_cancel"
+                    "boltffi_async_init_record_4demo5Point3new_cancel"
                 );
                 assert_eq!(
                     free.name().as_str(),
-                    "boltffi_async_init_record_demo_point_new_free"
+                    "boltffi_async_init_record_4demo5Point3new_free"
                 );
                 assert_eq!(
                     panic_message.name().as_str(),
-                    "boltffi_async_init_record_demo_point_new_panic_message"
+                    "boltffi_async_init_record_4demo5Point3new_panic_message"
                 );
             }
             other => panic!("expected native PollHandle protocol, got {other:?}"),
@@ -999,8 +1049,8 @@ mod tests {
         assert_eq!(
             names,
             vec![
-                "boltffi_init_record_demo_point_new",
-                "boltffi_method_record_demo_point_translate"
+                "boltffi_init_record_4demo5Point3new",
+                "boltffi_method_record_4demo5Point9translate"
             ]
         );
     }
@@ -1121,7 +1171,7 @@ mod tests {
         assert_eq!(methods[0].callable().receiver(), None);
         assert_eq!(
             methods[0].target().name().as_str(),
-            "boltffi_method_record_demo_point_origin_x"
+            "boltffi_method_record_4demo5Point8origin_x"
         );
     }
 
@@ -2218,7 +2268,7 @@ mod tests {
         assert_eq!(methods.len(), 1);
         assert_eq!(
             methods[0].target().name().as_str(),
-            "boltffi_method_record_demo_user_greet"
+            "boltffi_method_record_4demo4User5greet"
         );
         let RecordDecl::Encoded(_) = first_record(&bindings) else {
             panic!("expected encoded record");
@@ -2522,7 +2572,7 @@ mod tests {
     }
 
     #[test]
-    fn acronym_record_name_lowers_to_snake_cased_symbol() {
+    fn acronym_record_name_keeps_its_spelling_in_symbol() {
         let mut record = record(
             "demo::HTTPHeader",
             "HTTPHeader",
@@ -2540,7 +2590,7 @@ mod tests {
 
         assert_eq!(
             methods[0].target().name().as_str(),
-            "boltffi_method_record_demo_http_header_process"
+            "boltffi_method_record_4demo10HTTPHeader7process"
         );
     }
 
@@ -2557,7 +2607,7 @@ mod tests {
         match error.kind() {
             LowerErrorKind::InvalidBindings(error) => match error.kind() {
                 BindingErrorKind::DuplicateSymbolName(name) => {
-                    assert_eq!(name, "boltffi_method_record_demo_point_translate");
+                    assert_eq!(name, "boltffi_method_record_4demo5Point9translate");
                 }
                 other => panic!("expected DuplicateSymbolName, got {other:?}"),
             },

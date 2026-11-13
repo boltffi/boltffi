@@ -46,6 +46,7 @@ mod constants;
 mod customs;
 mod enums;
 mod error;
+mod foreign_names;
 mod functions;
 mod ids;
 mod index;
@@ -65,9 +66,11 @@ use boltffi_ast::SourceContract;
 
 use crate::{BindingError, Bindings, CanonicalName, Decl, PackageInfo};
 
+pub use self::callbacks::has_local_protocol;
 pub use self::error::{DeclarationFamily, LowerError, LowerErrorKind, UnsupportedType};
 pub use self::records::direct_record_fields;
 pub use self::surface::SurfaceLower;
+pub use self::symbol::linkage_anchor;
 
 use self::{ids::DeclarationIds, index::Index, symbol::SymbolAllocator};
 
@@ -105,6 +108,27 @@ impl<S: crate::Surface> LoweredBindings<S> {
     }
 }
 
+/// Declarations one macro invocation owns, plus the source declaration ids that produced
+/// them. They may reference declarations of other invocations, so this is not a
+/// [`Bindings`].
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LoweredInvocation<S: crate::Surface> {
+    decls: Vec<Decl<S>>,
+    declarations: DeclarationMap,
+}
+
+impl<S: crate::Surface> LoweredInvocation<S> {
+    /// Returns the invocation's declarations.
+    pub fn decls(&self) -> &[Decl<S>] {
+        &self.decls
+    }
+
+    /// Returns the source-to-binding declaration map.
+    pub fn declarations(&self) -> &DeclarationMap {
+        &self.declarations
+    }
+}
+
 /// Lowers a source contract into a binding contract for surface `S`.
 ///
 /// See the module-level docs for the steps each call runs through.
@@ -116,27 +140,63 @@ pub fn lower<S: SurfaceLower>(source: &SourceContract) -> Result<Bindings<S>, Lo
 pub fn lower_with_declarations<S: SurfaceLower>(
     source: &SourceContract,
 ) -> Result<LoweredBindings<S>, LowerError> {
+    foreign_names::require_unique(source)?;
     let ids = DeclarationIds::from_source(source)?;
     let bindings = lower_with_ids::<S>(source, &ids)?;
     let declarations = ids.declaration_map();
     Ok(LoweredBindings::new(bindings, declarations))
 }
 
+/// Lowers only the declarations in `selected`, as one macro invocation expands them.
+///
+/// Every other declaration in `source` is lookup-only: it answers id and shape
+/// questions for the selected ones, which never look past a referenced declaration's
+/// own fields. `shallow` names selected declarations that arrived lookup-only, such as
+/// a `#[data(impl)]` target, and lower without fields or variants. Customs always
+/// lower, since expansion reads their conversions.
+pub fn lower_invocation<S: SurfaceLower>(
+    source: &SourceContract,
+    selected: &std::collections::HashSet<String>,
+    shallow: &std::collections::HashSet<String>,
+) -> Result<LoweredInvocation<S>, LowerError> {
+    let ids = DeclarationIds::from_source(source)?;
+    let index = Index::new(source).lowering(selected, shallow);
+    let decls = lower_decls::<S>(&index, &ids)?;
+    Ok(LoweredInvocation {
+        decls: Bindings::check_invocation_decls(package_info(source), decls)?,
+        declarations: ids.declaration_map(),
+    })
+}
+
 fn lower_with_ids<S: SurfaceLower>(
     source: &SourceContract,
     ids: &DeclarationIds,
 ) -> Result<Bindings<S>, LowerError> {
-    let index = Index::new(source);
+    let decls = lower_decls::<S>(&Index::new(source), ids)?;
+    Ok(Bindings::from_decls(package_info(source), decls)?)
+}
+
+fn package_info(source: &SourceContract) -> PackageInfo {
+    PackageInfo::new(
+        CanonicalName::single(source.package.name.as_str()),
+        source.package.version.clone(),
+    )
+}
+
+fn lower_decls<S: SurfaceLower>(
+    index: &Index,
+    ids: &DeclarationIds,
+) -> Result<Vec<Decl<S>>, LowerError> {
     let mut allocator = SymbolAllocator::new();
 
-    let records = records::lower::<S>(&index, ids, &mut allocator)?;
-    let enums = enums::lower::<S>(&index, ids, &mut allocator)?;
-    let classes = classes::lower::<S>(&index, ids, &mut allocator)?;
-    let callbacks = callbacks::lower::<S>(&index, ids, &mut allocator)?;
-    let functions = functions::lower::<S>(&index, ids, &mut allocator)?;
-    let streams = streams::lower::<S>(&index, ids, &mut allocator)?;
-    let constants = constants::lower::<S>(&index, ids, &mut allocator)?;
-    let customs = customs::lower(&index, ids)?;
+    let records = records::lower::<S>(index, ids, &mut allocator)?;
+    let enums = enums::lower::<S>(index, ids, &mut allocator)?;
+    let classes = classes::lower::<S>(index, ids, &mut allocator)?;
+    let callbacks = callbacks::lower::<S>(index, ids, &mut allocator)?;
+    let functions = functions::lower::<S>(index, ids, &mut allocator)?;
+    let streams = streams::lower::<S>(index, ids, &mut allocator)?;
+    let constants = constants::lower::<S>(index, ids, &mut allocator)?;
+    let customs = customs::lower(index, ids)?;
 
     let decls = records
         .into_iter()
@@ -177,13 +237,7 @@ fn lower_with_ids<S: SurfaceLower>(
                 .map(|constant| Decl::Constant(Box::new(constant))),
         )
         .collect::<Vec<_>>();
-
-    let package = PackageInfo::new(
-        CanonicalName::single(source.package.name.as_str()),
-        source.package.version.clone(),
-    );
-
-    Ok(Bindings::from_decls(package, decls)?)
+    Ok(decls)
 }
 
 impl From<BindingError> for LowerError {
@@ -207,7 +261,45 @@ mod tests {
         ReturnPlan, TypeRef, ValueRef, WritePlan, native,
     };
 
-    use super::{lower, lower_with_declarations};
+    use super::{lower, lower_invocation, lower_with_declarations};
+
+    fn closure_maker(name: &str) -> SourceFunction {
+        let mut function = SourceFunction::new(
+            SourceFunctionId::new(format!("demo::{name}")),
+            SourceName::single(name),
+        );
+        function.returns = SourceReturn::value(SourceType::boxed(SourceType::dyn_fn(
+            boltffi_ast::FnTrait::new(
+                boltffi_ast::FnTraitKind::Fn,
+                boltffi_ast::FnSig::new(
+                    vec![SourceType::Primitive(SourcePrimitive::I32)],
+                    SourceReturn::value(SourceType::Primitive(SourcePrimitive::I32)),
+                ),
+            ),
+        )));
+        function
+    }
+
+    fn closure_exports(decls: &[Decl<crate::Wasm32>]) -> Vec<String> {
+        decls
+            .iter()
+            .filter_map(|decl| match decl {
+                Decl::Function(function) => match function.callable().returns().plan() {
+                    ReturnPlan::ClosureViaOutPointer(closure) => Some(
+                        closure
+                            .registration()
+                            .shape()
+                            .call()
+                            .name()
+                            .as_str()
+                            .to_owned(),
+                    ),
+                    _ => None,
+                },
+                _ => None,
+            })
+            .collect()
+    }
 
     fn source_contract() -> SourceContract {
         let mut function = SourceFunction::new(
@@ -219,6 +311,40 @@ mod tests {
         let mut source = SourceContract::new(SourcePackage::new("demo", None));
         source.functions.push(function);
         source
+    }
+
+    #[test]
+    fn wasm_closure_exports_match_between_crate_and_invocation_lowering() {
+        let mut source = SourceContract::new(SourcePackage::new("demo", None));
+        source.functions.push(closure_maker("make_adder"));
+        source.functions.push(closure_maker("make_doubler"));
+        let none = std::collections::HashSet::new();
+
+        let crate_wide = closure_exports(
+            lower::<crate::Wasm32>(&source)
+                .expect("two closure makers lower together")
+                .decls(),
+        );
+        let per_invocation = ["demo::make_adder", "demo::make_doubler"]
+            .into_iter()
+            .flat_map(|id| {
+                let selected = std::collections::HashSet::from([id.to_owned()]);
+                closure_exports(
+                    lower_invocation::<crate::Wasm32>(&source, &selected, &none)
+                        .expect("one closure maker lowers alone")
+                        .decls(),
+                )
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            crate_wide,
+            [
+                "boltffi_closure_function_4demo10make_adder_0_call",
+                "boltffi_closure_function_4demo12make_doubler_0_call",
+            ]
+        );
+        assert_eq!(per_invocation, crate_wide);
     }
 
     #[test]

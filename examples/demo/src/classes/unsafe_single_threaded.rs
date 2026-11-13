@@ -11,12 +11,13 @@ pub struct MarkerOptions {
     pub title: String,
 }
 
+#[export(single_threaded)]
 pub struct Marker {
     id: u32,
     title: String,
 }
 
-#[export(single_threaded)]
+#[export]
 impl Marker {
     pub fn id(&self) -> u32 {
         self.id
@@ -27,12 +28,13 @@ impl Marker {
     }
 }
 
+#[export(single_threaded)]
 #[derive(Default)]
 pub struct MapView {
     markers_created: Cell<u32>,
 }
 
-#[export(single_threaded)]
+#[export]
 impl MapView {
     pub fn new() -> Self {
         Self {
@@ -63,6 +65,7 @@ impl MapView {
     }
 }
 
+#[export(single_threaded)]
 pub struct StateHolder {
     label: String,
     value: i32,
@@ -74,7 +77,7 @@ pub struct StateHolder {
 // useful when you know only one thread touches this, e.g. main-thread-only
 // UI objects on iOS/Android where you don't want to pay for locks you'll
 // never need. proceed with caution.
-#[export(single_threaded)]
+#[export]
 impl StateHolder {
     pub fn new(label: String) -> Self {
         Self {
@@ -146,12 +149,13 @@ impl StateHolder {
     }
 }
 
+#[export(single_threaded)]
 #[derive(Default)]
 pub struct CounterSingleThreaded {
     value: i32,
 }
 
-#[export(single_threaded)]
+#[export]
 impl CounterSingleThreaded {
     pub fn new() -> Self {
         Self { value: 0 }
@@ -170,12 +174,13 @@ impl CounterSingleThreaded {
     }
 }
 
+#[export(single_threaded)]
 #[derive(Default)]
 pub struct AccumulatorSingleThreaded {
     value: i64,
 }
 
-#[export(single_threaded)]
+#[export]
 impl AccumulatorSingleThreaded {
     pub fn new() -> Self {
         Self { value: 0 }

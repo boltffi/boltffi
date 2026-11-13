@@ -9,8 +9,8 @@ typedef struct {
     uint64_t (*clone)(uint64_t);
     FfiBuf_u8 (*map_status)(uint64_t, int32_t *, int32_t);
 } ___StatusMapperVTable;
-void boltffi_register_callback_demo_status_mapper(const ___StatusMapperVTable *vtable);
-BoltFFICallbackHandle boltffi_create_callback_demo_status_mapper(uint64_t handle);
+void boltffi_register_callback_4demo12StatusMapper(const ___StatusMapperVTable *vtable);
+BoltFFICallbackHandle boltffi_create_callback_4demo12StatusMapper(uint64_t handle);
 
 ===== jni/jni_glue.c =====
 <jni source includes>
@@ -98,7 +98,7 @@ static bool boltffi_jni_load____StatusMapperVTable_callbacks(JNIEnv *env) {
     if (!boltffi_jni_lookup_static_method_with_diagnostic(env, g____StatusMapperVTable_class, "com/boltffi/demo/StatusMapperCallbacks", "map_status", "map_status", "(JJI)[B", "(JJI)[B", &g____StatusMapperVTable_map_status_method)) {
         goto fail;
     }
-    boltffi_register_callback_demo_status_mapper(&g____StatusMapperVTable_vtable);
+    boltffi_register_callback_4demo12StatusMapper(&g____StatusMapperVTable_vtable);
     return true;
 fail:
     (*env)->DeleteGlobalRef(env, g____StatusMapperVTable_class);

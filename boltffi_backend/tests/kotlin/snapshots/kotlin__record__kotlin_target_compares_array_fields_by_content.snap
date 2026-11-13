@@ -8,7 +8,7 @@ expression: rendered
 package com.boltffi.demo
 @Suppress("FunctionName")
 private object Native {
-    @JvmStatic external fun boltffi_function_demo_fail_blob(): Unit
+    @JvmStatic external fun boltffi_function_4demo9fail_blob(): Unit
 }
 
 
@@ -94,8 +94,8 @@ data class Nested(
     val maybeChunks: List<ByteArray>?,
     val pages: List<List<ByteArray>>,
     val sparse: List<List<ByteArray>?>,
-    val named: Map<String, ByteArray>,
-    val maybeNamed: Map<String, List<ByteArray>>?
+    val named: kotlin.collections.Map<String, ByteArray>,
+    val maybeNamed: kotlin.collections.Map<String, List<ByteArray>>?
 ) {
     internal fun wireSize(): Int {
         return 1 + (this.maybeChunks?.let { __boltffi_value_0 -> 4 + __boltffi_value_0.sumOf { __boltffi_value_1 -> val __boltffi_size: kotlin.Int = 4 + __boltffi_value_1.size; __boltffi_size } } ?: 0) + 4 + this.pages.sumOf { __boltffi_value_0 -> val __boltffi_size: kotlin.Int = 4 + __boltffi_value_0.sumOf { __boltffi_value_1 -> val __boltffi_size: kotlin.Int = 4 + __boltffi_value_1.size; __boltffi_size }; __boltffi_size } + 4 + this.sparse.sumOf { __boltffi_value_0 -> val __boltffi_size: kotlin.Int = 1 + (__boltffi_value_0?.let { __boltffi_value_1 -> 4 + __boltffi_value_1.sumOf { __boltffi_value_2 -> val __boltffi_size: kotlin.Int = 4 + __boltffi_value_2.size; __boltffi_size } } ?: 0); __boltffi_size } + this.named.wireSize({ __boltffi_value_0 -> 4 + Utf8Codec.maxBytes(__boltffi_value_0) }, { __boltffi_value_1 -> 4 + __boltffi_value_1.size }) + 1 + (this.maybeNamed?.let { __boltffi_value_0 -> __boltffi_value_0.wireSize({ __boltffi_value_1 -> 4 + Utf8Codec.maxBytes(__boltffi_value_1) }, { __boltffi_value_2 -> 4 + __boltffi_value_2.sumOf { __boltffi_value_3 -> val __boltffi_size: kotlin.Int = 4 + __boltffi_value_3.size; __boltffi_size } }) } ?: 0)
@@ -155,6 +155,169 @@ data class Nested(
         result = 31 * result + (this.maybeNamed?.let { left -> left.entries.fold(0) { hash, entry -> hash + entry.key.hashCode().xor(entry.value.fold(1) { hash1, element1 -> 31 * hash1 + element1.contentHashCode() }) } } ?: 0)
         return result
     }
+}
+
+
+data class ByteKeyMap(
+    val entries: kotlin.collections.Map<ByteArray, String>
+) {
+    internal fun wireSize(): Int {
+        return this.entries.wireSize({ __boltffi_value_0 -> 4 + __boltffi_value_0.size }, { __boltffi_value_1 -> 4 + Utf8Codec.maxBytes(__boltffi_value_1) })
+    }
+
+    internal fun writeTo(writer: WireWriter) {
+        writer.writeMap(this.entries, { writer, __boltffi_value_0 -> writer.writeBytes(__boltffi_value_0) }, { writer, __boltffi_value_1 -> writer.writeString(__boltffi_value_1) })
+    }
+
+    internal fun toByteArray(): ByteArray {
+        val buffer = WireWriterPool.acquire(wireSize())
+        val writer = buffer.writer
+        try {
+            writeTo(writer)
+            return buffer.bytes()
+        } finally {
+            buffer.close()
+        }
+    }
+
+    companion object {
+        internal fun fromReader(reader: WireReader): ByteKeyMap {
+            return ByteKeyMap(
+                reader.readMap({ reader -> reader.readBytes() }, { reader -> reader.readString() })
+            )
+        }
+
+        internal fun fromByteArray(bytes: ByteArray): ByteKeyMap {
+            val reader = WireReader(bytes)
+            return fromReader(reader)
+        }
+    }
+
+    override fun equals(other: kotlin.Any?): kotlin.Boolean {
+        if (this === other) return true
+        if (other !is ByteKeyMap) return false
+        return this.entries.size == other.entries.size && run { val unmatchedEntries = other.entries.entries.groupByTo(mutableMapOf()) { entry -> entry.key.contentHashCode() }; this.entries.entries.all { entry -> unmatchedEntries[entry.key.contentHashCode()]?.let { candidates -> run { val matchedIndex = candidates.indexOfFirst { candidate -> entry.key.contentEquals(candidate.key) && entry.value == candidate.value }; if (matchedIndex != -1) run { candidates.removeAt(matchedIndex); true } else false } } ?: false } }
+    }
+
+    override fun hashCode(): kotlin.Int = this.entries.entries.fold(0) { hash, entry -> hash + entry.key.contentHashCode().xor(entry.value.hashCode()) }
+}
+
+
+data class ArrayWrappers(
+    val pair: Pair<ByteArray, UInt>,
+    val triple: Triple<ByteArray?, Double, Boolean>,
+    val outcome: BoltFFIResult<ByteArray, ByteArray>,
+    val optionalPair: Pair<ByteArray, UInt>?,
+    val optionalOutcome: BoltFFIResult<ByteArray, ByteArray>?,
+    val outcomes: List<BoltFFIResult<ByteArray, ByteArray>>
+) {
+    internal fun wireSize(): Int {
+        return 0 + 4 + this.pair.field0.size + 4 + 0 + 1 + (this.triple.field0?.let { __boltffi_value_0 -> 4 + __boltffi_value_0.size } ?: 0) + 8 + 1 + this.outcome.wireSize({ __boltffi_value_0 -> 4 + __boltffi_value_0.size }, { __boltffi_value_0 -> 4 + __boltffi_value_0.size }) + 1 + (this.optionalPair?.let { __boltffi_value_0 -> 0 + 4 + __boltffi_value_0.field0.size + 4 } ?: 0) + 1 + (this.optionalOutcome?.let { __boltffi_value_0 -> __boltffi_value_0.wireSize({ __boltffi_value_1 -> 4 + __boltffi_value_1.size }, { __boltffi_value_1 -> 4 + __boltffi_value_1.size }) } ?: 0) + 4 + this.outcomes.sumOf { __boltffi_value_0 -> val __boltffi_size: kotlin.Int = __boltffi_value_0.wireSize({ __boltffi_value_1 -> 4 + __boltffi_value_1.size }, { __boltffi_value_1 -> 4 + __boltffi_value_1.size }); __boltffi_size }
+    }
+
+    internal fun writeTo(writer: WireWriter) {
+        run { writer.writeBytes(this.pair.field0); writer.writeU32(this.pair.field1); kotlin.Unit }
+        run { writer.writeOptionalValue(this.triple.field0, { writer, __boltffi_value_0 -> writer.writeBytes(__boltffi_value_0) }); writer.writeF64(this.triple.field1); writer.writeBool(this.triple.field2); kotlin.Unit }
+        writer.writeResult(this.outcome, { writer, __boltffi_value_0 -> writer.writeBytes(__boltffi_value_0) }, { writer, __boltffi_value_0 -> writer.writeBytes(__boltffi_value_0) })
+        writer.writeOptionalValue(this.optionalPair, { writer, __boltffi_value_0 -> run { writer.writeBytes(__boltffi_value_0.field0); writer.writeU32(__boltffi_value_0.field1); kotlin.Unit } })
+        writer.writeOptionalValue(this.optionalOutcome, { writer, __boltffi_value_0 -> writer.writeResult(__boltffi_value_0, { writer, __boltffi_value_1 -> writer.writeBytes(__boltffi_value_1) }, { writer, __boltffi_value_1 -> writer.writeBytes(__boltffi_value_1) }) })
+        writer.writeSequence(this.outcomes, this.outcomes.size, { writer, __boltffi_value_0 -> writer.writeResult(__boltffi_value_0, { writer, __boltffi_value_1 -> writer.writeBytes(__boltffi_value_1) }, { writer, __boltffi_value_1 -> writer.writeBytes(__boltffi_value_1) }) })
+    }
+
+    internal fun toByteArray(): ByteArray {
+        val buffer = WireWriterPool.acquire(wireSize())
+        val writer = buffer.writer
+        try {
+            writeTo(writer)
+            return buffer.bytes()
+        } finally {
+            buffer.close()
+        }
+    }
+
+    companion object {
+        internal fun fromReader(reader: WireReader): ArrayWrappers {
+            return ArrayWrappers(
+                Pair(reader.readBytes(), reader.readU32()),
+                Triple(reader.readOptionalValue({ reader -> reader.readBytes() }), reader.readF64(), reader.readBool()),
+                reader.readResult({ reader -> reader.readBytes() }, { reader -> reader.readBytes() }),
+                reader.readOptionalValue({ reader -> Pair(reader.readBytes(), reader.readU32()) }),
+                reader.readOptionalValue({ reader -> reader.readResult({ reader -> reader.readBytes() }, { reader -> reader.readBytes() }) }),
+                reader.readSequence({ reader -> reader.readResult({ reader -> reader.readBytes() }, { reader -> reader.readBytes() }) })
+            )
+        }
+
+        internal fun fromByteArray(bytes: ByteArray): ArrayWrappers {
+            val reader = WireReader(bytes)
+            return fromReader(reader)
+        }
+    }
+
+    override fun equals(other: kotlin.Any?): kotlin.Boolean {
+        if (this === other) return true
+        if (other !is ArrayWrappers) return false
+        return (this.pair.first.contentEquals(other.pair.first) && this.pair.second == other.pair.second) &&
+            (this.triple.first.contentEquals(other.triple.first) && this.triple.second.equals(other.triple.second) && this.triple.third == other.triple.third) &&
+            run { val otherResult = other.outcome; this.outcome.fold({ ok -> otherResult is BoltFFIResult.Ok && ok.contentEquals(otherResult.value) }, { error -> otherResult is BoltFFIResult.Err && error.contentEquals(otherResult.error) }) } &&
+            (this.optionalPair?.let { left -> other.optionalPair?.let { right -> (left.first.contentEquals(right.first) && left.second == right.second) } ?: false } ?: (other.optionalPair == null)) &&
+            (this.optionalOutcome?.let { left -> other.optionalOutcome?.let { right -> run { val otherResult = right; left.fold({ ok -> otherResult is BoltFFIResult.Ok && ok.contentEquals(otherResult.value) }, { error -> otherResult is BoltFFIResult.Err && error.contentEquals(otherResult.error) }) } } ?: false } ?: (other.optionalOutcome == null)) &&
+            this.outcomes.size == other.outcomes.size && this.outcomes.indices.all { index -> run { val otherResult1 = other.outcomes[index]; this.outcomes[index].fold({ ok1 -> otherResult1 is BoltFFIResult.Ok && ok1.contentEquals(otherResult1.value) }, { error1 -> otherResult1 is BoltFFIResult.Err && error1.contentEquals(otherResult1.error) }) } }
+    }
+
+    override fun hashCode(): kotlin.Int {
+        var result = (31 * (this.pair.first.contentHashCode()) + this.pair.second.hashCode())
+        result = 31 * result + (31 * (31 * (this.triple.first.contentHashCode()) + this.triple.second.hashCode()) + this.triple.third.hashCode())
+        result = 31 * result + this.outcome.fold({ ok -> ok.contentHashCode() }, { error -> error.contentHashCode() })
+        result = 31 * result + (this.optionalPair?.let { left -> (31 * (left.first.contentHashCode()) + left.second.hashCode()) } ?: 0)
+        result = 31 * result + (this.optionalOutcome?.let { left -> left.fold({ ok -> ok.contentHashCode() }, { error -> error.contentHashCode() }) } ?: 0)
+        result = 31 * result + this.outcomes.fold(1) { hash, element -> 31 * hash + element.fold({ ok1 -> ok1.contentHashCode() }, { error1 -> error1.contentHashCode() }) }
+        return result
+    }
+}
+
+
+data class WrappedKeyMap(
+    val entries: kotlin.collections.Map<Pair<ByteArray, UInt>, BoltFFIResult<ByteArray, ByteArray>>
+) {
+    internal fun wireSize(): Int {
+        return this.entries.wireSize({ __boltffi_value_0 -> 0 + 4 + __boltffi_value_0.field0.size + 4 }, { __boltffi_value_1 -> __boltffi_value_1.wireSize({ __boltffi_value_2 -> 4 + __boltffi_value_2.size }, { __boltffi_value_2 -> 4 + __boltffi_value_2.size }) })
+    }
+
+    internal fun writeTo(writer: WireWriter) {
+        writer.writeMap(this.entries, { writer, __boltffi_value_0 -> run { writer.writeBytes(__boltffi_value_0.field0); writer.writeU32(__boltffi_value_0.field1); kotlin.Unit } }, { writer, __boltffi_value_1 -> writer.writeResult(__boltffi_value_1, { writer, __boltffi_value_2 -> writer.writeBytes(__boltffi_value_2) }, { writer, __boltffi_value_2 -> writer.writeBytes(__boltffi_value_2) }) })
+    }
+
+    internal fun toByteArray(): ByteArray {
+        val buffer = WireWriterPool.acquire(wireSize())
+        val writer = buffer.writer
+        try {
+            writeTo(writer)
+            return buffer.bytes()
+        } finally {
+            buffer.close()
+        }
+    }
+
+    companion object {
+        internal fun fromReader(reader: WireReader): WrappedKeyMap {
+            return WrappedKeyMap(
+                reader.readMap({ reader -> Pair(reader.readBytes(), reader.readU32()) }, { reader -> reader.readResult({ reader -> reader.readBytes() }, { reader -> reader.readBytes() }) })
+            )
+        }
+
+        internal fun fromByteArray(bytes: ByteArray): WrappedKeyMap {
+            val reader = WireReader(bytes)
+            return fromReader(reader)
+        }
+    }
+
+    override fun equals(other: kotlin.Any?): kotlin.Boolean {
+        if (this === other) return true
+        if (other !is WrappedKeyMap) return false
+        return this.entries.size == other.entries.size && run { val unmatchedEntries = other.entries.entries.groupByTo(mutableMapOf()) { entry -> (31 * (entry.key.first.contentHashCode()) + entry.key.second.hashCode()) }; this.entries.entries.all { entry -> unmatchedEntries[(31 * (entry.key.first.contentHashCode()) + entry.key.second.hashCode())]?.let { candidates -> run { val matchedIndex = candidates.indexOfFirst { candidate -> (entry.key.first.contentEquals(candidate.key.first) && entry.key.second == candidate.key.second) && run { val otherResult1 = candidate.value; entry.value.fold({ ok1 -> otherResult1 is BoltFFIResult.Ok && ok1.contentEquals(otherResult1.value) }, { error1 -> otherResult1 is BoltFFIResult.Err && error1.contentEquals(otherResult1.error) }) } }; if (matchedIndex != -1) run { candidates.removeAt(matchedIndex); true } else false } } ?: false } }
+    }
+
+    override fun hashCode(): kotlin.Int = this.entries.entries.fold(0) { hash, entry -> hash + (31 * (entry.key.first.contentHashCode()) + entry.key.second.hashCode()).xor(entry.value.fold({ ok1 -> ok1.contentHashCode() }, { error1 -> error1.contentHashCode() })) }
 }
 
 
@@ -333,6 +496,33 @@ sealed class Frame {
             writer.writeString(this.name)
         }
     }
+    data class Wrapped(
+        val pair: Pair<ByteArray, UInt>,
+        val outcome: BoltFFIResult<ByteArray, ByteArray>
+    ) : Frame() {
+        internal override fun wireSize(): Int {
+            return 4 + 0 + 4 + this.pair.field0.size + 4 + this.outcome.wireSize({ __boltffi_value_0 -> 4 + __boltffi_value_0.size }, { __boltffi_value_0 -> 4 + __boltffi_value_0.size })
+        }
+
+        internal override fun writeTo(writer: WireWriter) {
+            writer.writeU32(4u)
+            run { writer.writeBytes(this.pair.field0); writer.writeU32(this.pair.field1); kotlin.Unit }
+            writer.writeResult(this.outcome, { writer, __boltffi_value_0 -> writer.writeBytes(__boltffi_value_0) }, { writer, __boltffi_value_0 -> writer.writeBytes(__boltffi_value_0) })
+        }
+
+        override fun equals(other: kotlin.Any?): kotlin.Boolean {
+            if (this === other) return true
+            if (other !is Wrapped) return false
+            return (this.pair.first.contentEquals(other.pair.first) && this.pair.second == other.pair.second) &&
+                run { val otherResult = other.outcome; this.outcome.fold({ ok -> otherResult is BoltFFIResult.Ok && ok.contentEquals(otherResult.value) }, { error -> otherResult is BoltFFIResult.Err && error.contentEquals(otherResult.error) }) }
+        }
+
+        override fun hashCode(): kotlin.Int {
+            var result = (31 * (this.pair.first.contentHashCode()) + this.pair.second.hashCode())
+            result = 31 * result + this.outcome.fold({ ok -> ok.contentHashCode() }, { error -> error.contentHashCode() })
+            return result
+        }
+    }
 
     companion object {
         internal fun fromReader(reader: WireReader): Frame {
@@ -342,6 +532,7 @@ sealed class Frame {
                 1u -> Data(reader.readBytes())
                 2u -> Tagged(reader.readU32(), reader.readLongArray())
                 3u -> Named(reader.readString())
+                4u -> Wrapped(Pair(reader.readBytes(), reader.readU32()), reader.readResult({ reader -> reader.readBytes() }, { reader -> reader.readBytes() }))
                 else -> throw IllegalArgumentException("unknown Frame tag: $tag")
             }
         }
@@ -354,5 +545,5 @@ sealed class Frame {
 }
 
 fun failBlob() {
-    try { Native.boltffi_function_demo_fail_blob() } catch (__boltffi_error: BoltFfiErrorBufferException) { run { val __boltffi_error_reader = WireReader(__boltffi_error.bytes); throw BlobError.fromReader(__boltffi_error_reader) } }
+    try { Native.boltffi_function_4demo9fail_blob() } catch (__boltffi_error: BoltFfiErrorBufferException) { run { val __boltffi_error_reader = WireReader(__boltffi_error.bytes); throw BlobError.fromReader(__boltffi_error_reader) } }
 }

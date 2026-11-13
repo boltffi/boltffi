@@ -37,7 +37,7 @@ public struct Point: Hashable, Equatable, Sendable {
 }
 
 public func points() -> [Point] {
-    let boltffiResult = boltffi_function_demo_points()
+    let boltffiResult = boltffi_function_4demo6points()
     defer { boltffi_free_buf(boltffiResult) }
     guard boltffiResult.len > 0, let boltffiResultPtr = boltffiResult.ptr else { return [] }
     let boltffiResultCount = Int(boltffiResult.len) / MemoryLayout<___Point>.stride

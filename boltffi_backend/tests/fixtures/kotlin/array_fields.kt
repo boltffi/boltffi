@@ -20,10 +20,21 @@ fun nested() = Nested(
     mapOf("c" to listOf(byteArrayOf(10))),
 )
 
-fun checkSame(left: Nested, right: Nested) {
+fun <T> checkEqual(left: T, right: T) {
     check(left == right)
+    check(right == left)
     check(left.hashCode() == right.hashCode())
+    check(setOf(left, right).size == 1)
 }
+
+fun arrayWrappers() = ArrayWrappers(
+    Pair(byteArrayOf(1, 2), 3u),
+    Triple(byteArrayOf(4), Double.NaN, true),
+    BoltFFIResult.Ok(byteArrayOf(5)),
+    Pair(byteArrayOf(6), 7u),
+    BoltFFIResult.Err(byteArrayOf(8)),
+    listOf(BoltFFIResult.Ok(byteArrayOf(9)), BoltFFIResult.Err(byteArrayOf(10))),
+)
 
 fun main() {
     check(blob() == blob())
@@ -52,9 +63,9 @@ fun main() {
     check(BlobError("failed", byteArrayOf(1)) == BlobError("failed", byteArrayOf(1)))
     check(BlobError("failed", byteArrayOf(1)) != BlobError("failed", byteArrayOf(2)))
 
-    checkSame(nested(), nested())
-    checkSame(nested().copy(maybeChunks = null), nested().copy(maybeChunks = null))
-    checkSame(nested().copy(maybeNamed = null), nested().copy(maybeNamed = null))
+    checkEqual(nested(), nested())
+    checkEqual(nested().copy(maybeChunks = null), nested().copy(maybeChunks = null))
+    checkEqual(nested().copy(maybeNamed = null), nested().copy(maybeNamed = null))
     check(nested() != nested().copy(maybeChunks = null))
     check(nested().copy(maybeChunks = null) != nested())
     check(nested() != nested().copy(maybeChunks = listOf(byteArrayOf(1), byteArrayOf(2, 4))))
@@ -68,4 +79,80 @@ fun main() {
     check(nested() != nested().copy(maybeNamed = null))
     check(nested() != nested().copy(maybeNamed = mapOf("c" to listOf(byteArrayOf(11)))))
     check(Nested.fromByteArray(nested().toByteArray()) == nested())
+
+    val map = ByteKeyMap(linkedMapOf(byteArrayOf(1) to "first", byteArrayOf(2) to "second"))
+    val reordered = ByteKeyMap(linkedMapOf(byteArrayOf(2) to "second", byteArrayOf(1) to "first"))
+    checkEqual(map, reordered)
+    check(map != ByteKeyMap(mapOf(byteArrayOf(1) to "changed", byteArrayOf(2) to "second")))
+    check(map != ByteKeyMap(mapOf(byteArrayOf(1) to "first", byteArrayOf(3) to "second")))
+    check(ByteKeyMap.fromByteArray(map.toByteArray()) == map)
+
+    val repeated = ByteKeyMap(
+        linkedMapOf(byteArrayOf(1) to "a", byteArrayOf(1) to "a", byteArrayOf(1) to "b"),
+    )
+    val repeatedReordered = ByteKeyMap(
+        linkedMapOf(byteArrayOf(1) to "b", byteArrayOf(1) to "a", byteArrayOf(1) to "a"),
+    )
+    val repeatedDifferent = ByteKeyMap(
+        linkedMapOf(byteArrayOf(1) to "a", byteArrayOf(1) to "b", byteArrayOf(1) to "b"),
+    )
+    checkEqual(repeated, repeatedReordered)
+    check(repeated != repeatedDifferent)
+    check(repeatedDifferent != repeated)
+
+    val collisions = ByteKeyMap(
+        linkedMapOf(byteArrayOf(0, 31) to "a", byteArrayOf(1, 0) to "b"),
+    )
+    checkEqual(
+        collisions,
+        ByteKeyMap(linkedMapOf(byteArrayOf(1, 0) to "b", byteArrayOf(0, 31) to "a")),
+    )
+    check(
+        collisions != ByteKeyMap(
+            linkedMapOf(byteArrayOf(0, 31) to "b", byteArrayOf(1, 0) to "a"),
+        ),
+    )
+
+    val wrappers = arrayWrappers()
+    checkEqual(wrappers, arrayWrappers())
+    check(wrappers != wrappers.copy(pair = Pair(byteArrayOf(1, 3), 3u)))
+    check(wrappers != wrappers.copy(pair = Pair(byteArrayOf(1, 2), 4u)))
+    check(wrappers != wrappers.copy(triple = Triple(null, Double.NaN, true)))
+    check(wrappers != wrappers.copy(triple = Triple(byteArrayOf(4), Double.NaN, false)))
+    checkEqual(
+        wrappers.copy(triple = Triple(null, Double.NaN, true)),
+        wrappers.copy(triple = Triple(null, Double.NaN, true)),
+    )
+    check(
+        wrappers.copy(triple = Triple(byteArrayOf(4), 0.0, true)) !=
+            wrappers.copy(triple = Triple(byteArrayOf(4), -0.0, true)),
+    )
+    check(wrappers != wrappers.copy(outcome = BoltFFIResult.Ok(byteArrayOf(0))))
+    check(wrappers != wrappers.copy(outcome = BoltFFIResult.Err(byteArrayOf(5))))
+    checkEqual(
+        wrappers.copy(outcome = BoltFFIResult.Err(byteArrayOf(5))),
+        wrappers.copy(outcome = BoltFFIResult.Err(byteArrayOf(5))),
+    )
+    checkEqual(
+        wrappers.copy(optionalPair = null, optionalOutcome = null),
+        wrappers.copy(optionalPair = null, optionalOutcome = null),
+    )
+    check(wrappers != wrappers.copy(optionalPair = null))
+    check(wrappers != wrappers.copy(optionalOutcome = null))
+    check(
+        wrappers != wrappers.copy(
+            outcomes = listOf(BoltFFIResult.Ok(byteArrayOf(9)), BoltFFIResult.Err(byteArrayOf(11))),
+        ),
+    )
+    checkEqual(ArrayWrappers.fromByteArray(wrappers.toByteArray()), wrappers)
+
+    val wrappedMap = WrappedKeyMap(mapOf(Pair(byteArrayOf(1), 2u) to BoltFFIResult.Ok(byteArrayOf(3))))
+    val wrappedMapCopy = WrappedKeyMap(mapOf(Pair(byteArrayOf(1), 2u) to BoltFFIResult.Ok(byteArrayOf(3))))
+    checkEqual(wrappedMap, wrappedMapCopy)
+    check(wrappedMap != WrappedKeyMap(mapOf(Pair(byteArrayOf(1), 2u) to BoltFFIResult.Err(byteArrayOf(3)))))
+
+    checkEqual(
+        Frame.Wrapped(Pair(byteArrayOf(1), 2u), BoltFFIResult.Ok(byteArrayOf(3))),
+        Frame.Wrapped(Pair(byteArrayOf(1), 2u), BoltFFIResult.Ok(byteArrayOf(3))),
+    )
 }

@@ -1,0 +1,13 @@
+error[E0433]: cannot find `PathBuf` in `path`
+ --> tests/diagnostics/unsupported_signatures/path_buf_by_full_path.rs:3:24
+  |
+3 | pub fn f(a: std::path::PathBuf) {}
+  |                        ^^^^^^^ could not find `PathBuf` in `path`
+
+warning: unused variable: `a`
+ --> tests/diagnostics/unsupported_signatures/path_buf_by_full_path.rs:3:10
+  |
+3 | pub fn f(a: std::path::PathBuf) {}
+  |          ^ help: if this is intentional, prefix it with an underscore: `_a`
+  |
+  = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default

@@ -110,7 +110,7 @@ mod tests {
 
     fn native_parameters_for(point: Type) -> Vec<NativeParameter> {
         let function = Function::new(
-            "boltffi_function_demo_distance",
+            "boltffi_function_4demo8distance",
             vec![Parameter::new("point", point).expect("parameter")],
             Type::Float64,
         )

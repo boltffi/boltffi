@@ -6,6 +6,7 @@ use boltffi::*;
 ///
 /// Shows multiple constructor patterns: a default constructor,
 /// a parameterized one, and a fallible one that returns Result.
+#[export]
 pub struct Inventory {
     items: Mutex<Vec<String>>,
     capacity: u32,

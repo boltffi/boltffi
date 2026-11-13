@@ -52,7 +52,7 @@ for (final _l$boltffiValue0 in history) {
     final _l$nameLen = _$$BoltUtil.writeString(_l$nameStorage.ptr, _l$nameStorage.len, name);
     late final int _l$callResult;
     try {
-      final _l$result = _f$boltffi_method_record_demo_api_profile_rename(_l$selfStorage.ptr, _l$selfWriter.len, _l$selfOut.ptr, _l$nameStorage.ptr, _l$nameLen);
+      final _l$result = _f$boltffi_method_record_8demo_api7Profile6rename(_l$selfStorage.ptr, _l$selfWriter.len, _l$selfOut.ptr, _l$nameStorage.ptr, _l$nameLen);
       final _l$selfBuffer = _l$selfOut.ptr.ref;
       final _l$selfReader = _$$BoltWireDecoder(_$$BoltBufReader.fromSpan(_l$selfBuffer.ptr, _l$selfBuffer.len));
       final _l$selfUpdated = Profile._m$wireDecode(_l$selfReader);
@@ -78,7 +78,7 @@ for (final _l$boltffiValue0 in history) {
     final _l$resultOut = _$$BoltStoragePool.acquireStorage($$ffi.sizeOf<$$ffi.Uint32>());
     late final int _l$callResult;
     try {
-      final _l$error = _f$boltffi_method_record_demo_api_profile_try_rename(_l$selfStorage.ptr, _l$selfWriter.len, _l$selfOut.ptr, _l$nameStorage.ptr, _l$nameLen, _l$resultOut.ptr.cast<$$ffi.Uint32>());
+      final _l$error = _f$boltffi_method_record_8demo_api7Profile10try_rename(_l$selfStorage.ptr, _l$selfWriter.len, _l$selfOut.ptr, _l$nameStorage.ptr, _l$nameLen, _l$resultOut.ptr.cast<$$ffi.Uint32>());
       if (_l$error.ptr != $$ffi.nullptr) {
         try {
           final _l$errorReader = _$$BoltWireDecoder(_$$BoltBufReader.fromSpan(_l$error.ptr, _l$error.len));

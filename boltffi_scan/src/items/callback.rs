@@ -17,6 +17,14 @@ pub fn scan(
     build(marked.item(), marked.scope(), declared_types)
 }
 
+pub(crate) fn scan_item(
+    item: &syn::ItemTrait,
+    scope: &ModuleScope,
+    declared_types: &DeclaredTypes,
+) -> Result<TraitDef, ScanError> {
+    build(item, scope, declared_types)
+}
+
 fn build(
     item: &syn::ItemTrait,
     scope: &ModuleScope,
@@ -76,7 +84,7 @@ fn supertraits(
 }
 
 fn is_supported_supertrait(bound: &syn::TraitBound) -> bool {
-    matches!(bound.modifier, syn::TraitBoundModifier::None)
+    !unsupported::has_bound_modifier(bound)
         && bound.lifetimes.is_none()
         && bound.path.segments.last().is_some_and(|segment| {
             matches!(

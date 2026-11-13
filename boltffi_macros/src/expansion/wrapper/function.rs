@@ -1,8 +1,7 @@
-use boltffi_ast::{FunctionDef, Path, PathRoot};
+use boltffi_ast::FunctionDef;
 use boltffi_binding::{ExecutionDecl, FunctionDecl};
 use proc_macro2::TokenStream;
-use quote::quote;
-use syn::{Ident, parse_str};
+use syn::Ident;
 
 use crate::expansion::{
     contract::{DeclarationPair, Expansion},
@@ -16,7 +15,6 @@ use super::export;
 pub struct Function<'expansion, 'lowered, S: boltffi_binding::SurfaceLower> {
     pair: DeclarationPair<'lowered, FunctionDef, FunctionDecl<S>>,
     expansion: &'expansion Expansion<'lowered, S>,
-    rust_path: Option<TokenStream>,
 }
 
 impl<'expansion, 'lowered, S: boltffi_binding::SurfaceLower> Function<'expansion, 'lowered, S> {
@@ -24,16 +22,7 @@ impl<'expansion, 'lowered, S: boltffi_binding::SurfaceLower> Function<'expansion
         pair: DeclarationPair<'lowered, FunctionDef, FunctionDecl<S>>,
         expansion: &'expansion Expansion<'lowered, S>,
     ) -> Self {
-        Self {
-            pair,
-            expansion,
-            rust_path: None,
-        }
-    }
-
-    pub fn with_path(mut self, path: &Path) -> Result<Self, Error> {
-        self.rust_path = Some(Self::path_tokens(path)?);
-        Ok(self)
+        Self { pair, expansion }
     }
 
     fn function_ident(source: &FunctionDef) -> Result<Ident, Error> {
@@ -42,37 +31,7 @@ impl<'expansion, 'lowered, S: boltffi_binding::SurfaceLower> Function<'expansion
     }
 
     fn rust_call(&self, function_ident: Ident) -> export::RustCall {
-        match &self.rust_path {
-            Some(path) => export::RustCall::function_path(function_ident, path.clone()),
-            None => export::RustCall::function(function_ident),
-        }
-    }
-
-    fn path_tokens(path: &Path) -> Result<TokenStream, Error> {
-        let prefix = match path.root {
-            PathRoot::Relative => TokenStream::new(),
-            PathRoot::Crate => quote! { crate:: },
-            PathRoot::Self_ => quote! { self:: },
-            PathRoot::Super(levels) => {
-                let parents =
-                    std::iter::repeat_n(quote! { super }, levels.get()).collect::<Vec<_>>();
-                quote! { #(#parents)::*:: }
-            }
-            PathRoot::Absolute => quote! { :: },
-        };
-        let segments = path
-            .segments
-            .iter()
-            .map(|segment| {
-                if !segment.arguments.is_empty() {
-                    return Err(Error::UnsupportedExpansion("generic function path"));
-                }
-                parse_str::<Ident>(segment.name.as_str()).map_err(|_| {
-                    Error::SourceSyntaxMismatch("function path segment is not Rust syntax")
-                })
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(quote! { #prefix #(#segments)::* })
+        export::RustCall::function(function_ident)
     }
 }
 

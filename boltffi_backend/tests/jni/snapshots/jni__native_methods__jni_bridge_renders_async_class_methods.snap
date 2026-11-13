@@ -4,14 +4,14 @@ expression: "rendered_fixture(\"exports/async_class_methods\")"
 ---
 ===== jni/demo.h =====
 <c abi support declarations>
-void boltffi_release_class_demo_engine(uint64_t handle);
-uint64_t boltffi_init_class_demo_engine_new(void);
-RustFutureHandle boltffi_method_class_demo_engine_compute(uint64_t receiver, uint32_t value);
-int8_t boltffi_async_method_class_demo_engine_compute_poll(RustFutureHandle handle, uint64_t callback_data, void (*callback)(uint64_t, int8_t));
-uint32_t boltffi_async_method_class_demo_engine_compute_complete(RustFutureHandle handle, FfiStatus *out_status);
-FfiBuf_u8 boltffi_async_method_class_demo_engine_compute_panic_message(RustFutureHandle handle);
-void boltffi_async_method_class_demo_engine_compute_cancel(RustFutureHandle handle);
-void boltffi_async_method_class_demo_engine_compute_free(RustFutureHandle handle);
+void boltffi_release_class_4demo6Engine(uint64_t handle);
+uint64_t boltffi_init_class_4demo6Engine3new(void);
+RustFutureHandle boltffi_method_class_4demo6Engine7compute(uint64_t receiver, uint32_t value);
+int8_t boltffi_async_method_class_4demo6Engine7compute_poll(RustFutureHandle handle, uint64_t callback_data, void (*callback)(uint64_t, int8_t));
+uint32_t boltffi_async_method_class_4demo6Engine7compute_complete(RustFutureHandle handle, FfiStatus *out_status);
+FfiBuf_u8 boltffi_async_method_class_4demo6Engine7compute_panic_message(RustFutureHandle handle);
+void boltffi_async_method_class_4demo6Engine7compute_cancel(RustFutureHandle handle);
+void boltffi_async_method_class_4demo6Engine7compute_free(RustFutureHandle handle);
 
 ===== jni/jni_glue.c =====
 <jni source includes>
@@ -53,48 +53,48 @@ JNIEXPORT void JNICALL JNI_OnUnload(JavaVM *vm, void *reserved) {
     boltffi_jni_native_class = NULL;
 }
 
-JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1release_1class_1demo_1engine(JNIEnv *env, jclass cls, jlong handle) {
+JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1release_1class_14demo6Engine(JNIEnv *env, jclass cls, jlong handle) {
     (void)cls;
 
     (void)env;
-    boltffi_release_class_demo_engine(handle);
+    boltffi_release_class_4demo6Engine(handle);
 
     return;
 }
 
-JNIEXPORT jlong JNICALL Java_com_boltffi_demo_Native_boltffi_1init_1class_1demo_1engine_1new(JNIEnv *env, jclass cls) {
+JNIEXPORT jlong JNICALL Java_com_boltffi_demo_Native_boltffi_1init_1class_14demo6Engine3new(JNIEnv *env, jclass cls) {
     (void)cls;
 
     (void)env;
-    uint64_t __boltffi_result = boltffi_init_class_demo_engine_new();
+    uint64_t __boltffi_result = boltffi_init_class_4demo6Engine3new();
 
     return (jlong)__boltffi_result;
 }
 
-JNIEXPORT jlong JNICALL Java_com_boltffi_demo_Native_boltffi_1method_1class_1demo_1engine_1compute(JNIEnv *env, jclass cls, jlong receiver, jint value) {
+JNIEXPORT jlong JNICALL Java_com_boltffi_demo_Native_boltffi_1method_1class_14demo6Engine7compute(JNIEnv *env, jclass cls, jlong receiver, jint value) {
     (void)cls;
 
     (void)env;
-    RustFutureHandle __boltffi_result = boltffi_method_class_demo_engine_compute(receiver, value);
+    RustFutureHandle __boltffi_result = boltffi_method_class_4demo6Engine7compute(receiver, value);
 
     return (jlong)__boltffi_result;
 }
 
-JNIEXPORT jbyte JNICALL Java_com_boltffi_demo_Native_boltffi_1async_1method_1class_1demo_1engine_1compute_1poll(JNIEnv *env, jclass cls, jlong handle, jlong callback_data) {
+JNIEXPORT jbyte JNICALL Java_com_boltffi_demo_Native_boltffi_1async_1method_1class_14demo6Engine7compute_1poll(JNIEnv *env, jclass cls, jlong handle, jlong callback_data) {
     (void)cls;
 
     (void)env;
-    int8_t __boltffi_result = boltffi_async_method_class_demo_engine_compute_poll((RustFutureHandle)handle, callback_data, boltffi_jni_continuation_callback);
+    int8_t __boltffi_result = boltffi_async_method_class_4demo6Engine7compute_poll((RustFutureHandle)handle, callback_data, boltffi_jni_continuation_callback);
 
     return (jbyte)__boltffi_result;
 }
 
-JNIEXPORT jint JNICALL Java_com_boltffi_demo_Native_boltffi_1async_1method_1class_1demo_1engine_1compute_1complete(JNIEnv *env, jclass cls, jlong handle) {
+JNIEXPORT jint JNICALL Java_com_boltffi_demo_Native_boltffi_1async_1method_1class_14demo6Engine7compute_1complete(JNIEnv *env, jclass cls, jlong handle) {
     (void)cls;
 
     FfiStatus __boltffi_status = (FfiStatus){0};
 
-    uint32_t __boltffi_result = boltffi_async_method_class_demo_engine_compute_complete((RustFutureHandle)handle, &__boltffi_status);
+    uint32_t __boltffi_result = boltffi_async_method_class_4demo6Engine7compute_complete((RustFutureHandle)handle, &__boltffi_status);
 
     if (__boltffi_status.code != 0) {
         boltffi_jni_throw_status(env, __boltffi_status);
@@ -104,29 +104,29 @@ JNIEXPORT jint JNICALL Java_com_boltffi_demo_Native_boltffi_1async_1method_1clas
     return (jint)__boltffi_result;
 }
 
-JNIEXPORT jbyteArray JNICALL Java_com_boltffi_demo_Native_boltffi_1async_1method_1class_1demo_1engine_1compute_1panic_1message(JNIEnv *env, jclass cls, jlong handle) {
+JNIEXPORT jbyteArray JNICALL Java_com_boltffi_demo_Native_boltffi_1async_1method_1class_14demo6Engine7compute_1panic_1message(JNIEnv *env, jclass cls, jlong handle) {
     (void)cls;
 
     (void)env;
-    FfiBuf_u8 __boltffi_result = boltffi_async_method_class_demo_engine_compute_panic_message((RustFutureHandle)handle);
+    FfiBuf_u8 __boltffi_result = boltffi_async_method_class_4demo6Engine7compute_panic_message((RustFutureHandle)handle);
 
     return boltffi_jni_buffer_to_byte_array(env, __boltffi_result);
 }
 
-JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1async_1method_1class_1demo_1engine_1compute_1cancel(JNIEnv *env, jclass cls, jlong handle) {
+JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1async_1method_1class_14demo6Engine7compute_1cancel(JNIEnv *env, jclass cls, jlong handle) {
     (void)cls;
 
     (void)env;
-    boltffi_async_method_class_demo_engine_compute_cancel((RustFutureHandle)handle);
+    boltffi_async_method_class_4demo6Engine7compute_cancel((RustFutureHandle)handle);
 
     return;
 }
 
-JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1async_1method_1class_1demo_1engine_1compute_1free(JNIEnv *env, jclass cls, jlong handle) {
+JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1async_1method_1class_14demo6Engine7compute_1free(JNIEnv *env, jclass cls, jlong handle) {
     (void)cls;
 
     (void)env;
-    boltffi_async_method_class_demo_engine_compute_free((RustFutureHandle)handle);
+    boltffi_async_method_class_4demo6Engine7compute_free((RustFutureHandle)handle);
 
     return;
 }

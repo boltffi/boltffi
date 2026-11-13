@@ -33,6 +33,18 @@ impl LowerError {
         })
     }
 
+    pub(crate) fn foreign_name_collision(
+        name: impl fmt::Display,
+        first: impl fmt::Display,
+        second: impl fmt::Display,
+    ) -> Self {
+        Self::new(LowerErrorKind::ForeignNameCollision {
+            name: name.to_string(),
+            first: first.to_string(),
+            second: second.to_string(),
+        })
+    }
+
     pub(crate) fn unknown_record(id: impl fmt::Display) -> Self {
         Self::new(LowerErrorKind::UnknownRecord(id.to_string()))
     }
@@ -97,6 +109,12 @@ impl fmt::Display for LowerError {
             LowerErrorKind::UnsupportedDeclaration(family) => {
                 write!(formatter, "{} lowering is not implemented", family)
             }
+            LowerErrorKind::UnsupportedType(
+                UnsupportedType::MutableClassReceiverRequiresUnsafeSingleThreaded,
+            ) => formatter.write_str(
+                "a `&mut self` method needs `#[export(single_threaded)]` on its class's struct or \
+                 enum, since a thread-safe class can be borrowed from many threads at once",
+            ),
             LowerErrorKind::UnsupportedType(unsupported) => {
                 write!(
                     formatter,
@@ -110,6 +128,14 @@ impl fmt::Display for LowerError {
             LowerErrorKind::DuplicateSourceId { family, id } => {
                 write!(formatter, "duplicate {} source id `{id}`", family)
             }
+            LowerErrorKind::ForeignNameCollision {
+                name,
+                first,
+                second,
+            } => write!(
+                formatter,
+                "`{first}` and `{second}` both bind as `{name}`; rename one of them"
+            ),
             LowerErrorKind::UnknownRecord(record) => {
                 write!(formatter, "unknown record id `{record}`")
             }
@@ -182,6 +208,15 @@ pub enum LowerErrorKind {
         family: DeclarationFamily,
         /// Duplicated source id.
         id: String,
+    },
+    /// Declarations from two crates would get one foreign name.
+    ForeignNameCollision {
+        /// The shared name.
+        name: String,
+        /// Source id of the first declaration.
+        first: String,
+        /// Source id of the second declaration.
+        second: String,
     },
     /// A record reference could not be resolved inside the source contract.
     UnknownRecord(String),

@@ -1259,7 +1259,7 @@ fn java_target_carries_mutable_primitive_slices_as_direct_vectors() {
     let module = java_source(&output, "com.boltffi.demo", "Demo");
 
     assert!(module.contains("public static void increment(long[] values)"));
-    assert!(module.contains("static native void boltffi_function_demo_increment(long[] values)"));
+    assert!(module.contains("static native void boltffi_function_4demo9increment(long[] values)"));
     assert!(!module.contains("java.nio.ByteBuffer values"));
     assert!(!module.contains("System.arraycopy"));
     assert!(output.coverage().unsupported().is_empty());
@@ -2097,21 +2097,21 @@ fn java_target_renders_class_ownership_and_handle_calls_from_binding_ir() {
     assert!(counter.contains("private final java.util.concurrent.atomic.AtomicLong handle;"));
     assert!(counter.contains("public Counter(int value)"));
     assert!(counter.contains("private static long __boltffiCreateHandle0(int value)"));
-    assert!(counter.contains("return Native.boltffi_init_class_demo_counter_new(value);"));
+    assert!(counter.contains("return Native.boltffi_init_class_4demo7Counter3new(value);"));
     assert!(counter.contains("public static Counter tryNew(int value)"));
     assert!(counter.contains(
-        "return Counter.__boltffiFromHandle(Native.boltffi_init_class_demo_counter_try_new(value));"
+        "return Counter.__boltffiFromHandle(Native.boltffi_init_class_4demo7Counter7try_new(value));"
     ));
     assert!(counter.contains("throw new RuntimeException(\"Factory constructor failed\")"));
     assert!(counter.contains("if (__boltffi_handle == 0) return;"));
-    assert!(counter.contains("Native.boltffi_release_class_demo_counter(__boltffi_handle);"));
+    assert!(counter.contains("Native.boltffi_release_class_4demo7Counter(__boltffi_handle);"));
     assert!(
         counter.contains("if (value == 0) throw new IllegalStateException(\"Counter is closed\");")
     );
     assert!(counter.contains("public int get()"));
     assert!(counter.contains("public void set(int value)"));
     assert!(
-        counter.contains("Native.boltffi_method_class_demo_counter_set(this.rawHandle(), value);")
+        counter.contains("Native.boltffi_method_class_4demo7Counter3set(this.rawHandle(), value);")
     );
 
     assert!(fallible.contains("public FallibleOnly(String name)"));
@@ -2122,11 +2122,11 @@ fn java_target_renders_class_ownership_and_handle_calls_from_binding_ir() {
 
     assert!(factory.contains("public static Counter make(int value)"));
     assert!(factory.contains(
-        "return Counter.__boltffiFromHandle(Native.boltffi_method_class_demo_factory_make(value));"
+        "return Counter.__boltffiFromHandle(Native.boltffi_method_class_4demo7Factory4make(value));"
     ));
     assert!(factory.contains("public Counter maybe(int value)"));
     assert!(factory.contains(
-        "long __boltffi_handle = Native.boltffi_method_class_demo_factory_maybe(this.rawHandle(), value);"
+        "long __boltffi_handle = Native.boltffi_method_class_4demo7Factory5maybe(this.rawHandle(), value);"
     ));
     assert!(factory.contains(
         "return (__boltffi_handle == 0L ? null : Counter.__boltffiFromHandle(__boltffi_handle));"
@@ -2170,7 +2170,7 @@ fn java_target_renders_jvm_owned_callbacks_from_binding_ir() {
     assert!(returned.contains("return ((ValueCallbackHandle) value).rawHandle();"));
     assert!(returned.contains("Native.boltffi_callback_handle_release(handle)"));
     assert!(returned.contains(
-        "return Native.boltffi_callback_handle_demo_value_callback_apply(this.rawHandle(), value)"
+        "return Native.boltffi_callback_handle_4demo13ValueCallback_apply(this.rawHandle(), value)"
     ));
     assert!(returned.contains(
         "if (closed.get()) throw new IllegalStateException(\"callback handle is closed\");"
@@ -2346,7 +2346,7 @@ fn java_target_renders_streams_from_shared_protocols_and_item_plans() {
     assert!(event_bus.contains("public StreamSubscription<Integer> valueBatches()"));
     assert!(
         event_bus
-            .contains("Native.boltffi_stream_demo_event_bus_values_subscribe(this.rawHandle())")
+            .contains("Native.boltffi_stream_4demo8EventBus6values_subscribe(this.rawHandle())")
     );
     assert!(!event_bus.contains("subscribe(this.handle)"));
     assert!(event_bus.contains("BoltFfiStreamBatches.ints(bytes)"));
@@ -2354,10 +2354,10 @@ fn java_target_renders_streams_from_shared_protocols_and_item_plans() {
     assert!(event_bus.contains("BoltFfiStreamBatches.map("));
     assert!(event_bus.contains("reader.readSequence(() -> StreamMessage.fromReader(reader))"));
     assert!(module.contains(
-        "static native byte[] boltffi_stream_demo_event_bus_values_pop_batch(long subscription, long maxCount)"
+        "static native byte[] boltffi_stream_4demo8EventBus6values_pop_batch(long subscription, long maxCount)"
     ));
     assert!(module.contains(
-        "static native void boltffi_stream_demo_event_bus_values_poll(long subscription, long callback_data)"
+        "static native void boltffi_stream_4demo8EventBus6values_poll(long subscription, long callback_data)"
     ));
     assert!(module.contains("final class BoltFfiStream"));
     assert!(module.contains("final class StreamSubscription<T> implements AutoCloseable"));
@@ -2516,7 +2516,7 @@ fn java_target_renders_async_rust_owned_callback_handles() {
     assert!(callback.contains("final class ReturnedListenerHandle"));
     assert!(callback.contains("public java.util.concurrent.CompletableFuture<String> name()"));
     assert!(callback.contains("long callback_data = BoltFfiCallbackFutures.insert"));
-    assert!(callback.contains("Native.boltffi_callback_handle_demo_returned_listener_name"));
+    assert!(callback.contains("Native.boltffi_callback_handle_4demo16ReturnedListener_name"));
     assert!(callback.contains("static void complete_name(long callbackData, byte[] result)"));
     assert!(callback.contains("static void fail_name(long callbackData)"));
     assert!(callback.contains("BoltFfiCallbackFutures.success"));
@@ -2556,7 +2556,7 @@ fn java_target_renders_async_functions_and_methods_from_poll_handle_protocols() 
         module.contains("public static java.util.concurrent.CompletableFuture<String> loadName()")
     );
     assert!(module.contains("return BoltFfiAsync.call("));
-    assert!(module.contains("boltffi_async_function_demo_refresh_panic_message(future)"));
+    assert!(module.contains("boltffi_async_function_4demo7refresh_panic_message(future)"));
     assert!(module.contains("BoltFfiAsync.failure(__boltffi_failure, () -> Native."));
     assert!(module.contains("(future, continuation) -> Native."));
     assert!(module.contains("() -> finishAsyncPoll(currentPoll, pollResult, error)"));
@@ -3032,7 +3032,7 @@ fn java_target_rejects_generated_name_collisions() {
         matches!(
             &error,
             Error::JavaNameCollision { scope, name }
-            if scope == "boltffi_function_demo_collision" && name == "class_"
+            if scope == "boltffi_function_4demo9collision" && name == "class_"
         ),
         "{error:?}"
     );

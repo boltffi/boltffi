@@ -8,7 +8,7 @@ expression: "rendered_fixture(\"constant/literals_and_accessors\")"
 package com.boltffi.demo
 @Suppress("FunctionName")
 private object Native {
-    @JvmStatic external fun boltffi_const_demo_magic(): ByteArray?
+    @JvmStatic external fun boltffi_const_4demo5MAGIC(): ByteArray?
 }
 
 
@@ -34,7 +34,7 @@ val defaultMode: Mode = Mode.FAST
 
 val magic: ByteArray
     get() {
-        val __boltffi_result = Native.boltffi_const_demo_magic() ?: throw IllegalStateException("null buffer returned")
+        val __boltffi_result = Native.boltffi_const_4demo5MAGIC() ?: throw IllegalStateException("null buffer returned")
         val __boltffi_reader = WireReader(__boltffi_result)
         return __boltffi_reader.readBytes()
     }

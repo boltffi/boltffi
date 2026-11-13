@@ -190,6 +190,7 @@ pub fn wasm_unsigned_enum_closure(
     callback(word, wide)
 }
 
+#[export]
 pub struct WasmUnsignedValue(u64);
 
 #[export]

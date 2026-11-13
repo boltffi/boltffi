@@ -404,7 +404,7 @@ mod tests {
             .expect("boltffi.h")
             .contents();
         assert!(header.contains("static inline int32_t demo_add(int32_t left, int32_t right) {"));
-        assert!(header.contains("boltffi_function_demo_add(left, right)"));
+        assert!(header.contains("boltffi_function_4demo3add(left, right)"));
     }
 
     #[test]
@@ -754,7 +754,7 @@ mod tests {
         // half missing fails the compile below. "measure" takes a shared slice
         // of the same record, which packs through an encoded slice instead.
         assert!(header.contains(
-            "boltffi_function_demo_total((const uint8_t *)pairs.ptr, pairs.len * sizeof(DemoPair))"
+            "boltffi_function_4demo5total((const uint8_t *)pairs.ptr, pairs.len * sizeof(DemoPair))"
         ));
 
         let dir = std::env::temp_dir().join(format!("boltffi_c_test_{}", std::process::id()));
@@ -831,7 +831,7 @@ mod tests {
         assert!(header.contains("typedef struct { uint64_t _boltffi_handle; } DemoEngine;"));
         assert!(header.contains("static inline DemoEngine demo_engine_new(uint64_t seed)"));
         assert!(header.contains(
-            "boltffi_result._boltffi_handle = boltffi_init_class_demo_engine_new(seed);"
+            "boltffi_result._boltffi_handle = boltffi_init_class_4demo6Engine3new(seed);"
         ));
         assert!(header.contains(
             "static inline uint32_t demo_engine_score(const DemoEngine *receiver, DemoPoint point)"
@@ -842,7 +842,7 @@ mod tests {
         ));
         assert!(
             header.contains(
-                "boltffi_method_class_demo_engine_score(receiver->_boltffi_handle, point)"
+                "boltffi_method_class_4demo6Engine5score(receiver->_boltffi_handle, point)"
             )
         );
         assert!(header.contains("value->_boltffi_handle=0;"));
@@ -879,17 +879,17 @@ mod tests {
                 "typedef struct {\n    BoltFFICallbackHandle raw;\n} DemoListenerHandle;"
             )
         );
-        assert!(header.contains("boltffi_register_callback_demo_listener"));
+        assert!(header.contains("boltffi_register_callback_4demo8Listener"));
         assert!(header.contains(
             "static inline DemoListenerHandle demo_listener_create(const DemoListener *vtable, uint64_t identity)"
         ));
         assert!(header.contains(
-            "int64_t boltffi_function_demo_install(BoltFFICallbackHandle listener, uint32_t code, uint32_t value)"
+            "int64_t boltffi_function_4demo7install(BoltFFICallbackHandle listener, uint32_t code, uint32_t value)"
         ));
         assert!(header.contains(
             "static inline int64_t demo_install(DemoListenerHandle *listener, uint32_t code, uint32_t value)"
         ));
-        assert!(header.contains("boltffi_function_demo_install(listener->raw, code, value)"));
+        assert!(header.contains("boltffi_function_4demo7install(listener->raw, code, value)"));
 
         if !compiler_available("cc") {
             return;
@@ -905,16 +905,16 @@ mod tests {
 
 static const ___ListenerVTable *registered_listener;
 
-void boltffi_register_callback_demo_listener(const ___ListenerVTable *vtable) {
+void boltffi_register_callback_4demo8Listener(const ___ListenerVTable *vtable) {
     registered_listener = vtable;
 }
 
-BoltFFICallbackHandle boltffi_create_callback_demo_listener(uint64_t handle) {
+BoltFFICallbackHandle boltffi_create_callback_4demo8Listener(uint64_t handle) {
     BoltFFICallbackHandle callback = {handle, registered_listener};
     return callback;
 }
 
-int64_t boltffi_function_demo_install(BoltFFICallbackHandle listener, uint32_t code, uint32_t value) {
+int64_t boltffi_function_4demo7install(BoltFFICallbackHandle listener, uint32_t code, uint32_t value) {
     const ___ListenerVTable *vtable = (const ___ListenerVTable *)listener.vtable;
     vtable->notify(listener.handle, code);
     return vtable->on_value(listener.handle, value);
@@ -1016,7 +1016,7 @@ int main(void) {
             header.contains("static inline DemoDivideResult demo_divide(int32_t value, int32_t b)")
         );
         assert!(header.contains(
-            "FfiBuf_u8 boltffi_error = boltffi_function_demo_divide(value, b, &boltffi_success);"
+            "FfiBuf_u8 boltffi_error = boltffi_function_4demo6divide(value, b, &boltffi_success);"
         ));
         assert!(!header.contains("boltffi_status_t"));
     }
@@ -1138,24 +1138,24 @@ FfiBuf_u8 boltffi_buf_with_len(uintptr_t len) {
     FfiBuf_u8 b = {(uint8_t *)malloc(len), len, len, 1}; return b;
 }
 void boltffi_free_buf(FfiBuf_u8 b) { free(b.ptr); }
-FfiBuf_u8 boltffi_function_demo_echo_payload(const uint8_t *ptr, uintptr_t len) {
+FfiBuf_u8 boltffi_function_4demo12echo_payload(const uint8_t *ptr, uintptr_t len) {
     FfiBuf_u8 b=boltffi_buf_with_len(len); if (len) memcpy(b.ptr,ptr,len); return b;
 }
-FfiBuf_u8 boltffi_function_demo_echo_string(const uint8_t *ptr, uintptr_t len) {
+FfiBuf_u8 boltffi_function_4demo11echo_string(const uint8_t *ptr, uintptr_t len) {
     FfiBuf_u8 b=boltffi_buf_with_len(len); if (len) memcpy(b.ptr,ptr,len); return b;
 }
-FfiStatus boltffi_function_demo_replace_text(const uint8_t *ptr, uintptr_t len, FfiBuf_u8 *out) {
+FfiStatus boltffi_function_4demo12replace_text(const uint8_t *ptr, uintptr_t len, FfiBuf_u8 *out) {
     (void)ptr; (void)len;
     *out = boltffi_buf_with_len(11);
     uint8_t encoded[] = {7, 0, 0, 0, 'u', 'p', 'd', 'a', 't', 'e', 'd'};
     memcpy(out->ptr, encoded, sizeof(encoded));
     return FFI_STATUS_OK;
 }
-FfiStatus boltffi_function_demo_fill_bytes(uint8_t *ptr, uintptr_t len) {
+FfiStatus boltffi_function_4demo10fill_bytes(uint8_t *ptr, uintptr_t len) {
     memset(ptr, 7, len);
     return FFI_STATUS_OK;
 }
-FfiStatus boltffi_method_record_demo_payload_rename(const uint8_t *ptr, uintptr_t len, FfiBuf_u8 *out) {
+FfiStatus boltffi_method_record_4demo7Payload6rename(const uint8_t *ptr, uintptr_t len, FfiBuf_u8 *out) {
     (void)ptr; (void)len;
     DemoPayloadView replacement = {0};
     replacement.name = demo_string_view("updated", 7);

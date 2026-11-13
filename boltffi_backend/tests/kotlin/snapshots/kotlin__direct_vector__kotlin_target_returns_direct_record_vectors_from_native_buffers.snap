@@ -8,7 +8,7 @@ expression: "rendered_fixture(\"direct_vector/record_vector_return\")"
 package com.boltffi.demo
 @Suppress("FunctionName")
 private object Native {
-    @JvmStatic external fun boltffi_function_demo_points(): ByteArray?
+    @JvmStatic external fun boltffi_function_4demo6points(): ByteArray?
 }
 
 
@@ -58,6 +58,6 @@ data class Point(
 }
 
 fun points(): List<Point> {
-    val __boltffi_result = Native.boltffi_function_demo_points() ?: throw IllegalStateException("null buffer returned")
+    val __boltffi_result = Native.boltffi_function_4demo6points() ?: throw IllegalStateException("null buffer returned")
     return DirectVectorCodec.readRecordList(__boltffi_result, 16, { buffer, offset -> Point.fromBuffer(buffer, offset) })
 }

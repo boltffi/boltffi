@@ -52,6 +52,7 @@ pub fn lower<S: SurfaceLower>(
     index
         .traits()
         .iter()
+        .filter(|callback| index.lowers(callback.id.as_str()))
         .map(|callback| lower_one::<S>(index, ids, allocator, callback))
         .collect()
 }
@@ -104,15 +105,14 @@ fn local_protocol<S: SurfaceLower>(
         .iter()
         .enumerate()
         .map(|(method_index, method)| {
-            let slot = CallbackSlot::from_source_name(&method.name);
+            let local_name = CallbackSlot::from_source_name(&method.name)
+                .local_method_name(callback.id.as_str());
+            allocator.enter_callable(&local_name);
             Ok(CallbackLocalMethodDecl::new(
                 crate::MethodId::from_raw(method_index as u32),
                 CanonicalName::from(&method.name),
                 metadata::decl_meta(method.doc.as_ref(), method.deprecated.as_ref()),
-                local_function(
-                    &module_segments,
-                    slot.local_method_name(callback.id.as_str()),
-                ),
+                local_function(&module_segments, local_name),
                 callable::lower_local_callback_method::<S>(
                     index,
                     ids,
@@ -124,6 +124,11 @@ fn local_protocol<S: SurfaceLower>(
         })
         .collect::<Result<Vec<_>, LowerError>>()?;
     Ok(CallbackLocalProtocol::new(handle, free, clone, methods))
+}
+
+/// Whether a callback trait gets a local protocol, read from its own methods alone.
+pub fn has_local_protocol(source: &SourceTrait) -> bool {
+    LocalCallbackProtocolSource::new(source).is_some()
 }
 
 #[derive(Clone, Copy)]
@@ -745,11 +750,11 @@ mod tests {
         assert_eq!(callback.protocol().vtable().methods().len(), 0);
         assert_eq!(
             callback.protocol().register().name().as_str(),
-            "boltffi_register_callback_demo_listener"
+            "boltffi_register_callback_4demo8Listener"
         );
         assert_eq!(
             callback.protocol().create_handle().name().as_str(),
-            "boltffi_create_callback_demo_listener"
+            "boltffi_create_callback_4demo8Listener"
         );
         assert_eq!(
             callback
@@ -760,7 +765,7 @@ mod tests {
                 .iter()
                 .map(|segment| segment.as_str())
                 .collect::<Vec<_>>(),
-            vec!["__boltffi_local_demo_listener_handle"]
+            vec!["__boltffi_local_4demo8Listener_handle"]
         );
         assert_eq!(
             callback
@@ -771,7 +776,7 @@ mod tests {
                 .iter()
                 .map(|segment| segment.as_str())
                 .collect::<Vec<_>>(),
-            vec!["__boltffi_local_demo_listener_free"]
+            vec!["__boltffi_local_4demo8Listener_free"]
         );
         assert_eq!(
             callback
@@ -782,7 +787,7 @@ mod tests {
                 .iter()
                 .map(|segment| segment.as_str())
                 .collect::<Vec<_>>(),
-            vec!["__boltffi_local_demo_listener_clone"]
+            vec!["__boltffi_local_4demo8Listener_clone"]
         );
     }
 
@@ -812,17 +817,17 @@ mod tests {
 
         assert_eq!(
             protocol.create_handle().name().as_str(),
-            "boltffi_create_callback_demo_listener"
+            "boltffi_create_callback_4demo8Listener"
         );
         assert_eq!(protocol.free().module().as_str(), "env");
         assert_eq!(
             protocol.free().name().as_str(),
-            "__boltffi_callback_lifecycle_demo_listener_free"
+            "__boltffi_callback_lifecycle_4demo8Listener_free"
         );
         assert_eq!(protocol.clone_import().module().as_str(), "env");
         assert_eq!(
             protocol.clone_import().name().as_str(),
-            "__boltffi_callback_lifecycle_demo_listener_clone"
+            "__boltffi_callback_lifecycle_4demo8Listener_clone"
         );
     }
 
@@ -859,7 +864,7 @@ mod tests {
                 .iter()
                 .map(|segment| segment.as_str())
                 .collect::<Vec<_>>(),
-            vec!["__boltffi_local_demo_listener_on_event"]
+            vec!["__boltffi_local_4demo8Listener8on_event"]
         );
         assert_eq!(
             methods[1]
@@ -868,7 +873,7 @@ mod tests {
                 .iter()
                 .map(|segment| segment.as_str())
                 .collect::<Vec<_>>(),
-            vec!["__boltffi_local_demo_listener_handle_url"]
+            vec!["__boltffi_local_4demo8Listener10handle_url"]
         );
     }
 
@@ -945,7 +950,7 @@ mod tests {
                 .iter()
                 .map(|segment| segment.as_str())
                 .collect::<Vec<_>>(),
-            vec!["api", "__boltffi_local_demo_api_listener_handle"]
+            vec!["api", "__boltffi_local_4demo3api8Listener_handle"]
         );
         assert_eq!(
             protocol.methods()[0]
@@ -954,7 +959,7 @@ mod tests {
                 .iter()
                 .map(|segment| segment.as_str())
                 .collect::<Vec<_>>(),
-            vec!["api", "__boltffi_local_demo_api_listener_on_event"]
+            vec!["api", "__boltffi_local_4demo3api8Listener8on_event"]
         );
     }
 
@@ -970,7 +975,7 @@ mod tests {
         assert_eq!(methods[0].target().module().as_str(), "env");
         assert_eq!(
             methods[0].target().name().as_str(),
-            "__boltffi_callback_method_demo_listener_on_event"
+            "__boltffi_callback_method_4demo8Listener8on_event"
         );
     }
 
@@ -1098,11 +1103,11 @@ mod tests {
         assert_eq!(outgoing.presence(), HandlePresence::Required);
         assert_eq!(
             outgoing.registration().shape().call().name().as_str(),
-            "boltffi_closure_1____closure__u32_call"
+            "boltffi_closure_method_callback_4demo8Listener8on_event_0_call"
         );
         assert_eq!(
             outgoing.registration().shape().free().name().as_str(),
-            "boltffi_closure_1____closure__u32_free"
+            "boltffi_closure_method_callback_4demo8Listener8on_event_0_free"
         );
         let symbol_names = bindings
             .symbols()
@@ -1110,8 +1115,14 @@ mod tests {
             .iter()
             .map(|symbol| symbol.name().as_str())
             .collect::<Vec<_>>();
-        assert!(symbol_names.contains(&"boltffi_closure_1____closure__u32_call"));
-        assert!(symbol_names.contains(&"boltffi_closure_1____closure__u32_free"));
+        assert!(
+            symbol_names
+                .contains(&"boltffi_closure_method_callback_4demo8Listener8on_event_0_call")
+        );
+        assert!(
+            symbol_names
+                .contains(&"boltffi_closure_method_callback_4demo8Listener8on_event_0_free")
+        );
 
         let invoke = outgoing.invoke();
         assert_eq!(invoke.params().len(), 1);
@@ -1730,8 +1741,8 @@ mod tests {
             .iter()
             .map(|symbol| symbol.name().as_str())
             .collect();
-        assert!(names.contains(&"boltffi_register_callback_demo_listener"));
-        assert!(names.contains(&"boltffi_create_callback_demo_listener"));
+        assert!(names.contains(&"boltffi_register_callback_4demo8Listener"));
+        assert!(names.contains(&"boltffi_create_callback_4demo8Listener"));
     }
 
     #[test]
@@ -1743,8 +1754,8 @@ mod tests {
             .iter()
             .map(|symbol| symbol.name().as_str())
             .collect();
-        assert!(names.contains(&"boltffi_create_callback_demo_listener"));
-        assert!(!names.contains(&"boltffi_register_callback_demo_listener"));
+        assert!(names.contains(&"boltffi_create_callback_4demo8Listener"));
+        assert!(!names.contains(&"boltffi_register_callback_4demo8Listener"));
     }
 
     #[test]
@@ -1893,7 +1904,7 @@ mod tests {
         assert_eq!(methods.len(), 1);
         assert_eq!(
             methods[0].target().name().as_str(),
-            "__boltffi_callback_method_demo_listener_on_url"
+            "__boltffi_callback_method_4demo8Listener6on_url"
         );
     }
 
@@ -1909,7 +1920,7 @@ mod tests {
 
         assert_eq!(
             methods[0].target().name().as_str(),
-            "__boltffi_callback_method_demo_listener_handle_http_request"
+            "__boltffi_callback_method_4demo8Listener19handle_http_request"
         );
     }
 
@@ -1935,18 +1946,19 @@ mod tests {
             .as_str()
             .to_owned();
         let wasm_suffix = wasm_import
-            .strip_prefix("__boltffi_callback_method_demo_listener_")
+            .strip_prefix("__boltffi_callback_method_4demo8Listener")
             .expect("wasm import must use the documented prefix");
 
         assert_eq!(
-            native_slot, wasm_suffix,
+            format!("{}{native_slot}", native_slot.len()),
+            wasm_suffix,
             "native vtable slot and wasm import suffix must be byte-equal so the same source \
              method dispatches to the same identifier on every surface"
         );
     }
 
     #[test]
-    fn acronym_callback_name_lowers_to_snake_cased_symbols() {
+    fn acronym_callback_name_keeps_its_spelling_in_symbols() {
         let mut callback = TraitDef::new("demo::HTTPListener".into(), name("HTTPListener"));
         callback
             .methods
@@ -1957,7 +1969,7 @@ mod tests {
 
         assert_eq!(
             cb.protocol().register().name().as_str(),
-            "boltffi_register_callback_demo_http_listener"
+            "boltffi_register_callback_4demo12HTTPListener"
         );
         let methods = cb.protocol().vtable().methods();
         assert_eq!(methods[0].target().as_str(), "on_request");
@@ -1975,7 +1987,7 @@ mod tests {
         let wasm_cb = first_callback(&wasm_bindings);
         assert_eq!(
             wasm_cb.protocol().methods()[0].target().name().as_str(),
-            "__boltffi_callback_method_demo_http_listener_on_request"
+            "__boltffi_callback_method_4demo12HTTPListener10on_request"
         );
     }
 
@@ -2049,13 +2061,13 @@ mod tests {
         assert_eq!(method.target().module().as_str(), "env");
         assert_eq!(
             method.target().name().as_str(),
-            "__boltffi_callback_async_start_demo_listener_on_event"
+            "__boltffi_callback_async_start_4demo8Listener8on_event"
         );
         match method.callable().execution() {
             ExecutionDecl::Asynchronous(wasm32::AsyncProtocol::CallbackCompletion { complete }) => {
                 assert_eq!(
                     complete.name().as_str(),
-                    "boltffi_callback_demo_listener_on_event_complete"
+                    "boltffi_callback_4demo8Listener8on_event_complete"
                 );
             }
             other => panic!("expected wasm callback completion protocol, got {other:?}"),
@@ -2067,7 +2079,7 @@ mod tests {
             .iter()
             .map(|symbol| symbol.name().as_str())
             .collect();
-        assert!(names.contains(&"boltffi_callback_demo_listener_on_event_complete"));
+        assert!(names.contains(&"boltffi_callback_4demo8Listener8on_event_complete"));
     }
 
     #[test]
@@ -2086,7 +2098,7 @@ mod tests {
             .map(|method| method.target().name().as_str())
             .collect();
 
-        assert!(imports.contains(&"__boltffi_callback_async_start_demo_listener_foo"));
-        assert!(imports.contains(&"__boltffi_callback_method_demo_listener_foo_start"));
+        assert!(imports.contains(&"__boltffi_callback_async_start_4demo8Listener3foo"));
+        assert!(imports.contains(&"__boltffi_callback_method_4demo8Listener9foo_start"));
     }
 }

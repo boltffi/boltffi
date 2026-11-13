@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -9,18 +10,24 @@ use boltffi_backend::target::{
     c::CHost,
     csharp::CSharpHost,
     dart::DartHost,
+    dart_web::DartWebHost,
     java::{JavaDesktopLoader, JavaHost, JavaVersion},
     kmp::{DEFAULT_KMP_MODULE_NAME, DEFAULT_KMP_PACKAGE_NAME, KmpHost, KmpSupportMode},
     kotlin::{KotlinApiStyle, KotlinDesktopLoader, KotlinFactoryStyle, KotlinHost},
     python::PythonCExtHost,
+    ruby::RubyCExtHost,
     swift::SwiftHost,
     typescript::TypeScriptHost,
 };
 use boltffi_backend::{CustomTypeMapping, GeneratedOutput, Target as BackendTarget};
-use boltffi_binding::{BindingMetadataSurface, Bindings, Native, Surface, Wasm32};
+use boltffi_binding::{
+    Bindings, LowerError, Native, RawSourceRecord, SourceFragmentError, Surface, SurfaceLower,
+    Wasm32, aggregate_records, lower, reachable_from,
+};
 use thiserror::Error;
 
-use crate::metadata::{BindingMetadataBuild, BindingMetadataBuildError};
+use crate::library_symbols::{self, LibrarySymbolsError};
+use crate::metadata::{BindingMetadataBuild, BindingMetadataBuildError, SourceMetadata};
 use crate::target::Target;
 
 /// Drives one BoltFFI generation from a compiled crate's embedded metadata
@@ -35,7 +42,6 @@ use crate::target::Target;
 pub struct Generation {
     manifest_path: PathBuf,
     triple: Option<String>,
-    binding_surface: Option<BindingMetadataSurface>,
     coverage: CoverageMode,
     cargo_args: Vec<String>,
     cargo_environment: Vec<(OsString, OsString)>,
@@ -44,11 +50,13 @@ pub struct Generation {
     python_distribution_name: Option<String>,
     python_package_version: Option<String>,
     python_native_library: Option<String>,
+    ruby_host: RubyCExtHost,
     csharp_namespace: Option<String>,
     csharp_module_class: Option<String>,
     csharp_native_library: Option<String>,
     dart_package: Option<String>,
     dart_native_artifact: Option<String>,
+    dart_standalone_pubspec: bool,
     java_package: Option<String>,
     java_file: Option<String>,
     java_android_library: Option<String>,
@@ -81,6 +89,7 @@ pub struct Generation {
     kmp_support_mode: KmpSupportMode,
     typescript_module: Option<String>,
     typescript_runtime_package: Option<String>,
+    dart_web_module: Option<String>,
 }
 
 impl Generation {
@@ -89,7 +98,6 @@ impl Generation {
         Self {
             manifest_path: manifest_path.into(),
             triple: None,
-            binding_surface: None,
             coverage: CoverageMode::Complete,
             cargo_args: Vec::new(),
             cargo_environment: Vec::new(),
@@ -98,11 +106,13 @@ impl Generation {
             python_distribution_name: None,
             python_package_version: None,
             python_native_library: None,
+            ruby_host: RubyCExtHost::new(),
             csharp_namespace: None,
             csharp_module_class: None,
             csharp_native_library: None,
             dart_package: None,
             dart_native_artifact: None,
+            dart_standalone_pubspec: false,
             java_package: None,
             java_file: None,
             java_android_library: None,
@@ -135,18 +145,13 @@ impl Generation {
             kmp_support_mode: KmpSupportMode::Strict,
             typescript_module: None,
             typescript_runtime_package: None,
+            dart_web_module: None,
         }
     }
 
     /// Builds for a Cargo target triple.
     pub fn triple(mut self, triple: impl Into<String>) -> Self {
         self.triple = Some(triple.into());
-        self
-    }
-
-    #[allow(missing_docs)]
-    pub fn binding_surface(mut self, surface: BindingMetadataSurface) -> Self {
-        self.binding_surface = Some(surface);
         self
     }
 
@@ -202,6 +207,12 @@ impl Generation {
     /// Sets the native library artifact name loaded by the Python package.
     pub fn python_native_library(mut self, native_library: impl Into<String>) -> Self {
         self.python_native_library = Some(native_library.into());
+        self
+    }
+
+    /// Sets the Ruby host that renders the Ruby target.
+    pub fn ruby_host(mut self, host: RubyCExtHost) -> Self {
+        self.ruby_host = host;
         self
     }
 
@@ -431,10 +442,24 @@ impl Generation {
         self
     }
 
+    /// Emits a pubspec without `resolution: workspace`, for packages consumed
+    /// through a bare path/git dependency outside any pub workspace.
+    pub fn dart_standalone_pubspec(mut self, standalone: bool) -> Self {
+        self.dart_standalone_pubspec = standalone;
+        self
+    }
+
+    #[allow(missing_docs)]
+    pub fn dart_web_module(mut self, module: impl Into<String>) -> Self {
+        self.dart_web_module = Some(module.into());
+        self
+    }
+
     /// Reads the embedded metadata, selects the target surface contract, and renders it.
     pub fn render(&self, target: Target) -> Result<GeneratedOutput, GenerationError> {
         match target {
             Target::Python
+            | Target::Ruby
             | Target::Java
             | Target::Kotlin
             | Target::KotlinMultiplatform
@@ -445,11 +470,12 @@ impl Generation {
             }
             Target::Swift => self.render_swift(),
             Target::TypeScript => self.render_typescript(),
+            Target::DartWeb => self.render_dart_web(),
             Target::C => {
                 let bindings = self.bindings::<Native>()?;
                 self.render_native_bindings(target, &bindings)
             }
-            Target::Header | Target::Ruby => Err(GenerationError::UnsupportedTarget { target }),
+            Target::Header => Err(GenerationError::UnsupportedTarget { target }),
         }
     }
 
@@ -479,13 +505,14 @@ impl Generation {
     ) -> Result<GeneratedOutput, GenerationError> {
         match target {
             Target::Python => self.render_python_bindings(bindings),
+            Target::Ruby => self.render_ruby_bindings(bindings),
             Target::Java => self.render_java_bindings(bindings),
             Target::Kotlin => self.render_kotlin_bindings(bindings),
             Target::KotlinMultiplatform => self.render_kmp_bindings(bindings),
             Target::CSharp => self.render_csharp_bindings(bindings),
             Target::Dart => self.render_dart_bindings(bindings),
             Target::C => self.render_c_bindings(bindings),
-            Target::Swift | Target::TypeScript | Target::Header | Target::Ruby => {
+            Target::Swift | Target::TypeScript | Target::Header | Target::DartWeb => {
                 Err(GenerationError::UnsupportedTarget { target })
             }
         }
@@ -598,6 +625,18 @@ impl Generation {
         self.render_backend(&target, bindings)
     }
 
+    fn render_ruby_bindings(
+        &self,
+        bindings: &Bindings<Native>,
+    ) -> Result<GeneratedOutput, GenerationError> {
+        let target = self
+            .ruby_host
+            .clone()
+            .into_target(bindings)
+            .map_err(GenerationError::Render)?;
+        self.render_backend(&target, bindings)
+    }
+
     fn render_kmp_bindings(
         &self,
         bindings: &Bindings<Native>,
@@ -626,6 +665,9 @@ impl Generation {
         if let Some(artifact) = &self.dart_native_artifact {
             host = host.native_artifact(artifact.clone());
         }
+        if self.dart_standalone_pubspec {
+            host = host.standalone_pubspec();
+        }
         let target = host.into_target().map_err(GenerationError::Render)?;
         self.render_backend(&target, bindings)
     }
@@ -647,6 +689,20 @@ impl Generation {
                     .as_deref()
                     .unwrap_or("@boltffi/runtime"),
             );
+        self.render_backend(&host.into_target(), bindings)
+    }
+
+    fn render_dart_web(&self) -> Result<GeneratedOutput, GenerationError> {
+        let bindings = self.bindings::<Wasm32>()?;
+        self.render_dart_web_bindings(&bindings)
+    }
+
+    fn render_dart_web_bindings(
+        &self,
+        bindings: &Bindings<Wasm32>,
+    ) -> Result<GeneratedOutput, GenerationError> {
+        let module = self.dart_web_module.as_deref().unwrap_or("boltffi");
+        let host = DartWebHost::new(module).map_err(GenerationError::Render)?;
         self.render_backend(&host.into_target(), bindings)
     }
 
@@ -815,24 +871,42 @@ impl Generation {
             .collect()
     }
 
-    fn bindings<S: Surface>(&self) -> Result<Bindings<S>, GenerationError> {
-        let surface = self
-            .binding_surface
-            .unwrap_or_else(|| BindingMetadataSurface::from_target_triple(self.triple.as_deref()));
-        self.metadata_build()
-            .read()?
-            .into_iter()
-            .find(|envelope| envelope.surface() == surface)
-            .and_then(|envelope| S::from_serialized(envelope.into_bindings()))
-            .ok_or(GenerationError::MissingSurface { surface })
+    /// Runs the records build and keeps its records in Cargo's build directory, where later
+    /// builds of the crate read them to name types by any spelling.
+    ///
+    /// Generating bindings does this too. A caller that compiles the crate before it
+    /// generates, such as `boltffi pack`, prepares the store first, so the first build of a
+    /// fresh checkout already finds it.
+    pub fn prepare_record_store(&self) -> Result<(), GenerationError> {
+        self.records().map(|_| ())
+    }
+
+    fn records(&self) -> Result<SourceMetadata, GenerationError> {
+        let source = self.metadata_build().read_source()?;
+        if source.source_records.is_empty() {
+            return Err(GenerationError::NoSourceRecords);
+        }
+        source
+            .write_record_store()
+            .map_err(GenerationError::RecordStore)?;
+        Ok(source)
+    }
+
+    fn bindings<S: Surface + SurfaceLower>(&self) -> Result<Bindings<S>, GenerationError> {
+        let source = self.records()?;
+        let seeds = seed_crates(&source.source_records, &source.local_packages);
+        let contract = aggregate_records(&source.source_records, source.package)
+            .map_err(GenerationError::SourceAggregation)?;
+        let contract = reachable_from(contract, seeds.iter().map(String::as_str));
+        let bindings = lower::<S>(&contract).map_err(GenerationError::Lower)?;
+        if let Some(library) = linked_library(&source.libraries) {
+            library_symbols::require_linked(library, seeds.iter().map(String::as_str))?;
+        }
+        Ok(bindings)
     }
 
     fn metadata_build(&self) -> BindingMetadataBuild {
-        let surface = self
-            .binding_surface
-            .unwrap_or_else(|| BindingMetadataSurface::from_target_triple(self.triple.as_deref()));
         let mut build = BindingMetadataBuild::new(&self.manifest_path)
-            .surface(surface)
             .cargo_environment(self.cargo_environment.clone());
         if !self.cargo_args.is_empty() {
             build = build.cargo_args(self.cargo_args.clone());
@@ -847,18 +921,51 @@ impl Generation {
     }
 }
 
+/// The library the bindings load: the dynamic one when built, else the static one.
+fn linked_library(libraries: &[PathBuf]) -> Option<&Path> {
+    let extension = |path: &&PathBuf| {
+        path.extension()
+            .and_then(std::ffi::OsStr::to_str)
+            .map(str::to_owned)
+    };
+    libraries
+        .iter()
+        .find(|path| {
+            matches!(
+                extension(path).as_deref(),
+                Some("dylib" | "so" | "dll" | "wasm")
+            )
+        })
+        .or_else(|| {
+            libraries.iter().find(|path| {
+                matches!(extension(path).as_deref(), Some("a" | "lib"))
+                    && !path.to_string_lossy().ends_with(".dll.lib")
+            })
+        })
+        .map(PathBuf::as_path)
+}
+
 /// Failure while generating bindings from embedded crate metadata.
 #[derive(Debug, Error)]
 pub enum GenerationError {
     /// The metadata build or artifact read failed.
     #[error(transparent)]
     Metadata(#[from] BindingMetadataBuildError),
-    /// The compiled crate embedded no metadata for the requested surface.
-    #[error("compiled crate embeds no binding metadata for the {surface:?} surface")]
-    MissingSurface {
-        /// Surface selected from the target triple.
-        surface: BindingMetadataSurface,
-    },
+    /// The compiled crate carried no per-invocation source records.
+    #[error("compiled crate carries no BoltFFI source records; does it export anything?")]
+    NoSourceRecords,
+    /// The workspace's record store could not be written.
+    #[error("write the BoltFFI record store: {0}")]
+    RecordStore(std::io::Error),
+    /// Per-invocation source records did not aggregate into one contract.
+    #[error("aggregate per-invocation source records: {0}")]
+    SourceAggregation(SourceFragmentError),
+    /// The aggregated source contract failed to lower.
+    #[error("lower aggregated source contract: {0}")]
+    Lower(LowerError),
+    /// The bindings call symbols the built library does not export.
+    #[error(transparent)]
+    LibrarySymbols(#[from] LibrarySymbolsError),
     /// The target backend failed to render the bindings.
     #[error("render bindings: {0}")]
     Render(boltffi_backend::Error),
@@ -889,6 +996,19 @@ fn write_file(path: &Path, contents: &str) -> Result<(), GenerationError> {
         path: path.to_path_buf(),
         source,
     })
+}
+
+/// Crates whose every declaration binds: those of the root and its path dependencies.
+fn seed_crates(
+    records: &[RawSourceRecord],
+    local_packages: &[boltffi_ast::PackageInfo],
+) -> BTreeSet<String> {
+    records
+        .iter()
+        .filter(|record| local_packages.contains(&record.package))
+        .filter_map(|record| record.module.split("::").next())
+        .map(str::to_owned)
+        .collect()
 }
 
 #[cfg(test)]
@@ -979,7 +1099,13 @@ mod tests {
         output
             .files()
             .iter()
-            .map(|file| file.path().as_path().display().to_string())
+            .map(|file| {
+                file.path()
+                    .as_path()
+                    .display()
+                    .to_string()
+                    .replace('\\', "/")
+            })
             .collect()
     }
 
@@ -1004,6 +1130,32 @@ mod tests {
     }
 
     #[test]
+    fn only_records_of_local_packages_seed_the_bindings() {
+        let record = |package: &str, module: &str| RawSourceRecord {
+            package: SourcePackageInfo::new(package, Some("0.1.0".to_owned())),
+            module: module.to_owned(),
+            slots: Vec::new(),
+            json: Vec::new(),
+        };
+        let records = [
+            record("app", "app"),
+            record("shapes-lib", "shapes_lib::geometry"),
+            record("registry", "registry"),
+            record("shapes-lib", "shapes_lib"),
+        ];
+        let local = [
+            SourcePackageInfo::new("app", Some("0.1.0".to_owned())),
+            SourcePackageInfo::new("shapes-lib", Some("0.1.0".to_owned())),
+            SourcePackageInfo::new("registry", Some("0.2.0".to_owned())),
+        ];
+
+        assert_eq!(
+            super::seed_crates(&records, &local),
+            BTreeSet::from(["app".to_owned(), "shapes_lib".to_owned()])
+        );
+    }
+
+    #[test]
     fn generation_preserves_the_complete_cargo_build_contract() {
         let generation = Generation::new("selected/Cargo.toml")
             .triple("x86_64-unknown-linux-gnu")
@@ -1018,7 +1170,6 @@ mod tests {
             generation.metadata_build(),
             BindingMetadataBuild::new("selected/Cargo.toml")
                 .target("x86_64-unknown-linux-gnu")
-                .surface(BindingMetadataSurface::Native)
                 .cargo_args(["--features".to_string(), "ffi".to_string()])
                 .cargo_environment([(
                     OsString::from("CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER"),
@@ -1052,7 +1203,7 @@ mod tests {
         assert!(
             output.files()[0]
                 .contents()
-                .contains("boltffi_function_demo_add")
+                .contains("boltffi_function_4demo3add")
         );
     }
 
@@ -1103,7 +1254,7 @@ mod tests {
                 .contains("public static int add(int left, int right)")
         );
         assert!(file(&output, "jni/jni_glue.c").contains(
-            "JNIEXPORT jint JNICALL Java_com_boltffi_demo_Native_boltffi_1function_1demo_1add"
+            "JNIEXPORT jint JNICALL Java_com_boltffi_demo_Native_boltffi_1function_14demo3add"
         ));
     }
 
@@ -1128,7 +1279,7 @@ mod tests {
                 .contains("export function add(left: number, right: number): number")
         );
         assert!(
-            file(&output, "demo.ts").contains("_exports.boltffi_function_demo_add as Function")
+            file(&output, "demo.ts").contains("_exports.boltffi_function_4demo3add as Function")
         );
     }
 
@@ -1149,14 +1300,15 @@ mod tests {
             .contains("return com.boltffi.demo.jvm.add(left, right)")
         );
         assert!(
-            internal.contains("external fun boltffi_function_demo_add(left: Int, right: Int): Int")
+            internal
+                .contains("external fun boltffi_function_4demo3add(left: Int, right: Int): Int")
         );
         assert!(internal.contains("val androidLibrary = \"demo\""));
         assert!(internal.contains("val desktopPreferredLibrary = \"demo_jni\""));
         assert!(internal.contains("val desktopFallbackLibrary = \"demo\""));
         assert!(
             file(&output, "src/jvmMain/c/jni_glue.c")
-                .contains("_result = boltffi_function_demo_add(left, right);")
+                .contains("_result = boltffi_function_4demo3add(left, right);")
         );
     }
 
@@ -1234,21 +1386,21 @@ mod tests {
         assert!(jvm_internal.contains("package com.boltffi.demo.jvm"));
         assert!(jvm_internal.contains("private object Native"));
         assert!(jvm_internal.contains(
-            "@JvmStatic external fun boltffi_function_demo_add(left: Int, right: Int): Int"
+            "@JvmStatic external fun boltffi_function_4demo3add(left: Int, right: Int): Int"
         ));
         assert!(jvm_internal.contains("fun add(left: Int, right: Int): Int"));
-        assert!(jvm_internal.contains("return Native.boltffi_function_demo_add(left, right)"));
+        assert!(jvm_internal.contains("return Native.boltffi_function_4demo3add(left, right)"));
         assert!(!jvm_internal.contains("expect fun"));
         assert!(!jvm_internal.contains("actual fun"));
 
         assert_eq!(jvm_jni, android_jni);
         assert!(jvm_jni.contains("#include <boltffi_generated/demo.h>"));
         assert!(jvm_jni.contains(
-            "JNIEXPORT jint JNICALL Java_com_boltffi_demo_jvm_Native_boltffi_1function_1demo_1add"
+            "JNIEXPORT jint JNICALL Java_com_boltffi_demo_jvm_Native_boltffi_1function_14demo3add"
         ));
-        assert!(jvm_jni.contains("boltffi_function_demo_add(left, right)"));
+        assert!(jvm_jni.contains("boltffi_function_4demo3add(left, right)"));
 
-        assert!(build_gradle.contains("kotlin(\"multiplatform\") version \"2.4.20\""));
+        assert!(build_gradle.contains("kotlin(\"multiplatform\") version \"2.4.21\""));
         assert!(build_gradle.contains("id(\"com.android.library\") version \"8.5.2\""));
         assert!(build_gradle.contains("jvm {"));
         assert!(build_gradle.contains("androidTarget {"));
@@ -1437,7 +1589,7 @@ mod tests {
         );
         assert!(
             file(&output, "src/jvmMain/c/jni_glue.c")
-                .contains("_result = boltffi_function_demo_do_the_thing(value);")
+                .contains("_result = boltffi_function_4demo10DoTheThing(value);")
         );
     }
 
@@ -1479,7 +1631,7 @@ mod tests {
             common.contains("expect fun read(`value`: Long): Long"),
             "{common}"
         );
-        assert!(jni.contains("_result = boltffi_function_demo_signed_read(value);"));
-        assert!(jni.contains("_result = boltffi_function_demo_wide_read(value);"));
+        assert!(jni.contains("_result = boltffi_function_4demo6signed4read(value);"));
+        assert!(jni.contains("_result = boltffi_function_4demo4wide4read(value);"));
     }
 }

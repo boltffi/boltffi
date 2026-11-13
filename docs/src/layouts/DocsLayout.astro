@@ -45,6 +45,15 @@ const {
       <Sidebar activeSection={activeSection} client:load />
       <main class="flex-1 min-w-0 py-10 px-6 lg:px-12">
         <article class="animate-fade-in prose prose-invert prose-headings:text-foreground prose-p:text-muted-foreground prose-a:text-primary prose-strong:text-foreground prose-code:before:content-none prose-code:after:content-none prose-code:border-0 prose-pre:bg-[hsl(var(--code-bg))] prose-pre:border prose-pre:border-border prose-table:block prose-table:overflow-x-auto prose-table:max-w-full max-w-none">
+          {activeSection !== 'migrating' && (
+            <a
+              href="/docs/migrating"
+              class="not-prose mb-8 block rounded-md border border-primary/40 bg-primary/10 px-4 py-3 text-sm text-foreground no-underline hover:bg-primary/15"
+            >
+              BoltFFI 0.32 changes how the macros expand, and existing crates need a few edits.{' '}
+              <span class="text-primary font-medium">Read the migration guide</span>
+            </a>
+          )}
           <DocsLlmActions
             title={title}
             markdownUrl={markdownPath}

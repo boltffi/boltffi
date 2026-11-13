@@ -9,8 +9,8 @@ typedef struct {
     uint64_t (*clone)(uint64_t);
     FfiBuf_u8 (*name)(uint64_t);
 } ___ListenerVTable;
-void boltffi_register_callback_demo_listener(const ___ListenerVTable *vtable);
-BoltFFICallbackHandle boltffi_create_callback_demo_listener(uint64_t handle);
+void boltffi_register_callback_4demo8Listener(const ___ListenerVTable *vtable);
+BoltFFICallbackHandle boltffi_create_callback_4demo8Listener(uint64_t handle);
 
 ===== jni/jni_glue.c =====
 <jni source includes>
@@ -97,7 +97,7 @@ static bool boltffi_jni_load____ListenerVTable_callbacks(JNIEnv *env) {
     if (!boltffi_jni_lookup_static_method_with_diagnostic(env, g____ListenerVTable_class, "com/boltffi/demo/ListenerCallbacks", "name", "name", "(J)[B", "(J)[B", &g____ListenerVTable_name_method)) {
         goto fail;
     }
-    boltffi_register_callback_demo_listener(&g____ListenerVTable_vtable);
+    boltffi_register_callback_4demo8Listener(&g____ListenerVTable_vtable);
     return true;
 fail:
     (*env)->DeleteGlobalRef(env, g____ListenerVTable_class);

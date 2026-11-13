@@ -68,14 +68,14 @@ public enum SaveError: Int32, Hashable, Sendable, CaseIterable, Error {
 }
 
 public func refresh() async throws {
-    let boltffiFuture = boltffi_function_demo_refresh()
+    let boltffiFuture = boltffi_function_4demo7refresh()
     return try await boltffiAsyncCall(
         futureHandle: boltffiFuture,
-        poll: boltffi_async_function_demo_refresh_poll,
-        cancel: boltffi_async_function_demo_refresh_cancel,
-        free: boltffi_async_function_demo_refresh_free
+        poll: boltffi_async_function_4demo7refresh_poll,
+        cancel: boltffi_async_function_4demo7refresh_cancel,
+        free: boltffi_async_function_4demo7refresh_free
     ) { boltffiFuture, boltffiStatus in
-        boltffi_async_function_demo_refresh_complete(boltffiFuture, boltffiStatus)
+        boltffi_async_function_4demo7refresh_complete(boltffiFuture, boltffiStatus)
         let boltffiStatusCode = boltffiStatus!.pointee.code
         guard boltffiStatusCode == 0 else {
             throw FfiError(message: "FFI failed in async completion with code \(boltffiStatusCode)")
@@ -84,14 +84,14 @@ public func refresh() async throws {
 }
 
 public func loadName() async throws -> String {
-    let boltffiFuture = boltffi_function_demo_load_name()
+    let boltffiFuture = boltffi_function_4demo9load_name()
     return try await boltffiAsyncCall(
         futureHandle: boltffiFuture,
-        poll: boltffi_async_function_demo_load_name_poll,
-        cancel: boltffi_async_function_demo_load_name_cancel,
-        free: boltffi_async_function_demo_load_name_free
+        poll: boltffi_async_function_4demo9load_name_poll,
+        cancel: boltffi_async_function_4demo9load_name_cancel,
+        free: boltffi_async_function_4demo9load_name_free
     ) { boltffiFuture, boltffiStatus in
-        let boltffiResult = boltffi_async_function_demo_load_name_complete(boltffiFuture, boltffiStatus)
+        let boltffiResult = boltffi_async_function_4demo9load_name_complete(boltffiFuture, boltffiStatus)
         let boltffiStatusCode = boltffiStatus!.pointee.code
         guard boltffiStatusCode == 0 else {
             throw FfiError(message: "FFI failed in async completion with code \(boltffiStatusCode)")
@@ -102,14 +102,14 @@ public func loadName() async throws -> String {
 }
 
 public func loadPoint() async throws -> Point {
-    let boltffiFuture = boltffi_function_demo_load_point()
+    let boltffiFuture = boltffi_function_4demo10load_point()
     return try await boltffiAsyncCall(
         futureHandle: boltffiFuture,
-        poll: boltffi_async_function_demo_load_point_poll,
-        cancel: boltffi_async_function_demo_load_point_cancel,
-        free: boltffi_async_function_demo_load_point_free
+        poll: boltffi_async_function_4demo10load_point_poll,
+        cancel: boltffi_async_function_4demo10load_point_cancel,
+        free: boltffi_async_function_4demo10load_point_free
     ) { boltffiFuture, boltffiStatus in
-        let boltffiResult = boltffi_async_function_demo_load_point_complete(boltffiFuture, boltffiStatus)
+        let boltffiResult = boltffi_async_function_4demo10load_point_complete(boltffiFuture, boltffiStatus)
         let boltffiStatusCode = boltffiStatus!.pointee.code
         guard boltffiStatusCode == 0 else {
             throw FfiError(message: "FFI failed in async completion with code \(boltffiStatusCode)")
@@ -119,14 +119,14 @@ public func loadPoint() async throws -> Point {
 }
 
 public func save() async throws {
-    let boltffiFuture = boltffi_function_demo_save()
+    let boltffiFuture = boltffi_function_4demo4save()
     return try await boltffiAsyncCall(
         futureHandle: boltffiFuture,
-        poll: boltffi_async_function_demo_save_poll,
-        cancel: boltffi_async_function_demo_save_cancel,
-        free: boltffi_async_function_demo_save_free
+        poll: boltffi_async_function_4demo4save_poll,
+        cancel: boltffi_async_function_4demo4save_cancel,
+        free: boltffi_async_function_4demo4save_free
     ) { boltffiFuture, boltffiStatus in
-        let boltffiError = boltffi_async_function_demo_save_complete(boltffiFuture, boltffiStatus)
+        let boltffiError = boltffi_async_function_4demo4save_complete(boltffiFuture, boltffiStatus)
         if boltffiError.ptr != nil || Int(boltffiError.len) != 0 {
             defer { boltffi_free_buf(boltffiError) }
             throw boltffiDecodeOwnedBuf(boltffiError.ptr, Int(boltffiError.len)) { boltffiErrorReader in SaveError(rawValue: boltffiErrorReader.readI32())! }
@@ -139,15 +139,15 @@ public func save() async throws {
 }
 
 public func saveChecked(value: Int32) async throws -> Int32 {
-    let boltffiFuture = boltffi_function_demo_save_checked(value)
+    let boltffiFuture = boltffi_function_4demo12save_checked(value)
     return try await boltffiAsyncCall(
         futureHandle: boltffiFuture,
-        poll: boltffi_async_function_demo_save_checked_poll,
-        cancel: boltffi_async_function_demo_save_checked_cancel,
-        free: boltffi_async_function_demo_save_checked_free
+        poll: boltffi_async_function_4demo12save_checked_poll,
+        cancel: boltffi_async_function_4demo12save_checked_cancel,
+        free: boltffi_async_function_4demo12save_checked_free
     ) { boltffiFuture, boltffiStatus in
         var boltffiResult: Int32 = Int32()
-        let boltffiError = boltffi_async_function_demo_save_checked_complete(boltffiFuture, boltffiStatus, &boltffiResult)
+        let boltffiError = boltffi_async_function_4demo12save_checked_complete(boltffiFuture, boltffiStatus, &boltffiResult)
         if boltffiError.ptr != nil || Int(boltffiError.len) != 0 {
             defer { boltffi_free_buf(boltffiError) }
             throw boltffiDecodeOwnedBuf(boltffiError.ptr, Int(boltffiError.len)) { boltffiErrorReader in SaveError(rawValue: boltffiErrorReader.readI32())! }

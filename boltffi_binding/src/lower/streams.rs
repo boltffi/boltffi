@@ -37,6 +37,7 @@ pub fn lower<S: SurfaceLower>(
     index
         .streams()
         .iter()
+        .filter(|stream| index.lowers(stream.id.as_str()))
         .map(|stream| lower_one::<S>(index, ids, allocator, stream))
         .collect()
 }
@@ -347,27 +348,27 @@ mod tests {
         );
         assert_eq!(
             protocol.subscribe().name().as_str(),
-            "boltffi_stream_demo_events_subscribe"
+            "boltffi_stream_4demo6events_subscribe"
         );
         assert_eq!(
             protocol.pop_batch().name().as_str(),
-            "boltffi_stream_demo_events_pop_batch"
+            "boltffi_stream_4demo6events_pop_batch"
         );
         assert_eq!(
             protocol.wait().name().as_str(),
-            "boltffi_stream_demo_events_wait"
+            "boltffi_stream_4demo6events_wait"
         );
         assert_eq!(
             protocol.poll().name().as_str(),
-            "boltffi_stream_demo_events_poll"
+            "boltffi_stream_4demo6events_poll"
         );
         assert_eq!(
             protocol.unsubscribe().name().as_str(),
-            "boltffi_stream_demo_events_unsubscribe"
+            "boltffi_stream_4demo6events_unsubscribe"
         );
         assert_eq!(
             protocol.free().name().as_str(),
-            "boltffi_stream_demo_events_free"
+            "boltffi_stream_4demo6events_free"
         );
     }
 
@@ -413,7 +414,7 @@ mod tests {
         assert_eq!(decl.owner(), Some(crate::ClassId::from_raw(0)));
         assert_eq!(
             decl.protocol().subscribe().name().as_str(),
-            "boltffi_stream_demo_engine_emissions_subscribe"
+            "boltffi_stream_4demo6Engine9emissions_subscribe"
         );
     }
 
@@ -603,7 +604,7 @@ mod tests {
             "unsubscribe",
             "free",
         ] {
-            let expected = format!("boltffi_stream_demo_events_{suffix}");
+            let expected = format!("boltffi_stream_4demo6events_{suffix}");
             assert!(
                 names.contains(&expected.as_str()),
                 "missing symbol `{expected}` in {names:?}"

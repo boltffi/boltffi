@@ -1,0 +1,13 @@
+error[E0433]: cannot find `Rc` in `rc`
+ --> tests/diagnostics/unsupported_signatures/rc_by_full_path.rs:3:22
+  |
+3 | pub fn f(a: std::rc::Rc<String>) {}
+  |                      ^^ could not find `Rc` in `rc`
+
+warning: unused variable: `a`
+ --> tests/diagnostics/unsupported_signatures/rc_by_full_path.rs:3:10
+  |
+3 | pub fn f(a: std::rc::Rc<String>) {}
+  |          ^ help: if this is intentional, prefix it with an underscore: `_a`
+  |
+  = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default

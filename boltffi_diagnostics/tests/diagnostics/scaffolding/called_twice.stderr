@@ -1,0 +1,22 @@
+error[E0428]: the name `__BoltffiTag` is defined multiple times
+ --> tests/diagnostics/scaffolding/called_twice.rs:2:1
+  |
+1 | boltffi::scaffolding!();
+  | ----------------------- previous definition of the type `__BoltffiTag` here
+2 | boltffi::scaffolding!();
+  | ^^^^^^^^^^^^^^^^^^^^^^^ `__BoltffiTag` redefined here
+  |
+  = note: `__BoltffiTag` must be defined only once in the type namespace of this module
+  = note: this error originates in the macro `boltffi::scaffolding` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0428]: the name `__BoltffiTag` is defined multiple times
+ --> tests/diagnostics/scaffolding/called_twice.rs:3:1
+  |
+1 | boltffi::scaffolding!();
+  | ----------------------- previous definition of the type `__BoltffiTag` here
+2 | boltffi::scaffolding!();
+3 | boltffi::scaffolding!();
+  | ^^^^^^^^^^^^^^^^^^^^^^^ `__BoltffiTag` redefined here
+  |
+  = note: `__BoltffiTag` must be defined only once in the type namespace of this module
+  = note: this error originates in the macro `boltffi::scaffolding` (in Nightly builds, run with -Z macro-backtrace for more info)

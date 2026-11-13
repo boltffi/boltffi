@@ -2216,8 +2216,8 @@ impl CallbackLocalFunction {
     /// Returns the crate-rooted path segments after `crate`.
     ///
     /// A root trait named `Listener` yields
-    /// `["__boltffi_local_demo_listener_handle"]`. A trait in `api::Listener`
-    /// yields `["api", "__boltffi_local_demo_api_listener_handle"]`.
+    /// `["__boltffi_local_4demo8Listener_handle"]`. A trait in `api::Listener`
+    /// yields `["api", "__boltffi_local_4demo3api8Listener_handle"]`.
     pub fn segments(&self) -> &[NamePart] {
         &self.segments
     }

@@ -1,0 +1,25 @@
+error: module is not supported in `trait`s or `impl`s
+ --> tests/diagnostics/classes/export_on_a_method_in_a_plain_impl.rs:4:5
+  |
+4 |     #[boltffi::export]
+  |     ^^^^^^^^^^^^^^^^^^
+  |
+  = help: consider moving the module out to a nearby module scope
+  = note: this error originates in the attribute macro `boltffi::export` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error: `use` import is not supported in `trait`s or `impl`s
+ --> tests/diagnostics/classes/export_on_a_method_in_a_plain_impl.rs:4:5
+  |
+4 |     #[boltffi::export]
+  |     ^^^^^^^^^^^^^^^^^^
+  |
+  = help: consider moving the `use` import out to a nearby module scope
+  = note: this error originates in the attribute macro `boltffi::export` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error: `const` items in this context need a name
+ --> tests/diagnostics/classes/export_on_a_method_in_a_plain_impl.rs:4:5
+  |
+4 |     #[boltffi::export]
+  |     ^^^^^^^^^^^^^^^^^^ `_` is not a valid name for this `const` item
+  |
+  = note: this error originates in the attribute macro `boltffi::export` (in Nightly builds, run with -Z macro-backtrace for more info)

@@ -54,21 +54,21 @@ public final class Engine {
 
     deinit {
         let handle = __boltffiTakeHandle()
-        if handle != 0 { boltffi_release_class_demo_engine(handle) }
+        if handle != 0 { boltffi_release_class_4demo6Engine(handle) }
     }
 }
 
 
 extension Engine {
     public func points() -> PointsSubscription {
-        let boltffiSubscription = boltffi_stream_demo_engine_points_subscribe(self.handle)
+        let boltffiSubscription = boltffi_stream_4demo6Engine6points_subscribe(self.handle)
         return PointsSubscription(
             handle: boltffiSubscription,
             readBatch: { subscription, batchSize in
                 return boltffiReadDirectStreamBatch(
                     subscription: subscription,
                     batchSize: batchSize,
-                    popBatch: boltffi_stream_demo_engine_points_pop_batch
+                    popBatch: boltffi_stream_4demo6Engine6points_pop_batch
                 ) { (rawItems: UnsafeBufferPointer<___Point>) in
                     var boltffiStreamBatch = [Point]()
                     boltffiStreamBatch.reserveCapacity(rawItems.count)
@@ -78,9 +78,9 @@ extension Engine {
                     return boltffiStreamBatch
                 }
             },
-            wait: boltffi_stream_demo_engine_points_wait,
-            unsubscribe: boltffi_stream_demo_engine_points_unsubscribe,
-            free: boltffi_stream_demo_engine_points_free
+            wait: boltffi_stream_4demo6Engine6points_wait,
+            unsubscribe: boltffi_stream_4demo6Engine6points_unsubscribe,
+            free: boltffi_stream_4demo6Engine6points_free
         )
     }
 }
@@ -140,7 +140,7 @@ public final class PointsSubscription {
 extension Engine {
     public func names() -> _Concurrency.AsyncStream<String> {
         _Concurrency.AsyncStream<String>(bufferingPolicy: .unbounded) { continuation in
-            let boltffiSubscription = boltffi_stream_demo_engine_names_subscribe(self.handle)
+            let boltffiSubscription = boltffi_stream_4demo6Engine5names_subscribe(self.handle)
             guard boltffiSubscription != 0 else {
                 continuation.finish()
                 return
@@ -152,7 +152,7 @@ extension Engine {
                     return boltffiReadWireStreamBatch(
                         subscription: subscription,
                         batchSize: batchSize,
-                        popBatch: boltffi_stream_demo_engine_names_pop_batch,
+                        popBatch: boltffi_stream_4demo6Engine5names_pop_batch,
                         freeBuf: boltffi_free_buf
                     ) { reader in
                         let boltffiStreamCount = Int(reader.readU32())
@@ -164,9 +164,9 @@ extension Engine {
                         return boltffiStreamBatch
                     }
                 },
-                poll: boltffi_stream_demo_engine_names_poll,
-                unsubscribe: boltffi_stream_demo_engine_names_unsubscribe,
-                free: boltffi_stream_demo_engine_names_free,
+                poll: boltffi_stream_4demo6Engine5names_poll,
+                unsubscribe: boltffi_stream_4demo6Engine5names_unsubscribe,
+                free: boltffi_stream_4demo6Engine5names_free,
                 atomicCompareExchange: boltffi_atomic_u8_cas,
                 yieldItem: { item in _ = continuation.yield(item) },
                 finish: { continuation.finish() }
@@ -180,7 +180,7 @@ extension Engine {
 
 extension Engine {
     public func ticks(callback: @escaping (Int32) -> Void) -> TicksCancellable {
-        let boltffiSubscription = boltffi_stream_demo_engine_ticks_subscribe(self.handle)
+        let boltffiSubscription = boltffi_stream_4demo6Engine5ticks_subscribe(self.handle)
         if boltffiSubscription == 0 {
             return TicksCancellable {}
         }
@@ -191,7 +191,7 @@ extension Engine {
                 return boltffiReadDirectStreamBatch(
                     subscription: subscription,
                     batchSize: batchSize,
-                    popBatch: boltffi_stream_demo_engine_ticks_pop_batch
+                    popBatch: boltffi_stream_4demo6Engine5ticks_pop_batch
                 ) { (rawItems: UnsafeBufferPointer<Int32>) in
                     var boltffiStreamBatch = [Int32]()
                     boltffiStreamBatch.reserveCapacity(rawItems.count)
@@ -201,9 +201,9 @@ extension Engine {
                     return boltffiStreamBatch
                 }
             },
-            poll: boltffi_stream_demo_engine_ticks_poll,
-            unsubscribe: boltffi_stream_demo_engine_ticks_unsubscribe,
-            free: boltffi_stream_demo_engine_ticks_free,
+            poll: boltffi_stream_4demo6Engine5ticks_poll,
+            unsubscribe: boltffi_stream_4demo6Engine5ticks_unsubscribe,
+            free: boltffi_stream_4demo6Engine5ticks_free,
             atomicCompareExchange: boltffi_atomic_u8_cas,
             yieldItem: callback,
             finish: {}

@@ -16,7 +16,7 @@ export interface DocumentationNeighbors {
 const DOCUMENTATION_SECTIONS: readonly DocumentationSection[] = [
   {
     title: 'Start here',
-    pages: ['overview', 'getting-started', 'installation', 'quick-start', 'tutorial'],
+    pages: ['overview', 'getting-started', 'installation', 'quick-start', 'tutorial', 'migrating'],
   },
   {
     title: 'Design a Rust API',

@@ -255,7 +255,7 @@ impl TypeName {
     }
 
     pub fn map(key: Self, value: Self) -> Self {
-        Self::new(format!("Map<{key}, {value}>"))
+        Self::new(format!("kotlin.collections.Map<{key}, {value}>"))
     }
 
     pub fn result(ok: Self, err: Self) -> Self {
@@ -410,6 +410,10 @@ impl Expression {
         Self("this".to_owned())
     }
 
+    pub fn unit() -> Self {
+        Self("kotlin.Unit".to_owned())
+    }
+
     pub fn call(receiver: impl fmt::Display, method: Identifier, arguments: ArgumentList) -> Self {
         Self(format!("{receiver}.{method}({arguments})"))
     }
@@ -472,6 +476,10 @@ impl Expression {
         Self(format!("{self} == {other}"))
     }
 
+    pub fn type_check(self, ty: TypeName) -> Self {
+        Self(format!("{self} is {ty}"))
+    }
+
     pub fn and(self, other: Self) -> Self {
         Self(format!("{self} && {other}"))
     }
@@ -482,6 +490,16 @@ impl Expression {
 
     pub fn all(self, parameter: Identifier, body: Self) -> Self {
         Self(format!("{self}.all {{ {parameter} -> {body} }}"))
+    }
+
+    pub fn group_by_to(self, destination: Self, parameter: Identifier, key: Self) -> Self {
+        Self(format!(
+            "{self}.groupByTo({destination}) {{ {parameter} -> {key} }}"
+        ))
+    }
+
+    pub fn index_of_first(self, parameter: Identifier, body: Self) -> Self {
+        Self(format!("{self}.indexOfFirst {{ {parameter} -> {body} }}"))
     }
 
     pub fn fold(
@@ -617,6 +635,14 @@ impl fmt::Display for Statement {
 }
 
 impl Statement {
+    pub fn sequence(mut statements: Vec<Self>) -> Self {
+        match statements.len() {
+            0 => Self::expression(Expression::unit()),
+            1 => statements.remove(0),
+            _ => Self::expression(Expression::run(statements, Expression::unit())),
+        }
+    }
+
     pub fn value(name: Identifier, value: Expression) -> Self {
         Self(format!("val {name} = {value}"))
     }

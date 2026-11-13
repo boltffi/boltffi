@@ -5,6 +5,10 @@ export async function run() {
   assert.equal(counter.get(), 2);
   counter.increment();
   assert.equal(counter.get(), 3);
+  globalThis.demoCase("case:classes.methods.counter.decrement.should_call_a_method_declared_in_a_methods_block");
+  counter.decrement();
+  assert.equal(counter.get(), 2);
+  counter.increment();
   counter.add(7);
   assert.equal(counter.get(), 10);
   assert.equal(counter.tryGetPositive(), 10);

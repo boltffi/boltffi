@@ -11,8 +11,7 @@ use crate::{
     target::kotlin::{
         KotlinHost,
         codec::WireBuffer,
-        name_style::KotlinPackage,
-        name_style::Name,
+        name_style::{KotlinPackage, Name},
         primitive::KotlinPrimitive,
         render::{
             AssociatedConstants, Documentation,

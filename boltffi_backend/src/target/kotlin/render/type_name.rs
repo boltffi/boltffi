@@ -16,7 +16,7 @@ use crate::{
             callback::CallbackHandle, class::ClassHandle, direct_vector::DirectVector,
             enumeration::Enumeration, equality::Comparison, record::Record,
         },
-        syntax::TypeName,
+        syntax::{Identifier, TypeName},
         tuple::Arity,
     },
 };
@@ -207,15 +207,7 @@ impl TypeRefRender for KotlinTypeRef<'_> {
     }
 
     fn optional(&mut self, inner: Self::Output) -> Self::Output {
-        inner.map(|inner| {
-            ApiType::new(inner.ty.nullable()).compared(match inner.comparison {
-                Comparison::Float { .. } => Comparison::Float { nullable: true },
-                comparison @ (Comparison::List(_) | Comparison::Map(_)) => {
-                    Comparison::Nullable(Box::new(comparison))
-                }
-                comparison => comparison,
-            })
-        })
+        inner.map(|inner| ApiType::new(inner.ty.nullable()).compared(inner.comparison.optional()))
     }
 
     fn sequence(&mut self, element: Self::Output) -> Self::Output {
@@ -225,28 +217,35 @@ impl TypeRefRender for KotlinTypeRef<'_> {
                 .direct_vector_type()
                 .map(|ty| ApiType::new(ty).compared(Comparison::Array)),
             None => Ok(ApiType::new(TypeName::list(element.ty))
-                .compared(Comparison::container(element.comparison, Comparison::List))),
+                .compared(Comparison::sequence(element.comparison))),
         }
     }
 
     fn tuple(&mut self, elements: Vec<Self::Output>) -> Self::Output {
         let arity = Arity::from_count(elements.len())?;
-        elements
-            .into_iter()
-            .map(|element| element.map(ApiType::into_type))
-            .collect::<Result<Vec<_>>>()
-            .and_then(|elements| arity.type_name(elements))
-            .map(ApiType::new)
+        let elements = elements.into_iter().collect::<Result<Vec<_>>>()?;
+        let ty = arity.type_name(elements.iter().map(|element| element.ty.clone()).collect())?;
+        let fields = arity
+            .fields()
+            .iter()
+            .zip(elements)
+            .map(|(field, element)| Ok((Identifier::parse(*field)?, element.comparison)))
+            .collect::<Result<Vec<_>>>()?;
+        Ok(ApiType::new(ty).compared(Comparison::tuple(fields)))
     }
 
     fn result(&mut self, ok: Self::Output, err: Self::Output) -> Self::Output {
-        Ok(ApiType::new(TypeName::result(ok?.ty, err?.ty)))
+        let ok = ok?;
+        let err = err?;
+        Ok(ApiType::new(TypeName::result(ok.ty, err.ty))
+            .compared(Comparison::result(ok.comparison, err.comparison)))
     }
 
     fn map(&mut self, key: Self::Output, value: Self::Output) -> Self::Output {
+        let key = key?;
         let value = value?;
-        Ok(ApiType::new(TypeName::map(key?.ty, value.ty))
-            .compared(Comparison::container(value.comparison, Comparison::Map)))
+        Ok(ApiType::new(TypeName::map(key.ty, value.ty))
+            .compared(Comparison::map(key.comparison, value.comparison)))
     }
 }
 

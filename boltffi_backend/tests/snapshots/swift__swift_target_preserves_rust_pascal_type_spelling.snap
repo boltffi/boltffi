@@ -36,14 +36,14 @@ public final class GPSSimulator {
 
     deinit {
         let handle = __boltffiTakeHandle()
-        if handle != 0 { boltffi_release_class_demo_gps_simulator(handle) }
+        if handle != 0 { boltffi_release_class_4demo12GPSSimulator(handle) }
     }
 
     public init(enabled: Bool) {
-        self.handle = boltffi_init_class_demo_gps_simulator_new(enabled)
+        self.handle = boltffi_init_class_4demo12GPSSimulator3new(enabled)
     }
 
     public func enabled() -> Bool {
-        return boltffi_method_class_demo_gps_simulator_enabled(self.handle)
+        return boltffi_method_class_4demo12GPSSimulator7enabled(self.handle)
     }
 }
