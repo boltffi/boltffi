@@ -610,6 +610,13 @@ extension type _$$BoltWireEncoder(_$$BoltBufWriter writer) {
   @pragma('vm:prefer-inline')
   int get len => writer.len;
 
+  void pad(int size) {
+    final start = writer.advance(size);
+    for (var i = 0; i < size; i++) {
+      writer.writeU8(0, start + i);
+    }
+  }
+
   @pragma('vm:prefer-inline')
   void writeU8(int v) => writer.writeU8(v, writer.advance(1));
 
@@ -834,6 +841,12 @@ final class _$$BoltBufReader {
 
 
 extension type _$$BoltWireDecoder(_$$BoltBufReader reader) {
+  @pragma('vm:prefer-inline')
+  _$$BoltWireDecoder skip(int size) {
+    reader.advance(size);
+    return this;
+  }
+
   @pragma('vm:prefer-inline')
   int readU8() => reader.readU8(reader.advance(1));
 

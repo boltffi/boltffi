@@ -63,6 +63,7 @@ impl DeclaredTypes {
     pub(super) fn defer_slot(&self, path: &syn::Path) -> Option<usize> {
         self.defer_slot_keyed(spelling::path(path), || {
             SlotSource::Type(Box::new(syn::Type::Path(syn::TypePath {
+                attrs: Vec::new(),
                 qself: None,
                 path: path.clone(),
             })))
