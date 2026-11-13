@@ -72,7 +72,7 @@ pub fn helper_name(
         })?;
     Ok(format!(
         "boltffi_c_{}_{}_{}",
-        Name::new(context.bindings().package().name()).member(),
+        Name::package(context).member(),
         operation,
         Name::new(enumeration.name()).member()
     ))
@@ -93,7 +93,7 @@ pub fn variant_tag(
 fn codec(enumeration: &DataEnumDecl<Native>, context: &RenderContext<Native>) -> Result<String> {
     let ty = TypeRef::Enum(enumeration.id());
     let owned_type = super::surface::value_type(&ty, context, super::surface::ValueUse::Return)?;
-    let package = Name::new(context.bindings().package().name()).member();
+    let package = Name::package(context).member();
     let decode_name = helper_name(enumeration.id(), context, "decode")?;
     let free_name = helper_name(enumeration.id(), context, "free")?;
     let encoding = [super::surface::ValueUse::Param, super::surface::ValueUse::Return]
