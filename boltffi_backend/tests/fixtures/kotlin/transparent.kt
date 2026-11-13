@@ -11,6 +11,13 @@ private suspend fun defaultArguments(value: Envelope, reply: Reply) {
     reply.asyncOffset()
 }
 
+private suspend fun shadowedArguments(value: Outer, envelope: Envelope) {
+    value.echo(envelope)
+    value.asyncEcho(envelope)
+    value.echoOptional(envelope)
+    value.echoMany(listOf(envelope))
+}
+
 fun main() {
     val ping = Ping(7u)
     check(ping is Envelope && ping is Reply)

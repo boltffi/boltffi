@@ -367,11 +367,29 @@ fn kotlin_transparent_enums_compile_with_defaults_and_async_initializers() {
         return;
     };
     let source = format!(
-        "{}\n#[data(impl)] impl Reply {{
-            pub fn offset(&self, step: i32) -> i32 {{ step }}
-            pub fn async_offset(&self) -> u32 {{ 0 }}
-        }}",
+        "{}\n{}",
         fixture("enums/transparent"),
+        r#"
+        #[data(impl)]
+        impl Reply {
+            pub fn offset(&self, step: i32) -> i32 { step }
+            pub fn async_offset(&self) -> u32 { 0 }
+        }
+
+        #[data]
+        pub enum Outer {
+            Envelope { value: u32 },
+            Empty,
+        }
+
+        #[data(impl)]
+        impl Outer {
+            pub fn echo(&self, value: Envelope) -> Envelope { value }
+            pub async fn async_echo(&self, value: Envelope) -> Envelope { value }
+            pub fn echo_optional(&self, value: Option<Envelope>) -> Option<Envelope> { value }
+            pub fn echo_many(&self, values: Vec<Envelope>) -> Vec<Envelope> { values }
+        }
+        "#,
     );
     run_with_generated_kotlin(
         &compiler,

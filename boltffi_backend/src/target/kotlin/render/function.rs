@@ -584,7 +584,7 @@ impl ExportedParameter {
         let ty = Self::type_name(parameter, package, host, context)?;
         let native_argument = match parameter.payload() {
             IncomingParam::Value(plan) => {
-                Self::native_argument_for(source_name, name.clone(), plan, host, context)?
+                Self::native_argument_for(source_name, name.clone(), plan, package, host, context)?
             }
             IncomingParam::Closure(closure) => NativeArgument::direct(Closure::native_argument(
                 closure,
@@ -681,12 +681,14 @@ impl ExportedParameter {
         source_name: Name,
         name: Identifier,
         plan: &ParamPlan<Native, IntoRust>,
+        package: Option<&KotlinPackage>,
         host: &KotlinHost,
         context: &RenderContext<Native>,
     ) -> Result<NativeArgument> {
         plan.render_with(&mut NativeArgumentRender {
             source_name,
             name,
+            package,
             host,
             context,
         })
@@ -696,6 +698,7 @@ impl ExportedParameter {
 struct NativeArgumentRender<'context> {
     source_name: Name,
     name: Identifier,
+    package: Option<&'context KotlinPackage>,
     host: &'context KotlinHost,
     context: &'context RenderContext<'context, Native>,
 }
@@ -1015,7 +1018,11 @@ impl<'plan> ParamPlanRender<'plan, Native, IntoRust> for NativeArgumentRender<'_
             receive,
         )?;
         WireBuffer::new(&self.source_name)
-            .and_then(|buffer| buffer.write(codec, self.host, self.context))
+            .and_then(|buffer| {
+                buffer
+                    .package(self.package)
+                    .write(codec, self.host, self.context)
+            })
             .map(|write| NativeArgument::encoded(write, mutation))
     }
 

@@ -17,7 +17,7 @@ static NEXT_PYTHON_PACKAGE: AtomicU64 = AtomicU64::new(0);
 /// contract: a python-level assertion failure exits non-zero, and anything
 /// that silently skips the file would print nothing.
 const SCRIPT: &str = r#"
-import asyncio, gc, pickle, sys
+import asyncio, gc, importlib, pickle, sys
 sys.path.insert(0, sys.argv[1])
 import demo
 
@@ -107,6 +107,36 @@ for _ in range(50_000):
     doomed = demo.Ping(sequence=1)
     del doomed
 gc.collect()
+
+original_ping_type = demo.Ping
+native_module = demo._native
+
+def check_reload():
+    previous_envelope = demo.Envelope
+    previous_reply = demo.Reply
+    assert importlib.reload(demo) is demo
+    assert demo._native is native_module
+    assert demo.Ping is original_ping_type
+    assert demo.Ping.__bases__ == (demo.Envelope, demo.Reply)
+    assert demo.Envelope is not previous_envelope
+    assert demo.Reply is not previous_reply
+    assert isinstance(ping, demo.Envelope) and isinstance(ping, demo.Reply)
+    assert isinstance(sub_ping, demo.Envelope) and isinstance(sub_ping, demo.Reply)
+    assert not isinstance(ping, previous_envelope)
+    assert demo.echo_envelope(ping) == ping
+    assert demo.echo_envelope(demo.Ping(sequence=11)) == demo.Ping(sequence=11)
+    assert demo.echo_envelope(demo.Note(body="reloaded")) == demo.Note(body="reloaded")
+    assert demo.echo_envelopes([ping, demo.EnvelopeRaw("raw"), demo.EnvelopeUnset()]) == [ping, demo.EnvelopeRaw("raw"), demo.EnvelopeUnset()]
+    assert demo.Envelope._boltffi_from_wire(demo.Envelope._boltffi_wire_value(ping)) == ping
+    assert demo.Reply._boltffi_from_wire(demo.Reply._boltffi_wire_value(ping)) == ping
+    assert demo.Envelope.new() == demo.Ping(sequence=7)
+    assert ping.offset() == 10
+    assert ping.reply_offset() == 18
+    assert pickle.loads(pickle.dumps(ping)) == ping
+    asyncio.run(check_async())
+
+check_reload()
+check_reload()
 
 print("ok")
 "#;
