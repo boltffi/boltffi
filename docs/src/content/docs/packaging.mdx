@@ -612,6 +612,37 @@ The native runtime assets are loaded automatically from the NuGet `runtimes/<rid
 folder. Classes implement `IDisposable`; streams return `IAsyncEnumerable<T>` and can be consumed
 with `await foreach`.
 
+### Targeting .NET Framework
+
+`target_framework` also decides which .NET APIs the generated C# may use, so the same crate can be
+packaged for applications that still run on .NET Framework:
+
+```toml
+[targets.csharp]
+enabled = true
+target_framework = "net461"
+runtime_identifiers = ["win-x86", "win-x64"]
+```
+
+| `target_framework` | Generated for | Extra package references | Streams |
+|---|---|---|---|
+| `net5.0` and newer, `netcoreapp3.0`, `netcoreapp3.1`, `netstandard2.1` | Modern .NET | None | `IAsyncEnumerable<T>` |
+| `net461` to `net481`, `netstandard2.0` | .NET Framework 4.6.1+ | `Microsoft.Bcl.AsyncInterfaces`, `System.Memory`, `System.Threading.Tasks.Extensions`, `System.ValueTuple` | `IAsyncEnumerable<T>` |
+| `net45`, `net451`, `net452`, `net46` | .NET Framework 4.5 to 4.6 | `System.ValueTuple` | Not generated |
+
+Other values are rejected when the configuration is loaded.
+
+For the .NET Framework profiles the generated code avoids APIs that only exist on modern .NET, and
+the package gains a `Polyfills.cs` with the compiler attributes that records rely on. The public API
+is the same as on modern .NET, apart from streams before 4.6.1. Output for modern target frameworks
+is unaffected by these profiles.
+
+Before 4.6.1 there is no `IAsyncEnumerable<T>`: the package that provides it starts at 4.6.1, so
+stream methods are skipped. They are listed in the generation coverage summary, and
+`--deny-skipped` turns them into an error. Async results that complete on a native thread are
+handed to the thread pool before continuations run, because 4.5 has no
+`TaskCreationOptions.RunContinuationsAsynchronously`.
+
 ### Source-Only Generation
 
 If you prefer to integrate the bindings into an existing .NET project without using the NuGet
