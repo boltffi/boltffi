@@ -118,7 +118,7 @@ struct CSharpPackagingTarget {
 struct CSharpPackagingPlan {
     package_id: String,
     package_version: String,
-    target_framework: String,
+    target_frameworks: Vec<String>,
     profile: CSharpProfile,
     artifact_name: String,
     source_directory: PathBuf,
@@ -247,20 +247,18 @@ impl CSharpPackagingPlan {
             root_directory,
         };
 
-        let target_framework = config.csharp_target_framework();
-        let profile = CSharpProfile::from_target_framework(&target_framework).map_err(|error| {
-            CliError::CommandFailed {
+        let profile = CSharpProfile::from_target_framework(&config.csharp_target_framework())
+            .map_err(|error| CliError::CommandFailed {
                 command: error.to_string(),
                 status: None,
-            }
-        })?;
+            })?;
 
         Ok(Self {
             package_id: config.csharp_package_id(),
             package_version: config
                 .package_version()
                 .unwrap_or_else(|| "0.1.0".to_string()),
-            target_framework,
+            target_frameworks: config.csharp_target_frameworks(),
             profile,
             artifact_name,
             source_directory,
@@ -478,8 +476,9 @@ fn sync_csharp_project(config: &Config, plan: &CSharpPackagingPlan) -> Result<()
 #[derive(Template)]
 #[template(path = "BoltFFI.CSharp.csproj.xml", escape = "html")]
 struct CSharpProjectTemplate<'a> {
-    target_framework: &'a str,
+    target_frameworks: &'a [String],
     package_references: &'a [(&'a str, &'a str)],
+    framework_package_references: &'a [(&'a str, &'static [(&'static str, &'static str)])],
     runtime_identifiers: &'a [CSharpRuntimeIdentifier],
     package_id: &'a str,
     package_version: &'a str,
@@ -633,10 +632,27 @@ fn render_csharp_project(config: &Config, plan: &CSharpPackagingPlan) -> Result<
         .map(|target| target.runtime_identifier)
         .collect::<Vec<_>>();
     let nuget = CSharpNugetProjectMetadata::from_config(config, plan)?;
+    let package_references = csharp_package_references(plan.profile);
+    let framework_package_references = match plan.target_frameworks.as_slice() {
+        [_] => Vec::new(),
+        target_frameworks => target_frameworks
+            .iter()
+            .filter(|target_framework| {
+                CSharpProfile::from_target_framework(target_framework)
+                    .is_ok_and(|profile| profile != CSharpProfile::Modern)
+            })
+            .map(|target_framework| (target_framework.as_str(), package_references))
+            .filter(|(_, references)| !references.is_empty())
+            .collect(),
+    };
 
     CSharpProjectTemplate {
-        target_framework: &plan.target_framework,
-        package_references: csharp_package_references(plan.profile),
+        target_frameworks: &plan.target_frameworks,
+        package_references: match plan.target_frameworks.len() {
+            1 => package_references,
+            _ => &[],
+        },
+        framework_package_references: &framework_package_references,
         runtime_identifiers: &runtime_identifiers,
         package_id: &plan.package_id,
         package_version: &plan.package_version,
@@ -901,7 +917,7 @@ mod tests {
         CSharpPackagingPlan {
             package_id: "Demo.Runtime".to_string(),
             package_version: "1.2.3".to_string(),
-            target_framework: "net10.0".to_string(),
+            target_frameworks: vec!["net10.0".to_string()],
             profile: CSharpProfile::Modern,
             artifact_name: "demo".to_string(),
             source_directory: PathBuf::from("/tmp/demo"),
@@ -1068,7 +1084,7 @@ mod tests {
     #[test]
     fn csharp_project_references_compatibility_packages_for_net_framework() {
         let mut plan = csharp_packaging_plan(PathBuf::from("/tmp/dist/csharp"));
-        plan.target_framework = "net48".to_string();
+        plan.target_frameworks = vec!["net48".to_string()];
         plan.profile = CSharpProfile::NetFx46;
 
         let project = render_csharp_project(&config(), &plan).expect("C# project should render");
@@ -1093,7 +1109,7 @@ mod tests {
     #[test]
     fn csharp_project_for_net_framework_45_omits_packages_it_cannot_use() {
         let mut plan = csharp_packaging_plan(PathBuf::from("/tmp/dist/csharp"));
-        plan.target_framework = "net45".to_string();
+        plan.target_frameworks = vec!["net45".to_string()];
         plan.profile = CSharpProfile::NetFx45;
 
         let project = render_csharp_project(&config(), &plan).expect("C# project should render");
@@ -1113,19 +1129,47 @@ mod tests {
     }
 
     #[test]
+    fn csharp_project_multi_targets_with_framework_specific_packages() {
+        let mut plan = csharp_packaging_plan(PathBuf::from("/tmp/dist/csharp"));
+        plan.target_frameworks = vec!["net461".to_string(), "net8.0".to_string()];
+        plan.profile = CSharpProfile::NetFx46;
+
+        let project = render_csharp_project(&config(), &plan).expect("C# project should render");
+
+        assert!(project.contains("<TargetFrameworks>net461;net8.0</TargetFrameworks>"));
+        assert!(!project.contains("<TargetFramework>"));
+        let (common, conditional) = project
+            .split_once(r#"<ItemGroup Condition="'$(TargetFramework)' == 'net461'">"#)
+            .expect("net461 package group");
+        assert!(!common.contains("<PackageReference"));
+        assert!(!project.contains("'net8.0'"));
+        for name in [
+            "Microsoft.Bcl.AsyncInterfaces",
+            "System.Memory",
+            "System.Threading.Tasks.Extensions",
+            "System.ValueTuple",
+        ] {
+            assert!(
+                conditional.contains(&format!(r#"<PackageReference Include="{name}""#)),
+                "missing {name}"
+            );
+        }
+    }
+
+    #[test]
     fn syncing_the_project_removes_stale_polyfills_for_the_modern_profile() {
         let root = unique_temp_dir("boltffi-csharp-polyfill-test");
         let mut plan = csharp_packaging_plan(root.clone());
         let polyfills = plan.layout.source_directory.join("Polyfills.cs");
 
-        plan.target_framework = "net48".to_string();
+        plan.target_frameworks = vec!["net48".to_string()];
         plan.profile = CSharpProfile::NetFx46;
         sync_csharp_project(&config(), &plan).expect("sync legacy project");
         std::fs::write(&polyfills, "").expect("write polyfills");
         sync_csharp_project(&config(), &plan).expect("sync legacy project again");
         assert!(polyfills.exists());
 
-        plan.target_framework = "net10.0".to_string();
+        plan.target_frameworks = vec!["net10.0".to_string()];
         plan.profile = CSharpProfile::Modern;
         sync_csharp_project(&config(), &plan).expect("sync modern project");
         assert!(!polyfills.exists());

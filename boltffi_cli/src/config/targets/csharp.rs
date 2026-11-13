@@ -12,6 +12,7 @@ pub struct CSharpConfig {
     pub module_class: Option<String>,
     pub package_id: Option<String>,
     pub target_framework: Option<String>,
+    pub target_frameworks: Option<Vec<String>>,
     pub package_output: Option<PathBuf>,
     pub runtime_identifiers: Option<Vec<CSharpRuntimeIdentifier>>,
     #[serde(default)]
@@ -31,6 +32,7 @@ impl Default for CSharpConfig {
             module_class: None,
             package_id: None,
             target_framework: None,
+            target_frameworks: None,
             package_output: None,
             runtime_identifiers: None,
             nuget: CSharpNugetConfig::default(),

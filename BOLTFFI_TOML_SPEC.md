@@ -512,6 +512,9 @@ Controls npm package generation in `boltffi pack wasm`.
   - Also selects what the generated C# may rely on. `net5.0` and newer, `netcoreapp3.0`, `netcoreapp3.1` and `netstandard2.1` generate for modern .NET. `net461`, `net462`, `net47`, `net471`, `net472`, `net48`, `net481` and `netstandard2.0` generate for .NET Framework: the project references `Microsoft.Bcl.AsyncInterfaces`, `System.Memory`, `System.Threading.Tasks.Extensions` and `System.ValueTuple`, and a `Polyfills.cs` file is emitted.
   - `net45`, `net451`, `net452` and `net46` generate for .NET Framework 4.5: the project references only `System.ValueTuple`, `Polyfills.cs` is emitted, and streams are skipped because `IAsyncEnumerable` is unavailable. Skipped declarations are reported in the generation coverage summary, and `--deny-skipped` turns them into an error.
   - Other values are rejected.
+- `target_frameworks` (array of strings, optional): Several target frameworks for one multi-targeted project, e.g. `["net461", "net8.0"]`. Mutually exclusive with `target_framework`.
+  - Each entry accepts the same values as `target_framework`; entries must be unique.
+  - The C# is generated once, for the most restrictive entry, so the same sources compile for every framework. Compatibility package references are added only for the .NET Framework entries.
 - `package_output` (path, optional): Directory where `boltffi pack csharp` writes `.nupkg` files.
   - Default: `{targets.csharp.output}/packages`
 - `runtime_identifiers` (array of strings, optional): Desired .NET native runtime asset outputs.

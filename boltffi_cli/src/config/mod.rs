@@ -303,8 +303,38 @@ impl Config {
                 ));
             }
 
-            CSharpProfile::from_target_framework(&self.csharp_target_framework())
-                .map_err(|error| ConfigError::Validation(error.to_string()))?;
+            if let Some(target_frameworks) = self.targets.csharp.target_frameworks.as_deref() {
+                if self.targets.csharp.target_framework.is_some() {
+                    return Err(ConfigError::Validation(
+                        "targets.csharp.target_framework and targets.csharp.target_frameworks cannot both be set".to_string(),
+                    ));
+                }
+                if target_frameworks.is_empty() {
+                    return Err(ConfigError::Validation(
+                        "targets.csharp.target_frameworks must not be empty".to_string(),
+                    ));
+                }
+                let mut seen = std::collections::HashSet::new();
+                for target_framework in target_frameworks {
+                    let moniker = target_framework.trim().to_ascii_lowercase();
+                    if moniker.is_empty() {
+                        return Err(ConfigError::Validation(
+                            "targets.csharp.target_frameworks must not contain empty entries"
+                                .to_string(),
+                        ));
+                    }
+                    if !seen.insert(moniker) {
+                        return Err(ConfigError::Validation(format!(
+                            "targets.csharp.target_frameworks lists '{target_framework}' more than once"
+                        )));
+                    }
+                }
+            }
+
+            for target_framework in self.csharp_target_frameworks() {
+                CSharpProfile::from_target_framework(&target_framework)
+                    .map_err(|error| ConfigError::Validation(error.to_string()))?;
+            }
 
             validate_optional_non_empty_string(
                 self.targets.csharp.nuget.title.as_deref(),
@@ -978,12 +1008,39 @@ impl Config {
             .unwrap_or_else(|| self.package.name.clone())
     }
 
+    /// Target frameworks the C# project builds for, in configured order.
+    pub fn csharp_target_frameworks(&self) -> Vec<String> {
+        match &self.targets.csharp.target_frameworks {
+            Some(target_frameworks) => target_frameworks.clone(),
+            None => vec![
+                self.targets
+                    .csharp
+                    .target_framework
+                    .clone()
+                    .unwrap_or_else(|| "net10.0".to_string()),
+            ],
+        }
+    }
+
+    /// Target framework the C# sources are generated for: the most restrictive
+    /// of `csharp_target_frameworks`, so the same sources compile for all of them.
     pub fn csharp_target_framework(&self) -> String {
-        self.targets
-            .csharp
-            .target_framework
-            .clone()
-            .unwrap_or_else(|| "net10.0".to_string())
+        let target_frameworks = self.csharp_target_frameworks();
+        target_frameworks
+            .iter()
+            .filter_map(|target_framework| {
+                CSharpProfile::from_target_framework(target_framework)
+                    .ok()
+                    .map(|profile| (profile, target_framework))
+            })
+            .reduce(
+                |lowest, candidate| match candidate.0.min(lowest.0) == lowest.0 {
+                    true => lowest,
+                    false => candidate,
+                },
+            )
+            .map(|(_, target_framework)| target_framework.clone())
+            .unwrap_or_else(|| target_frameworks[0].clone())
     }
 
     pub fn csharp_package_output(&self) -> PathBuf {
@@ -2902,6 +2959,46 @@ runtime_identifiers = []
                 matches!(config.validate(), Err(ConfigError::Validation(message))
                 if message.contains("targets.csharp.target_framework")),
                 "{framework}"
+            );
+        }
+    }
+
+    #[test]
+    fn csharp_target_frameworks_generate_for_the_most_restrictive_one() {
+        let config = parse_config(
+            "[package]\nname = \"demo\"\n\n[targets.csharp]\nenabled = true\ntarget_frameworks = [\"net8.0\", \"net461\"]\n",
+        );
+
+        assert_eq!(config.csharp_target_frameworks(), ["net8.0", "net461"]);
+        assert_eq!(config.csharp_target_framework(), "net461");
+    }
+
+    #[test]
+    fn rejects_invalid_csharp_target_frameworks() {
+        for (target_frameworks, target_framework, expected) in [
+            (&[][..], None, "must not be empty"),
+            (&["net8.0", ""][..], None, "empty entries"),
+            (&["net461", "NET461"][..], None, "more than once"),
+            (
+                &["net8.0", "net40"][..],
+                None,
+                "unsupported C# target framework",
+            ),
+            (&["net8.0"][..], Some("net461"), "cannot both be set"),
+        ] {
+            let mut config = parse_config("[package]\nname = \"demo\"");
+            config.targets.csharp.enabled = true;
+            config.targets.csharp.target_frameworks = Some(
+                target_frameworks
+                    .iter()
+                    .map(|framework| framework.to_string())
+                    .collect(),
+            );
+            config.targets.csharp.target_framework = target_framework.map(str::to_owned);
+            assert!(
+                matches!(config.validate(), Err(ConfigError::Validation(message))
+                if message.contains(expected)),
+                "{target_frameworks:?}"
             );
         }
     }

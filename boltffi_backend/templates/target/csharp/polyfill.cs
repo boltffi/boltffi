@@ -4,8 +4,11 @@
 
 namespace System.Runtime.CompilerServices
 {
-{% if !features.is_external_init %}    internal static class IsExternalInit { }
+{% if !features.is_external_init %}#if !NET5_0_OR_GREATER
+    internal static class IsExternalInit { }
+#endif
 {% endif %}{% if !features.overload_resolution_priority %}
+#if !NET9_0_OR_GREATER
     [global::System.AttributeUsage(
         global::System.AttributeTargets.Method | global::System.AttributeTargets.Constructor | global::System.AttributeTargets.Property,
         AllowMultiple = false,
@@ -16,4 +19,5 @@ namespace System.Runtime.CompilerServices
 
         public int Priority { get; }
     }
+#endif
 {% endif %}}

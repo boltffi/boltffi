@@ -1,8 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>{{ target_framework }}</TargetFramework>
-    <RuntimeIdentifiers>{% for runtime_identifier in runtime_identifiers %}{{ runtime_identifier.canonical_name() }}{% if !loop.last %};{% endif %}{% endfor %}</RuntimeIdentifiers>
+{% if target_frameworks.len() == 1 %}    <TargetFramework>{{ target_frameworks[0] }}</TargetFramework>
+{% else %}    <TargetFrameworks>{% for target_framework in target_frameworks %}{{ target_framework }}{% if !loop.last %};{% endif %}{% endfor %}</TargetFrameworks>
+{% endif %}    <RuntimeIdentifiers>{% for runtime_identifier in runtime_identifiers %}{{ runtime_identifier.canonical_name() }}{% if !loop.last %};{% endif %}{% endfor %}</RuntimeIdentifiers>
     <PackageId>{{ package_id }}</PackageId>
     <Version>{{ package_version }}</Version>
     <Nullable>enable</Nullable>
@@ -33,5 +34,9 @@
 {% endif %}{% if let Some(package_readme_file) = nuget.package_readme_file() %}    <None Include="{{ package_readme_file.include_path() }}" Pack="true" PackagePath="" />
 {% endif %}
   </ItemGroup>
-
+{% for (target_framework, references) in framework_package_references %}
+  <ItemGroup Condition="'$(TargetFramework)' == '{{ target_framework }}'">
+{% for (name, version) in references %}    <PackageReference Include="{{ name }}" Version="{{ version }}" />
+{% endfor %}  </ItemGroup>
+{% endfor %}
 </Project>

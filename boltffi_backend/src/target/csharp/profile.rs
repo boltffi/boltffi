@@ -166,6 +166,23 @@ impl CSharpProfile {
         }
     }
 
+    /// Returns the more restrictive of two profiles, the one whose generated
+    /// code also compiles for the other.
+    pub const fn min(self, other: Self) -> Self {
+        match self.rank() <= other.rank() {
+            true => self,
+            false => other,
+        }
+    }
+
+    const fn rank(self) -> u8 {
+        match self {
+            Self::NetFx45 => 0,
+            Self::NetFx46 => 1,
+            Self::Modern => 2,
+        }
+    }
+
     /// Returns the capabilities generated code may rely on under this profile.
     pub const fn features(self) -> CSharpFeatures {
         match self {
@@ -270,6 +287,20 @@ mod tests {
                 Ok(CSharpProfile::NetFx45),
                 "{framework}"
             );
+        }
+    }
+
+    #[test]
+    fn min_picks_the_more_restrictive_profile() {
+        use CSharpProfile::{Modern, NetFx45, NetFx46};
+        for (left, right, expected) in [
+            (Modern, NetFx46, NetFx46),
+            (NetFx46, Modern, NetFx46),
+            (NetFx46, NetFx45, NetFx45),
+            (Modern, NetFx45, NetFx45),
+            (Modern, Modern, Modern),
+        ] {
+            assert_eq!(left.min(right), expected, "{left:?} {right:?}");
         }
     }
 

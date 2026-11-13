@@ -643,6 +643,20 @@ stream methods are skipped. They are listed in the generation coverage summary, 
 handed to the thread pool before continuations run, because 4.5 has no
 `TaskCreationOptions.RunContinuationsAsynchronously`.
 
+To ship one package for both .NET Framework and modern .NET, list several frameworks with
+`target_frameworks` instead:
+
+```toml
+[targets.csharp]
+enabled = true
+target_frameworks = ["net461", "net8.0"]
+```
+
+The project becomes multi-targeted, so NuGet gives each consumer the assembly built for its runtime.
+The C# is generated once for the most restrictive entry, here `net461`, and the same sources are
+compiled for every framework. The compatibility packages are only referenced by the .NET Framework
+builds.
+
 ### Source-Only Generation
 
 If you prefer to integrate the bindings into an existing .NET project without using the NuGet

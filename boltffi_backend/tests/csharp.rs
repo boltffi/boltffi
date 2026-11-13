@@ -919,6 +919,20 @@ fn csharp_net_framework_compiles_generated_bindings() {
 }
 
 #[test]
+fn csharp_net_framework_output_also_compiles_for_modern_dotnet() {
+    for (name, source) in net_framework_fixtures() {
+        let output = target(net_framework_host("net461"))
+            .render(&bindings(&source))
+            .unwrap_or_else(|error| panic!("{name} renders: {error}"));
+        compile_csharp_for_net_framework_when_enabled(
+            &output,
+            &format!("csharp-multi-target-{name}"),
+            "net461;net8.0",
+        );
+    }
+}
+
+#[test]
 fn csharp_net_framework_45_compiles_generated_bindings() {
     for (name, source) in net_framework_fixtures() {
         let output = target(net_framework_host("net45"))
@@ -1271,17 +1285,24 @@ fn compile_csharp_with_dotnet(
             format!("    <PackageReference Include=\"{name}\" Version=\"{version}\" />\n")
         })
         .collect::<String>();
+    let (framework_property, references_condition) = match framework.contains(';') {
+        true => (
+            "TargetFrameworks",
+            r#" Condition="'$(TargetFrameworkIdentifier)' == '.NETFramework'""#,
+        ),
+        false => ("TargetFramework", ""),
+    };
     fs::write(
         directory.join("Smoke.csproj"),
         format!(
             r#"<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>{framework}</TargetFramework>
+    <{framework_property}>{framework}</{framework_property}>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <LangVersion>latest</LangVersion>
   </PropertyGroup>
-  <ItemGroup>
+  <ItemGroup{references_condition}>
 {references}  </ItemGroup>
 </Project>
 "#
