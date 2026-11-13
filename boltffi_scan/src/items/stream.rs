@@ -192,7 +192,7 @@ fn validate(
 ) -> Result<StreamItem, ScanError> {
     let item = format!("stream {owner}::{}", method.sig.ident);
     unsupported::generics(&method.sig.generics, &item)?;
-    unsupported::unsafety(method.sig.unsafety.as_ref(), &item)?;
+    unsupported::safety(&method.sig.safety, &item)?;
     unsupported::extern_abi(method.sig.abi.as_ref(), &item)?;
     if method.sig.asyncness.is_some() {
         return Err(Attribute::invalid(format!("`{item}` cannot be async")));
@@ -255,7 +255,7 @@ fn has_shared_receiver_only(method: &syn::ImplItemFn) -> bool {
         && matches!(
             method.sig.inputs.first(),
             Some(syn::FnArg::Receiver(receiver))
-                if receiver.reference.is_some() && receiver.mutability.is_none()
+                if matches!(receiver.kind, syn::ReceiverKind::Reference(_, _, None))
         )
 }
 

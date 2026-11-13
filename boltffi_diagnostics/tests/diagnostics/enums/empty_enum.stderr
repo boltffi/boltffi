@@ -1,0 +1,43 @@
+error[E0084]: unsupported representation for zero-variant enum
+ --> tests/diagnostics/enums/empty_enum.rs:2:1
+  |
+2 | #[boltffi::data]
+  | ^^^^^^^^^^^^^^^^
+3 | #[derive(Clone, Copy)]
+4 | pub enum E {}
+  | ---------- zero-variant enum
+  |
+  = note: this error originates in the attribute macro `boltffi::data` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unreachable expression
+ --> tests/diagnostics/enums/empty_enum.rs:2:1
+  |
+2 | #[boltffi::data]
+  | ^^^^^^^^^^^^^^^^
+  | |
+  | unreachable expression
+  | any code following this expression is unreachable
+  |
+  = note: `#[warn(unreachable_code)]` (part of `#[warn(unused)]`) on by default
+  = note: this warning originates in the attribute macro `boltffi::data` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0004]: non-exhaustive patterns: type `&E` is non-empty
+ --> tests/diagnostics/enums/empty_enum.rs:2:1
+  |
+2 | #[boltffi::data]
+  | ^^^^^^^^^^^^^^^^
+  |
+note: `E` defined here
+ --> tests/diagnostics/enums/empty_enum.rs:4:10
+  |
+4 | pub enum E {}
+  |          ^
+  = note: the matched value is of type `&E`
+  = note: references are always considered inhabited
+  = note: this error originates in the attribute macro `boltffi::data` (in Nightly builds, run with -Z macro-backtrace for more info)
+help: ensure that all possible cases are being handled by adding a match arm with a wildcard pattern as shown
+  |
+2 ~ #[boltffi::data] {
+3 +     _ => todo!(),
+4 + }
+  |

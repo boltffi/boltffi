@@ -1,0 +1,7 @@
+error: BoltFFI: invalid stream declaration: `stream $slot:0::s` must return Arc<EventSubscription<T>>
+ --> tests/diagnostics/streams/wrong_return_type.rs:4:1
+  |
+4 | #[boltffi::export]
+  | ^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `boltffi::export` (in Nightly builds, run with -Z macro-backtrace for more info)

@@ -1,0 +1,7 @@
+error: BoltFFI: `function first` cannot use generics
+ --> tests/diagnostics/unsupported_items/generic_function.rs:3:1
+  |
+3 | #[boltffi::export]
+  | ^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `boltffi::export` (in Nightly builds, run with -Z macro-backtrace for more info)

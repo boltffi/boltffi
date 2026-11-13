@@ -1,0 +1,7 @@
+error: cannot find macro `Listener` in this scope
+ --> tests/diagnostics/undeclared_types/plain_trait_in_signature.rs:8:33
+  |
+8 | pub fn notify(listener: Box<dyn Listener>) {
+  |                                 ^^^^^^^^
+  |
+  = note: `Listener` is in scope, but it is a trait, not a macro

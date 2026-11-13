@@ -1,0 +1,7 @@
+error: BoltFFI: opaque Rust pointer container cannot be represented in binding IR yet
+ --> tests/diagnostics/records/recursive_boxed_field.rs:2:1
+  |
+2 | #[boltffi::data]
+  | ^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the macro `::boltffi::__private::lane_resume` (in Nightly builds, run with -Z macro-backtrace for more info)

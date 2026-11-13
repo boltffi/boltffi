@@ -50,6 +50,13 @@
             return value;
         }
 
+        internal WireReader Skip(int count)
+        {
+            Require(count, "padding");
+            position += count;
+            return this;
+        }
+
         internal byte ReadU8()
         {
             Require(1, "u8");
@@ -231,6 +238,13 @@
 
         internal void WriteBool(bool value) => WriteU8(value ? (byte)1 : (byte)0);
         internal void WriteI8(sbyte value) => WriteU8(unchecked((byte)value));
+
+        internal void Pad(int count)
+        {
+            EnsureCapacity(count);
+            global::System.Array.Clear(buffer, position, count);
+            position += count;
+        }
 
         internal void WriteU8(byte value)
         {

@@ -1,0 +1,7 @@
+error: BoltFFI: invalid BoltFFI marker `export(single_thread)`
+ --> tests/diagnostics/attributes/misspelled_class_argument.rs:2:1
+  |
+2 | #[boltffi::export(single_thread)]
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `boltffi::export` (in Nightly builds, run with -Z macro-backtrace for more info)
