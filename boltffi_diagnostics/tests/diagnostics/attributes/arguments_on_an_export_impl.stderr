@@ -1,0 +1,5 @@
+error: `#[export] impl` takes no arguments; write `#[export(single_threaded)]` on `Counter`, which declares the class
+ --> tests/diagnostics/attributes/arguments_on_an_export_impl.rs:4:19
+  |
+4 | #[boltffi::export(single_threaded)]
+  |                   ^^^^^^^^^^^^^^^

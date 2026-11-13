@@ -1,0 +1,7 @@
+error: BoltFFI: constant `$CRATE::A` value does not match its declared type
+ --> tests/diagnostics/constants/value_out_of_range.rs:2:1
+  |
+2 | #[boltffi::export]
+  | ^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `boltffi::export` (in Nightly builds, run with -Z macro-backtrace for more info)

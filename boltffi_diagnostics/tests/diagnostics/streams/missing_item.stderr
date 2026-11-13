@@ -1,0 +1,7 @@
+error: BoltFFI: invalid stream declaration: `ffi_stream` is not a valid stream attribute: expected attribute arguments in parentheses: #[ffi_stream(...)]
+ --> tests/diagnostics/streams/missing_item.rs:4:1
+  |
+4 | #[boltffi::export]
+  | ^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `boltffi::export` (in Nightly builds, run with -Z macro-backtrace for more info)

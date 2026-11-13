@@ -1,0 +1,7 @@
+error: cannot find macro `Point` in this scope
+  --> tests/diagnostics/undeclared_types/data_impl_on_an_undeclared_type.rs:10:6
+   |
+10 | impl Point {
+   |      ^^^^^
+   |
+   = note: `Point` is in scope, but it is a struct, not a macro

@@ -1,0 +1,7 @@
+error: BoltFFI: closure in a value-shaped position cannot be represented in binding IR yet
+ --> tests/diagnostics/records/closure_field.rs:2:1
+  |
+2 | #[boltffi::data]
+  | ^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `boltffi::data` (in Nightly builds, run with -Z macro-backtrace for more info)

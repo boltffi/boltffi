@@ -1,0 +1,5 @@
+error: BoltFFI does not support `#[cfg]` on parameters; gate the whole function instead
+ --> tests/diagnostics/unsupported_signatures/cfg_on_a_parameter.rs:4:26
+  |
+4 | pub fn scale(value: f64, #[cfg(unix)] factor: f64) -> f64 {
+  |                          ^^^^^^^^^^^^

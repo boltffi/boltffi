@@ -1,0 +1,7 @@
+error: BoltFFI: exported class impl `Counter` cannot implement a trait
+ --> tests/diagnostics/classes/trait_impl_as_class.rs:8:1
+  |
+8 | #[boltffi::export]
+  | ^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `boltffi::export` (in Nightly builds, run with -Z macro-backtrace for more info)

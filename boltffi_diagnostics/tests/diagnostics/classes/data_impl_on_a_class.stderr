@@ -1,0 +1,7 @@
+error: BoltFFI: `#[data(impl)]` adds methods to a `#[data]` type, and `Counter` is an exported class; use `#[export] impl`
+  --> tests/diagnostics/classes/data_impl_on_a_class.rs:15:1
+   |
+15 | #[boltffi::data(impl)]
+   | ^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: this error originates in the macro `::boltffi::__private::lane_resume` (in Nightly builds, run with -Z macro-backtrace for more info)
