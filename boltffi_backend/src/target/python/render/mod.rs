@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{collections::BTreeSet, path::PathBuf};
 
 use askama::Template as AskamaTemplate;
 use boltffi_binding::{
@@ -9,9 +9,7 @@ use boltffi_binding::{
 
 use crate::{
     bridge::python_cext::PythonCExtBridgeContract,
-    core::{
-        Error, FilePath, GeneratedFile, GeneratedOutput, RenderContext, RenderedDeclaration, Result,
-    },
+    core::{Error, FilePath, GeneratedFile, GeneratedOutput, RenderContext, Result},
     target::python::{
         codec::{CodecAdapters, EnumCodec, FixedStruct, ReadFunction, WriteFunction},
         cpython::{
@@ -120,13 +118,10 @@ impl<'bindings> Package<'bindings> {
         distribution: String,
         version: Option<String>,
         library: String,
-        rendered: &[RenderedDeclaration<'bindings, Native>],
+        declarations: impl IntoIterator<Item = DeclarationRef<'bindings, Native>>,
     ) -> Self {
-        let declarations = PackageDeclarations::from_rendered(rendered);
-        let declaration_refs = rendered
-            .iter()
-            .map(RenderedDeclaration::declaration)
-            .collect::<Vec<_>>();
+        let declaration_refs = declarations.into_iter().collect::<Vec<_>>();
+        let declarations = PackageDeclarations::from_declarations(declaration_refs.iter().copied());
         Self {
             declarations,
             codec_adapters: CodecAdapters::from_declarations(context.bindings(), &declaration_refs),
@@ -137,6 +132,59 @@ impl<'bindings> Package<'bindings> {
             version,
             library,
         }
+    }
+
+    pub fn wrapped_transparent_enums(&self) -> Result<BTreeSet<EnumId>> {
+        let enums = self
+            .declarations
+            .enums
+            .iter()
+            .filter_map(|enumeration| match enumeration {
+                EnumDecl::Data(enumeration)
+                    if self.context.enum_is_transparent(enumeration.id())
+                        && (!enumeration.methods().is_empty()
+                            || !enumeration.initializers().is_empty()
+                            || self
+                                .context
+                                .associated_constants(boltffi_binding::ConstantOwner::Enum(
+                                    enumeration.id(),
+                                ))
+                                .next()
+                                .is_some()) =>
+                {
+                    Some(enumeration.as_ref())
+                }
+                _ => None,
+            })
+            .filter_map(
+                |enumeration| match EnumClass::from_data(enumeration, self) {
+                    Ok(class) => Some(Ok((enumeration.id(), class))),
+                    Err(Error::UnsupportedTarget { .. }) => None,
+                    Err(error) => Some(Err(error)),
+                },
+            )
+            .collect::<Result<Vec<_>>>()?;
+        self.declarations
+            .records
+            .iter()
+            .filter(|record| {
+                self.context
+                    .transparent_enums(record.id())
+                    .any(|enumeration| enums.iter().any(|(id, _)| *id == enumeration.id()))
+            })
+            .try_fold(BTreeSet::new(), |mut wrapped, record| {
+                let record = match record {
+                    RecordDecl::Direct(record) => RecordClass::from_direct(record, self),
+                    RecordDecl::Encoded(record) => RecordClass::from_encoded(record, self),
+                    _ => return Ok(wrapped),
+                };
+                match record {
+                    Ok(record) => wrapped.extend(record.wrapped_enum_bases(&enums)),
+                    Err(Error::UnsupportedTarget { .. }) => {}
+                    Err(error) => return Err(error),
+                }
+                Ok(wrapped)
+            })
     }
 
     pub fn render(self) -> Result<GeneratedOutput> {
@@ -336,11 +384,10 @@ struct PackageDeclarations<'bindings> {
 }
 
 impl<'bindings> PackageDeclarations<'bindings> {
-    fn from_rendered(rendered: &[RenderedDeclaration<'bindings, Native>]) -> Self {
-        rendered
-            .iter()
-            .map(RenderedDeclaration::declaration)
-            .fold(Self::default(), Self::insert)
+    fn from_declarations(
+        declarations: impl IntoIterator<Item = DeclarationRef<'bindings, Native>>,
+    ) -> Self {
+        declarations.into_iter().fold(Self::default(), Self::insert)
     }
 
     fn insert(mut self, declaration: DeclarationRef<'bindings, Native>) -> Self {
@@ -437,7 +484,7 @@ impl<'bindings> Package<'bindings> {
                     Identifier::parse(Name::new(enumeration.name()).class()).map(|class_name| {
                         EnumCodec::Data {
                             class_name,
-                            transparent: enumeration.has_transparent_variants(),
+                            transparent: self.context.enum_is_transparent(enumeration.id()),
                         }
                     })
                 }
@@ -710,9 +757,7 @@ impl<'bindings> Package<'bindings> {
             .and_then(|scope| scope.insert_all(functions.iter().map(FunctionStub::top_level_name)))
             .map(|_| ())?;
 
-        records
-            .iter()
-            .try_for_each(|record| record.validate_names(enums))?;
+        records.iter().try_for_each(RecordClass::validate_names)?;
         enums.iter().try_for_each(EnumClass::validate_names)?;
         classes.iter().try_for_each(Class::validate_names)?;
         functions.iter().try_for_each(FunctionStub::validate_names)

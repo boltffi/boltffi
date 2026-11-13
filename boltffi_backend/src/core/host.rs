@@ -6,9 +6,11 @@
 //! associated type to reject invalid host/bridge pairings at compile
 //! time.
 
+use std::collections::BTreeSet;
+
 use boltffi_binding::{
-    Bindings, CallbackDecl, ClassDecl, ConstantDecl, CustomTypeDecl, EnumDecl, FunctionDecl,
-    RecordDecl, StreamDecl, Surface,
+    Bindings, CallbackDecl, ClassDecl, ConstantDecl, CustomTypeDecl, EnumDecl, EnumId,
+    FunctionDecl, RecordDecl, StreamDecl, Surface,
 };
 
 use crate::core::{
@@ -52,6 +54,15 @@ pub trait HostBackend: sealed::HostBackend {
         _context: &RenderContext<Self::Surface>,
     ) -> Result<CoverageReport> {
         Ok(CoverageReport::new())
+    }
+
+    #[doc(hidden)]
+    fn wrapped_transparent_enums(
+        &self,
+        _bridge: &Self::Bridge,
+        context: &RenderContext<Self::Surface>,
+    ) -> Result<BTreeSet<EnumId>> {
+        Ok(context.transparent_enum_ids().clone())
     }
 
     /// Renders a record declaration.

@@ -250,9 +250,6 @@ impl Enumeration {
         bridge: &CBridgeContract,
         context: &RenderContext<Native>,
     ) -> Result<Self> {
-        if enumeration.has_transparent_variants() {
-            return Err(SwiftHost::unsupported("transparent data enum variant"));
-        }
         let (mut initializers, mut diagnostics) =
             Initializer::from_enum_declarations(enumeration.initializers(), bridge, context)?
                 .into_parts();

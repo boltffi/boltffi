@@ -1,5 +1,7 @@
+use std::collections::{BTreeSet, HashMap, hash_map::Entry};
+
 use boltffi_binding::{
-    ConstantOwner, DirectFieldDecl, DirectRecordDecl, EncodedFieldDecl, EncodedRecordDecl,
+    ConstantOwner, DirectFieldDecl, DirectRecordDecl, EncodedFieldDecl, EncodedRecordDecl, EnumId,
     ExportedMethodDecl, FieldKey, InitializerDecl, Native, NativeSymbol, Receive,
 };
 
@@ -122,40 +124,40 @@ impl RecordClass {
             .any(AssociatedCallable::uses_callable_annotations)
     }
 
-    pub fn validate_names(&self, enums: &[EnumClass]) -> Result<()> {
-        let scope = NameScope::new(format!("record `{}`", self.class_name))
-            .insert_all(self.fields.iter().map(RecordField::field_name))
-            .and_then(|scope| {
-                scope.insert_all(self.constants.iter().map(ConstantStub::member_name))
-            })
-            .and_then(|scope| {
-                scope.insert_all(self.callables().map(AssociatedCallable::member_name))
-            })?;
-        self.bases.iter().try_fold(scope, |scope, base| {
-            let enumeration = enums
-                .iter()
-                .find(|enumeration| &enumeration.class_name == base)
-                .ok_or(Error::UnsupportedTarget {
-                    target: "python",
-                    shape: "transparent payload without its enum base",
-                })?;
-            scope
-                .insert_all(enumeration.callables().map(|callable| {
-                    (
-                        callable.python_name.to_string(),
-                        format!(
-                            "method `{}.{}`",
-                            enumeration.class_name, callable.python_name
-                        ),
-                    )
-                }))
-                .and_then(|scope| {
-                    scope.insert_all(enumeration.constants.iter().map(ConstantStub::member_name))
-                })
-        })?;
+    pub fn validate_names(&self) -> Result<()> {
+        NameScope::new(format!("record `{}`", self.class_name)).insert_all(self.member_names())?;
         RecordField::validate_default_order(&self.fields, "record default before required field")?;
         self.callables()
             .try_for_each(|callable| callable.validate_names(&self.class_name))
+    }
+
+    pub fn wrapped_enum_bases(&self, enums: &[(EnumId, EnumClass)]) -> BTreeSet<EnumId> {
+        let mut names = self
+            .member_names()
+            .map(|(name, _)| (name, None))
+            .collect::<HashMap<_, Option<EnumId>>>();
+        let mut wrapped = BTreeSet::new();
+        enums
+            .iter()
+            .filter(|(_, enumeration)| self.bases.contains(&enumeration.class_name))
+            .for_each(|(id, enumeration)| {
+                enumeration
+                    .callables()
+                    .map(AssociatedCallable::member_name)
+                    .chain(enumeration.constants.iter().map(ConstantStub::member_name))
+                    .for_each(|(name, _)| match names.entry(name) {
+                        Entry::Vacant(entry) => {
+                            entry.insert(Some(*id));
+                        }
+                        Entry::Occupied(entry) => {
+                            wrapped.insert(*id);
+                            if let Some(previous) = entry.get() {
+                                wrapped.insert(*previous);
+                            }
+                        }
+                    });
+            });
+        wrapped
     }
 
     pub fn top_level_name(&self) -> (String, String) {
@@ -179,6 +181,14 @@ impl RecordClass {
             .iter()
             .chain(&self.static_methods)
             .chain(&self.instance_methods)
+    }
+
+    fn member_names(&self) -> impl Iterator<Item = (String, String)> + '_ {
+        self.fields
+            .iter()
+            .map(RecordField::field_name)
+            .chain(self.constants.iter().map(ConstantStub::member_name))
+            .chain(self.callables().map(AssociatedCallable::member_name))
     }
 
     fn constructors(

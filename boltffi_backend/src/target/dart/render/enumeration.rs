@@ -134,9 +134,6 @@ impl Enumeration {
         bridge: &CBridgeContract,
         context: &RenderContext<Native>,
     ) -> Result<Self> {
-        if declaration.has_transparent_variants() {
-            return super::super::unsupported("transparent data enum variant");
-        }
         let name = declaration_name(declaration.name())?;
         Ok(Self {
             documentation: Documentation::new(declaration.meta().doc(), 0),

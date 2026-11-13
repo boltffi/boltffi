@@ -2,14 +2,16 @@ use std::{
     fs,
     path::{Path, PathBuf},
     process::Command,
+    sync::atomic::{AtomicU64, Ordering},
     time::UNIX_EPOCH,
 };
 
 use boltffi_ast::PackageInfo;
-use boltffi_backend::{Error, GeneratedOutput, target::python::PythonCExtHost};
+use boltffi_backend::{GeneratedOutput, target::python::PythonCExtHost};
 use boltffi_binding::{Bindings, Native, lower};
 
 const SOURCE: &str = include_str!("fixtures/source/enums/transparent.rs");
+static NEXT_PYTHON_PACKAGE: AtomicU64 = AtomicU64::new(0);
 
 /// Exercises the package through the interpreter. Printing `ok` is the
 /// contract: a python-level assertion failure exits non-zero, and anything
@@ -111,50 +113,120 @@ print("ok")
 
 #[test]
 fn python_package_runs_transparent_variants_against_the_interpreter() {
-    if cfg!(windows) {
-        return;
+    PythonPackage::run(SOURCE, SCRIPT);
+}
+
+#[test]
+fn python_package_runs_wrapped_variants_when_members_conflict() {
+    let source = format!(
+        "{SOURCE}\n#[data(impl)] impl Reply {{
+        pub fn offset(&self, #[boltffi::default(13)] step: u32) -> u32 {{
+            match self {{ Self::Ping(ping) => ping.sequence + step + 100, Self::Ack => step + 100 }}
+        }}
+    }}"
+    );
+    PythonPackage::run(
+        &source,
+        r#"
+import asyncio, sys
+sys.path.insert(0, sys.argv[1])
+import demo
+
+ping = demo.Ping(sequence=7)
+envelope = demo.EnvelopePing(ping)
+reply = demo.ReplyPing(ping)
+assert not isinstance(ping, demo.Envelope)
+assert not isinstance(ping, demo.Reply)
+assert envelope.offset() == 10
+assert reply.offset() == 120
+assert reply.reply_offset() == 18
+assert demo.echo_envelope(envelope) == envelope
+assert demo.echo_envelopes([envelope, demo.EnvelopeNote(demo.Note("hi")), demo.EnvelopeUnset()]) == [envelope, demo.EnvelopeNote(demo.Note("hi")), demo.EnvelopeUnset()]
+assert demo.Envelope.new() == envelope
+
+async def check_async():
+    assert await demo.Envelope.load() == demo.EnvelopePing(demo.Ping(sequence=9))
+    assert await envelope.async_offset() == 12
+
+asyncio.run(check_async())
+print("ok")
+"#,
+    );
+}
+
+struct PythonPackage {
+    root: PathBuf,
+}
+
+impl PythonPackage {
+    fn new() -> Self {
+        let root = std::env::temp_dir().join(format!(
+            "python-runtime-transparent-{}-{}-{}",
+            std::process::id(),
+            UNIX_EPOCH.elapsed().expect("system clock").as_nanos(),
+            NEXT_PYTHON_PACKAGE.fetch_add(1, Ordering::Relaxed),
+        ));
+        fs::create_dir(&root).expect("create unique Python package directory");
+        Self { root }
     }
-    let (Some(python), Some(includes), Some(compiler)) = (tool("python3"), includes(), tool("cc"))
-    else {
-        return;
-    };
 
-    let bindings = bindings(SOURCE);
-    let output = PythonCExtHost::new()
-        .native_library("demo")
-        .into_target(&bindings)
-        .expect("python target")
-        .render(&bindings)
-        .expect("transparent variants should render");
+    fn run(source: &str, script_source: &str) {
+        if cfg!(windows) {
+            return;
+        }
+        let (Some(python), Some(includes), Some(compiler)) =
+            (tool("python3"), includes(), tool("cc"))
+        else {
+            return;
+        };
 
-    let root = scratch("python-runtime-transparent");
-    write_package(&output, &root);
-    let extension = root.join(native_module_path(&output));
-    let package = extension.parent().expect("package directory").to_owned();
+        let bindings = bindings(source);
+        let output = PythonCExtHost::new()
+            .native_library("demo")
+            .into_target(&bindings)
+            .expect("python target")
+            .render(&bindings)
+            .expect("transparent variants should render");
 
-    build_rust_library(&root, &package.join(cdylib_name()));
-    build_shared_library(
-        &compiler,
-        &extension,
-        &package.join("_native.so"),
-        &[includes, extension_flags()].concat(),
-    );
+        let package = Self::new();
+        let root = &package.root;
+        write_package(&output, root);
+        let extension = root.join(native_module_path(&output));
+        let package_directory = extension.parent().expect("package directory").to_owned();
 
-    let script = root.join("check.py");
-    fs::write(&script, SCRIPT).expect("write check script");
-    let run = Command::new(&python)
-        .arg(&script)
-        .arg(&root)
-        .output()
-        .expect("run the generated package");
-    assert!(
-        run.status.success() && String::from_utf8_lossy(&run.stdout).contains("ok"),
-        "the generated package failed:\n{}\n{}",
-        String::from_utf8_lossy(&run.stdout),
-        String::from_utf8_lossy(&run.stderr),
-    );
+        build_rust_library(root, &package_directory.join(cdylib_name()), source);
+        build_shared_library(
+            &compiler,
+            &extension,
+            &package_directory.join("_native.so"),
+            &[includes, extension_flags()].concat(),
+        );
 
-    fs::remove_dir_all(&root).ok();
+        let script = root.join("check.py");
+        fs::write(&script, script_source).expect("write check script");
+        let run = Command::new(&python)
+            .arg(&script)
+            .arg(root)
+            .output()
+            .expect("run the generated package");
+        assert!(
+            run.status.success() && String::from_utf8_lossy(&run.stdout).contains("ok"),
+            "the generated package failed:\n{}\n{}",
+            String::from_utf8_lossy(&run.stdout),
+            String::from_utf8_lossy(&run.stderr),
+        );
+    }
+}
+
+impl Drop for PythonPackage {
+    fn drop(&mut self) {
+        if let Err(error) = fs::remove_dir_all(&self.root) {
+            eprintln!(
+                "removing Python package {} failed: {error}",
+                self.root.display()
+            );
+        }
+    }
 }
 
 fn bindings(source: &str) -> Bindings<Native> {
@@ -167,31 +239,52 @@ fn bindings(source: &str) -> Bindings<Native> {
 }
 
 #[test]
-fn python_target_rejects_conflicting_transparent_members() {
+fn python_target_wraps_conflicting_transparent_members() {
     [
-        "#[data(impl)] impl Reply { pub fn offset(&self, step: u32) -> u32 { step } }",
-        "#[data(impl)] impl Ping { pub fn offset(&self, step: u32) -> u32 { self.sequence + step } }",
-        "#[data(impl)] impl Envelope { pub fn sequence(&self) -> u32 { 0 } }",
+        ("#[data(impl)] impl Reply { pub fn offset(&self, step: u32) -> u32 { step } }", true),
+        ("#[data(impl)] impl Ping { pub fn offset(&self, step: u32) -> u32 { self.sequence + step } }", false),
+        ("#[data(impl)] impl Envelope { pub fn sequence(&self) -> u32 { 0 } }", false),
     ]
     .into_iter()
-    .for_each(|conflict| {
-        let source = format!(
-            "{}\n{conflict}",
-            include_str!("fixtures/source/enums/transparent.rs")
-        );
-        let bindings = bindings(&source);
-        let error = PythonCExtHost::new()
+    .for_each(|(conflict, both_enums)| {
+        let source = format!("{SOURCE}\n{conflict}");
+        let expected = if both_enums {
+            source.replace("#[boltffi::transparent]", "")
+        } else {
+            source.replacen("#[boltffi::transparent]", "", 2)
+        };
+        let render = |source: &str| {
+            let bindings = bindings(source);
+            PythonCExtHost::new().native_library("demo").into_target(&bindings)
+                .expect("Python target").render(&bindings)
+                .expect("unsupported transparency must use ordinary variants")
+        };
+        assert!(render(&source) == render(&expected), "ordinary variants must be used");
+    });
+}
+
+#[test]
+fn python_uses_ordinary_error_variants() {
+    let source = SOURCE.replace(
+        "#[data]\npub enum Envelope",
+        "#[boltffi::error]\npub enum Envelope",
+    );
+    let source =
+        format!("{source}\n#[export] pub fn try_envelope() -> Result<u32, Envelope> {{ Ok(1) }}");
+    let expected = source.replacen("#[boltffi::transparent]", "", 2);
+    let render = |source: &str| {
+        let bindings = bindings(source);
+        PythonCExtHost::new()
             .native_library("demo")
             .into_target(&bindings)
             .expect("Python target")
             .render(&bindings)
-            .expect_err("conflicting inherited members must fail generation");
-        assert!(matches!(
-            error,
-            Error::PythonNameCollision { scope, .. }
-                if scope == "record `Ping`"
-        ));
-    });
+            .expect("ordinary error enum")
+    };
+    assert!(
+        render(&source) == render(&expected),
+        "ordinary variants must be used"
+    );
 }
 
 /// The name of a tool on `PATH`, or `None` when it cannot be run.
@@ -221,15 +314,6 @@ fn includes() -> Option<Vec<String>> {
     )
 }
 
-fn scratch(prefix: &str) -> PathBuf {
-    let root = std::env::temp_dir().join(format!(
-        "{prefix}-{}",
-        UNIX_EPOCH.elapsed().expect("system clock").as_nanos()
-    ));
-    fs::create_dir_all(&root).expect("create scratch directory");
-    root
-}
-
 /// The rendered extension source, which the host places inside the package
 /// module rather than at the tree root.
 fn native_module_path(output: &GeneratedOutput) -> PathBuf {
@@ -250,7 +334,7 @@ fn write_package(output: &GeneratedOutput, root: &Path) {
     });
 }
 
-fn build_rust_library(root: &Path, destination: &Path) {
+fn build_rust_library(root: &Path, destination: &Path, source: &str) {
     let crate_directory = root.join("rust");
     fs::create_dir_all(crate_directory.join("src")).expect("create Rust fixture directory");
     let boltffi_path = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -279,7 +363,7 @@ boltffi = {{ path = {path:?} }}
     .expect("write Rust fixture manifest");
     fs::write(
         crate_directory.join("src/lib.rs"),
-        format!("use boltffi::{{data, export}};\nboltffi::scaffolding!();\n{SOURCE}"),
+        format!("use boltffi::{{data, export}};\nboltffi::scaffolding!();\n{source}"),
     )
     .expect("write Rust fixture source");
     let target_directory = root.join("target");
@@ -287,6 +371,7 @@ boltffi = {{ path = {path:?} }}
         .args(["build", "--quiet", "--manifest-path"])
         .arg(crate_directory.join("Cargo.toml"))
         .env("CARGO_TARGET_DIR", &target_directory)
+        .env("CARGO_BUILD_BUILD_DIR", target_directory.join("build"))
         .output()
         .expect("build Rust fixture");
     assert!(

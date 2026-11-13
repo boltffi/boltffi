@@ -146,9 +146,11 @@ where
         let context = RenderContext::new(bindings, self.host.name(), mode)
             .with_custom_type_mappings(self.host.custom_type_mappings(bindings)?)
             .with_capability_analysis(capability_analysis);
+        let wrapped = self.host.wrapped_transparent_enums(&contract, &context)?;
+        let context = context.without_transparent_enums(wrapped);
         let pruned_transparent_enums =
             self.pruned_transparent_enums(bindings, &contract, &context, &host_capabilities, mode);
-        let context = context.with_pruned_transparent_enums(pruned_transparent_enums);
+        let context = context.without_transparent_enums(pruned_transparent_enums);
         let preflight_coverage = self
             .host
             .preflight_coverage(bindings, &contract, &context)?;

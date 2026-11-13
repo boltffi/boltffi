@@ -86,9 +86,6 @@ pack_host_dart() {
     rm -f "$overlay"
 }
 
-# Transparent variants only render for kotlin and python, so the demo keeps
-# them behind a feature; the other targets would fail to generate. The kotlin
-# gradle build passes the same feature to its own codegen step.
 transparent_demo_args=(--cargo-arg=--features --cargo-arg=transparent-demo)
 
 host_default_platforms() {

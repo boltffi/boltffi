@@ -18,7 +18,7 @@ use crate::{
             AssociatedConstants, Documentation,
             field::EncodedField,
             function::{ExportedCall, ExportedCallRenderer, ReceiverCarrier, ReceiverMutation},
-            signature::validate_exception_fields,
+            signature::{validate_exception_fields, validate_reserved_members},
         },
         syntax::{ArgumentList, Expression, Identifier, Literal, Statement, TypeName},
     },
@@ -376,7 +376,7 @@ impl Enumeration {
             .ok_or(KotlinHost::broken_bridge_contract(
                 "enum type was not found in render context",
             ))? {
-            EnumDecl::Data(enumeration) => Ok(enumeration.has_transparent_variants()),
+            EnumDecl::Data(_) => Ok(context.enum_is_transparent(id)),
             _ => Ok(false),
         }
     }
@@ -456,13 +456,33 @@ impl Enumeration {
         package: Option<&KotlinPackage>,
     ) -> Result<Self> {
         let error = enumeration.is_error_payload();
-        let transparent = enumeration.has_transparent_variants();
-        if error && transparent {
-            // The sealed interface a transparent enum renders as cannot
-            // extend Exception the way the error sealed class does.
-            return Err(KotlinHost::unsupported("transparent error enum"));
-        }
+        let transparent = context.enum_is_transparent(enumeration.id());
         let name = Name::new(enumeration.name()).type_name();
+        let member_names = enumeration
+            .methods()
+            .iter()
+            .filter(|method| {
+                method.callable().receiver().is_some() && method.callable().params().is_empty()
+            })
+            .map(|method| Name::new(method.name()).function())
+            .collect::<Result<Vec<_>>>()?;
+        if !member_names.is_empty() {
+            let mut reserved = ["wireSize", "toByteArray", "hashCode", "toString"]
+                .map(str::to_owned)
+                .to_vec();
+            let max_fields = enumeration
+                .variants()
+                .iter()
+                .map(|variant| variant.payload().fields().len())
+                .max()
+                .unwrap_or(0);
+            reserved.extend((1..=max_fields).map(|index| format!("component{index}")));
+            validate_reserved_members(
+                &name,
+                &reserved.iter().map(String::as_str).collect::<Vec<_>>(),
+                member_names.iter(),
+            )?;
+        }
         let buffer = WireBuffer::new(&Name::new(enumeration.name()))?;
         let writer = buffer.writer().clone();
         // The codec of a transparent enum lives on the companion, so the
@@ -534,6 +554,7 @@ impl Enumeration {
                     .map(|variant| {
                         let mut variant = DataVariant::from_declaration(
                             variant,
+                            enumeration.id(),
                             host,
                             context,
                             package,
@@ -792,6 +813,7 @@ impl DataVariant {
 
     fn from_declaration(
         variant: &DataVariantDecl,
+        enumeration: EnumId,
         host: &KotlinHost,
         context: &RenderContext<Native>,
         package: Option<&KotlinPackage>,
@@ -807,7 +829,7 @@ impl DataVariant {
             Identifier::parse("writeU32")?,
             [tag.clone()].into_iter().collect::<ArgumentList>(),
         ));
-        if variant.transparent() {
+        if context.enum_is_transparent(enumeration) && variant.transparent() {
             return Self::from_transparent(variant, name, tag, tag_write, fields);
         }
         let read = Self::read_expression(name.clone(), &fields);

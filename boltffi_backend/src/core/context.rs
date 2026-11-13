@@ -21,7 +21,7 @@ pub struct RenderContext<'bindings, S: Surface> {
     custom_type_mappings: ResolvedCustomTypeMappings,
     capability_analysis: Option<BindingCapabilityAnalysis>,
     coverage_mode: CoverageMode,
-    pruned_transparent_enums: BTreeSet<EnumId>,
+    transparent_enum_ids: BTreeSet<EnumId>,
 }
 
 impl<'bindings, S: Surface> RenderContext<'bindings, S> {
@@ -37,7 +37,19 @@ impl<'bindings, S: Surface> RenderContext<'bindings, S> {
             custom_type_mappings: ResolvedCustomTypeMappings::default(),
             capability_analysis: None,
             coverage_mode,
-            pruned_transparent_enums: BTreeSet::new(),
+            transparent_enum_ids: bindings
+                .decls()
+                .iter()
+                .filter_map(|declaration| match DeclarationRef::from(declaration) {
+                    DeclarationRef::Enum(EnumDecl::Data(enumeration))
+                        if enumeration.has_transparent_variants()
+                            && !enumeration.is_error_payload() =>
+                    {
+                        Some(enumeration.id())
+                    }
+                    _ => None,
+                })
+                .collect(),
         }
     }
 
@@ -53,11 +65,18 @@ impl<'bindings, S: Surface> RenderContext<'bindings, S> {
         self
     }
 
-    /// Records the transparent data enums this render leaves out, so payload
-    /// records stop conforming to a type the generated source never declares.
-    pub(crate) fn with_pruned_transparent_enums(mut self, pruned: BTreeSet<EnumId>) -> Self {
-        self.pruned_transparent_enums = pruned;
+    pub(crate) fn without_transparent_enums(mut self, excluded: BTreeSet<EnumId>) -> Self {
+        self.transparent_enum_ids
+            .retain(|id| !excluded.contains(id));
         self
+    }
+
+    pub(crate) fn transparent_enum_ids(&self) -> &BTreeSet<EnumId> {
+        &self.transparent_enum_ids
+    }
+
+    pub(crate) fn enum_is_transparent(&self, id: EnumId) -> bool {
+        self.transparent_enum_ids.contains(&id)
     }
 
     /// Returns the binding contract being rendered.
@@ -167,7 +186,7 @@ impl<'bindings, S: Surface> RenderContext<'bindings, S> {
             })
             .filter_map(move |enumeration| match enumeration {
                 EnumDecl::Data(enumeration)
-                    if !self.pruned_transparent_enums.contains(&enumeration.id())
+                    if self.enum_is_transparent(enumeration.id())
                         && enumeration
                             .variants()
                             .iter()

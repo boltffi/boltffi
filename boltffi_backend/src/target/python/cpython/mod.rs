@@ -1,11 +1,11 @@
-use std::path::PathBuf;
+use std::{collections::BTreeSet, path::PathBuf};
 
 pub(crate) mod codec;
 pub mod render;
 
 use boltffi_binding::{
-    Bindings, CallbackDecl, ClassDecl, ConstantDecl, CustomTypeDecl, EnumDecl, FunctionDecl,
-    Native, RecordDecl, StreamDecl,
+    Bindings, CallbackDecl, ClassDecl, ConstantDecl, CustomTypeDecl, DeclarationRef, EnumDecl,
+    EnumId, FunctionDecl, Native, RecordDecl, StreamDecl,
 };
 
 use crate::{
@@ -110,6 +110,27 @@ impl host::HostBackend for PythonCExtHost {
         CapabilityRequirements::new().require(BridgeCapability::PythonExtension)
     }
 
+    fn wrapped_transparent_enums(
+        &self,
+        bridge: &Self::Bridge,
+        context: &RenderContext<Native>,
+    ) -> Result<BTreeSet<EnumId>> {
+        if context.transparent_enum_ids().is_empty() {
+            return Ok(BTreeSet::new());
+        }
+        let bindings = context.bindings();
+        Package::new(
+            bridge,
+            context,
+            self.package_module(bindings)?,
+            self.resolved_distribution(bindings)?,
+            self.package_version(bindings),
+            self.native_library_name(bindings)?,
+            bindings.decls().iter().map(DeclarationRef::from),
+        )
+        .wrapped_transparent_enums()
+    }
+
     fn record(
         &self,
         decl: &RecordDecl<Self::Surface>,
@@ -200,7 +221,7 @@ impl host::HostBackend for PythonCExtHost {
             self.resolved_distribution(bindings)?,
             self.package_version(bindings),
             self.native_library_name(bindings)?,
-            &declarations,
+            declarations.iter().map(RenderedDeclaration::declaration),
         )
         .render()?;
         let mut output = GeneratedOutput::combine([

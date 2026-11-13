@@ -1,6 +1,6 @@
 use boltffi_binding::{
     CStyleEnumDecl, CanonicalName, ConstantOwner, DataEnumDecl, DataVariantDecl,
-    DataVariantPayload, EncodedFieldDecl, ExportedMethodDecl, InitializerDecl, Native,
+    DataVariantPayload, EncodedFieldDecl, EnumId, ExportedMethodDecl, InitializerDecl, Native,
     NativeSymbol, Receive,
 };
 
@@ -93,13 +93,7 @@ impl EnumClass {
     pub fn from_data(enumeration: &DataEnumDecl<Native>, package: &Package) -> Result<Self> {
         let symbols = enumeration_render::Symbols::from_data(enumeration)?;
         let class_name = symbols.class_name().clone();
-        let transparent = enumeration.has_transparent_variants();
-        if transparent && enumeration.is_error_payload() {
-            return Err(Error::UnsupportedTarget {
-                target: "python",
-                shape: "transparent error enum",
-            });
-        }
+        let transparent = package.context.enum_is_transparent(enumeration.id());
         Ok(Self {
             documentation: Documentation::new(enumeration.meta().doc()),
             class_name: class_name.clone(),
@@ -115,7 +109,14 @@ impl EnumClass {
                 variants: enumeration
                     .variants()
                     .iter()
-                    .map(|variant| DataEnumVariant::from_variant(variant, &class_name, package))
+                    .map(|variant| {
+                        DataEnumVariant::from_variant(
+                            variant,
+                            enumeration.id(),
+                            &class_name,
+                            package,
+                        )
+                    })
                     .collect::<Result<Vec<_>>>()?,
             }),
             constructors: Self::constructors(enumeration.initializers(), &symbols, package)?,
@@ -332,12 +333,16 @@ impl DataEnumVariant {
 
     fn from_variant(
         variant: &DataVariantDecl,
+        enumeration: EnumId,
         enum_class_name: &Identifier,
         package: &Package,
     ) -> Result<Self> {
         let fields = Self::payload_fields(variant.payload())?;
-        let transparent_payload = variant
-            .transparent_payload()
+        let transparent_payload = package
+            .context
+            .enum_is_transparent(enumeration)
+            .then(|| variant.transparent_payload())
+            .flatten()
             .map(|record| package.record_name(record))
             .transpose()?;
         Ok(Self {

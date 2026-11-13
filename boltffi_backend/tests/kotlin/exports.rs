@@ -383,44 +383,57 @@ fn kotlin_transparent_enums_compile_with_defaults_and_async_initializers() {
 }
 
 #[test]
-fn kotlin_target_rejects_conflicting_transparent_members() {
+fn kotlin_target_wraps_conflicting_transparent_members() {
     [
-        ("#[data(impl)] impl Reply { pub fn offset(&self, step: u32) -> u32 { step } }", "offset("),
-        ("#[data(impl)] impl Ping { pub fn offset(&self, step: u32) -> u32 { self.sequence + step } }", "offset("),
+        ("#[data(impl)] impl Reply { pub fn offset(&self, step: u32) -> u32 { step } }", true),
+        ("#[data(impl)] impl Ping { pub fn offset(&self, step: u32) -> u32 { self.sequence + step } }", false),
         ("#[data(impl)] impl Envelope { pub fn inspect(&self, value: Ping) -> u32 { value.sequence } }
-          #[data(impl)] impl Reply { pub fn inspect(&self, value: Ping) -> u32 { value.sequence } }", "inspect("),
+          #[data(impl)] impl Reply { pub fn inspect(&self, value: Ping) -> u32 { value.sequence } }", true),
         ("#[data(impl)] impl Envelope { pub fn inspect(&self, values: Vec<String>) -> u32 { values.len() as u32 } }
-          #[data(impl)] impl Reply { pub fn inspect(&self, values: Vec<Ping>) -> u32 { values.len() as u32 } }", "inspect("),
-        ("#[data(impl)] impl Envelope { pub fn wire_size(&self) -> u32 { 0 } }", "wireSize("),
-        ("#[data(impl)] impl Envelope { pub fn get_sequence(&self) -> u32 { 99 } }", "getSequence("),
-        ("#[data(impl)] impl Envelope { pub fn component1(&self) -> u32 { 99 } }", "component1("),
-        ("#[data(impl)] impl Envelope { pub fn copy(&self, sequence: u32) -> Self { Self::Ping(Ping { sequence }) } }", "copy("),
+          #[data(impl)] impl Reply { pub fn inspect(&self, values: Vec<Ping>) -> u32 { values.len() as u32 } }", true),
+        ("#[data(impl)] impl Envelope { pub fn get_sequence(&self) -> u32 { 99 } }", false),
+        ("#[data(impl)] impl Envelope { pub fn copy(&self, sequence: u32) -> Self { Self::Ping(Ping { sequence }) } }", false),
     ]
     .into_iter()
-    .for_each(|(conflict, name_prefix)| {
+    .for_each(|(conflict, both_enums)| {
         let source = format!("{}\n{conflict}", fixture("enums/transparent"));
-        let bindings = super::bindings(&source);
-        let error = KotlinHost::new("com.boltffi.demo", "Demo")
-            .expect("Kotlin host")
-            .into_target()
-            .expect("Kotlin target")
-            .render(&bindings)
-            .expect_err("conflicting inherited methods must fail generation");
-        assert!(matches!(
-            error,
-            Error::KotlinNameCollision { scope, name }
-                if scope == "Ping" && name.starts_with(name_prefix)
-        ));
+        let expected = if both_enums {
+            source.replace("#[boltffi::transparent]", "")
+        } else {
+            source.replacen("#[boltffi::transparent]", "", 2)
+        };
+        assert!(super::files(&source) == super::files(&expected), "ordinary variants must be used for {conflict}");
     });
 }
 
-/// A pruned transparent enum leaves no sealed interface behind, so the payload
-/// record must drop the conformance rather than name a supertype the file
-/// never declares. Both pruning routes are covered: the capability gate
-/// (`InternedString`) and a render the host rejects (a transparent error
-/// enum).
 #[test]
-fn kotlin_target_drops_conformances_of_pruned_transparent_enums() {
+fn kotlin_reports_actual_enum_name_collisions_with_or_without_transparency() {
+    [
+        "#[data(impl)] impl Envelope { pub fn wire_size(&self) -> u32 { 0 } }",
+        "#[data(impl)] impl Envelope { pub fn component1(&self) -> u32 { 99 } }",
+    ]
+    .into_iter()
+    .for_each(|conflict| {
+        let source = format!("{}\n{conflict}", fixture("enums/transparent"));
+        [&source, &source.replace("#[boltffi::transparent]", "")]
+            .into_iter()
+            .for_each(|source| {
+                let bindings = super::bindings(source);
+                let error = KotlinHost::new("com.boltffi.demo", "Demo")
+                    .expect("Kotlin host")
+                    .into_target()
+                    .expect("Kotlin target")
+                    .render(&bindings)
+                    .expect_err("generated enum members must have distinct names");
+                assert!(
+                    matches!(error, Error::KotlinNameCollision { scope, .. } if scope == "Envelope")
+                );
+            });
+    });
+}
+
+#[test]
+fn kotlin_target_omits_inheritance_for_wrapped_and_pruned_enums() {
     for source in [
         r#"
         use boltffi::InternedString;
@@ -477,7 +490,11 @@ fn kotlin_target_drops_conformances_of_pruned_transparent_enums() {
             "payload record was pruned alongside its transparent enum:\n{contents}"
         );
         assert!(
-            !contents.contains(": Envelope"),
+            !contents
+                .split("sealed class Envelope")
+                .next()
+                .expect("record declarations")
+                .contains(": Envelope"),
             "payload record conformed to a pruned transparent enum:\n{contents}"
         );
     }
