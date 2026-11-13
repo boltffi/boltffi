@@ -366,7 +366,13 @@ mod tests {
         output
             .files()
             .iter()
-            .map(|file| file.path().as_path().display().to_string())
+            .map(|file| {
+                file.path()
+                    .as_path()
+                    .display()
+                    .to_string()
+                    .replace('\\', "/")
+            })
             .collect()
     }
 

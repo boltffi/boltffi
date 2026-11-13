@@ -3,6 +3,8 @@
 pub mod c;
 pub mod csharp;
 pub mod dart;
+#[allow(missing_docs)]
+pub mod dart_web;
 pub mod java;
 pub mod jvm;
 pub mod kmp;
