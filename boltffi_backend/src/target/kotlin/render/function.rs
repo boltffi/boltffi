@@ -581,19 +581,16 @@ impl ExportedParameter {
         let source_name = Name::new(parameter.name());
         let name = source_name.parameter()?;
         let default = Self::default_for(parameter, context)?;
-        let (ty, native_argument) = match parameter.payload() {
-            IncomingParam::Value(plan) => (
-                Self::type_name(plan, package, context)?,
-                Self::native_argument_for(source_name, name.clone(), plan, host, context)?,
-            ),
-            IncomingParam::Closure(closure) => (
-                Closure::type_name(closure, host, context)?,
-                NativeArgument::direct(Closure::native_argument(
-                    closure,
-                    Expression::identifier(name.clone()),
-                    bridge,
-                )?),
-            ),
+        let ty = Self::type_name(parameter, package, host, context)?;
+        let native_argument = match parameter.payload() {
+            IncomingParam::Value(plan) => {
+                Self::native_argument_for(source_name, name.clone(), plan, host, context)?
+            }
+            IncomingParam::Closure(closure) => NativeArgument::direct(Closure::native_argument(
+                closure,
+                Expression::identifier(name.clone()),
+                bridge,
+            )?),
         };
         Ok(Self {
             owned_class: native_argument.owned_class,
@@ -604,6 +601,20 @@ impl ExportedParameter {
             setup: native_argument.setup,
             cleanup: native_argument.cleanup,
         })
+    }
+
+    pub fn type_name(
+        parameter: &ParamDecl<Native, IntoRust>,
+        package: Option<&KotlinPackage>,
+        host: &KotlinHost,
+        context: &RenderContext<Native>,
+    ) -> Result<TypeName> {
+        match parameter.payload() {
+            IncomingParam::Value(plan) => {
+                plan.render_with(&mut ParameterType::new(context).package(package))
+            }
+            IncomingParam::Closure(closure) => Closure::type_name(closure, host, context),
+        }
     }
 
     pub fn name(&self) -> &Identifier {
@@ -662,14 +673,6 @@ impl ExportedParameter {
 
     fn mutation(&self) -> Option<&ParameterMutation> {
         self.mutation.as_ref()
-    }
-
-    fn type_name(
-        plan: &ParamPlan<Native, IntoRust>,
-        package: Option<&KotlinPackage>,
-        context: &RenderContext<Native>,
-    ) -> Result<TypeName> {
-        plan.render_with(&mut ParameterType::new(context).package(package))
     }
 }
 

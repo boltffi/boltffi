@@ -34,7 +34,7 @@ fn jni_bridge_contract_records_class_and_source_path() {
     assert_eq!(contract.methods().len(), 1);
     assert_eq!(
         contract.methods()[0].symbol().to_string(),
-        "Java_com_boltffi_demo_Native_boltffi_1function_1demo_1add"
+        "Java_com_boltffi_demo_Native_boltffi_1function_14demo3add"
     );
 }
 

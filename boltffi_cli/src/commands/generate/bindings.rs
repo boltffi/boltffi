@@ -11,10 +11,10 @@ use boltffi_backend::target::kotlin::{
     KotlinApiStyle as BackendKotlinApiStyle, KotlinDesktopLoader as BackendKotlinDesktopLoader,
     KotlinFactoryStyle as BackendKotlinFactoryStyle,
 };
+use boltffi_backend::target::ruby::RubyCExtHost;
 use boltffi_backend::{CoverageMode, GeneratedOutput};
 use boltffi_bindgen::generate::{Generation, GenerationError};
 use boltffi_bindgen::target::Target;
-use boltffi_binding::BindingMetadataSurface;
 
 use crate::build::BindingExpansion;
 use crate::cargo::Cargo;
@@ -106,9 +106,11 @@ pub fn run_generation(config: &Config, options: &GenerateOptions) -> Result<()> 
         GenerateTarget::KotlinMultiplatform => generate_kmp(config, options),
         GenerateTarget::Typescript => generate_typescript(config, options),
         GenerateTarget::Dart => generate_dart(config, options),
+        GenerateTarget::DartWeb => generate_dart_web(config, options),
         GenerateTarget::CSharp => generate_csharp(config, options),
         GenerateTarget::Header => generate_header(config, options),
         GenerateTarget::C => generate_c(config, options),
+        GenerateTarget::Ruby => generate_ruby(config, options),
         other => Err(CliError::CommandFailed {
             command: format!("cannot directly generate {}", target_label(other)),
             status: None,
@@ -164,6 +166,7 @@ fn generate_dart(config: &Config, options: &GenerateOptions) -> Result<()> {
         .generation()
         .dart_package(config.package.name.clone())
         .dart_native_artifact(expansion.artifact_name())
+        .dart_standalone_pubspec(config.dart_standalone())
         .render(Target::Dart)
         .map_err(|error| generation_error(Target::Dart.name(), error))?;
 
@@ -171,6 +174,37 @@ fn generate_dart(config: &Config, options: &GenerateOptions) -> Result<()> {
     Generation::write_output(output, &output_directory)
         .map(drop)
         .map_err(|error| generation_error(Target::Dart.name(), error))
+}
+
+fn generate_dart_web(config: &Config, options: &GenerateOptions) -> Result<()> {
+    if !config.should_process(Target::DartWeb, options.experimental) {
+        return Err(CliError::CommandFailed {
+            command: "targets.dart_web.enabled = false (or requires --experimental)".to_string(),
+            status: None,
+        });
+    }
+
+    let expansion = BindingExpansion::resolve(
+        config,
+        &generation_cargo_args(config, Some(TargetSection::Wasm), options),
+    )?;
+    let output_directory = options
+        .output
+        .clone()
+        .unwrap_or_else(|| config.dart_web_output());
+
+    expansion
+        .generation()
+        .coverage_mode(CoverageMode::Partial)
+        .dart_web_module(config.dart_web_module_name())
+        .render(Target::DartWeb)
+        .map_err(|error| generation_error(Target::DartWeb.name(), error))
+        .and_then(|output| {
+            print_coverage(Target::DartWeb.name(), &output, options.deny_skipped)?;
+            Generation::write_output(output, &output_directory)
+                .map(drop)
+                .map_err(|error| generation_error(Target::DartWeb.name(), error))
+        })
 }
 
 fn generate_typescript(config: &Config, options: &GenerateOptions) -> Result<()> {
@@ -192,7 +226,7 @@ fn generate_typescript(config: &Config, options: &GenerateOptions) -> Result<()>
 
     expansion
         .generation()
-        .binding_surface(BindingMetadataSurface::Wasm32)
+        .triple(config.wasm_triple())
         .coverage_mode(CoverageMode::Partial)
         .typescript_module(config.wasm_typescript_module_name())
         .typescript_runtime_package(config.wasm_runtime_package())
@@ -500,6 +534,70 @@ fn generate_c(config: &Config, options: &GenerateOptions) -> Result<()> {
             Generation::write_output(output, &output_directory)
                 .map(drop)
                 .map_err(|error| generation_error(Target::C.name(), error))
+        })
+}
+
+fn generate_ruby(config: &Config, options: &GenerateOptions) -> Result<()> {
+    let target = Target::Ruby;
+    if !config.is_ruby_enabled() {
+        return Err(CliError::CommandFailed {
+            command: "targets.ruby.enabled = false".to_string(),
+            status: None,
+        });
+    }
+
+    if !config.should_process(target, options.experimental) {
+        return Err(CliError::CommandFailed {
+            command: format!(
+                "{} is experimental, use --experimental flag or add \"{}\" to [experimental]",
+                target.name(),
+                target.name()
+            ),
+            status: None,
+        });
+    }
+
+    let expansion = BindingExpansion::resolve(
+        config,
+        &generation_cargo_args(config, Some(TargetSection::Ruby), options),
+    )?;
+    let output_directory = options
+        .output
+        .clone()
+        .unwrap_or_else(|| config.ruby_output());
+    render_ruby(config, &expansion, &output_directory, options.deny_skipped)
+}
+
+/// Writes the Ruby gem sources for one binding expansion.
+///
+/// `pack ruby` passes the expansion that it builds the static library from.
+/// The extension then calls only functions that the library exports: Ruby
+/// resolves a missing function only at its first call, which crashes.
+pub(crate) fn render_ruby(
+    config: &Config,
+    expansion: &BindingExpansion,
+    output_directory: &Path,
+    deny_skipped: bool,
+) -> Result<()> {
+    let target = Target::Ruby;
+    let ruby = &config.targets.ruby;
+    let host = RubyCExtHost::new()
+        .native_library(expansion.artifact_name())
+        .version(ruby.version.clone())
+        .gem_name(config.ruby_gem_name())
+        .and_then(|host| host.module_name(ruby.module_name.as_deref()))
+        .map_err(|error| generation_error(target.name(), GenerationError::Render(error)))?;
+    expansion
+        .generation()
+        .coverage_mode(CoverageMode::Partial)
+        .ruby_host(host)
+        .render(target)
+        .map_err(|error| generation_error(target.name(), error))
+        .and_then(|output| {
+            print_coverage(target.name(), &output, deny_skipped)?;
+            Generation::write_output(output, output_directory)
+                .map(drop)
+                .map_err(|error| generation_error(target.name(), error))
         })
 }
 
@@ -896,9 +994,11 @@ fn target_label(target: &GenerateTarget) -> &'static str {
         GenerateTarget::Header => "header",
         GenerateTarget::Typescript => "typescript",
         GenerateTarget::Dart => "dart",
+        GenerateTarget::DartWeb => "dart_web",
         GenerateTarget::Python => "python",
         GenerateTarget::CSharp => "csharp",
         GenerateTarget::C => "c",
+        GenerateTarget::Ruby => "ruby",
         GenerateTarget::All => "all",
     }
 }
@@ -938,6 +1038,36 @@ mod tests {
 
     fn demo_manifest_path() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../examples/demo/Cargo.toml")
+    }
+
+    /// `targets.dart_web.enabled = true` alone must not bypass the same
+    /// experimental opt-in `GenerateTarget::All` and `pack dart-web` both
+    /// require -- this must fail on the gate itself, before ever touching
+    /// cargo, so a config with no real crate on disk is enough to prove it.
+    #[test]
+    fn generate_dart_web_requires_experimental_opt_in() {
+        let config = parse_config(
+            r#"
+[package]
+name = "demo"
+
+[targets.dart_web]
+enabled = true
+"#,
+        );
+
+        let result = run_generation(
+            &config,
+            &GenerateOptions {
+                target: GenerateTarget::DartWeb,
+                output: None,
+                experimental: false,
+                cargo_args: Vec::new(),
+                deny_skipped: false,
+            },
+        );
+
+        assert!(result.is_err());
     }
 
     #[test]

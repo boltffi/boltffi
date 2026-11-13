@@ -20,6 +20,6 @@ public struct FfiError: Error {
 
 public func increment(values: inout [UInt64]) {
     _ = values.withUnsafeMutableBufferPointer { boltffiValuesBuffer in
-        boltffi_function_demo_increment(boltffiValuesBuffer.baseAddress, UInt(boltffiValuesBuffer.count))
+        boltffi_function_4demo9increment(boltffiValuesBuffer.baseAddress, UInt(boltffiValuesBuffer.count))
     }
 }

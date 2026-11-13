@@ -36,6 +36,8 @@ crate-type = ["staticlib"]
 boltffi = { path = "$repo_root/boltffi" }
 TOML
     cat > "$fixture/src/lib.rs" <<RUST
+boltffi::scaffolding!();
+
 #[boltffi::export]
 pub fn ${library}_value() -> i32 { $value }
 RUST

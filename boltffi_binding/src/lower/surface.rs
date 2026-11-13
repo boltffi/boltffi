@@ -137,7 +137,6 @@ pub trait SurfaceLower:
     #[doc(hidden)]
     fn outgoing_closure_registration(
         allocator: &mut SymbolAllocator,
-        closure: &FnSig,
     ) -> Result<Self::OutgoingClosureRegistration, LowerError>;
 }
 
@@ -182,7 +181,6 @@ impl SurfaceLower for Native {
 
     fn outgoing_closure_registration(
         _allocator: &mut SymbolAllocator,
-        _closure: &FnSig,
     ) -> Result<Self::OutgoingClosureRegistration, LowerError> {
         Ok(native::ClosureRegistration::InvokeContextRelease)
     }
@@ -266,8 +264,7 @@ impl SurfaceLower for Wasm32 {
 
     fn outgoing_closure_registration(
         allocator: &mut SymbolAllocator,
-        closure: &FnSig,
     ) -> Result<Self::OutgoingClosureRegistration, LowerError> {
-        wasm_closure::outgoing_registration(allocator, closure)
+        wasm_closure::outgoing_registration(allocator)
     }
 }

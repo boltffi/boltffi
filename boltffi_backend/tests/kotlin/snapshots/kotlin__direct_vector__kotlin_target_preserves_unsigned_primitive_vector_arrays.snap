@@ -8,22 +8,22 @@ expression: rendered
 package com.boltffi.demo
 @Suppress("FunctionName")
 private object Native {
-    @JvmStatic external fun boltffi_function_demo_echo_u16(values: ShortArray): ByteArray?
-    @JvmStatic external fun boltffi_function_demo_echo_u32(values: IntArray): ByteArray?
-    @JvmStatic external fun boltffi_function_demo_echo_u64(values: LongArray): ByteArray?
+    @JvmStatic external fun boltffi_function_4demo8echo_u16(values: ShortArray): ByteArray?
+    @JvmStatic external fun boltffi_function_4demo8echo_u32(values: IntArray): ByteArray?
+    @JvmStatic external fun boltffi_function_4demo8echo_u64(values: LongArray): ByteArray?
 }
 
 fun echoU16(values: UShortArray): UShortArray {
-    val __boltffi_result = Native.boltffi_function_demo_echo_u16(values.asShortArray()) ?: throw IllegalStateException("null buffer returned")
+    val __boltffi_result = Native.boltffi_function_4demo8echo_u16(values.asShortArray()) ?: throw IllegalStateException("null buffer returned")
     return DirectVectorCodec.readUShortArray(__boltffi_result)
 }
 
 fun echoU32(values: UIntArray): UIntArray {
-    val __boltffi_result = Native.boltffi_function_demo_echo_u32(values.asIntArray()) ?: throw IllegalStateException("null buffer returned")
+    val __boltffi_result = Native.boltffi_function_4demo8echo_u32(values.asIntArray()) ?: throw IllegalStateException("null buffer returned")
     return DirectVectorCodec.readUIntArray(__boltffi_result)
 }
 
 fun echoU64(values: ULongArray): ULongArray {
-    val __boltffi_result = Native.boltffi_function_demo_echo_u64(values.asLongArray()) ?: throw IllegalStateException("null buffer returned")
+    val __boltffi_result = Native.boltffi_function_4demo8echo_u64(values.asLongArray()) ?: throw IllegalStateException("null buffer returned")
     return DirectVectorCodec.readULongArray(__boltffi_result)
 }

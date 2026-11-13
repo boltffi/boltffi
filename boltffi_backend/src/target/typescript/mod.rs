@@ -1,5 +1,5 @@
 mod codec;
-mod name_style;
+pub(crate) mod name_style;
 mod primitive;
 mod render;
 mod syntax;
@@ -765,10 +765,10 @@ mod tests {
             .expect("browser module");
 
         [
-            "return ((_exports.boltffi_function_demo_echo_u32 as Function)(value) >>> 0);",
-            "return ((_exports.boltffi_function_demo_echo_usize as Function)(value) >>> 0);",
-            "return __boltffiAsUintN(64, (_exports.boltffi_function_demo_echo_u64 as Function)(value));",
-            "return (_exports.boltffi_function_demo_add as Function)(left, right);",
+            "return ((_exports.boltffi_function_4demo8echo_u32 as Function)(value) >>> 0);",
+            "return ((_exports.boltffi_function_4demo10echo_usize as Function)(value) >>> 0);",
+            "return __boltffiAsUintN(64, (_exports.boltffi_function_4demo8echo_u64 as Function)(value));",
+            "return (_exports.boltffi_function_4demo3add as Function)(left, right);",
         ]
         .into_iter()
         .for_each(|expected| assert!(module.contents().contains(expected), "missing {expected}"));
@@ -809,7 +809,7 @@ mod tests {
                 .contains("export function echoBool(value: boolean): boolean")
         );
         assert!(browser.contents().contains(
-            "return (_exports.boltffi_function_demo_echo_bool as Function)(value) !== 0;"
+            "return (_exports.boltffi_function_4demo9echo_bool as Function)(value) !== 0;"
         ));
         assert!(
             browser
@@ -838,7 +838,7 @@ mod tests {
                 .contains("const __boltffi_value_allocation = _module.allocOwnedString(value);")
         );
         assert!(browser.contents().contains(
-            "return _module.takePackedUtf8String((_exports.boltffi_function_demo_echo_string as Function)(__boltffi_value_allocation.ptr, __boltffi_value_allocation.len) as bigint);"
+            "return _module.takePackedUtf8String((_exports.boltffi_function_4demo11echo_string as Function)(__boltffi_value_allocation.ptr, __boltffi_value_allocation.len) as bigint);"
         ));
         assert_eq!(
             browser
@@ -855,7 +855,7 @@ mod tests {
         // The argument keeps its length prefix; the return does not need one,
         // since the packed value already carries the length.
         assert!(browser.contents().contains(
-            "return _module.takePackedBytes((_exports.boltffi_function_demo_echo_bytes as Function)(__boltffi_value_allocation.ptr, __boltffi_value_allocation.len) as bigint);"
+            "return _module.takePackedBytes((_exports.boltffi_function_4demo10echo_bytes as Function)(__boltffi_value_allocation.ptr, __boltffi_value_allocation.len) as bigint);"
         ));
         // A writable byte slice crosses as a direct vector: the pointer goes
         // unframed and the host copies back what the callee wrote. Framing it
@@ -908,7 +908,7 @@ mod tests {
                 .contains("export function echoOptionalI32(value: number | null): number | null")
         );
         assert!(browser.contents().contains(
-            "(_exports.boltffi_function_demo_echo_optional_i32 as Function)((value === null ? Number.NaN : value))"
+            "(_exports.boltffi_function_4demo17echo_optional_i32 as Function)((value === null ? Number.NaN : value))"
         ));
         assert!(browser.contents().contains(
             "export function resultToString(value: number | WireResult<number, string> | Error): string"
@@ -1002,7 +1002,7 @@ mod tests {
             )
         );
         assert!(contents.contains(
-            "(_exports.boltffi_stream_demo_event_bus_values_poll as Function)(subscription);"
+            "(_exports.boltffi_stream_4demo8EventBus6values_poll as Function)(subscription);"
         ));
         assert!(contents.contains("_module.streamManager,"));
         assert!(contents.contains("tuples(): AsyncIterable<[number, string]>;"));
@@ -1250,7 +1250,7 @@ mod tests {
             "const __boltffi_value_writer = _module.allocWriter(PointCodec.size(value));"
         ));
         assert!(browser.contents().contains(
-            "return _module.readPackedBuffer((_exports.boltffi_function_demo_echo_point"
+            "return _module.readPackedBuffer((_exports.boltffi_function_4demo10echo_point"
         ));
         assert!(
             browser
@@ -1722,12 +1722,12 @@ mod tests {
         let contents = browser.contents();
 
         assert!(
-            contents.contains("takePackedBytes((_exports.boltffi_function_demo_owned"),
+            contents.contains("takePackedBytes((_exports.boltffi_function_4demo5owned"),
             "an owned Vec<u8> return should skip the prefix",
         );
         for framed in [
-            "boltffi_function_demo_borrowed",
-            "boltffi_const_demo_constant",
+            "boltffi_function_4demo8borrowed",
+            "boltffi_const_4demo8CONSTANT",
         ] {
             assert!(
                 contents.contains(&format!("takePackedWireBytes((_exports.{framed}")),

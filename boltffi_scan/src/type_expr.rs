@@ -2,8 +2,8 @@ use std::num::NonZeroUsize;
 
 use boltffi_ast::{
     AdditionalBound, BaseTrait, BuiltinType, ConstExpr, CustomTypeId, FnSig, FnTrait, FnTraitKind,
-    GenericArgument, MapKind, NamePart, Path, PathRoot, PathSegment, Primitive, ReturnDef,
-    TraitBounds, TypeExpr,
+    GenericArgument, MapKind, NamePart, Path, PathRoot, PathSegment, Primitive, RecordId,
+    ReturnDef, TraitBounds, TraitId, TypeExpr,
 };
 use quote::ToTokens;
 
@@ -28,6 +28,10 @@ impl<'a> Scanner<'a> {
         self.scope
     }
 
+    pub(crate) fn is_deferred(&self) -> bool {
+        self.declared_types.is_deferred()
+    }
+
     pub fn scan(&self, ty: &syn::Type) -> Result<TypeExpr, ScanError> {
         let unwrapped = unwrapped(ty);
         if let Some(custom) = self.custom_remote(unwrapped)? {
@@ -37,7 +41,7 @@ impl<'a> Scanner<'a> {
             ));
         }
         match unwrapped {
-            syn::Type::BareFn(bare_fn) => self.bare_fn(bare_fn),
+            syn::Type::FnPtr(fn_ptr) => self.fn_ptr(fn_ptr),
             syn::Type::ImplTrait(impl_trait) => self.impl_trait(impl_trait, ty),
             syn::Type::Slice(slice) => self.slice(slice),
             syn::Type::Path(type_path) => self.path(type_path, ty),
@@ -163,6 +167,11 @@ impl<'a> Scanner<'a> {
         let Some(standard_type) = StandardType::from_leaf(&segment.ident.to_string()) else {
             return Ok(None);
         };
+        if self.declared_types.is_deferred() {
+            return Ok(standard_type
+                .accepts_path(&path_without_arguments(&type_path.path))
+                .then_some(standard_type));
+        }
         match self
             .declared_types
             .resolve_type_in_scope(self.scope, &type_path.path)?
@@ -193,6 +202,12 @@ impl<'a> Scanner<'a> {
             .iter()
             .any(|segment| !matches!(segment.arguments, syn::PathArguments::None))
         {
+            if let Some(index) = self.declared_types.defer_slot(&type_path.path) {
+                return Ok(TypeExpr::record(
+                    RecordId::new(format!("$slot:{index}")),
+                    ast_path_without_arguments(&type_path.path),
+                ));
+            }
             return Err(ScanError::unsupported_type(source));
         }
         let Some(segment) = type_path.path.segments.last() else {
@@ -209,6 +224,12 @@ impl<'a> Scanner<'a> {
             return Ok(TypeExpr::Primitive(primitive));
         }
         let path = ast_path(&type_path.path, self)?;
+        if let Some(index) = self.declared_types.defer_slot(&type_path.path) {
+            return Ok(TypeExpr::record(
+                RecordId::new(format!("$slot:{index}")),
+                path,
+            ));
+        }
         match self
             .declared_types
             .resolve_type_in_scope(self.scope, &type_path.path)?
@@ -305,7 +326,7 @@ impl<'a> Scanner<'a> {
         &self,
         bound: &syn::TraitBound,
     ) -> Result<Option<AdditionalBound>, ScanError> {
-        if !matches!(bound.modifier, syn::TraitBoundModifier::None)
+        if crate::unsupported::has_bound_modifier(bound)
             || bound.lifetimes.is_some()
             || closure_bound(bound).is_some()
             || bound
@@ -328,7 +349,7 @@ impl<'a> Scanner<'a> {
     }
 
     fn base_trait(&self, bound: &syn::TraitBound) -> Result<Option<BaseTrait>, ScanError> {
-        if !matches!(bound.modifier, syn::TraitBoundModifier::None) || bound.lifetimes.is_some() {
+        if crate::unsupported::has_bound_modifier(bound) || bound.lifetimes.is_some() {
             return Ok(None);
         }
         if let Some((kind, arguments)) = closure_bound(bound) {
@@ -347,6 +368,18 @@ impl<'a> Scanner<'a> {
             return Ok(None);
         }
         let path = ast_path(&bound.path, self)?;
+        if self.declared_types.is_deferred() {
+            if is_auto_trait_path(&bound.path) {
+                return Ok(None);
+            }
+            let Some(index) = self.declared_types.defer_trait_slot(&bound.path) else {
+                return Ok(None);
+            };
+            return Ok(Some(BaseTrait::Named {
+                id: TraitId::new(format!("$slot:{index}")),
+                path,
+            }));
+        }
         match self
             .declared_types
             .resolve_type_in_scope(self.scope, &bound.path)?
@@ -362,33 +395,33 @@ impl<'a> Scanner<'a> {
         }
     }
 
-    fn bare_fn(&self, bare_fn: &syn::TypeBareFn) -> Result<TypeExpr, ScanError> {
-        if bare_fn.lifetimes.is_some() {
+    fn fn_ptr(&self, fn_ptr: &syn::TypeFnPtr) -> Result<TypeExpr, ScanError> {
+        if fn_ptr.lifetimes.is_some() {
             return Err(crate::unsupported::feature(
                 UnsupportedFeature::HigherRankedFunctionPointer,
             ));
         }
-        if bare_fn.unsafety.is_some() {
+        if fn_ptr.unsafety.is_some() {
             return Err(crate::unsupported::feature(
                 UnsupportedFeature::UnsafeFunctionPointer,
             ));
         }
-        if bare_fn.abi.is_some() {
+        if fn_ptr.abi.is_some() {
             return Err(crate::unsupported::feature(
                 UnsupportedFeature::ExternFunctionPointer,
             ));
         }
-        if bare_fn.variadic.is_some() {
+        if fn_ptr.variadic.is_some() {
             return Err(crate::unsupported::feature(
                 UnsupportedFeature::VariadicFunctionPointer,
             ));
         }
-        let parameters = bare_fn
+        let parameters = fn_ptr
             .inputs
             .iter()
             .map(|argument| self.scan(&argument.ty))
             .collect::<Result<Vec<_>, _>>()?;
-        let returns = self.scan_return(&bare_fn.output)?;
+        let returns = self.scan_return(&fn_ptr.output)?;
         Ok(TypeExpr::fn_ptr(FnSig::new(parameters, returns)))
     }
 
@@ -400,7 +433,7 @@ impl<'a> Scanner<'a> {
         let parameters = arguments
             .inputs
             .iter()
-            .map(|input| self.scan(input))
+            .map(|input| self.scan(&input.ty))
             .collect::<Result<Vec<_>, _>>()?;
         let returns = self.scan_return(&arguments.output)?;
         Ok(FnTrait::new(kind, FnSig::new(parameters, returns)))
@@ -440,6 +473,14 @@ impl<'a> Scanner<'a> {
                 .any(|segment| !matches!(segment.arguments, syn::PathArguments::None))
         {
             return Err(ScanError::unsupported_type(source));
+        }
+        if let Some(index) = self.declared_types.defer_slot(&pool_path.path) {
+            return Ok(TypeExpr::interned_string(
+                interned_string_base_path(&type_path.path),
+                format!("$slot:{index}"),
+                ast_path_without_arguments(&pool_path.path),
+                Vec::new(),
+            ));
         }
         let (pool_canonical_path, static_values) = self
             .declared_types
@@ -500,6 +541,9 @@ impl<'a> Scanner<'a> {
     }
 
     fn custom_remote(&self, ty: &syn::Type) -> Result<Option<&CustomTypeId>, ScanError> {
+        if self.declared_types.is_deferred() {
+            return Ok(None);
+        }
         if self.can_resolve_custom_remote(ty)? {
             self.declared_types.resolve_custom_remote(self.scope, ty)
         } else {
@@ -540,6 +584,17 @@ pub fn unwrapped(ty: &syn::Type) -> &syn::Type {
 
 fn is_unit(ty: &syn::Type) -> bool {
     matches!(unwrapped(ty), syn::Type::Tuple(tuple) if tuple.elems.is_empty())
+}
+
+/// Whether a bound path names a well-known auto trait, which stays an
+/// additional bound instead of becoming a deferred base-trait slot.
+fn is_auto_trait_path(path: &syn::Path) -> bool {
+    path.segments.last().is_some_and(|segment| {
+        matches!(
+            segment.ident.to_string().as_str(),
+            "Send" | "Sync" | "Unpin"
+        )
+    })
 }
 
 fn ast_path(path: &syn::Path, scanner: &Scanner<'_>) -> Result<Path, ScanError> {
@@ -713,7 +768,7 @@ impl StandardType {
                 "alloc::collections::BTreeMap",
             ],
             Self::Box => &["Box", "std::boxed::Box", "alloc::boxed::Box"],
-            Self::Arc => &["std::sync::Arc", "alloc::sync::Arc"],
+            Self::Arc => &["Arc", "std::sync::Arc", "alloc::sync::Arc"],
             Self::Builtin(BuiltinType::Duration) => {
                 &["Duration", "std::time::Duration", "core::time::Duration"]
             }

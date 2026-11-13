@@ -21,14 +21,14 @@ public struct FfiError: Error {
 public func echoDuration(value: Double) -> Double {
     let boltffiValueBytes = boltffiEncode { boltffiValueWriter in boltffiValueWriter.writeDuration(value) }
     return boltffiValueBytes.withUnsafeBufferPointer { boltffiValueBuffer in
-        let boltffiResult = boltffi_function_demo_echo_duration(boltffiValueBuffer.baseAddress!, UInt(boltffiValueBuffer.count))
+        let boltffiResult = boltffi_function_4demo13echo_duration(boltffiValueBuffer.baseAddress!, UInt(boltffiValueBuffer.count))
         defer { boltffi_free_buf(boltffiResult) }
         return boltffiDecodeOwnedBuf(boltffiResult.ptr, Int(boltffiResult.len)) { boltffiReader in boltffiReader.readDuration() }
     }
 }
 
 public func makeDuration(seconds: UInt64, nanos: UInt32) -> Double {
-    let boltffiResult = boltffi_function_demo_make_duration(seconds, nanos)
+    let boltffiResult = boltffi_function_4demo13make_duration(seconds, nanos)
     defer { boltffi_free_buf(boltffiResult) }
     return boltffiDecodeOwnedBuf(boltffiResult.ptr, Int(boltffiResult.len)) { boltffiReader in boltffiReader.readDuration() }
 }
@@ -36,14 +36,14 @@ public func makeDuration(seconds: UInt64, nanos: UInt32) -> Double {
 public func durationAsMillis(value: Double) -> UInt64 {
     let boltffiValueBytes = boltffiEncode { boltffiValueWriter in boltffiValueWriter.writeDuration(value) }
     return boltffiValueBytes.withUnsafeBufferPointer { boltffiValueBuffer in
-        return boltffi_function_demo_duration_as_millis(boltffiValueBuffer.baseAddress!, UInt(boltffiValueBuffer.count))
+        return boltffi_function_4demo18duration_as_millis(boltffiValueBuffer.baseAddress!, UInt(boltffiValueBuffer.count))
     }
 }
 
 public func echoSystemTime(value: Date) -> Date {
     let boltffiValueBytes = boltffiEncode { boltffiValueWriter in boltffiValueWriter.writeTimestamp(value) }
     return boltffiValueBytes.withUnsafeBufferPointer { boltffiValueBuffer in
-        let boltffiResult = boltffi_function_demo_echo_system_time(boltffiValueBuffer.baseAddress!, UInt(boltffiValueBuffer.count))
+        let boltffiResult = boltffi_function_4demo16echo_system_time(boltffiValueBuffer.baseAddress!, UInt(boltffiValueBuffer.count))
         defer { boltffi_free_buf(boltffiResult) }
         return boltffiDecodeOwnedBuf(boltffiResult.ptr, Int(boltffiResult.len)) { boltffiReader in boltffiReader.readTimestamp() }
     }
@@ -52,12 +52,12 @@ public func echoSystemTime(value: Date) -> Date {
 public func systemTimeToMillis(value: Date) -> UInt64 {
     let boltffiValueBytes = boltffiEncode { boltffiValueWriter in boltffiValueWriter.writeTimestamp(value) }
     return boltffiValueBytes.withUnsafeBufferPointer { boltffiValueBuffer in
-        return boltffi_function_demo_system_time_to_millis(boltffiValueBuffer.baseAddress!, UInt(boltffiValueBuffer.count))
+        return boltffi_function_4demo21system_time_to_millis(boltffiValueBuffer.baseAddress!, UInt(boltffiValueBuffer.count))
     }
 }
 
 public func millisToSystemTime(value: UInt64) -> Date {
-    let boltffiResult = boltffi_function_demo_millis_to_system_time(value)
+    let boltffiResult = boltffi_function_4demo21millis_to_system_time(value)
     defer { boltffi_free_buf(boltffiResult) }
     return boltffiDecodeOwnedBuf(boltffiResult.ptr, Int(boltffiResult.len)) { boltffiReader in boltffiReader.readTimestamp() }
 }
@@ -65,7 +65,7 @@ public func millisToSystemTime(value: UInt64) -> Date {
 public func echoUuid(value: UUID) -> UUID {
     let boltffiValueBytes = boltffiEncode { boltffiValueWriter in boltffiValueWriter.writeUuid(value) }
     return boltffiValueBytes.withUnsafeBufferPointer { boltffiValueBuffer in
-        let boltffiResult = boltffi_function_demo_echo_uuid(boltffiValueBuffer.baseAddress!, UInt(boltffiValueBuffer.count))
+        let boltffiResult = boltffi_function_4demo9echo_uuid(boltffiValueBuffer.baseAddress!, UInt(boltffiValueBuffer.count))
         defer { boltffi_free_buf(boltffiResult) }
         return boltffiDecodeOwnedBuf(boltffiResult.ptr, Int(boltffiResult.len)) { boltffiReader in boltffiReader.readUuid() }
     }
@@ -74,7 +74,7 @@ public func echoUuid(value: UUID) -> UUID {
 public func uuidToString(value: UUID) -> String {
     let boltffiValueBytes = boltffiEncode { boltffiValueWriter in boltffiValueWriter.writeUuid(value) }
     return boltffiValueBytes.withUnsafeBufferPointer { boltffiValueBuffer in
-        let boltffiResult = boltffi_function_demo_uuid_to_string(boltffiValueBuffer.baseAddress!, UInt(boltffiValueBuffer.count))
+        let boltffiResult = boltffi_function_4demo14uuid_to_string(boltffiValueBuffer.baseAddress!, UInt(boltffiValueBuffer.count))
         defer { boltffi_free_buf(boltffiResult) }
         return boltffiDecodeOwnedBuf(boltffiResult.ptr, Int(boltffiResult.len)) { boltffiReader in boltffiReader.readString() }
     }
@@ -83,7 +83,7 @@ public func uuidToString(value: UUID) -> String {
 public func echoUrl(value: URL) -> URL {
     let boltffiValueBytes = boltffiEncode { boltffiValueWriter in boltffiValueWriter.writeUrl(value) }
     return boltffiValueBytes.withUnsafeBufferPointer { boltffiValueBuffer in
-        let boltffiResult = boltffi_function_demo_echo_url(boltffiValueBuffer.baseAddress!, UInt(boltffiValueBuffer.count))
+        let boltffiResult = boltffi_function_4demo8echo_url(boltffiValueBuffer.baseAddress!, UInt(boltffiValueBuffer.count))
         defer { boltffi_free_buf(boltffiResult) }
         return boltffiDecodeOwnedBuf(boltffiResult.ptr, Int(boltffiResult.len)) { boltffiReader in boltffiReader.readUrl() }
     }
@@ -92,7 +92,7 @@ public func echoUrl(value: URL) -> URL {
 public func urlToString(value: URL) -> String {
     let boltffiValueBytes = boltffiEncode { boltffiValueWriter in boltffiValueWriter.writeUrl(value) }
     return boltffiValueBytes.withUnsafeBufferPointer { boltffiValueBuffer in
-        let boltffiResult = boltffi_function_demo_url_to_string(boltffiValueBuffer.baseAddress!, UInt(boltffiValueBuffer.count))
+        let boltffiResult = boltffi_function_4demo13url_to_string(boltffiValueBuffer.baseAddress!, UInt(boltffiValueBuffer.count))
         defer { boltffi_free_buf(boltffiResult) }
         return boltffiDecodeOwnedBuf(boltffiResult.ptr, Int(boltffiResult.len)) { boltffiReader in boltffiReader.readString() }
     }

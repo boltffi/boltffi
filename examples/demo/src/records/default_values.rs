@@ -23,7 +23,7 @@ custom_type!(
 #[derive(Clone, Debug, PartialEq)]
 pub struct RequestConfig {
     #[boltffi::default(1.5)]
-    pub timeout: chrono::TimeDelta,
+    pub timeout: Timeout,
 }
 
 #[demo_bench_macros::demo_case(

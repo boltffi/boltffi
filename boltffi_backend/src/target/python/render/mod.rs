@@ -710,7 +710,9 @@ impl<'bindings> Package<'bindings> {
             .and_then(|scope| scope.insert_all(functions.iter().map(FunctionStub::top_level_name)))
             .map(|_| ())?;
 
-        records.iter().try_for_each(RecordClass::validate_names)?;
+        records
+            .iter()
+            .try_for_each(|record| record.validate_names(enums))?;
         enums.iter().try_for_each(EnumClass::validate_names)?;
         classes.iter().try_for_each(Class::validate_names)?;
         functions.iter().try_for_each(FunctionStub::validate_names)

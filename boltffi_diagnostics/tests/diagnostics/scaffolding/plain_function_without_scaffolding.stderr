@@ -1,0 +1,7 @@
+error[E0425]: cannot find type `__BoltffiTag` in the crate root
+ --> tests/diagnostics/scaffolding/plain_function_without_scaffolding.rs:1:1
+  |
+1 | #[boltffi::export]
+  | ^^^^^^^^^^^^^^^^^^ not found in the crate root
+  |
+  = note: this error originates in the attribute macro `boltffi::export` (in Nightly builds, run with -Z macro-backtrace for more info)

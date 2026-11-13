@@ -4,8 +4,8 @@ expression: "rendered_fixture(\"exports/string_functions\")"
 ---
 ===== jni/demo.h =====
 <c abi support declarations>
-FfiBuf_u8 boltffi_function_demo_echo_string(const uint8_t *message_ptr, uintptr_t message_len);
-FfiBuf_u8 boltffi_function_demo_echo_str(const uint8_t *message_ptr, uintptr_t message_len);
+FfiBuf_u8 boltffi_function_4demo11echo_string(const uint8_t *message_ptr, uintptr_t message_len);
+FfiBuf_u8 boltffi_function_4demo8echo_str(const uint8_t *message_ptr, uintptr_t message_len);
 
 ===== jni/jni_glue.c =====
 <jni source includes>
@@ -37,7 +37,7 @@ static bool boltffi_jni_direct_buffer_address(JNIEnv *env, jobject buffer, jlong
     return true;
 }
 
-JNIEXPORT jbyteArray JNICALL Java_com_boltffi_demo_Native_boltffi_1function_1demo_1echo_1string(JNIEnv *env, jclass cls, jobject message, jint __boltffi_message_len) {
+JNIEXPORT jbyteArray JNICALL Java_com_boltffi_demo_Native_boltffi_1function_14demo11echo_1string(JNIEnv *env, jclass cls, jobject message, jint __boltffi_message_len) {
     (void)cls;
 
     void *__boltffi_message_ptr = NULL;
@@ -47,14 +47,14 @@ JNIEXPORT jbyteArray JNICALL Java_com_boltffi_demo_Native_boltffi_1function_1dem
     }
 
     (void)env;
-    FfiBuf_u8 __boltffi_result = boltffi_function_demo_echo_string((const uint8_t *)__boltffi_message_ptr, (uintptr_t)__boltffi_message_len);
+    FfiBuf_u8 __boltffi_result = boltffi_function_4demo11echo_string((const uint8_t *)__boltffi_message_ptr, (uintptr_t)__boltffi_message_len);
 
     return boltffi_jni_buffer_to_byte_array(env, __boltffi_result);
 __boltffi_error:
     return NULL;
 }
 
-JNIEXPORT jbyteArray JNICALL Java_com_boltffi_demo_Native_boltffi_1function_1demo_1echo_1str(JNIEnv *env, jclass cls, jobject message, jint __boltffi_message_len) {
+JNIEXPORT jbyteArray JNICALL Java_com_boltffi_demo_Native_boltffi_1function_14demo8echo_1str(JNIEnv *env, jclass cls, jobject message, jint __boltffi_message_len) {
     (void)cls;
 
     void *__boltffi_message_ptr = NULL;
@@ -64,7 +64,7 @@ JNIEXPORT jbyteArray JNICALL Java_com_boltffi_demo_Native_boltffi_1function_1dem
     }
 
     (void)env;
-    FfiBuf_u8 __boltffi_result = boltffi_function_demo_echo_str((const uint8_t *)__boltffi_message_ptr, (uintptr_t)__boltffi_message_len);
+    FfiBuf_u8 __boltffi_result = boltffi_function_4demo8echo_str((const uint8_t *)__boltffi_message_ptr, (uintptr_t)__boltffi_message_len);
 
     return boltffi_jni_buffer_to_byte_array(env, __boltffi_result);
 __boltffi_error:

@@ -10,15 +10,15 @@ package com.boltffi.demo
 import kotlinx.coroutines.launch
 @Suppress("FunctionName")
 private object Native {
-    @JvmStatic external fun boltffi_release_class_demo_client(handle: Long): Unit
-    @JvmStatic external fun boltffi_init_class_demo_client_new(): Long
-    @JvmStatic external fun boltffi_init_class_demo_client_connect(port: Int): Long
-    @JvmStatic external fun boltffi_async_init_class_demo_client_connect_poll(handle: Long, callback_data: Long): Byte
-    @JvmStatic external fun boltffi_async_init_class_demo_client_connect_complete(handle: Long): Long
-    @JvmStatic external fun boltffi_async_init_class_demo_client_connect_cancel(handle: Long): Unit
-    @JvmStatic external fun boltffi_async_init_class_demo_client_connect_free(handle: Long): Unit
-    @JvmStatic external fun boltffi_async_init_class_demo_client_connect_panic_message(handle: Long): ByteArray?
-    @JvmStatic external fun boltffi_method_class_demo_client_port(`receiver`: Long): Int
+    @JvmStatic external fun boltffi_release_class_4demo6Client(handle: Long): Unit
+    @JvmStatic external fun boltffi_init_class_4demo6Client3new(): Long
+    @JvmStatic external fun boltffi_init_class_4demo6Client7connect(port: Int): Long
+    @JvmStatic external fun boltffi_async_init_class_4demo6Client7connect_poll(handle: Long, callback_data: Long): Byte
+    @JvmStatic external fun boltffi_async_init_class_4demo6Client7connect_complete(handle: Long): Long
+    @JvmStatic external fun boltffi_async_init_class_4demo6Client7connect_cancel(handle: Long): Unit
+    @JvmStatic external fun boltffi_async_init_class_4demo6Client7connect_free(handle: Long): Unit
+    @JvmStatic external fun boltffi_async_init_class_4demo6Client7connect_panic_message(handle: Long): ByteArray?
+    @JvmStatic external fun boltffi_method_class_4demo6Client4port(`receiver`: Long): Int
 
     @JvmStatic fun boltffiFutureContinuationCallback(handle: Long, pollResult: Byte) {
         BoltFfiAsync.resume(handle, pollResult)
@@ -30,7 +30,7 @@ class Client internal constructor(private val __boltffi_handle: java.util.concur
     override fun close() {
         val handle = __boltffi_handle.getAndSet(0L)
         if (handle != 0L) {
-            Native.boltffi_release_class_demo_client(handle)
+            Native.boltffi_release_class_4demo6Client(handle)
         }
     }
 
@@ -50,24 +50,24 @@ class Client internal constructor(private val __boltffi_handle: java.util.concur
 
     companion object {
         private fun new(): Client {
-            return Client(java.util.concurrent.atomic.AtomicLong(Native.boltffi_init_class_demo_client_new()))
+            return Client(java.util.concurrent.atomic.AtomicLong(Native.boltffi_init_class_4demo6Client3new()))
         }
         suspend fun connect(port: UInt): Client {
             return boltffiCallAsync(
                 createFuture = {
-                    Native.boltffi_init_class_demo_client_connect(port.toInt())
+                    Native.boltffi_init_class_4demo6Client7connect(port.toInt())
                 },
-                poll = { future, contHandle -> Native.boltffi_async_init_class_demo_client_connect_poll(future, contHandle) },
+                poll = { future, contHandle -> Native.boltffi_async_init_class_4demo6Client7connect_poll(future, contHandle) },
                 complete = { future ->
-                    Client(java.util.concurrent.atomic.AtomicLong(Native.boltffi_async_init_class_demo_client_connect_complete(future)))
+                    Client(java.util.concurrent.atomic.AtomicLong(Native.boltffi_async_init_class_4demo6Client7connect_complete(future)))
                 },
-                free = { future -> Native.boltffi_async_init_class_demo_client_connect_free(future) },
-                cancel = { future -> Native.boltffi_async_init_class_demo_client_connect_cancel(future) },
+                free = { future -> Native.boltffi_async_init_class_4demo6Client7connect_free(future) },
+                cancel = { future -> Native.boltffi_async_init_class_4demo6Client7connect_cancel(future) },
             )
         }
     }
 
     fun port(): UInt {
-        return Native.boltffi_method_class_demo_client_port(this.boltffiHandle()).toUInt()
+        return Native.boltffi_method_class_4demo6Client4port(this.boltffiHandle()).toUInt()
     }
 }

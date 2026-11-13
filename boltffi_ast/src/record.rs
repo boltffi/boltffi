@@ -23,14 +23,19 @@ pub struct RecordDef {
     /// `repr` attributes written on the struct.
     pub repr: ReprAttr,
     /// User attributes preserved from the struct.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub user_attrs: Vec<UserAttr>,
     /// Documentation attached to the record.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub doc: Option<DocComment>,
     /// Deprecation metadata attached to the record.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub deprecated: Option<DeprecationInfo>,
     /// Methods attached to the record.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub methods: Vec<crate::MethodDef>,
     /// Visibility and source location for diagnostics.
+    #[serde(default, skip_serializing_if = "Source::is_exported")]
     pub source: Source,
     /// Proc-macro span available while scanning the user crate.
     #[serde(default, skip_serializing, skip_deserializing)]
@@ -72,12 +77,16 @@ pub struct FieldDef {
     /// Rust source type written for the field.
     pub type_expr: TypeExpr,
     /// Documentation attached to the field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub doc: Option<DocComment>,
     /// Default value written for the field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default: Option<DefaultValue>,
     /// User attributes preserved from the field.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub user_attrs: Vec<UserAttr>,
     /// Visibility and source location for diagnostics.
+    #[serde(default, skip_serializing_if = "Source::is_exported")]
     pub source: Source,
     /// Proc-macro span available while scanning the user crate.
     #[serde(default, skip_serializing, skip_deserializing)]
@@ -101,5 +110,52 @@ impl FieldDef {
             source: Source::exported(),
             source_span: None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+    use crate::{CanonicalName, Visibility};
+
+    #[test]
+    fn serialized_field_omits_what_it_does_not_carry() {
+        let field = FieldDef::new(
+            SourceName::new("width", CanonicalName::single("width")),
+            TypeExpr::String,
+        );
+        let serialized = serde_json::to_value(&field).expect("field serializes");
+        assert_eq!(
+            serialized,
+            json!({ "name": { "spelling": "width" }, "type_expr": "String" }),
+            "absent documentation, default, attributes and public visibility are left out"
+        );
+        assert_eq!(
+            serde_json::from_value::<FieldDef>(serialized).expect("field deserializes"),
+            field,
+            "the omitted parts read back as written"
+        );
+    }
+
+    #[test]
+    fn serialized_field_keeps_a_visibility_that_is_not_public() {
+        let mut field = FieldDef::new(
+            SourceName::new("width", CanonicalName::single("width")),
+            TypeExpr::String,
+        );
+        field.source = Source::new(Visibility::Private, None);
+        let serialized = serde_json::to_value(&field).expect("field serializes");
+        assert_eq!(
+            serialized["source"],
+            json!({ "visibility": "Private" }),
+            "a private field says so"
+        );
+        assert_eq!(
+            serde_json::from_value::<FieldDef>(serialized).expect("field deserializes"),
+            field,
+            "the visibility is read back"
+        );
     }
 }

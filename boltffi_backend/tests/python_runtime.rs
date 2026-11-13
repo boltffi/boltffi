@@ -1,16 +1,3 @@
-//! Builds the rendered CPython extension and runs the package, so the shapes
-//! that only exist at runtime are asserted against a real interpreter.
-//!
-//! Transparent variants are the reason this harness exists: a conforming
-//! direct record's type is built by `PyType_FromSpecWithBases` during package
-//! import, and no amount of rendered-source matching shows whether the
-//! resulting type actually inherits its bases, survives the boxer, or
-//! deallocates cleanly once the python bases pull in their GC flag.
-//!
-//! Every external tool is optional: the test returns instead of failing when
-//! `cc`, `python3` or `python3-config` is missing, the way the C# and Java
-//! smoke tests treat `dotnet` and `javac`.
-
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -19,52 +6,16 @@ use std::{
 };
 
 use boltffi_ast::PackageInfo;
-use boltffi_backend::{GeneratedOutput, target::python::PythonCExtHost};
+use boltffi_backend::{Error, GeneratedOutput, target::python::PythonCExtHost};
 use boltffi_binding::{Bindings, Native, lower};
 
-/// Two enums share `Ping`, so the same payload carries a different tag in
-/// each — the reason the tag cannot live on the payload. `Ping` is direct
-/// (one fixed-width primitive) and `Note` is encoded, so both payload lanes
-/// are covered, alongside a wrapped scalar variant and `Unset`.
-const SOURCE: &str = r#"
-#[data]
-pub struct Ping {
-    sequence: u32,
-}
-
-#[data]
-pub struct Note {
-    body: String,
-}
-
-#[data]
-pub enum Envelope {
-    Unset,
-    #[boltffi::transparent]
-    Ping(Ping),
-    #[boltffi::transparent]
-    Note(Note),
-    Raw(String),
-}
-
-#[data]
-pub enum Reply {
-    #[boltffi::transparent]
-    Ping(Ping),
-    Ack,
-}
-
-#[export]
-pub fn echo_envelope(envelope: Envelope) -> Envelope {
-    envelope
-}
-"#;
+const SOURCE: &str = include_str!("fixtures/source/enums/transparent.rs");
 
 /// Exercises the package through the interpreter. Printing `ok` is the
 /// contract: a python-level assertion failure exits non-zero, and anything
 /// that silently skips the file would print nothing.
 const SCRIPT: &str = r#"
-import gc, pickle, sys
+import asyncio, gc, pickle, sys
 sys.path.insert(0, sys.argv[1])
 import demo
 
@@ -73,6 +24,26 @@ assert [c.__name__ for c in demo.Ping.__mro__] == ["Ping", "Envelope", "Reply", 
 assert [c.__name__ for c in demo.Note.__mro__] == ["Note", "Envelope", "object"], demo.Note.__mro__
 
 ping, note = demo.Ping(sequence=7), demo.Note(body="hi")
+assert demo.echo_envelope(ping) == ping
+assert demo.echo_envelope(note) == note
+values = [ping, note, demo.EnvelopeUnset(), demo.EnvelopeRaw("raw")]
+assert demo.echo_envelopes(values) == values
+assert demo.Envelope.new() == demo.Ping(sequence=7)
+assert demo.Envelope.new(13) == demo.Ping(sequence=13)
+assert demo.Envelope.default_step() == 3
+assert ping.offset() == 10
+assert ping.offset(2) == 9
+assert ping.reply_offset() == 18
+assert note.offset() == 3
+
+async def check_async():
+    assert await demo.Envelope.load() == demo.Ping(sequence=9)
+    assert await demo.Envelope.load(21) == demo.Ping(sequence=21)
+    assert await ping.async_offset() == 12
+    assert await ping.async_offset(4) == 11
+
+asyncio.run(check_async())
+
 assert isinstance(ping, demo.Envelope) and isinstance(ping, demo.Reply)
 assert isinstance(note, demo.Envelope) and not isinstance(note, demo.Reply)
 
@@ -161,13 +132,7 @@ fn python_package_runs_transparent_variants_against_the_interpreter() {
     let extension = root.join(native_module_path(&output));
     let package = extension.parent().expect("package directory").to_owned();
 
-    // The package dlopens the cdylib on import and resolves every symbol up
-    // front, so the extension needs a library to find. Nothing here calls an
-    // export, so empty definitions are enough.
-    let stub = root.join("stub.c");
-    let native = fs::read_to_string(&extension).expect("generated extension source");
-    fs::write(&stub, stub_library(&native)).expect("write stub source");
-    build_shared_library(&compiler, &stub, &package.join(cdylib_name()), &[]);
+    build_rust_library(&root, &package.join(cdylib_name()));
     build_shared_library(
         &compiler,
         &extension,
@@ -199,6 +164,34 @@ fn bindings(source: &str) -> Bindings<Native> {
     )
     .expect("source should scan");
     lower::<Native>(&source).expect("source should lower")
+}
+
+#[test]
+fn python_target_rejects_conflicting_transparent_members() {
+    [
+        "#[data(impl)] impl Reply { pub fn offset(&self, step: u32) -> u32 { step } }",
+        "#[data(impl)] impl Ping { pub fn offset(&self, step: u32) -> u32 { self.sequence + step } }",
+        "#[data(impl)] impl Envelope { pub fn sequence(&self) -> u32 { 0 } }",
+    ]
+    .into_iter()
+    .for_each(|conflict| {
+        let source = format!(
+            "{}\n{conflict}",
+            include_str!("fixtures/source/enums/transparent.rs")
+        );
+        let bindings = bindings(&source);
+        let error = PythonCExtHost::new()
+            .native_library("demo")
+            .into_target(&bindings)
+            .expect("Python target")
+            .render(&bindings)
+            .expect_err("conflicting inherited members must fail generation");
+        assert!(matches!(
+            error,
+            Error::PythonNameCollision { scope, .. }
+                if scope == "record `Ping`"
+        ));
+    });
 }
 
 /// The name of a tool on `PATH`, or `None` when it cannot be run.
@@ -249,31 +242,63 @@ fn native_module_path(output: &GeneratedOutput) -> PathBuf {
 }
 
 fn write_package(output: &GeneratedOutput, root: &Path) {
-    for file in output.files() {
+    output.files().iter().for_each(|file| {
         let path = root.join(file.path().as_path());
         fs::create_dir_all(path.parent().expect("generated file parent"))
             .expect("create package directory");
         fs::write(&path, file.contents()).expect("write generated file");
-    }
+    });
 }
 
-/// Empty definitions for every symbol the extension resolves out of the
-/// cdylib, read off the generated `dlsym` calls so the list cannot drift.
-fn stub_library(native: &str) -> String {
-    let mut symbols: Vec<&str> = native
-        .match_indices("dlsym(boltffi_python_library_handle, \"")
-        .filter_map(|(index, marker)| {
-            let rest = &native[index + marker.len()..];
-            rest.find('"').map(|end| &rest[..end])
-        })
-        .collect();
-    symbols.sort_unstable();
-    symbols.dedup();
-    assert!(!symbols.is_empty(), "the extension resolved no symbols");
-    symbols
-        .iter()
-        .map(|symbol| format!("void {symbol}(void) {{}}\n"))
-        .collect()
+fn build_rust_library(root: &Path, destination: &Path) {
+    let crate_directory = root.join("rust");
+    fs::create_dir_all(crate_directory.join("src")).expect("create Rust fixture directory");
+    let boltffi_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("workspace root")
+        .join("boltffi");
+    fs::write(
+        crate_directory.join("Cargo.toml"),
+        format!(
+            r#"[package]
+name = "demo"
+version = "0.0.0"
+edition = "2024"
+
+[workspace]
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+boltffi = {{ path = {path:?} }}
+"#,
+            path = boltffi_path.to_str().expect("UTF-8 fixture path"),
+        ),
+    )
+    .expect("write Rust fixture manifest");
+    fs::write(
+        crate_directory.join("src/lib.rs"),
+        format!("use boltffi::{{data, export}};\nboltffi::scaffolding!();\n{SOURCE}"),
+    )
+    .expect("write Rust fixture source");
+    let target_directory = root.join("target");
+    let build = Command::new(env!("CARGO"))
+        .args(["build", "--quiet", "--manifest-path"])
+        .arg(crate_directory.join("Cargo.toml"))
+        .env("CARGO_TARGET_DIR", &target_directory)
+        .output()
+        .expect("build Rust fixture");
+    assert!(
+        build.status.success(),
+        "Rust fixture failed to build:\n{}",
+        String::from_utf8_lossy(&build.stderr),
+    );
+    fs::copy(
+        target_directory.join("debug").join(cdylib_name()),
+        destination,
+    )
+    .expect("copy compiled Rust library into the generated package");
 }
 
 /// The library filename the generated package looks for, which it derives

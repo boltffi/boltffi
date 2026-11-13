@@ -37,7 +37,7 @@ public struct Response: Hashable, Equatable, Sendable {
 public func resultToString(value: Swift.Result<Int32, FfiError>) -> String {
     let boltffiValueBytes = boltffiEncode { boltffiValueWriter in boltffiValueWriter.writeResult(value, { boltffiValueWriter, boltffiValue0 in boltffiValueWriter.writeI32(boltffiValue0) }, { boltffiValueWriter, boltffiValue0 in boltffiValueWriter.writeString(boltffiValue0.message) }) }
     return boltffiValueBytes.withUnsafeBufferPointer { boltffiValueBuffer in
-        let boltffiResult = boltffi_function_demo_result_to_string(boltffiValueBuffer.baseAddress!, UInt(boltffiValueBuffer.count))
+        let boltffiResult = boltffi_function_4demo16result_to_string(boltffiValueBuffer.baseAddress!, UInt(boltffiValueBuffer.count))
         defer { boltffi_free_buf(boltffiResult) }
         return boltffiDecodeOwnedBuf(boltffiResult.ptr, Int(boltffiResult.len)) { boltffiReader in boltffiReader.readString() }
     }
@@ -46,7 +46,7 @@ public func resultToString(value: Swift.Result<Int32, FfiError>) -> String {
 public func echoResponse(response: Response) -> Response {
     let boltffiResponseBytes = boltffiEncode { boltffiResponseWriter in response.encode(to: &boltffiResponseWriter) }
     return boltffiResponseBytes.withUnsafeBufferPointer { boltffiResponseBuffer in
-        let boltffiResult = boltffi_function_demo_echo_response(boltffiResponseBuffer.baseAddress!, UInt(boltffiResponseBuffer.count))
+        let boltffiResult = boltffi_function_4demo13echo_response(boltffiResponseBuffer.baseAddress!, UInt(boltffiResponseBuffer.count))
         defer { boltffi_free_buf(boltffiResult) }
         return boltffiDecodeOwnedBuf(boltffiResult.ptr, Int(boltffiResult.len)) { boltffiReader in Response.decode(from: &boltffiReader) }
     }

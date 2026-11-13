@@ -79,7 +79,7 @@ private var boltffiChildVtable: ___ChildVTable = {
 
 private enum ChildBridge {
     private static let register: Void = {
-        boltffi_register_callback_demo_child(&boltffiChildVtable)
+        boltffi_register_callback_4demo5Child(&boltffiChildVtable)
     }()
     static func release(_ handle: BoltFFICallbackHandle) {
         guard handle.handle != 0,
@@ -104,7 +104,7 @@ private enum ChildBridge {
         }
         let wrapper = ChildWrapper(impl)
         let handle = UInt64(UInt(bitPattern: Unmanaged.passRetained(wrapper).toOpaque()))
-        return boltffi_create_callback_demo_child(handle)
+        return boltffi_create_callback_4demo5Child(handle)
     }
     static func wrap(_ handle: BoltFFICallbackHandle) -> any Child {
         _ = register
@@ -146,13 +146,13 @@ private var boltffiListenerVtable: ___ListenerVTable = {
 
 private enum ListenerBridge {
     private static let register: Void = {
-        boltffi_register_callback_demo_listener(&boltffiListenerVtable)
+        boltffi_register_callback_4demo8Listener(&boltffiListenerVtable)
     }()
 
     static func create(_ impl: Listener) -> BoltFFICallbackHandle {
         _ = register
         let wrapper = ListenerWrapper(impl)
         let handle = UInt64(UInt(bitPattern: Unmanaged.passRetained(wrapper).toOpaque()))
-        return boltffi_create_callback_demo_listener(handle)
+        return boltffi_create_callback_4demo8Listener(handle)
     }
 }

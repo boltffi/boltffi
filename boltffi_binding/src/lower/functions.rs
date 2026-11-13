@@ -25,6 +25,7 @@ pub fn lower<S: SurfaceLower>(
     index
         .functions()
         .iter()
+        .filter(|function| index.lowers(function.id.as_str()))
         .map(|function| lower_one::<S>(index, ids, allocator, function))
         .collect()
 }
@@ -377,7 +378,7 @@ mod tests {
     }
 
     #[test]
-    fn function_symbol_uses_function_lane_and_snake_path() {
+    fn function_symbol_uses_function_lane_and_length_prefixed_path() {
         let bindings = TestContract::new()
             .with_function(function("demo::nested::DoTheThing", "DoTheThing"))
             .lower_ok::<Native>();
@@ -385,7 +386,7 @@ mod tests {
 
         assert_eq!(
             function.symbol().name().as_str(),
-            "boltffi_function_demo_nested_do_the_thing"
+            "boltffi_function_4demo6nested10DoTheThing"
         );
     }
 
@@ -398,7 +399,7 @@ mod tests {
 
         assert_eq!(
             function.symbol().name().as_str(),
-            "boltffi_function_my_crate_add"
+            "boltffi_function_8my_crate3add"
         );
     }
 
@@ -412,7 +413,7 @@ mod tests {
 
         assert_eq!(
             function.symbol().name().as_str(),
-            "boltffi_function_demo_spin"
+            "boltffi_function_4demo4spin"
         );
         match function.callable().execution() {
             ExecutionDecl::Asynchronous(native::AsyncProtocol::PollHandle {
@@ -426,23 +427,23 @@ mod tests {
                 assert_eq!(handle, &native::HandleCarrier::U64);
                 assert_eq!(
                     poll.name().as_str(),
-                    "boltffi_async_function_demo_spin_poll"
+                    "boltffi_async_function_4demo4spin_poll"
                 );
                 assert_eq!(
                     complete.name().as_str(),
-                    "boltffi_async_function_demo_spin_complete"
+                    "boltffi_async_function_4demo4spin_complete"
                 );
                 assert_eq!(
                     cancel.name().as_str(),
-                    "boltffi_async_function_demo_spin_cancel"
+                    "boltffi_async_function_4demo4spin_cancel"
                 );
                 assert_eq!(
                     free.name().as_str(),
-                    "boltffi_async_function_demo_spin_free"
+                    "boltffi_async_function_4demo4spin_free"
                 );
                 assert_eq!(
                     panic_message.name().as_str(),
-                    "boltffi_async_function_demo_spin_panic_message"
+                    "boltffi_async_function_4demo4spin_panic_message"
                 );
             }
             other => panic!("expected native PollHandle protocol, got {other:?}"),
@@ -469,23 +470,23 @@ mod tests {
                 assert_eq!(handle, &wasm32::HandleCarrier::U32);
                 assert_eq!(
                     poll_sync.name().as_str(),
-                    "boltffi_async_function_demo_spin_poll_sync"
+                    "boltffi_async_function_4demo4spin_poll_sync"
                 );
                 assert_eq!(
                     complete.name().as_str(),
-                    "boltffi_async_function_demo_spin_complete"
+                    "boltffi_async_function_4demo4spin_complete"
                 );
                 assert_eq!(
                     cancel.name().as_str(),
-                    "boltffi_async_function_demo_spin_cancel"
+                    "boltffi_async_function_4demo4spin_cancel"
                 );
                 assert_eq!(
                     free.name().as_str(),
-                    "boltffi_async_function_demo_spin_free"
+                    "boltffi_async_function_4demo4spin_free"
                 );
                 assert_eq!(
                     panic_message.name().as_str(),
-                    "boltffi_async_function_demo_spin_panic_message"
+                    "boltffi_async_function_4demo4spin_panic_message"
                 );
             }
             other => panic!("expected wasm32 PollHandle protocol, got {other:?}"),
@@ -500,12 +501,12 @@ mod tests {
         let bindings = TestContract::new().with_function(spin).lower_ok::<Native>();
         let names = symbol_names(&bindings);
 
-        assert!(names.contains(&"boltffi_function_demo_spin"));
-        assert!(names.contains(&"boltffi_async_function_demo_spin_poll"));
-        assert!(names.contains(&"boltffi_async_function_demo_spin_complete"));
-        assert!(names.contains(&"boltffi_async_function_demo_spin_cancel"));
-        assert!(names.contains(&"boltffi_async_function_demo_spin_free"));
-        assert!(names.contains(&"boltffi_async_function_demo_spin_panic_message"));
+        assert!(names.contains(&"boltffi_function_4demo4spin"));
+        assert!(names.contains(&"boltffi_async_function_4demo4spin_poll"));
+        assert!(names.contains(&"boltffi_async_function_4demo4spin_complete"));
+        assert!(names.contains(&"boltffi_async_function_4demo4spin_cancel"));
+        assert!(names.contains(&"boltffi_async_function_4demo4spin_free"));
+        assert!(names.contains(&"boltffi_async_function_4demo4spin_panic_message"));
     }
 
     #[test]
@@ -701,8 +702,8 @@ mod tests {
         assert_eq!(
             symbol_names(&bindings),
             vec![
-                "boltffi_method_record_demo_point_free",
-                "boltffi_function_demo_point_free",
+                "boltffi_method_record_4demo5Point4free",
+                "boltffi_function_4demo5Point4free",
             ]
         );
     }

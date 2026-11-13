@@ -135,7 +135,7 @@ FfiBuf_u8 boltffi_buf_with_len(uintptr_t len);
 FfiBuf_u8 boltffi_callback_error(const uint8_t *message, uintptr_t length);
 FfiStatus boltffi_last_error_message(FfiString *out);
 void boltffi_clear_last_error(void);
-int32_t boltffi_function_demo_add(int32_t left, int32_t right);
+int32_t boltffi_function_4demo3add(int32_t left, int32_t right);
 
 #ifdef __cplusplus
 }
@@ -149,11 +149,11 @@ int32_t boltffi_function_demo_add(int32_t left, int32_t right);
 #endif
 
 #include "demo.h"
-JNIEXPORT jint JNICALL Java_com_boltffi_demo_Native_boltffi_1function_1demo_1add(JNIEnv *env, jclass cls, jint left, jint right) {
+JNIEXPORT jint JNICALL Java_com_boltffi_demo_Native_boltffi_1function_14demo3add(JNIEnv *env, jclass cls, jint left, jint right) {
     (void)cls;
 
     (void)env;
-    int32_t __boltffi_result = boltffi_function_demo_add(left, right);
+    int32_t __boltffi_result = boltffi_function_4demo3add(left, right);
 
     return (jint)__boltffi_result;
 }
@@ -164,9 +164,9 @@ JNIEXPORT jint JNICALL Java_com_boltffi_demo_Native_boltffi_1function_1demo_1add
 package com.boltffi.demo
 @Suppress("FunctionName")
 private object Native {
-    @JvmStatic external fun boltffi_function_demo_add(left: Int, right: Int): Int
+    @JvmStatic external fun boltffi_function_4demo3add(left: Int, right: Int): Int
 }
 
 fun add(left: Int, right: Int): Int {
-    return Native.boltffi_function_demo_add(left, right)
+    return Native.boltffi_function_4demo3add(left, right)
 }

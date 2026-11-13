@@ -1,0 +1,7 @@
+error: BoltFFI: owned class receiver cannot be represented in binding IR yet
+ --> tests/diagnostics/unsupported_signatures/owned_class_receiver.rs:8:1
+  |
+8 | #[boltffi::export]
+  | ^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the macro `::boltffi::__private::lane_resume` (in Nightly builds, run with -Z macro-backtrace for more info)

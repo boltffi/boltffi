@@ -1,0 +1,7 @@
+error: cannot find macro `char` in this scope
+ --> tests/diagnostics/unsupported_signatures/char_parameter.rs:3:13
+  |
+3 | pub fn f(a: char) -> char {
+  |             ^^^^
+  |
+  = note: `char` is in scope, but it is a builtin type, not a macro

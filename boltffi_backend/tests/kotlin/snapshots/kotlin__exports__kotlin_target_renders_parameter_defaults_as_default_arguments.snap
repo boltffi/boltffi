@@ -10,64 +10,64 @@ package com.boltffi.demo
 import kotlinx.coroutines.launch
 @Suppress("FunctionName")
 private object Native {
-    @JvmStatic external fun boltffi_init_record_demo_default_amount_with_scaled_value(value: Int): ByteArray?
-    @JvmStatic external fun boltffi_method_record_demo_default_amount_try_scaled_value(value: Int): ByteArray?
-    @JvmStatic external fun boltffi_method_record_demo_default_amount_offset(`receiver`: java.nio.ByteBuffer, step: Int): Int
-    @JvmStatic external fun boltffi_init_record_demo_named_amount_empty(): ByteArray?
-    @JvmStatic external fun boltffi_init_record_demo_named_amount_load(value: Int): Long
-    @JvmStatic external fun boltffi_async_init_record_demo_named_amount_load_poll(handle: Long, callback_data: Long): Byte
-    @JvmStatic external fun boltffi_async_init_record_demo_named_amount_load_complete(handle: Long): ByteArray?
-    @JvmStatic external fun boltffi_async_init_record_demo_named_amount_load_cancel(handle: Long): Unit
-    @JvmStatic external fun boltffi_async_init_record_demo_named_amount_load_free(handle: Long): Unit
-    @JvmStatic external fun boltffi_async_init_record_demo_named_amount_load_panic_message(handle: Long): ByteArray?
-    @JvmStatic external fun boltffi_init_record_demo_named_amount_with_value(value: Int): ByteArray?
-    @JvmStatic external fun boltffi_init_enum_demo_default_mode_with_mode(mode: Byte): Byte
-    @JvmStatic external fun boltffi_init_enum_demo_default_mode_new(mode: Byte): Byte
-    @JvmStatic external fun boltffi_init_enum_demo_default_mode_load(mode: Byte): Long
-    @JvmStatic external fun boltffi_async_init_enum_demo_default_mode_load_poll(handle: Long, callback_data: Long): Byte
-    @JvmStatic external fun boltffi_async_init_enum_demo_default_mode_load_complete(handle: Long): Byte
-    @JvmStatic external fun boltffi_async_init_enum_demo_default_mode_load_cancel(handle: Long): Unit
-    @JvmStatic external fun boltffi_async_init_enum_demo_default_mode_load_free(handle: Long): Unit
-    @JvmStatic external fun boltffi_async_init_enum_demo_default_mode_load_panic_message(handle: Long): ByteArray?
-    @JvmStatic external fun boltffi_method_enum_demo_default_mode_matches(`receiver`: Byte, mode: Byte): Boolean
-    @JvmStatic external fun boltffi_release_class_demo_server(handle: Long): Unit
-    @JvmStatic external fun boltffi_init_class_demo_server_new(port: Short): Long
-    @JvmStatic external fun boltffi_init_class_demo_server_start(port: Short, first: Long, second: Long): Long
-    @JvmStatic external fun boltffi_async_init_class_demo_server_start_poll(handle: Long, callback_data: Long): Byte
-    @JvmStatic external fun boltffi_async_init_class_demo_server_start_complete(handle: Long): Long
-    @JvmStatic external fun boltffi_async_init_class_demo_server_start_cancel(handle: Long): Unit
-    @JvmStatic external fun boltffi_async_init_class_demo_server_start_free(handle: Long): Unit
-    @JvmStatic external fun boltffi_async_init_class_demo_server_start_panic_message(handle: Long): ByteArray?
-    @JvmStatic external fun boltffi_method_class_demo_server_port(`receiver`: Long, mapped: Boolean): Short
-    @JvmStatic external fun boltffi_release_class_demo_default_counter(handle: Long): Unit
-    @JvmStatic external fun boltffi_init_class_demo_default_counter_from_text(value: java.nio.ByteBuffer, __boltffi_value_len: Int): Long
-    @JvmStatic external fun boltffi_init_class_demo_default_counter_new(start: Int): Long
-    @JvmStatic external fun boltffi_init_class_demo_default_counter_with_offset(start: Int, offset: Int): Long
-    @JvmStatic external fun boltffi_method_class_demo_default_counter_offset(`receiver`: Long, step: Int): Int
-    @JvmStatic external fun boltffi_method_class_demo_default_counter_sum(left: Int, right: Int): Int
-    @JvmStatic external fun boltffi_method_class_demo_default_counter_async_offset(`receiver`: Long, step: Int): Long
-    @JvmStatic external fun boltffi_async_method_class_demo_default_counter_async_offset_poll(handle: Long, callback_data: Long): Byte
-    @JvmStatic external fun boltffi_async_method_class_demo_default_counter_async_offset_complete(handle: Long): Int
-    @JvmStatic external fun boltffi_async_method_class_demo_default_counter_async_offset_cancel(handle: Long): Unit
-    @JvmStatic external fun boltffi_async_method_class_demo_default_counter_async_offset_free(handle: Long): Unit
-    @JvmStatic external fun boltffi_async_method_class_demo_default_counter_async_offset_panic_message(handle: Long): ByteArray?
-    @JvmStatic external fun boltffi_function_demo_greet(name: java.nio.ByteBuffer, __boltffi_name_len: Int, greeting: java.nio.ByteBuffer, __boltffi_greeting_len: Int, times: Int, offset: Long, shout: Boolean, ratio: Float, mode: Byte, suffix: java.nio.ByteBuffer, __boltffi_suffix_len: Int, limit: java.nio.ByteBuffer, __boltffi_limit_len: Int): ByteArray?
-    @JvmStatic external fun boltffi_function_demo_format_defaults(name: java.nio.ByteBuffer, __boltffi_name_len: Int, greeting: java.nio.ByteBuffer, __boltffi_greeting_len: Int, enabled: Boolean, ratio: Float, mode: Byte, weight: java.nio.ByteBuffer, __boltffi_weight_len: Int, handler: Long): ByteArray?
-    @JvmStatic external fun boltffi_function_demo_async_default(value: Int): Long
-    @JvmStatic external fun boltffi_async_function_demo_async_default_poll(handle: Long, callback_data: Long): Byte
-    @JvmStatic external fun boltffi_async_function_demo_async_default_complete(handle: Long): Int
-    @JvmStatic external fun boltffi_async_function_demo_async_default_cancel(handle: Long): Unit
-    @JvmStatic external fun boltffi_async_function_demo_async_default_free(handle: Long): Unit
-    @JvmStatic external fun boltffi_async_function_demo_async_default_panic_message(handle: Long): ByteArray?
-    @JvmStatic external fun boltffi_function_demo_apply_optional_closure(value: Int, callback: Long): Int
-    @JvmStatic external fun boltffi_function_demo_default_amount(amount: java.nio.ByteBuffer, __boltffi_amount_len: Int): ByteArray?
-    @JvmStatic external fun boltffi_function_demo_span(start: Long, end: Long): Long
-    @JvmStatic external fun boltffi_function_demo_throttle(limit: java.nio.ByteBuffer, __boltffi_limit_len: Int): ByteArray?
-    @JvmStatic external fun boltffi_function_demo_default_float_bits(value: Float): Int
-    @JvmStatic external fun boltffi_function_demo_default_double_bits(value: Double): Long
-    @JvmStatic external fun boltffi_function_demo_default_email(email: java.nio.ByteBuffer, __boltffi_email_len: Int): ByteArray?
-    @JvmStatic external fun boltffi_function_demo_default_identifier(identifier: java.nio.ByteBuffer, __boltffi_identifier_len: Int): ByteArray?
-    @JvmStatic external fun boltffi_function_demo_default_optional_email(email: java.nio.ByteBuffer, __boltffi_email_len: Int): ByteArray?
+    @JvmStatic external fun boltffi_init_record_4demo13DefaultAmount17with_scaled_value(value: Int): ByteArray?
+    @JvmStatic external fun boltffi_method_record_4demo13DefaultAmount16try_scaled_value(value: Int): ByteArray?
+    @JvmStatic external fun boltffi_method_record_4demo13DefaultAmount6offset(`receiver`: java.nio.ByteBuffer, step: Int): Int
+    @JvmStatic external fun boltffi_init_record_4demo11NamedAmount5empty(): ByteArray?
+    @JvmStatic external fun boltffi_init_record_4demo11NamedAmount4load(value: Int): Long
+    @JvmStatic external fun boltffi_async_init_record_4demo11NamedAmount4load_poll(handle: Long, callback_data: Long): Byte
+    @JvmStatic external fun boltffi_async_init_record_4demo11NamedAmount4load_complete(handle: Long): ByteArray?
+    @JvmStatic external fun boltffi_async_init_record_4demo11NamedAmount4load_cancel(handle: Long): Unit
+    @JvmStatic external fun boltffi_async_init_record_4demo11NamedAmount4load_free(handle: Long): Unit
+    @JvmStatic external fun boltffi_async_init_record_4demo11NamedAmount4load_panic_message(handle: Long): ByteArray?
+    @JvmStatic external fun boltffi_init_record_4demo11NamedAmount10with_value(value: Int): ByteArray?
+    @JvmStatic external fun boltffi_init_enum_4demo11DefaultMode9with_mode(mode: Byte): Byte
+    @JvmStatic external fun boltffi_init_enum_4demo11DefaultMode3new(mode: Byte): Byte
+    @JvmStatic external fun boltffi_init_enum_4demo11DefaultMode4load(mode: Byte): Long
+    @JvmStatic external fun boltffi_async_init_enum_4demo11DefaultMode4load_poll(handle: Long, callback_data: Long): Byte
+    @JvmStatic external fun boltffi_async_init_enum_4demo11DefaultMode4load_complete(handle: Long): Byte
+    @JvmStatic external fun boltffi_async_init_enum_4demo11DefaultMode4load_cancel(handle: Long): Unit
+    @JvmStatic external fun boltffi_async_init_enum_4demo11DefaultMode4load_free(handle: Long): Unit
+    @JvmStatic external fun boltffi_async_init_enum_4demo11DefaultMode4load_panic_message(handle: Long): ByteArray?
+    @JvmStatic external fun boltffi_method_enum_4demo11DefaultMode7matches(`receiver`: Byte, mode: Byte): Boolean
+    @JvmStatic external fun boltffi_release_class_4demo6Server(handle: Long): Unit
+    @JvmStatic external fun boltffi_init_class_4demo6Server3new(port: Short): Long
+    @JvmStatic external fun boltffi_init_class_4demo6Server5start(port: Short, first: Long, second: Long): Long
+    @JvmStatic external fun boltffi_async_init_class_4demo6Server5start_poll(handle: Long, callback_data: Long): Byte
+    @JvmStatic external fun boltffi_async_init_class_4demo6Server5start_complete(handle: Long): Long
+    @JvmStatic external fun boltffi_async_init_class_4demo6Server5start_cancel(handle: Long): Unit
+    @JvmStatic external fun boltffi_async_init_class_4demo6Server5start_free(handle: Long): Unit
+    @JvmStatic external fun boltffi_async_init_class_4demo6Server5start_panic_message(handle: Long): ByteArray?
+    @JvmStatic external fun boltffi_method_class_4demo6Server4port(`receiver`: Long, mapped: Boolean): Short
+    @JvmStatic external fun boltffi_release_class_4demo14DefaultCounter(handle: Long): Unit
+    @JvmStatic external fun boltffi_init_class_4demo14DefaultCounter9from_text(value: java.nio.ByteBuffer, __boltffi_value_len: Int): Long
+    @JvmStatic external fun boltffi_init_class_4demo14DefaultCounter3new(start: Int): Long
+    @JvmStatic external fun boltffi_init_class_4demo14DefaultCounter11with_offset(start: Int, offset: Int): Long
+    @JvmStatic external fun boltffi_method_class_4demo14DefaultCounter6offset(`receiver`: Long, step: Int): Int
+    @JvmStatic external fun boltffi_method_class_4demo14DefaultCounter3sum(left: Int, right: Int): Int
+    @JvmStatic external fun boltffi_method_class_4demo14DefaultCounter12async_offset(`receiver`: Long, step: Int): Long
+    @JvmStatic external fun boltffi_async_method_class_4demo14DefaultCounter12async_offset_poll(handle: Long, callback_data: Long): Byte
+    @JvmStatic external fun boltffi_async_method_class_4demo14DefaultCounter12async_offset_complete(handle: Long): Int
+    @JvmStatic external fun boltffi_async_method_class_4demo14DefaultCounter12async_offset_cancel(handle: Long): Unit
+    @JvmStatic external fun boltffi_async_method_class_4demo14DefaultCounter12async_offset_free(handle: Long): Unit
+    @JvmStatic external fun boltffi_async_method_class_4demo14DefaultCounter12async_offset_panic_message(handle: Long): ByteArray?
+    @JvmStatic external fun boltffi_function_4demo5greet(name: java.nio.ByteBuffer, __boltffi_name_len: Int, greeting: java.nio.ByteBuffer, __boltffi_greeting_len: Int, times: Int, offset: Long, shout: Boolean, ratio: Float, mode: Byte, suffix: java.nio.ByteBuffer, __boltffi_suffix_len: Int, limit: java.nio.ByteBuffer, __boltffi_limit_len: Int): ByteArray?
+    @JvmStatic external fun boltffi_function_4demo15format_defaults(name: java.nio.ByteBuffer, __boltffi_name_len: Int, greeting: java.nio.ByteBuffer, __boltffi_greeting_len: Int, enabled: Boolean, ratio: Float, mode: Byte, weight: java.nio.ByteBuffer, __boltffi_weight_len: Int, handler: Long): ByteArray?
+    @JvmStatic external fun boltffi_function_4demo13async_default(value: Int): Long
+    @JvmStatic external fun boltffi_async_function_4demo13async_default_poll(handle: Long, callback_data: Long): Byte
+    @JvmStatic external fun boltffi_async_function_4demo13async_default_complete(handle: Long): Int
+    @JvmStatic external fun boltffi_async_function_4demo13async_default_cancel(handle: Long): Unit
+    @JvmStatic external fun boltffi_async_function_4demo13async_default_free(handle: Long): Unit
+    @JvmStatic external fun boltffi_async_function_4demo13async_default_panic_message(handle: Long): ByteArray?
+    @JvmStatic external fun boltffi_function_4demo22apply_optional_closure(value: Int, callback: Long): Int
+    @JvmStatic external fun boltffi_function_4demo14default_amount(amount: java.nio.ByteBuffer, __boltffi_amount_len: Int): ByteArray?
+    @JvmStatic external fun boltffi_function_4demo4span(start: Long, end: Long): Long
+    @JvmStatic external fun boltffi_function_4demo8throttle(limit: java.nio.ByteBuffer, __boltffi_limit_len: Int): ByteArray?
+    @JvmStatic external fun boltffi_function_4demo18default_float_bits(value: Float): Int
+    @JvmStatic external fun boltffi_function_4demo19default_double_bits(value: Double): Long
+    @JvmStatic external fun boltffi_function_4demo13default_email(email: java.nio.ByteBuffer, __boltffi_email_len: Int): ByteArray?
+    @JvmStatic external fun boltffi_function_4demo18default_identifier(identifier: java.nio.ByteBuffer, __boltffi_identifier_len: Int): ByteArray?
+    @JvmStatic external fun boltffi_function_4demo22default_optional_email(email: java.nio.ByteBuffer, __boltffi_email_len: Int): ByteArray?
 
     @JvmStatic fun boltffiFutureContinuationCallback(handle: Long, pollResult: Byte) {
         BoltFfiAsync.resume(handle, pollResult)
@@ -162,12 +162,12 @@ data class DefaultAmount(
         }
 
         fun withScaledValue(value: Int = 2): DefaultAmount {
-            val __boltffi_result = Native.boltffi_init_record_demo_default_amount_with_scaled_value(value) ?: throw IllegalStateException("null buffer returned")
+            val __boltffi_result = Native.boltffi_init_record_4demo13DefaultAmount17with_scaled_value(value) ?: throw IllegalStateException("null buffer returned")
             return DefaultAmount.fromByteArray(__boltffi_result)
         }
 
         fun tryScaledValue(value: Int = 2): DefaultAmount? {
-            val __boltffi_result = Native.boltffi_method_record_demo_default_amount_try_scaled_value(value) ?: throw IllegalStateException("null buffer returned")
+            val __boltffi_result = Native.boltffi_method_record_4demo13DefaultAmount16try_scaled_value(value) ?: throw IllegalStateException("null buffer returned")
             val __boltffi_reader = WireReader(__boltffi_result)
             return __boltffi_reader.readOptionalValue({ __boltffi_reader -> DefaultAmount.fromReader(__boltffi_reader) })
         }
@@ -175,7 +175,7 @@ data class DefaultAmount(
 
     fun offset(step: Int = 2): Int {
         val __boltffi_receiver = this.toDirectBuffer()
-        return Native.boltffi_method_record_demo_default_amount_offset(__boltffi_receiver, step)
+        return Native.boltffi_method_record_4demo13DefaultAmount6offset(__boltffi_receiver, step)
     }
 }
 
@@ -221,27 +221,27 @@ data class NamedAmount(
         }
 
         fun empty(): NamedAmount {
-            val __boltffi_result = Native.boltffi_init_record_demo_named_amount_empty() ?: throw IllegalStateException("null buffer returned")
+            val __boltffi_result = Native.boltffi_init_record_4demo11NamedAmount5empty() ?: throw IllegalStateException("null buffer returned")
             return NamedAmount.fromByteArray(__boltffi_result)
         }
 
         suspend fun load(value: Int = 6): NamedAmount {
             return boltffiCallAsync(
                 createFuture = {
-                    Native.boltffi_init_record_demo_named_amount_load(value)
+                    Native.boltffi_init_record_4demo11NamedAmount4load(value)
                 },
-                poll = { future, contHandle -> Native.boltffi_async_init_record_demo_named_amount_load_poll(future, contHandle) },
+                poll = { future, contHandle -> Native.boltffi_async_init_record_4demo11NamedAmount4load_poll(future, contHandle) },
                 complete = { future ->
-                    val __boltffi_result = Native.boltffi_async_init_record_demo_named_amount_load_complete(future) ?: throw IllegalStateException("null buffer returned")
+                    val __boltffi_result = Native.boltffi_async_init_record_4demo11NamedAmount4load_complete(future) ?: throw IllegalStateException("null buffer returned")
                     NamedAmount.fromByteArray(__boltffi_result)
                 },
-                free = { future -> Native.boltffi_async_init_record_demo_named_amount_load_free(future) },
-                cancel = { future -> Native.boltffi_async_init_record_demo_named_amount_load_cancel(future) },
+                free = { future -> Native.boltffi_async_init_record_4demo11NamedAmount4load_free(future) },
+                cancel = { future -> Native.boltffi_async_init_record_4demo11NamedAmount4load_cancel(future) },
             )
         }
 
         fun withValue(value: Int = 5): NamedAmount {
-            val __boltffi_result = Native.boltffi_init_record_demo_named_amount_with_value(value) ?: throw IllegalStateException("null buffer returned")
+            val __boltffi_result = Native.boltffi_init_record_4demo11NamedAmount10with_value(value) ?: throw IllegalStateException("null buffer returned")
             return NamedAmount.fromByteArray(__boltffi_result)
         }
     }
@@ -434,30 +434,30 @@ enum class DefaultMode(val value: Byte) {
             entries.first { it.value == value }
 
         fun withMode(mode: DefaultMode = DefaultMode.LOUD): DefaultMode {
-            return DefaultMode.fromValue(Native.boltffi_init_enum_demo_default_mode_with_mode(mode.value.toByte()))
+            return DefaultMode.fromValue(Native.boltffi_init_enum_4demo11DefaultMode9with_mode(mode.value.toByte()))
         }
 
         fun new(mode: DefaultMode = DefaultMode.QUIET): DefaultMode {
-            return DefaultMode.fromValue(Native.boltffi_init_enum_demo_default_mode_new(mode.value.toByte()))
+            return DefaultMode.fromValue(Native.boltffi_init_enum_4demo11DefaultMode3new(mode.value.toByte()))
         }
 
         suspend fun load(mode: DefaultMode = DefaultMode.QUIET): DefaultMode {
             return boltffiCallAsync(
                 createFuture = {
-                    Native.boltffi_init_enum_demo_default_mode_load(mode.value.toByte())
+                    Native.boltffi_init_enum_4demo11DefaultMode4load(mode.value.toByte())
                 },
-                poll = { future, contHandle -> Native.boltffi_async_init_enum_demo_default_mode_load_poll(future, contHandle) },
+                poll = { future, contHandle -> Native.boltffi_async_init_enum_4demo11DefaultMode4load_poll(future, contHandle) },
                 complete = { future ->
-                    DefaultMode.fromValue(Native.boltffi_async_init_enum_demo_default_mode_load_complete(future))
+                    DefaultMode.fromValue(Native.boltffi_async_init_enum_4demo11DefaultMode4load_complete(future))
                 },
-                free = { future -> Native.boltffi_async_init_enum_demo_default_mode_load_free(future) },
-                cancel = { future -> Native.boltffi_async_init_enum_demo_default_mode_load_cancel(future) },
+                free = { future -> Native.boltffi_async_init_enum_4demo11DefaultMode4load_free(future) },
+                cancel = { future -> Native.boltffi_async_init_enum_4demo11DefaultMode4load_cancel(future) },
             )
         }
     }
 
     fun matches(mode: DefaultMode = DefaultMode.QUIET): Boolean {
-        return Native.boltffi_method_enum_demo_default_mode_matches(this.value.toByte(), mode.value.toByte())
+        return Native.boltffi_method_enum_4demo11DefaultMode7matches(this.value.toByte(), mode.value.toByte())
     }
 }
 
@@ -562,7 +562,7 @@ class Server internal constructor(private val __boltffi_handle: java.util.concur
     override fun close() {
         val handle = __boltffi_handle.getAndSet(0L)
         if (handle != 0L) {
-            Native.boltffi_release_class_demo_server(handle)
+            Native.boltffi_release_class_4demo6Server(handle)
         }
     }
 
@@ -582,25 +582,25 @@ class Server internal constructor(private val __boltffi_handle: java.util.concur
 
     companion object {
         private fun new(port: UShort): Server {
-            return Server(java.util.concurrent.atomic.AtomicLong(Native.boltffi_init_class_demo_server_new(port.toShort())))
+            return Server(java.util.concurrent.atomic.AtomicLong(Native.boltffi_init_class_4demo6Server3new(port.toShort())))
         }
         suspend fun start(port: UShort, first: Handler? = null, second: Handler? = null): Server {
             return boltffiCallAsync(
                 createFuture = {
-                    Native.boltffi_init_class_demo_server_start(port.toShort(), first?.let { __boltffi_callback -> HandlerBridge.create(__boltffi_callback) } ?: 0L, second?.let { __boltffi_callback -> HandlerBridge.create(__boltffi_callback) } ?: 0L)
+                    Native.boltffi_init_class_4demo6Server5start(port.toShort(), first?.let { __boltffi_callback -> HandlerBridge.create(__boltffi_callback) } ?: 0L, second?.let { __boltffi_callback -> HandlerBridge.create(__boltffi_callback) } ?: 0L)
                 },
-                poll = { future, contHandle -> Native.boltffi_async_init_class_demo_server_start_poll(future, contHandle) },
+                poll = { future, contHandle -> Native.boltffi_async_init_class_4demo6Server5start_poll(future, contHandle) },
                 complete = { future ->
-                    Server(java.util.concurrent.atomic.AtomicLong(Native.boltffi_async_init_class_demo_server_start_complete(future)))
+                    Server(java.util.concurrent.atomic.AtomicLong(Native.boltffi_async_init_class_4demo6Server5start_complete(future)))
                 },
-                free = { future -> Native.boltffi_async_init_class_demo_server_start_free(future) },
-                cancel = { future -> Native.boltffi_async_init_class_demo_server_start_cancel(future) },
+                free = { future -> Native.boltffi_async_init_class_4demo6Server5start_free(future) },
+                cancel = { future -> Native.boltffi_async_init_class_4demo6Server5start_cancel(future) },
             )
         }
     }
 
     fun port(mapped: Boolean = false): UShort {
-        return Native.boltffi_method_class_demo_server_port(this.boltffiHandle(), mapped).toUShort()
+        return Native.boltffi_method_class_4demo6Server4port(this.boltffiHandle(), mapped).toUShort()
     }
 }
 
@@ -609,7 +609,7 @@ class DefaultCounter internal constructor(private val __boltffi_handle: java.uti
     override fun close() {
         val handle = __boltffi_handle.getAndSet(0L)
         if (handle != 0L) {
-            Native.boltffi_release_class_demo_default_counter(handle)
+            Native.boltffi_release_class_4demo14DefaultCounter(handle)
         }
     }
 
@@ -635,37 +635,37 @@ class DefaultCounter internal constructor(private val __boltffi_handle: java.uti
             val __boltffi_value_writer = __boltffi_value_wire.writer
             __boltffi_value_writer.writeString(value)
             try {
-                return DefaultCounter(java.util.concurrent.atomic.AtomicLong(Native.boltffi_init_class_demo_default_counter_from_text(__boltffi_value_wire.directBuffer(), __boltffi_value_wire.size())))
+                return DefaultCounter(java.util.concurrent.atomic.AtomicLong(Native.boltffi_init_class_4demo14DefaultCounter9from_text(__boltffi_value_wire.directBuffer(), __boltffi_value_wire.size())))
             } finally {
                 __boltffi_value_wire.close()
             }
         }
         private fun new(start: Int): DefaultCounter {
-            return DefaultCounter(java.util.concurrent.atomic.AtomicLong(Native.boltffi_init_class_demo_default_counter_new(start)))
+            return DefaultCounter(java.util.concurrent.atomic.AtomicLong(Native.boltffi_init_class_4demo14DefaultCounter3new(start)))
         }
         private fun withOffset(start: Int, offset: Int): DefaultCounter {
-            return DefaultCounter(java.util.concurrent.atomic.AtomicLong(Native.boltffi_init_class_demo_default_counter_with_offset(start, offset)))
+            return DefaultCounter(java.util.concurrent.atomic.AtomicLong(Native.boltffi_init_class_4demo14DefaultCounter11with_offset(start, offset)))
         }
         fun sum(left: Int = 1, right: Int = 2): Int {
-            return Native.boltffi_method_class_demo_default_counter_sum(left, right)
+            return Native.boltffi_method_class_4demo14DefaultCounter3sum(left, right)
         }
     }
 
     fun offset(step: Int = 1): Int {
-        return Native.boltffi_method_class_demo_default_counter_offset(this.boltffiHandle(), step)
+        return Native.boltffi_method_class_4demo14DefaultCounter6offset(this.boltffiHandle(), step)
     }
 
     suspend fun asyncOffset(step: Int = 3): Int {
         return boltffiCallAsync(
             createFuture = {
-                Native.boltffi_method_class_demo_default_counter_async_offset(this.boltffiHandle(), step)
+                Native.boltffi_method_class_4demo14DefaultCounter12async_offset(this.boltffiHandle(), step)
             },
-            poll = { future, contHandle -> Native.boltffi_async_method_class_demo_default_counter_async_offset_poll(future, contHandle) },
+            poll = { future, contHandle -> Native.boltffi_async_method_class_4demo14DefaultCounter12async_offset_poll(future, contHandle) },
             complete = { future ->
-                Native.boltffi_async_method_class_demo_default_counter_async_offset_complete(future)
+                Native.boltffi_async_method_class_4demo14DefaultCounter12async_offset_complete(future)
             },
-            free = { future -> Native.boltffi_async_method_class_demo_default_counter_async_offset_free(future) },
-            cancel = { future -> Native.boltffi_async_method_class_demo_default_counter_async_offset_cancel(future) },
+            free = { future -> Native.boltffi_async_method_class_4demo14DefaultCounter12async_offset_free(future) },
+            cancel = { future -> Native.boltffi_async_method_class_4demo14DefaultCounter12async_offset_cancel(future) },
         )
     }
 }
@@ -688,7 +688,7 @@ fun greet(name: String, greeting: String = "world", times: UInt = 3u, offset: Lo
     val __boltffi_limit_writer = __boltffi_limit_wire.writer
     __boltffi_limit_writer.writeOptionalU16(limit)
     try {
-        val __boltffi_result = Native.boltffi_function_demo_greet(__boltffi_name_wire.directBuffer(), __boltffi_name_wire.size(), __boltffi_greeting_wire.directBuffer(), __boltffi_greeting_wire.size(), times.toInt(), offset, shout, ratio, mode.value.toByte(), __boltffi_suffix_wire.directBuffer(), __boltffi_suffix_wire.size(), __boltffi_limit_wire.directBuffer(), __boltffi_limit_wire.size()) ?: throw IllegalStateException("null buffer returned")
+        val __boltffi_result = Native.boltffi_function_4demo5greet(__boltffi_name_wire.directBuffer(), __boltffi_name_wire.size(), __boltffi_greeting_wire.directBuffer(), __boltffi_greeting_wire.size(), times.toInt(), offset, shout, ratio, mode.value.toByte(), __boltffi_suffix_wire.directBuffer(), __boltffi_suffix_wire.size(), __boltffi_limit_wire.directBuffer(), __boltffi_limit_wire.size()) ?: throw IllegalStateException("null buffer returned")
         val __boltffi_reader = WireReader(__boltffi_result)
         return __boltffi_reader.readString()
     } finally {
@@ -710,7 +710,7 @@ fun formatDefaults(name: String, greeting: String = "hello", enabled: Boolean = 
     val __boltffi_weight_writer = __boltffi_weight_wire.writer
     __boltffi_weight_writer.writeOptionalF64(weight)
     try {
-        val __boltffi_result = Native.boltffi_function_demo_format_defaults(__boltffi_name_wire.directBuffer(), __boltffi_name_wire.size(), __boltffi_greeting_wire.directBuffer(), __boltffi_greeting_wire.size(), enabled, ratio, mode.value.toByte(), __boltffi_weight_wire.directBuffer(), __boltffi_weight_wire.size(), handler?.let { __boltffi_callback -> DefaultHandlerBridge.create(__boltffi_callback) } ?: 0L) ?: throw IllegalStateException("null buffer returned")
+        val __boltffi_result = Native.boltffi_function_4demo15format_defaults(__boltffi_name_wire.directBuffer(), __boltffi_name_wire.size(), __boltffi_greeting_wire.directBuffer(), __boltffi_greeting_wire.size(), enabled, ratio, mode.value.toByte(), __boltffi_weight_wire.directBuffer(), __boltffi_weight_wire.size(), handler?.let { __boltffi_callback -> DefaultHandlerBridge.create(__boltffi_callback) } ?: 0L) ?: throw IllegalStateException("null buffer returned")
         val __boltffi_reader = WireReader(__boltffi_result)
         return __boltffi_reader.readString()
     } finally {
@@ -723,19 +723,19 @@ fun formatDefaults(name: String, greeting: String = "hello", enabled: Boolean = 
 suspend fun asyncDefault(value: UInt = 9u): UInt {
     return boltffiCallAsync(
         createFuture = {
-            Native.boltffi_function_demo_async_default(value.toInt())
+            Native.boltffi_function_4demo13async_default(value.toInt())
         },
-        poll = { future, contHandle -> Native.boltffi_async_function_demo_async_default_poll(future, contHandle) },
+        poll = { future, contHandle -> Native.boltffi_async_function_4demo13async_default_poll(future, contHandle) },
         complete = { future ->
-            Native.boltffi_async_function_demo_async_default_complete(future).toUInt()
+            Native.boltffi_async_function_4demo13async_default_complete(future).toUInt()
         },
-        free = { future -> Native.boltffi_async_function_demo_async_default_free(future) },
-        cancel = { future -> Native.boltffi_async_function_demo_async_default_cancel(future) },
+        free = { future -> Native.boltffi_async_function_4demo13async_default_free(future) },
+        cancel = { future -> Native.boltffi_async_function_4demo13async_default_cancel(future) },
     )
 }
 
 fun applyOptionalClosure(value: Int, callback: ClosureI32ToI32? = null): Int {
-    return Native.boltffi_function_demo_apply_optional_closure(value, callback?.let { __boltffi_closure -> ClosureI32ToI32Callbacks.insert(__boltffi_closure) } ?: 0L)
+    return Native.boltffi_function_4demo22apply_optional_closure(value, callback?.let { __boltffi_closure -> ClosureI32ToI32Callbacks.insert(__boltffi_closure) } ?: 0L)
 }
 
 fun defaultAmount(amount: DefaultAmount = DefaultAmount(5)): DefaultAmount {
@@ -743,7 +743,7 @@ fun defaultAmount(amount: DefaultAmount = DefaultAmount(5)): DefaultAmount {
     val __boltffi_amount_writer = __boltffi_amount_wire.writer
     amount.writeTo(__boltffi_amount_writer)
     try {
-        val __boltffi_result = Native.boltffi_function_demo_default_amount(__boltffi_amount_wire.directBuffer(), __boltffi_amount_wire.size()) ?: throw IllegalStateException("null buffer returned")
+        val __boltffi_result = Native.boltffi_function_4demo14default_amount(__boltffi_amount_wire.directBuffer(), __boltffi_amount_wire.size()) ?: throw IllegalStateException("null buffer returned")
         val __boltffi_reader = WireReader(__boltffi_result)
         return DefaultAmount.fromReader(__boltffi_reader)
     } finally {
@@ -752,7 +752,7 @@ fun defaultAmount(amount: DefaultAmount = DefaultAmount(5)): DefaultAmount {
 }
 
 fun span(start: Long = Long.MIN_VALUE, end: ULong = 18446744073709551615uL): ULong {
-    return Native.boltffi_function_demo_span(start, end.toLong()).toULong()
+    return Native.boltffi_function_4demo4span(start, end.toLong()).toULong()
 }
 
 fun throttle(limit: UInt? = null): UInt? {
@@ -760,7 +760,7 @@ fun throttle(limit: UInt? = null): UInt? {
     val __boltffi_limit_writer = __boltffi_limit_wire.writer
     __boltffi_limit_writer.writeOptionalValue(limit, { __boltffi_limit_writer, __boltffi_value_0 -> __boltffi_limit_writer.writeU32(__boltffi_value_0) })
     try {
-        val __boltffi_result = Native.boltffi_function_demo_throttle(__boltffi_limit_wire.directBuffer(), __boltffi_limit_wire.size()) ?: throw IllegalStateException("null buffer returned")
+        val __boltffi_result = Native.boltffi_function_4demo8throttle(__boltffi_limit_wire.directBuffer(), __boltffi_limit_wire.size()) ?: throw IllegalStateException("null buffer returned")
         val __boltffi_reader = WireReader(__boltffi_result)
         return __boltffi_reader.readOptionalValue({ __boltffi_reader -> __boltffi_reader.readU32() })
     } finally {
@@ -769,11 +769,11 @@ fun throttle(limit: UInt? = null): UInt? {
 }
 
 fun defaultFloatBits(value: Float = -0.0f): UInt {
-    return Native.boltffi_function_demo_default_float_bits(value).toUInt()
+    return Native.boltffi_function_4demo18default_float_bits(value).toUInt()
 }
 
 fun defaultDoubleBits(value: Double = -0.0): ULong {
-    return Native.boltffi_function_demo_default_double_bits(value).toULong()
+    return Native.boltffi_function_4demo19default_double_bits(value).toULong()
 }
 
 fun defaultEmail(email: String = "mailto:ada@example.com"): String {
@@ -781,7 +781,7 @@ fun defaultEmail(email: String = "mailto:ada@example.com"): String {
     val __boltffi_email_writer = __boltffi_email_wire.writer
     __boltffi_email_writer.writeString(email)
     try {
-        val __boltffi_result = Native.boltffi_function_demo_default_email(__boltffi_email_wire.directBuffer(), __boltffi_email_wire.size()) ?: throw IllegalStateException("null buffer returned")
+        val __boltffi_result = Native.boltffi_function_4demo13default_email(__boltffi_email_wire.directBuffer(), __boltffi_email_wire.size()) ?: throw IllegalStateException("null buffer returned")
         val __boltffi_reader = WireReader(__boltffi_result)
         return __boltffi_reader.readString()
     } finally {
@@ -794,7 +794,7 @@ fun defaultIdentifier(identifier: String = "01234567-89ab-cdef-0123-456789abcdef
     val __boltffi_identifier_writer = __boltffi_identifier_wire.writer
     __boltffi_identifier_writer.writeString(identifier)
     try {
-        val __boltffi_result = Native.boltffi_function_demo_default_identifier(__boltffi_identifier_wire.directBuffer(), __boltffi_identifier_wire.size()) ?: throw IllegalStateException("null buffer returned")
+        val __boltffi_result = Native.boltffi_function_4demo18default_identifier(__boltffi_identifier_wire.directBuffer(), __boltffi_identifier_wire.size()) ?: throw IllegalStateException("null buffer returned")
         val __boltffi_reader = WireReader(__boltffi_result)
         return __boltffi_reader.readString()
     } finally {
@@ -807,7 +807,7 @@ fun defaultOptionalEmail(email: String? = "mailto:ada@example.com"): String? {
     val __boltffi_email_writer = __boltffi_email_wire.writer
     __boltffi_email_writer.writeOptionalValue(email, { __boltffi_email_writer, __boltffi_value_0 -> __boltffi_email_writer.writeString(__boltffi_value_0) })
     try {
-        val __boltffi_result = Native.boltffi_function_demo_default_optional_email(__boltffi_email_wire.directBuffer(), __boltffi_email_wire.size()) ?: throw IllegalStateException("null buffer returned")
+        val __boltffi_result = Native.boltffi_function_4demo22default_optional_email(__boltffi_email_wire.directBuffer(), __boltffi_email_wire.size()) ?: throw IllegalStateException("null buffer returned")
         val __boltffi_reader = WireReader(__boltffi_result)
         return __boltffi_reader.readOptionalValue({ __boltffi_reader -> __boltffi_reader.readString() })
     } finally {

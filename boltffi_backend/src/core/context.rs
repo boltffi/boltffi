@@ -2,9 +2,9 @@ use std::collections::BTreeSet;
 
 use boltffi_binding::{
     Bindings, CallbackDecl, CallbackId, CanonicalName, ClassDecl, ClassId, ConstantDecl,
-    ConstantId, ConstantOwner, CustomTypeDecl, CustomTypeId, DeclarationId, DeclarationRef,
-    EnumDecl, EnumId, FunctionDecl, FunctionId, RecordDecl, RecordId, StreamDecl, StreamId,
-    Surface,
+    ConstantId, ConstantOwner, CustomTypeDecl, CustomTypeId, DataEnumDecl, DeclarationId,
+    DeclarationRef, EnumDecl, EnumId, FunctionDecl, FunctionId, RecordDecl, RecordId, StreamDecl,
+    StreamId, Surface,
 };
 
 use crate::core::capabilities::BindingCapabilityAnalysis;
@@ -152,6 +152,13 @@ impl<'bindings, S: Surface> RenderContext<'bindings, S> {
         &self,
         id: RecordId,
     ) -> impl Iterator<Item = &'bindings CanonicalName> + '_ {
+        self.transparent_enums(id).map(DataEnumDecl::name)
+    }
+
+    pub(crate) fn transparent_enums(
+        &self,
+        id: RecordId,
+    ) -> impl Iterator<Item = &'bindings DataEnumDecl<S>> + '_ {
         self.bindings
             .decls()
             .iter()
@@ -166,7 +173,7 @@ impl<'bindings, S: Surface> RenderContext<'bindings, S> {
                             .iter()
                             .any(|variant| variant.transparent_payload() == Some(id)) =>
                 {
-                    Some(enumeration.name())
+                    Some(enumeration.as_ref())
                 }
                 _ => None,
             })
@@ -176,7 +183,7 @@ impl<'bindings, S: Surface> RenderContext<'bindings, S> {
     /// variant this render emits, i.e. whether its rendered type declares
     /// supertypes.
     pub fn is_transparent_payload(&self, id: RecordId) -> bool {
-        self.transparent_conformances(id).next().is_some()
+        self.transparent_enums(id).next().is_some()
     }
 
     /// Returns the function declaration with the given id.

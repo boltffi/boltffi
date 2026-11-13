@@ -361,6 +361,59 @@ fn kotlin_target_renders_transparent_enums_as_sealed_interfaces() {
     insta::assert_snapshot!(rendered_fixture("enums/transparent"));
 }
 
+#[test]
+fn kotlin_transparent_enums_compile_with_defaults_and_async_initializers() {
+    let Some(compiler) = kotlin_compiler() else {
+        return;
+    };
+    let source = format!(
+        "{}\n#[data(impl)] impl Reply {{
+            pub fn offset(&self, step: i32) -> i32 {{ step }}
+            pub fn async_offset(&self) -> u32 {{ 0 }}
+        }}",
+        fixture("enums/transparent"),
+    );
+    run_with_generated_kotlin(
+        &compiler,
+        "transparent",
+        super::files(&source),
+        "Transparent.kt",
+        include_str!("../fixtures/kotlin/transparent.kt"),
+    );
+}
+
+#[test]
+fn kotlin_target_rejects_conflicting_transparent_members() {
+    [
+        ("#[data(impl)] impl Reply { pub fn offset(&self, step: u32) -> u32 { step } }", "offset("),
+        ("#[data(impl)] impl Ping { pub fn offset(&self, step: u32) -> u32 { self.sequence + step } }", "offset("),
+        ("#[data(impl)] impl Envelope { pub fn inspect(&self, value: Ping) -> u32 { value.sequence } }
+          #[data(impl)] impl Reply { pub fn inspect(&self, value: Ping) -> u32 { value.sequence } }", "inspect("),
+        ("#[data(impl)] impl Envelope { pub fn inspect(&self, values: Vec<String>) -> u32 { values.len() as u32 } }
+          #[data(impl)] impl Reply { pub fn inspect(&self, values: Vec<Ping>) -> u32 { values.len() as u32 } }", "inspect("),
+        ("#[data(impl)] impl Envelope { pub fn wire_size(&self) -> u32 { 0 } }", "wireSize("),
+        ("#[data(impl)] impl Envelope { pub fn get_sequence(&self) -> u32 { 99 } }", "getSequence("),
+        ("#[data(impl)] impl Envelope { pub fn component1(&self) -> u32 { 99 } }", "component1("),
+        ("#[data(impl)] impl Envelope { pub fn copy(&self, sequence: u32) -> Self { Self::Ping(Ping { sequence }) } }", "copy("),
+    ]
+    .into_iter()
+    .for_each(|(conflict, name_prefix)| {
+        let source = format!("{}\n{conflict}", fixture("enums/transparent"));
+        let bindings = super::bindings(&source);
+        let error = KotlinHost::new("com.boltffi.demo", "Demo")
+            .expect("Kotlin host")
+            .into_target()
+            .expect("Kotlin target")
+            .render(&bindings)
+            .expect_err("conflicting inherited methods must fail generation");
+        assert!(matches!(
+            error,
+            Error::KotlinNameCollision { scope, name }
+                if scope == "Ping" && name.starts_with(name_prefix)
+        ));
+    });
+}
+
 /// A pruned transparent enum leaves no sealed interface behind, so the payload
 /// record must drop the conformance rather than name a supertype the file
 /// never declares. Both pruning routes are covered: the capability gate
@@ -446,6 +499,20 @@ fn kotlin_target_renders_map_values_through_shared_codec() {
 }
 
 #[test]
+fn kotlin_target_qualifies_maps_beside_a_class_named_map() {
+    let rendered = rendered_fixture("exports/class_named_map");
+
+    assert!(rendered.contains("class Map internal constructor"));
+    assert!(rendered.contains("kotlin.collections.Map<String, Int>"));
+    assert!(
+        rendered
+            .match_indices("Map<")
+            .all(|(index, _)| rendered[..index].ends_with("kotlin.collections.")),
+        "every map type is qualified, so an exported class named Map cannot shadow it"
+    );
+}
+
+#[test]
 fn kotlin_target_renders_tuples_through_shared_codec() {
     insta::assert_snapshot!(rendered_fixture("exports/tuple_functions"));
 }
@@ -467,7 +534,7 @@ fn kotlin_target_renders_class_handles_and_associated_callables() {
     assert!(rendered.contains("internal fun boltffiHandle(): Long {"));
     assert!(rendered.contains("check(handle != 0L) { \"Engine is closed\" }"));
     assert!(
-        rendered.contains("Native.boltffi_method_class_demo_engine_value(this.boltffiHandle())")
+        rendered.contains("Native.boltffi_method_class_4demo6Engine5value(this.boltffiHandle())")
     );
     assert!(!rendered.contains("this.handle"));
     assert!(rendered.contains("other.__boltffiTakeHandle()"));

@@ -8,11 +8,11 @@ typedef struct {
     int32_t x;
     int32_t y;
 } ___Point;
-void boltffi_release_class_demo_engine(uint64_t handle);
-uint64_t boltffi_init_class_demo_engine_new(uint64_t seed);
-uint32_t boltffi_method_class_demo_engine_version(void);
-uint32_t boltffi_method_class_demo_engine_score(uint64_t receiver, ___Point point);
-FfiStatus boltffi_method_class_demo_engine_advance(uint64_t receiver, uint32_t delta);
+void boltffi_release_class_4demo6Engine(uint64_t handle);
+uint64_t boltffi_init_class_4demo6Engine3new(uint64_t seed);
+uint32_t boltffi_method_class_4demo6Engine7version(void);
+uint32_t boltffi_method_class_4demo6Engine5score(uint64_t receiver, ___Point point);
+FfiStatus boltffi_method_class_4demo6Engine7advance(uint64_t receiver, uint32_t delta);
 
 ===== jni/jni_glue.c =====
 <jni source includes>
@@ -44,34 +44,34 @@ static bool boltffi_jni_direct_buffer_address(JNIEnv *env, jobject buffer, jlong
     return true;
 }
 
-JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1release_1class_1demo_1engine(JNIEnv *env, jclass cls, jlong handle) {
+JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1release_1class_14demo6Engine(JNIEnv *env, jclass cls, jlong handle) {
     (void)cls;
 
     (void)env;
-    boltffi_release_class_demo_engine(handle);
+    boltffi_release_class_4demo6Engine(handle);
 
     return;
 }
 
-JNIEXPORT jlong JNICALL Java_com_boltffi_demo_Native_boltffi_1init_1class_1demo_1engine_1new(JNIEnv *env, jclass cls, jlong seed) {
+JNIEXPORT jlong JNICALL Java_com_boltffi_demo_Native_boltffi_1init_1class_14demo6Engine3new(JNIEnv *env, jclass cls, jlong seed) {
     (void)cls;
 
     (void)env;
-    uint64_t __boltffi_result = boltffi_init_class_demo_engine_new(seed);
+    uint64_t __boltffi_result = boltffi_init_class_4demo6Engine3new(seed);
 
     return (jlong)__boltffi_result;
 }
 
-JNIEXPORT jint JNICALL Java_com_boltffi_demo_Native_boltffi_1method_1class_1demo_1engine_1version(JNIEnv *env, jclass cls) {
+JNIEXPORT jint JNICALL Java_com_boltffi_demo_Native_boltffi_1method_1class_14demo6Engine7version(JNIEnv *env, jclass cls) {
     (void)cls;
 
     (void)env;
-    uint32_t __boltffi_result = boltffi_method_class_demo_engine_version();
+    uint32_t __boltffi_result = boltffi_method_class_4demo6Engine7version();
 
     return (jint)__boltffi_result;
 }
 
-JNIEXPORT jint JNICALL Java_com_boltffi_demo_Native_boltffi_1method_1class_1demo_1engine_1score(JNIEnv *env, jclass cls, jlong receiver, jobject point) {
+JNIEXPORT jint JNICALL Java_com_boltffi_demo_Native_boltffi_1method_1class_14demo6Engine5score(JNIEnv *env, jclass cls, jlong receiver, jobject point) {
     (void)cls;
 
     void *__boltffi_point_ptr = NULL;
@@ -83,17 +83,17 @@ JNIEXPORT jint JNICALL Java_com_boltffi_demo_Native_boltffi_1method_1class_1demo
     memcpy(&__boltffi_point_value, __boltffi_point_ptr, sizeof(___Point));
 
     (void)env;
-    uint32_t __boltffi_result = boltffi_method_class_demo_engine_score(receiver, __boltffi_point_value);
+    uint32_t __boltffi_result = boltffi_method_class_4demo6Engine5score(receiver, __boltffi_point_value);
 
     return (jint)__boltffi_result;
 __boltffi_error:
     return 0;
 }
 
-JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1method_1class_1demo_1engine_1advance(JNIEnv *env, jclass cls, jlong receiver, jint delta) {
+JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1method_1class_14demo6Engine7advance(JNIEnv *env, jclass cls, jlong receiver, jint delta) {
     (void)cls;
 
-    FfiStatus __boltffi_status = boltffi_method_class_demo_engine_advance(receiver, delta);
+    FfiStatus __boltffi_status = boltffi_method_class_4demo6Engine7advance(receiver, delta);
 
     if (__boltffi_status.code != 0) {
         boltffi_jni_throw_status(env, __boltffi_status);

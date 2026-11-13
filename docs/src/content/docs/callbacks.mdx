@@ -511,7 +511,8 @@ Trait objects can be stored in class fields for later use. The target language o
 
 <CodeComparison
   title=""
-  rust={`pub struct Engine {
+  rust={`#[export]
+pub struct Engine {
     logger: Box<dyn Logger>,
 }
 

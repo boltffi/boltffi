@@ -1,3 +1,4 @@
+#[export]
 pub struct Ledger {
     balance: i64,
 }
@@ -13,6 +14,7 @@ impl Ledger {
     }
 }
 
+#[export]
 pub struct Tally {
     count: u64,
 }

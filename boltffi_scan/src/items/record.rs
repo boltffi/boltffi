@@ -17,6 +17,14 @@ pub fn scan(
     Ok(record)
 }
 
+pub(crate) fn scan_item(
+    item: &syn::ItemStruct,
+    scope: &ModuleScope,
+    declared_types: &DeclaredTypes,
+) -> Result<RecordDef, ScanError> {
+    build(item, scope, declared_types)
+}
+
 fn build(
     item: &syn::ItemStruct,
     scope: &ModuleScope,

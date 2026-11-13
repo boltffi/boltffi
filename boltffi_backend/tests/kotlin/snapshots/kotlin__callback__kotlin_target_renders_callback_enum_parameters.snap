@@ -8,7 +8,7 @@ expression: "rendered_fixture(\"callback/callback_enum_parameter\")"
 package com.boltffi.demo
 @Suppress("FunctionName")
 private object Native {
-    @JvmStatic external fun boltffi_function_demo_map_status(mapper: Long, status: Byte): Byte
+    @JvmStatic external fun boltffi_function_4demo10map_status(mapper: Long, status: Byte): Byte
 }
 
 
@@ -71,5 +71,5 @@ object StatusMapperBridge {
 }
 
 fun mapStatus(mapper: StatusMapper, status: Status): Status {
-    return Status.fromValue(Native.boltffi_function_demo_map_status(StatusMapperBridge.create(mapper), status.value.toByte()))
+    return Status.fromValue(Native.boltffi_function_4demo10map_status(StatusMapperBridge.create(mapper), status.value.toByte()))
 }

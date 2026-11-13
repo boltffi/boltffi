@@ -35,8 +35,10 @@ impl DocComment {
 #[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
 pub struct DeprecationInfo {
     /// Optional message supplied by the Rust author.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
     /// Optional version string supplied by the Rust author.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub since: Option<String>,
 }
 

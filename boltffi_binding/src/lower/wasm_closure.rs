@@ -19,12 +19,10 @@ pub fn incoming_registration(
 
 pub fn outgoing_registration(
     allocator: &mut SymbolAllocator,
-    closure: &FnSig,
 ) -> Result<wasm32::OutgoingClosureRegistration, LowerError> {
-    let signature = ClosureSignature::from_fn_signature(closure).symbol_part();
-    let group_id = allocator.next_group_id();
-    let call = export_symbol(allocator, group_id, &signature, "call")?;
-    let free = export_symbol(allocator, group_id, &signature, "free")?;
+    let stem = allocator.next_closure_stem();
+    let call = export_symbol(allocator, &stem, "call")?;
+    let free = export_symbol(allocator, &stem, "free")?;
     Ok(wasm32::OutgoingClosureRegistration::new(call, free))
 }
 
@@ -39,13 +37,10 @@ fn import_symbol(
 
 fn export_symbol(
     allocator: &mut SymbolAllocator,
-    group_id: u32,
-    signature: &str,
+    stem: &str,
     action: &str,
 ) -> Result<NativeSymbol, LowerError> {
-    allocator.mint(symbol::wasm_closure_export_name(
-        group_id, signature, action,
-    ))
+    allocator.mint(symbol::wasm_closure_export_name(stem, action))
 }
 
 #[cfg(test)]
@@ -81,22 +76,23 @@ mod tests {
     }
 
     #[test]
-    fn outgoing_registration_uses_closure_signature_export_names() {
-        let closure = closure(
-            vec![TypeExpr::Primitive(AstPrimitive::F64)],
-            ReturnDef::Void,
-        );
+    fn outgoing_registration_names_exports_after_the_owning_callable() {
         let mut allocator = SymbolAllocator::new();
-        let registration =
-            outgoing_registration(&mut allocator, &closure).expect("valid closure registration");
+        allocator.enter_callable("boltffi_function_4demo9make_adder");
+        let first = outgoing_registration(&mut allocator).expect("valid closure registration");
+        let second = outgoing_registration(&mut allocator).expect("valid closure registration");
 
         assert_eq!(
-            registration.call().name().as_str(),
-            "boltffi_closure_0____closure__f64_call"
+            first.call().name().as_str(),
+            "boltffi_closure_function_4demo9make_adder_0_call"
         );
         assert_eq!(
-            registration.free().name().as_str(),
-            "boltffi_closure_0____closure__f64_free"
+            first.free().name().as_str(),
+            "boltffi_closure_function_4demo9make_adder_0_free"
+        );
+        assert_eq!(
+            second.call().name().as_str(),
+            "boltffi_closure_function_4demo9make_adder_1_call"
         );
     }
 }

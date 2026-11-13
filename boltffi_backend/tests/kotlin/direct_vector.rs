@@ -21,20 +21,21 @@ fn kotlin_target_preserves_unsigned_primitive_vector_arrays() {
     assert!(rendered.contains("fun echoU64(values: ULongArray): ULongArray"));
     assert!(
         rendered.contains(
-            "external fun boltffi_function_demo_echo_u16(values: ShortArray): ByteArray?"
+            "external fun boltffi_function_4demo8echo_u16(values: ShortArray): ByteArray?"
         )
     );
     assert!(
         rendered
-            .contains("external fun boltffi_function_demo_echo_u32(values: IntArray): ByteArray?")
+            .contains("external fun boltffi_function_4demo8echo_u32(values: IntArray): ByteArray?")
     );
     assert!(
-        rendered
-            .contains("external fun boltffi_function_demo_echo_u64(values: LongArray): ByteArray?")
+        rendered.contains(
+            "external fun boltffi_function_4demo8echo_u64(values: LongArray): ByteArray?"
+        )
     );
-    assert!(rendered.contains("Native.boltffi_function_demo_echo_u16(values.asShortArray())"));
-    assert!(rendered.contains("Native.boltffi_function_demo_echo_u32(values.asIntArray())"));
-    assert!(rendered.contains("Native.boltffi_function_demo_echo_u64(values.asLongArray())"));
+    assert!(rendered.contains("Native.boltffi_function_4demo8echo_u16(values.asShortArray())"));
+    assert!(rendered.contains("Native.boltffi_function_4demo8echo_u32(values.asIntArray())"));
+    assert!(rendered.contains("Native.boltffi_function_4demo8echo_u64(values.asLongArray())"));
     assert!(rendered.contains("DirectVectorCodec.readUShortArray"));
     assert!(rendered.contains("DirectVectorCodec.readUIntArray"));
     assert!(rendered.contains("DirectVectorCodec.readULongArray"));

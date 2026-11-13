@@ -8,7 +8,7 @@ expression: "rendered_fixture(\"exports/multi_argument_closure_parameter\")"
 package com.boltffi.demo
 @Suppress("FunctionName")
 private object Native {
-    @JvmStatic external fun boltffi_function_demo_install(callback: Long): Unit
+    @JvmStatic external fun boltffi_function_4demo7install(callback: Long): Unit
 }
 
 fun interface ClosureU32U32ToU32 {
@@ -38,5 +38,5 @@ private object ClosureU32_U32ToU32Callbacks {
 }
 
 fun install(callback: ClosureU32U32ToU32) {
-    Native.boltffi_function_demo_install(ClosureU32_U32ToU32Callbacks.insert(callback))
+    Native.boltffi_function_4demo7install(ClosureU32_U32ToU32Callbacks.insert(callback))
 }

@@ -1,0 +1,23 @@
+error: BoltFFI: `record Pair` cannot use generics
+ --> tests/diagnostics/unsupported_items/generic_record.rs:3:1
+  |
+3 | #[boltffi::data]
+  | ^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `boltffi::data` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0107]: missing generics for struct `Pair`
+ --> tests/diagnostics/unsupported_items/generic_record.rs:5:12
+  |
+5 | pub struct Pair<T> {
+  |            ^^^^ expected 1 generic argument
+  |
+note: struct defined here, with 1 generic parameter: `T`
+ --> tests/diagnostics/unsupported_items/generic_record.rs:5:12
+  |
+5 | pub struct Pair<T> {
+  |            ^^^^ -
+help: add missing generic argument
+  |
+5 | pub struct Pair<T><T> {
+  |                +++

@@ -248,7 +248,7 @@ mod tests {
 
         assert!(
             header.contains(
-                "uint32_t boltffi_function_demo_fill(uint8_t *out_ptr, uintptr_t out_len);"
+                "uint32_t boltffi_function_4demo4fill(uint8_t *out_ptr, uintptr_t out_len);"
             ),
             "{header}"
         );
@@ -265,7 +265,7 @@ mod tests {
         let function = contract
             .functions()
             .iter()
-            .find(|function| function.name() == "boltffi_function_demo_install")
+            .find(|function| function.name() == "boltffi_function_4demo7install")
             .expect("exported function");
         let [ParameterGroup::Closure(closure)] = function.parameter_groups() else {
             panic!("expected one closure parameter group");
@@ -295,7 +295,7 @@ mod tests {
         let function = contract
             .functions()
             .iter()
-            .find(|function| function.name() == "boltffi_function_demo_install")
+            .find(|function| function.name() == "boltffi_function_4demo7install")
             .expect("exported function");
         let [ParameterGroup::Closure(closure)] = function.parameter_groups() else {
             panic!("expected one closure parameter group");
@@ -320,7 +320,7 @@ mod tests {
         let function = contract
             .functions()
             .iter()
-            .find(|function| function.name() == "boltffi_function_demo_install")
+            .find(|function| function.name() == "boltffi_function_4demo7install")
             .expect("exported function");
         let [ParameterGroup::Closure(closure)] = function.parameter_groups() else {
             panic!("expected one closure parameter group");
@@ -348,7 +348,7 @@ mod tests {
             .callbacks()
             .iter()
             .find(|callback| {
-                callback.create_handle().name() == "boltffi_create_callback_demo_listener"
+                callback.create_handle().name() == "boltffi_create_callback_4demo8Listener"
             })
             .expect("callback declaration");
         let slot = callback
@@ -389,13 +389,13 @@ mod tests {
             .callbacks()
             .iter()
             .find(|callback| {
-                callback.create_handle().name() == "boltffi_create_callback_demo_listener"
+                callback.create_handle().name() == "boltffi_create_callback_4demo8Listener"
             })
             .expect("callback declaration");
         let function = contract
             .functions()
             .iter()
-            .find(|function| function.name() == "boltffi_function_demo_install")
+            .find(|function| function.name() == "boltffi_function_4demo7install")
             .expect("exported function");
         let [ParameterGroup::Value(listener)] = function.parameter_groups() else {
             panic!("expected one callback-handle parameter");
@@ -424,7 +424,7 @@ mod tests {
         let function = contract
             .functions()
             .iter()
-            .find(|function| function.name() == "boltffi_function_demo_greet")
+            .find(|function| function.name() == "boltffi_function_4demo5greet")
             .expect("exported function");
         let [ParameterGroup::ByteSlice(bytes)] = function.parameter_groups() else {
             panic!("expected one byte-slice parameter group");
@@ -465,17 +465,17 @@ mod tests {
         let distance = contract
             .functions()
             .iter()
-            .find(|function| function.name() == "boltffi_function_demo_distance")
+            .find(|function| function.name() == "boltffi_function_4demo8distance")
             .expect("shared direct record parameter function");
         let scale = contract
             .functions()
             .iter()
-            .find(|function| function.name() == "boltffi_function_demo_scale")
+            .find(|function| function.name() == "boltffi_function_4demo5scale")
             .expect("mutable direct record parameter function");
         let echo = contract
             .functions()
             .iter()
-            .find(|function| function.name() == "boltffi_function_demo_echo")
+            .find(|function| function.name() == "boltffi_function_4demo4echo")
             .expect("by-value direct record parameter function");
 
         let [ParameterGroup::Value(distance_point)] = distance.parameter_groups() else {
@@ -531,7 +531,7 @@ mod tests {
         let function = contract
             .functions()
             .iter()
-            .find(|function| function.name() == "boltffi_method_record_demo_person_rename")
+            .find(|function| function.name() == "boltffi_method_record_4demo6Person6rename")
             .expect("encoded record method");
         let [
             ParameterGroup::ByteSlice(receiver),
@@ -574,7 +574,7 @@ mod tests {
         let function = contract
             .functions()
             .iter()
-            .find(|function| function.name() == "boltffi_method_record_demo_point_move_by")
+            .find(|function| function.name() == "boltffi_method_record_4demo5Point7move_by")
             .expect("mutable direct record method");
         let [
             ParameterGroup::DirectWriteback(receiver),
@@ -607,7 +607,7 @@ mod tests {
         let function = contract
             .functions()
             .iter()
-            .find(|function| function.name() == "boltffi_async_function_demo_fetch_count_poll")
+            .find(|function| function.name() == "boltffi_async_function_4demo11fetch_count_poll")
             .expect("async poll function");
         let [
             ParameterGroup::Value(_),

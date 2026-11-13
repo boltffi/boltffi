@@ -67,6 +67,11 @@ pub enum Anchor {
         dart,
         reason = ExclusionReason::ImplementationGap,
         details = "The Dart backend rejects transparent variants at generate time."
+    ),
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "The Ruby backend does not support transparent enum variants."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -97,6 +102,11 @@ pub enum Anchor {
         dart,
         reason = ExclusionReason::ImplementationGap,
         details = "The Dart backend rejects transparent variants at generate time."
+    ),
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "The Ruby backend does not support transparent enum variants."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -127,6 +137,11 @@ pub enum Anchor {
         dart,
         reason = ExclusionReason::ImplementationGap,
         details = "The Dart backend rejects transparent variants at generate time."
+    ),
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "The Ruby backend does not support transparent enum variants."
     )
 )]
 pub fn echo_waypoint(waypoint: Waypoint) -> Waypoint {
@@ -163,6 +178,11 @@ pub fn echo_waypoint(waypoint: Waypoint) -> Waypoint {
         dart,
         reason = ExclusionReason::ImplementationGap,
         details = "The Dart backend rejects transparent variants at generate time."
+    ),
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "The Ruby backend does not support transparent enum variants."
     )
 )]
 pub fn echo_anchor(anchor: Anchor) -> Anchor {

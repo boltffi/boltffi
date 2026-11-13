@@ -36,5 +36,5 @@ public func install(callback: @escaping (UInt32) -> UInt32) {
         guard let context = context else { return }
         Unmanaged<BoltFFIClosureBox<(UInt32) -> UInt32>>.fromOpaque(context).release()
     }
-    boltffi_function_demo_install(boltffiCallbackCall, boltffiCallbackContext, boltffiCallbackRelease)
+    boltffi_function_4demo7install(boltffiCallbackCall, boltffiCallbackContext, boltffiCallbackRelease)
 }

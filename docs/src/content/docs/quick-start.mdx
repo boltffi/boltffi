@@ -39,6 +39,8 @@ Replace `src/lib.rs`:
 ```rust
 use boltffi::{data, export};
 
+boltffi::scaffolding!();
+
 #[data]
 #[derive(Clone, Copy)]
 pub struct Point {

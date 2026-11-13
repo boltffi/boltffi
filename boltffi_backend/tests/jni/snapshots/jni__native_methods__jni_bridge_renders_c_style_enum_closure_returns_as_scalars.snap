@@ -7,7 +7,7 @@ expression: "rendered_fixture(\"exports/c_style_enum_closure_return\")"
 typedef uint8_t ___Mode;
 #define MODE_FAST ((___Mode)1)
 #define MODE_SLOW ((___Mode)2)
-FfiStatus boltffi_function_demo_install(___Mode (*callback_call)(void *), void *callback_context, void (*callback_release)(void *));
+FfiStatus boltffi_function_4demo7install(___Mode (*callback_call)(void *), void *callback_context, void (*callback_release)(void *));
 
 ===== jni/jni_glue.c =====
 <jni source includes>
@@ -114,10 +114,10 @@ JNIEXPORT void JNICALL JNI_OnUnload(JavaVM *vm, void *reserved) {
     boltffi_jni_native_class = NULL;
 }
 
-JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1function_1demo_1install(JNIEnv *env, jclass cls, jlong callback) {
+JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1function_14demo7install(JNIEnv *env, jclass cls, jlong callback) {
     (void)cls;
 
-    FfiStatus __boltffi_status = boltffi_function_demo_install(boltffi_jni____closure__to_demo_mode_call, (void *)callback, boltffi_jni____closure__to_demo_mode_release);
+    FfiStatus __boltffi_status = boltffi_function_4demo7install(boltffi_jni____closure__to_demo_mode_call, (void *)callback, boltffi_jni____closure__to_demo_mode_release);
 
     if (__boltffi_status.code != 0) {
         boltffi_jni_throw_status(env, __boltffi_status);

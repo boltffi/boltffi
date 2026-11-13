@@ -301,6 +301,7 @@ pub struct TraitBounds {
     /// The trait that defines the `dyn` object or `impl Trait` shape.
     pub base: BaseTrait,
     /// Extra Rust bounds written after the base trait.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub bounds: Vec<AdditionalBound>,
 }
 

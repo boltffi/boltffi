@@ -4,7 +4,7 @@ expression: "rendered_fixture(\"exports/closure_parameter\")"
 ---
 ===== jni/demo.h =====
 <c abi support declarations>
-FfiStatus boltffi_function_demo_install(uint32_t (*callback_call)(void *, uint32_t), void *callback_context, void (*callback_release)(void *));
+FfiStatus boltffi_function_4demo7install(uint32_t (*callback_call)(void *, uint32_t), void *callback_context, void (*callback_release)(void *));
 
 ===== jni/jni_glue.c =====
 <jni source includes>
@@ -111,10 +111,10 @@ JNIEXPORT void JNICALL JNI_OnUnload(JavaVM *vm, void *reserved) {
     boltffi_jni_native_class = NULL;
 }
 
-JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1function_1demo_1install(JNIEnv *env, jclass cls, jlong callback) {
+JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1function_14demo7install(JNIEnv *env, jclass cls, jlong callback) {
     (void)cls;
 
-    FfiStatus __boltffi_status = boltffi_function_demo_install(boltffi_jni____closure__u32_to_u32_call, (void *)callback, boltffi_jni____closure__u32_to_u32_release);
+    FfiStatus __boltffi_status = boltffi_function_4demo7install(boltffi_jni____closure__u32_to_u32_call, (void *)callback, boltffi_jni____closure__u32_to_u32_release);
 
     if (__boltffi_status.code != 0) {
         boltffi_jni_throw_status(env, __boltffi_status);

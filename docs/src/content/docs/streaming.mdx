@@ -198,6 +198,7 @@ Streams are created using `EventSubscription` or `StreamProducer`. The choice de
   rust={`use boltffi::EventSubscription;
 use std::sync::Arc;
 
+#[export]
 pub struct Sensor {
     subscription: Arc<EventSubscription<Reading>>,
 }
@@ -283,6 +284,7 @@ if subscription.wait(50) > 0:
   title=""
   rust={`use boltffi::StreamProducer;
 
+#[export]
 pub struct EventBus {
     producer: StreamProducer<Event>,
 }

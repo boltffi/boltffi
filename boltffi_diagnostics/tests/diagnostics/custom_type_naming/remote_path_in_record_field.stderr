@@ -1,0 +1,11 @@
+error[E0433]: cannot find `Length` in `units`
+  --> tests/diagnostics/custom_type_naming/remote_path_in_record_field.rs:19:24
+   |
+19 |     pub length: units::Length,
+   |                        ^^^^^^ could not find `Length` in `units`
+   |
+help: units::Length is not a macro, but a tuple struct, try to remove `!`
+   |
+19 -     pub length: units::Length,
+19 +     pub length: units::Length
+   |

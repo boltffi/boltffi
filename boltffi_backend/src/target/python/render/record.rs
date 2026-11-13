@@ -15,8 +15,8 @@ use crate::{
 };
 
 use super::{
-    AssociatedCallable, ConstantStub, Documentation, NameScope, default_value::DefaultExpression,
-    type_hint::TypeHint,
+    AssociatedCallable, ConstantStub, Documentation, EnumClass, NameScope,
+    default_value::DefaultExpression, type_hint::TypeHint,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -122,16 +122,37 @@ impl RecordClass {
             .any(AssociatedCallable::uses_callable_annotations)
     }
 
-    pub fn validate_names(&self) -> Result<()> {
-        NameScope::new(format!("record `{}`", self.class_name))
+    pub fn validate_names(&self, enums: &[EnumClass]) -> Result<()> {
+        let scope = NameScope::new(format!("record `{}`", self.class_name))
             .insert_all(self.fields.iter().map(RecordField::field_name))
             .and_then(|scope| {
                 scope.insert_all(self.constants.iter().map(ConstantStub::member_name))
             })
             .and_then(|scope| {
                 scope.insert_all(self.callables().map(AssociatedCallable::member_name))
-            })
-            .map(|_| ())?;
+            })?;
+        self.bases.iter().try_fold(scope, |scope, base| {
+            let enumeration = enums
+                .iter()
+                .find(|enumeration| &enumeration.class_name == base)
+                .ok_or(Error::UnsupportedTarget {
+                    target: "python",
+                    shape: "transparent payload without its enum base",
+                })?;
+            scope
+                .insert_all(enumeration.callables().map(|callable| {
+                    (
+                        callable.python_name.to_string(),
+                        format!(
+                            "method `{}.{}`",
+                            enumeration.class_name, callable.python_name
+                        ),
+                    )
+                }))
+                .and_then(|scope| {
+                    scope.insert_all(enumeration.constants.iter().map(ConstantStub::member_name))
+                })
+        })?;
         RecordField::validate_default_order(&self.fields, "record default before required field")?;
         self.callables()
             .try_for_each(|callable| callable.validate_names(&self.class_name))
@@ -235,6 +256,7 @@ pub struct RecordField {
     pub name: Identifier,
     pub annotation: TypeAnnotation,
     pub default: Option<Expression>,
+    lazy_default: bool,
 }
 
 impl RecordField {
@@ -249,7 +271,22 @@ impl RecordField {
                 .map(|value| DefaultExpression::new(field.ty(), value, package))
                 .transpose()?
                 .map(DefaultExpression::into_expression),
+            lazy_default: matches!(
+                field.ty(),
+                boltffi_binding::TypeRef::Record(_) | boltffi_binding::TypeRef::Custom(_)
+            ),
         })
+    }
+
+    /// The right-hand side of the field's default, deferred when it constructs a
+    /// record so the class body does not depend on the order records are declared in.
+    pub fn default_assignment(&self) -> Option<String> {
+        self.default
+            .as_ref()
+            .map(|default| match self.lazy_default {
+                true => format!("_boltffi_field(default_factory=lambda: {default})"),
+                false => default.to_string(),
+            })
     }
 
     pub fn field_name(&self) -> (String, String) {
@@ -302,6 +339,7 @@ impl RecordField {
                 })
                 .transpose()?
                 .map(DefaultExpression::into_expression),
+            lazy_default: false,
         })
     }
 }

@@ -4,11 +4,12 @@ use boltffi::*;
 
 use crate::{FixtureMarkerOptions, FixtureMessageRecord, FixturePoint, FixtureStatus};
 
+#[export(single_threaded)]
 pub struct TestCounter {
     value: i32,
 }
 
-#[export(single_threaded)]
+#[export]
 impl TestCounter {
     pub fn new(initial: i32) -> Self {
         Self { value: initial }
@@ -37,6 +38,7 @@ impl TestCounter {
     }
 }
 
+#[export]
 pub struct ThreadSafeCounter {
     value: Mutex<i32>,
 }
@@ -68,21 +70,23 @@ impl ThreadSafeCounter {
     }
 }
 
+#[export(single_threaded)]
 pub struct FixtureMarker {
     id: i32,
 }
 
-#[export(single_threaded)]
+#[export]
 impl FixtureMarker {
     pub fn id(&self) -> i32 {
         self.id
     }
 }
 
+#[export(single_threaded)]
 #[derive(Default)]
 pub struct FixtureMap;
 
-#[export(single_threaded)]
+#[export]
 impl FixtureMap {
     pub fn new() -> Self {
         Self
@@ -109,6 +113,7 @@ impl FixtureMap {
     }
 }
 
+#[export(single_threaded)]
 pub struct ClassTestFixture {
     id: i32,
     name: String,
@@ -118,7 +123,7 @@ pub struct ClassTestFixture {
     optional: Option<i32>,
 }
 
-#[export(single_threaded)]
+#[export]
 impl ClassTestFixture {
     pub fn new_default() -> Self {
         Self {

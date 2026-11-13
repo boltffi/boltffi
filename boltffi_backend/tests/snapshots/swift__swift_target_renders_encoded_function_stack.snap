@@ -95,7 +95,7 @@ public enum Message: Hashable, Equatable, Sendable {
 public func echoBytes(bytes: Data) -> Data {
     let boltffiBytesBytes = boltffiEncode { boltffiBytesWriter in boltffiBytesWriter.writeBytes(bytes) }
     return boltffiBytesBytes.withUnsafeBufferPointer { boltffiBytesBuffer in
-        let boltffiResult = boltffi_function_demo_echo_bytes(boltffiBytesBuffer.baseAddress!, UInt(boltffiBytesBuffer.count))
+        let boltffiResult = boltffi_function_4demo10echo_bytes(boltffiBytesBuffer.baseAddress!, UInt(boltffiBytesBuffer.count))
         defer { boltffi_free_buf(boltffiResult) }
         return boltffiDecodeOwnedBuf(boltffiResult.ptr, Int(boltffiResult.len)) { boltffiReader in boltffiReader.readBytes() }
     }
@@ -104,7 +104,7 @@ public func echoBytes(bytes: Data) -> Data {
 public func keepPerson(person: Person) -> Person {
     let boltffiPersonBytes = boltffiEncode { boltffiPersonWriter in person.encode(to: &boltffiPersonWriter) }
     return boltffiPersonBytes.withUnsafeBufferPointer { boltffiPersonBuffer in
-        let boltffiResult = boltffi_function_demo_keep_person(boltffiPersonBuffer.baseAddress!, UInt(boltffiPersonBuffer.count))
+        let boltffiResult = boltffi_function_4demo11keep_person(boltffiPersonBuffer.baseAddress!, UInt(boltffiPersonBuffer.count))
         defer { boltffi_free_buf(boltffiResult) }
         return boltffiDecodeOwnedBuf(boltffiResult.ptr, Int(boltffiResult.len)) { boltffiReader in Person.decode(from: &boltffiReader) }
     }
@@ -113,7 +113,7 @@ public func keepPerson(person: Person) -> Person {
 public func keepShape(shape: Shape) -> Shape {
     let boltffiShapeBytes = boltffiEncode { boltffiShapeWriter in shape.encode(to: &boltffiShapeWriter) }
     return boltffiShapeBytes.withUnsafeBufferPointer { boltffiShapeBuffer in
-        let boltffiResult = boltffi_function_demo_keep_shape(boltffiShapeBuffer.baseAddress!, UInt(boltffiShapeBuffer.count))
+        let boltffiResult = boltffi_function_4demo10keep_shape(boltffiShapeBuffer.baseAddress!, UInt(boltffiShapeBuffer.count))
         defer { boltffi_free_buf(boltffiResult) }
         return boltffiDecodeOwnedBuf(boltffiResult.ptr, Int(boltffiResult.len)) { boltffiReader in Shape.decode(from: &boltffiReader) }
     }
@@ -122,7 +122,7 @@ public func keepShape(shape: Shape) -> Shape {
 public func echoMessage(message: Message) -> Message {
     let boltffiMessageBytes = boltffiEncode { boltffiMessageWriter in message.encode(to: &boltffiMessageWriter) }
     return boltffiMessageBytes.withUnsafeBufferPointer { boltffiMessageBuffer in
-        let boltffiResult = boltffi_function_demo_echo_message(boltffiMessageBuffer.baseAddress!, UInt(boltffiMessageBuffer.count))
+        let boltffiResult = boltffi_function_4demo12echo_message(boltffiMessageBuffer.baseAddress!, UInt(boltffiMessageBuffer.count))
         defer { boltffi_free_buf(boltffiResult) }
         return boltffiDecodeOwnedBuf(boltffiResult.ptr, Int(boltffiResult.len)) { boltffiReader in Message.decode(from: &boltffiReader) }
     }

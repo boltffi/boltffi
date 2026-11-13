@@ -4,8 +4,8 @@ expression: "rendered_fixture(\"exports/encoded_closure_return_shapes\")"
 ---
 ===== jni/demo.h =====
 <c abi support declarations>
-FfiStatus boltffi_function_demo_install_vec(FfiBuf_u8 (*callback_call)(void *), void *callback_context, void (*callback_release)(void *));
-FfiStatus boltffi_function_demo_install_option(FfiBuf_u8 (*callback_call)(void *), void *callback_context, void (*callback_release)(void *));
+FfiStatus boltffi_function_4demo11install_vec(FfiBuf_u8 (*callback_call)(void *), void *callback_context, void (*callback_release)(void *));
+FfiStatus boltffi_function_4demo14install_option(FfiBuf_u8 (*callback_call)(void *), void *callback_context, void (*callback_release)(void *));
 
 ===== jni/jni_glue.c =====
 <jni source includes>
@@ -199,10 +199,10 @@ JNIEXPORT void JNICALL JNI_OnUnload(JavaVM *vm, void *reserved) {
     boltffi_jni_native_class = NULL;
 }
 
-JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1function_1demo_1install_1vec(JNIEnv *env, jclass cls, jlong callback) {
+JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1function_14demo11install_1vec(JNIEnv *env, jclass cls, jlong callback) {
     (void)cls;
 
-    FfiStatus __boltffi_status = boltffi_function_demo_install_vec(boltffi_jni____closure__to_vec_u32_call, (void *)callback, boltffi_jni____closure__to_vec_u32_release);
+    FfiStatus __boltffi_status = boltffi_function_4demo11install_vec(boltffi_jni____closure__to_vec_u32_call, (void *)callback, boltffi_jni____closure__to_vec_u32_release);
 
     if (__boltffi_status.code != 0) {
         boltffi_jni_throw_status(env, __boltffi_status);
@@ -212,10 +212,10 @@ JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1function_1demo_1ins
     return;
 }
 
-JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1function_1demo_1install_1option(JNIEnv *env, jclass cls, jlong callback) {
+JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1function_14demo14install_1option(JNIEnv *env, jclass cls, jlong callback) {
     (void)cls;
 
-    FfiStatus __boltffi_status = boltffi_function_demo_install_option(boltffi_jni____closure__to_opt_i32_call, (void *)callback, boltffi_jni____closure__to_opt_i32_release);
+    FfiStatus __boltffi_status = boltffi_function_4demo14install_option(boltffi_jni____closure__to_opt_i32_call, (void *)callback, boltffi_jni____closure__to_opt_i32_release);
 
     if (__boltffi_status.code != 0) {
         boltffi_jni_throw_status(env, __boltffi_status);

@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use askama::Template as AskamaTemplate;
 use boltffi_binding::{
     CanonicalName, ConstantOwner, DirectFieldDecl, DirectRecordDecl, EncodedFieldDecl,
@@ -7,7 +9,7 @@ use boltffi_binding::{
 
 use crate::{
     bridge::jni::JniBridgeContract,
-    core::{Emitted, RenderContext, Result},
+    core::{Emitted, Error, RenderContext, Result},
     target::kotlin::{
         KotlinHost,
         codec::{Sizer, WireBuffer},
@@ -17,7 +19,10 @@ use crate::{
             AssociatedConstants, Documentation,
             default_value::DefaultExpression,
             field::EncodedField,
-            function::{ExportedCall, ExportedCallRenderer, ReceiverCarrier, ReceiverMutation},
+            function::{
+                ExportedCall, ExportedCallRenderer, ExportedParameter, ReceiverCarrier,
+                ReceiverMutation,
+            },
             signature::validate_exception_fields,
         },
         syntax::{ArgumentList, Expression, Identifier, Statement, TypeName},
@@ -100,6 +105,7 @@ impl Record {
                     .map(|field| (field.name(), field.ty())),
             )?;
         }
+        record.validate_inherited_methods(declaration.id(), host, context)?;
         Ok(record)
     }
 
@@ -152,17 +158,6 @@ impl Record {
         matches!(self.body, RecordBody::Encoded { .. })
     }
 
-    fn field_offset(record: &DirectRecordDecl<Native>, field: &DirectFieldDecl) -> Result<u64> {
-        Ok(record
-            .layout()
-            .field(field.key())
-            .ok_or(KotlinHost::broken_bridge_contract(
-                "direct record field layout was not found",
-            ))?
-            .offset()
-            .get())
-    }
-
     /// The record's supertype clause: `Exception(…)` when the record is an
     /// error payload, then the sealed interface of every transparent enum it
     /// is a payload of. Kotlin cannot declare conformance after the fact, so
@@ -180,15 +175,6 @@ impl Record {
             true => String::new(),
             false => format!(" : {}", parts.join(", ")),
         }
-    }
-
-    /// The sealed interfaces of the transparent enums whose variants carry
-    /// this record as their payload.
-    fn conformances(id: RecordId, context: &RenderContext<Native>) -> Vec<TypeName> {
-        context
-            .transparent_conformances(id)
-            .map(|name| Name::new(name).type_name())
-            .collect()
     }
 
     pub fn error_message(&self) -> Option<&Identifier> {
@@ -451,6 +437,109 @@ impl Record {
                 .map(|call| call.documented(method.meta().doc()))
             })
             .collect()
+    }
+
+    fn field_offset(record: &DirectRecordDecl<Native>, field: &DirectFieldDecl) -> Result<u64> {
+        Ok(record
+            .layout()
+            .field(field.key())
+            .ok_or(KotlinHost::broken_bridge_contract(
+                "direct record field layout was not found",
+            ))?
+            .offset()
+            .get())
+    }
+
+    fn conformances(id: RecordId, context: &RenderContext<Native>) -> Vec<TypeName> {
+        context
+            .transparent_conformances(id)
+            .map(|name| Name::new(name).type_name())
+            .collect()
+    }
+
+    fn validate_inherited_methods(
+        &self,
+        id: RecordId,
+        host: &KotlinHost,
+        context: &RenderContext<Native>,
+    ) -> Result<()> {
+        if self.conformances.is_empty() {
+            return Ok(());
+        }
+        let mut signatures = self
+            .instance_methods
+            .iter()
+            .map(|method| {
+                (
+                    method.name().clone(),
+                    method
+                        .parameters()
+                        .iter()
+                        .map(|parameter| parameter.ty().jvm_method_erasure())
+                        .collect::<Vec<_>>(),
+                )
+            })
+            .collect::<HashSet<_>>();
+        ["wireSize", "toByteArray", "hashCode", "toString"]
+            .into_iter()
+            .try_for_each(|name| {
+                signatures.insert((Identifier::parse(name)?, Vec::new()));
+                Ok::<_, Error>(())
+            })?;
+        signatures.insert((
+            Identifier::parse("writeTo")?,
+            vec![TypeName::new("WireWriter")],
+        ));
+        if !self.empty() {
+            signatures.insert((
+                Identifier::parse("copy")?,
+                self.fields
+                    .iter()
+                    .map(|field| field.ty().jvm_method_erasure())
+                    .collect(),
+            ));
+            self.fields
+                .iter()
+                .enumerate()
+                .try_for_each(|(index, field)| {
+                    signatures.insert((field.name().jvm_getter(), Vec::new()));
+                    signatures.insert((
+                        Identifier::parse(format!("component{}", index + 1))?,
+                        Vec::new(),
+                    ));
+                    Ok::<_, Error>(())
+                })?;
+        }
+        context
+            .transparent_enums(id)
+            .flat_map(|enumeration| enumeration.methods())
+            .filter(|method| method.callable().receiver().is_some())
+            .try_for_each(|method| {
+                let name = Name::new(method.name()).function()?;
+                let parameters = method
+                    .callable()
+                    .params()
+                    .iter()
+                    .map(|parameter| {
+                        ExportedParameter::type_name(parameter, None, host, context)
+                            .map(|ty| ty.jvm_method_erasure())
+                    })
+                    .collect::<Result<Vec<_>>>()?;
+                if let Some((name, parameters)) = signatures.replace((name, parameters)) {
+                    return Err(Error::KotlinNameCollision {
+                        scope: self.name.to_string(),
+                        name: format!(
+                            "{name}({})",
+                            parameters
+                                .iter()
+                                .map(ToString::to_string)
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        ),
+                    });
+                }
+                Ok(())
+            })
     }
 
     fn direct_receiver(name: &CanonicalName) -> Result<Receiver> {

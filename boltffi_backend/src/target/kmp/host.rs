@@ -366,7 +366,13 @@ mod tests {
         output
             .files()
             .iter()
-            .map(|file| file.path().as_path().display().to_string())
+            .map(|file| {
+                file.path()
+                    .as_path()
+                    .display()
+                    .to_string()
+                    .replace('\\', "/")
+            })
             .collect()
     }
 
@@ -440,12 +446,12 @@ mod tests {
             &output,
             "src/jvmMain/kotlin/com/example/boltffi/jvm/BoltFFI.kt",
         );
-        assert!(internal.contains("external fun boltffi_function_demo_add"));
-        assert!(internal.contains("return Native.boltffi_function_demo_add(left, right)"));
+        assert!(internal.contains("external fun boltffi_function_4demo3add"));
+        assert!(internal.contains("return Native.boltffi_function_4demo3add(left, right)"));
 
         let jni = file(&output, "src/jvmMain/c/jni_glue.c");
-        assert!(jni.contains("Java_com_example_boltffi_jvm_Native_boltffi_1function_1demo_1add"));
-        assert!(jni.contains("boltffi_function_demo_add(left, right)"));
+        assert!(jni.contains("Java_com_example_boltffi_jvm_Native_boltffi_1function_14demo3add"));
+        assert!(jni.contains("boltffi_function_4demo3add(left, right)"));
         assert_eq!(jni, file(&output, "src/androidMain/c/jni_glue.c"));
 
         let report: serde_json::Value =

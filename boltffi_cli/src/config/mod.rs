@@ -18,10 +18,10 @@ pub use experimental::Experimental;
 pub use symbols::{DebugSymbolsBundle, DebugSymbolsConfig, DebugSymbolsFormat};
 pub use targets::{
     AndroidConfig, AndroidLinkConfig, AndroidPackConfig, AppleConfig, CConfig, CSharpConfig,
-    DartConfig, HeaderConfig, JavaConfig, KotlinApiStyle, KotlinConfig, KotlinDesktopLoader,
-    KotlinFactoryStyle, KotlinMultiplatformConfig, PythonConfig, SpmConfig, SpmDistribution,
-    SpmLayout, SwiftConfig, TargetSection, TargetsConfig, WasmConfig, WasmNpmTarget,
-    WasmOptimizeLevel, WasmOptimizeOnMissing, WasmProfile, XcframeworkConfig,
+    DartConfig, DartWebConfig, HeaderConfig, JavaConfig, KotlinApiStyle, KotlinConfig,
+    KotlinDesktopLoader, KotlinFactoryStyle, KotlinMultiplatformConfig, PythonConfig, RubyConfig,
+    SpmConfig, SpmDistribution, SpmLayout, SwiftConfig, TargetSection, TargetsConfig, WasmConfig,
+    WasmNpmTarget, WasmOptimizeLevel, WasmOptimizeOnMissing, WasmProfile, XcframeworkConfig,
 };
 #[cfg(test)]
 pub use targets::{CSharpNugetConfig, JavaJvmConfig, PythonWheelConfig};
@@ -402,6 +402,10 @@ impl Config {
         self.targets.dart.enabled
     }
 
+    pub fn is_dart_web_enabled(&self) -> bool {
+        self.targets.dart_web.enabled
+    }
+
     pub fn is_python_enabled(&self) -> bool {
         self.targets.python.enabled
     }
@@ -412,6 +416,10 @@ impl Config {
 
     pub fn is_c_enabled(&self) -> bool {
         self.targets.c.enabled
+    }
+
+    pub fn is_ruby_enabled(&self) -> bool {
+        self.targets.ruby.enabled
     }
 
     pub fn is_kotlin_multiplatform_enabled(&self) -> bool {
@@ -701,6 +709,10 @@ impl Config {
         &self.targets.android.link.extra_args
     }
 
+    pub fn android_export_c_symbols(&self) -> bool {
+        self.targets.android.link.export_c_symbols
+    }
+
     pub fn kotlin_class_name(&self) -> String {
         to_pascal_case(&self.package.name)
     }
@@ -778,10 +790,11 @@ impl Config {
             Target::TypeScript => self.is_wasm_enabled(),
             Target::Header => self.is_apple_enabled() || self.is_android_enabled(),
             Target::Dart => self.is_dart_enabled(),
+            Target::DartWeb => self.is_dart_web_enabled(),
             Target::Python => self.is_python_enabled(),
             Target::CSharp => self.is_csharp_enabled(),
             Target::C => self.is_c_enabled(),
-            Target::Ruby => false,
+            Target::Ruby => self.is_ruby_enabled(),
         }
     }
 
@@ -936,6 +949,20 @@ impl Config {
 
     pub fn csharp_module_class(&self) -> Option<&str> {
         self.targets.csharp.module_class.as_deref()
+    }
+
+    pub fn ruby_output(&self) -> PathBuf {
+        self.targets.ruby.output.clone()
+    }
+
+    /// The gem name for generation and packaging: `targets.ruby.gem_name`,
+    /// or `package.name`.
+    pub fn ruby_gem_name(&self) -> &str {
+        self.targets
+            .ruby
+            .gem_name
+            .as_deref()
+            .unwrap_or(&self.package.name)
     }
 
     pub fn csharp_namespace(&self) -> Option<&str> {
@@ -1172,6 +1199,27 @@ impl Config {
 
     pub fn dart_targets(&self) -> Vec<RustTarget> {
         self.dart_native_targets().to_vec()
+    }
+
+    pub fn dart_standalone(&self) -> bool {
+        self.targets.dart.standalone
+    }
+
+    pub fn dart_web_output(&self) -> PathBuf {
+        self.targets.dart_web.output.clone()
+    }
+
+    pub fn dart_web_module_name(&self) -> String {
+        // DartWebHost::new requires a plain identifier (letters/digits/
+        // underscore), but a Cargo package name may contain hyphens --
+        // normalize the default the same way the wasm/TypeScript module
+        // name is, so a hyphenated package.name doesn't make dart_web
+        // reject every default-configured project outright.
+        self.targets
+            .dart_web
+            .module_name
+            .clone()
+            .unwrap_or_else(|| normalize_module_name(&self.package.name))
     }
 }
 
@@ -2175,6 +2223,9 @@ cargo_args = ["csharp"]
 
 [targets.c]
 cargo_args = ["c"]
+
+[targets.ruby]
+cargo_args = ["ruby"]
 "#,
         );
 
@@ -2188,6 +2239,7 @@ cargo_args = ["c"]
             (TargetSection::Python, "python"),
             (TargetSection::CSharp, "csharp"),
             (TargetSection::C, "c"),
+            (TargetSection::Ruby, "ruby"),
         ]
         .into_iter()
         .for_each(|(section, expected)| {
@@ -2498,6 +2550,41 @@ enabled = true
             PathBuf::from("dist/python/wheelhouse")
         );
         assert_eq!(config.python_wheel_interpreters(), None);
+    }
+
+    #[test]
+    fn dart_web_module_name_normalizes_a_hyphenated_default() {
+        // DartWebHost::new only accepts a plain identifier (letters,
+        // digits, underscore); a raw hyphenated package.name would make
+        // dart_web reject the module name for every default-configured
+        // project with a hyphenated Cargo package name.
+        let config = parse_config(
+            r#"
+[package]
+name = "my-lib"
+
+[targets.dart_web]
+enabled = true
+"#,
+        );
+
+        assert_eq!(config.dart_web_module_name(), "my_lib");
+    }
+
+    #[test]
+    fn dart_web_module_name_uses_the_configured_override_unnormalized() {
+        let config = parse_config(
+            r#"
+[package]
+name = "my-lib"
+
+[targets.dart_web]
+enabled = true
+module_name = "custom_module"
+"#,
+        );
+
+        assert_eq!(config.dart_web_module_name(), "custom_module");
     }
 
     #[test]
@@ -2882,6 +2969,28 @@ extra_args = ["-Wl,-z,max-page-size=16384"]
             config.android_extra_link_args(),
             &["-Wl,-z,max-page-size=16384".to_string()]
         );
+    }
+
+    #[test]
+    fn android_link_exports_c_symbols_unless_turned_off() {
+        let default = parse_config(
+            r#"
+[package]
+name = "mylib"
+"#,
+        );
+        assert!(default.android_export_c_symbols());
+
+        let jni_only = parse_config(
+            r#"
+[package]
+name = "mylib"
+
+[targets.android.link]
+export_c_symbols = false
+"#,
+        );
+        assert!(!jni_only.android_export_c_symbols());
     }
 
     #[test]

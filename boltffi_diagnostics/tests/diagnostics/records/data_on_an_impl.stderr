@@ -1,0 +1,54 @@
+error[E0119]: conflicting implementations of trait `boltffi::__private::Passable` for type `Point`
+ --> tests/diagnostics/records/data_on_an_impl.rs:5:1
+  |
+2 | #[boltffi::data]
+  | ---------------- first implementation here
+...
+5 | #[boltffi::data]
+  | ^^^^^^^^^^^^^^^^ conflicting implementation for `Point`
+  |
+  = note: this error originates in the macro `::boltffi::__private::lane_resume` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0119]: conflicting implementations of trait `boltffi::__private::wire::blittable::Blittable` for type `Point`
+ --> tests/diagnostics/records/data_on_an_impl.rs:5:1
+  |
+2 | #[boltffi::data]
+  | ---------------- first implementation here
+...
+5 | #[boltffi::data]
+  | ^^^^^^^^^^^^^^^^ conflicting implementation for `Point`
+  |
+  = note: this error originates in the macro `::boltffi::__private::lane_resume` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0119]: conflicting implementations of trait `boltffi::__private::wire::encode::WireEncode` for type `Point`
+ --> tests/diagnostics/records/data_on_an_impl.rs:5:1
+  |
+2 | #[boltffi::data]
+  | ---------------- first implementation here
+...
+5 | #[boltffi::data]
+  | ^^^^^^^^^^^^^^^^ conflicting implementation for `Point`
+  |
+  = note: this error originates in the macro `::boltffi::__private::lane_resume` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0119]: conflicting implementations of trait `boltffi::__private::wire::decode::WireDecode` for type `Point`
+ --> tests/diagnostics/records/data_on_an_impl.rs:5:1
+  |
+2 | #[boltffi::data]
+  | ---------------- first implementation here
+...
+5 | #[boltffi::data]
+  | ^^^^^^^^^^^^^^^^ conflicting implementation for `Point`
+  |
+  = note: this error originates in the macro `::boltffi::__private::lane_resume` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0119]: conflicting implementations of trait `boltffi::__private::VecTransport` for type `Point`
+ --> tests/diagnostics/records/data_on_an_impl.rs:5:1
+  |
+2 | #[boltffi::data]
+  | ---------------- first implementation here
+...
+5 | #[boltffi::data]
+  | ^^^^^^^^^^^^^^^^ conflicting implementation for `Point`
+  |
+  = note: this error originates in the macro `::boltffi::__private::lane_resume` (in Nightly builds, run with -Z macro-backtrace for more info)
