@@ -3,6 +3,9 @@ use std::{error, fmt};
 use boltffi_ast::DeclarationId as SourceDeclarationId;
 use boltffi_binding::{DeclarationId, LowerError, SourceLocation, SourcePosition};
 
+pub const FLOAT_MAP_KEY: &str = "a map key can't be `f32` or `f64`, since floats are not `Eq` or `Hash`; use an integer or \
+     `String` key";
+
 #[derive(Debug)]
 pub enum Error {
     Lower(LowerError),

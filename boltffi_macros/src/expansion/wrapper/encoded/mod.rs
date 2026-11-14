@@ -1,6 +1,6 @@
 use boltffi_binding::{CodecNode, Primitive};
 
-use crate::expansion::error::Error;
+use crate::expansion::error::{Error, FLOAT_MAP_KEY};
 
 pub mod callback_error;
 pub mod incoming;
@@ -58,9 +58,9 @@ impl RuntimeWireCodec {
 
     fn require_supported_map_key(&self, codec: &CodecNode) -> Result<(), Error> {
         match codec {
-            CodecNode::Primitive(Primitive::F32 | Primitive::F64) => Err(
-                Error::UnsupportedExpansion("floating-point encoded map key"),
-            ),
+            CodecNode::Primitive(Primitive::F32 | Primitive::F64) => {
+                Err(Error::Unsupported(FLOAT_MAP_KEY))
+            }
             CodecNode::Custom { .. } => Err(Error::UnsupportedExpansion("custom encoded map key")),
             CodecNode::Map { .. } => Err(Error::UnsupportedExpansion("nested encoded map key")),
             CodecNode::Optional(inner) | CodecNode::Sequence { element: inner, .. } => {

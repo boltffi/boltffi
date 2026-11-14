@@ -2914,7 +2914,7 @@ mod tests {
         assert!(matches!(
             &error,
             Error::Located(cause, location)
-                if matches!(**cause, Error::UnsupportedExpansion("floating-point encoded map key"))
+                if matches!(**cause, Error::Unsupported(message) if message.contains("`f32` or `f64`"))
                     && location.position() == Some(boltffi_binding::SourcePosition::Parameter(0))
         ));
     }
