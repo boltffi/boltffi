@@ -202,6 +202,12 @@ impl fmt::Display for LowerError {
                     "a callback trait method must take `&self`, the only receiver a foreign \
                      implementation can be called through",
                 ),
+            LowerErrorKind::UnsupportedType(UnsupportedType::BorrowedCallbackParameter) => {
+                formatter.write_str(
+                    "a callback parameter must be passed by value: take `impl Trait`, `Box<dyn \
+                     Trait>`, or `Arc<dyn Trait>` instead of a reference",
+                )
+            }
             LowerErrorKind::UnsupportedType(unsupported) => {
                 write!(
                     formatter,
