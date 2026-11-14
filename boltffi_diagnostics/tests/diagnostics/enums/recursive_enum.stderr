@@ -1,4 +1,4 @@
-error: BoltFFI: `Box` and `Arc` cross only around a trait object, such as `Box<dyn Trait>`; pass the inner type itself, for example `Self` instead of `Arc<Self>`
+error: BoltFFI: a record or enum can't contain itself through `Box` or `Arc`; hold the nested values in a `Vec` instead
  --> tests/diagnostics/enums/recursive_enum.rs:4:19
   |
 4 | pub enum E { L, N(Box<E>) }

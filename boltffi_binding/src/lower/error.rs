@@ -224,6 +224,10 @@ impl fmt::Display for LowerError {
                      in a parameter or return, pass the inner type itself, for example `Self` \
                      instead of `Arc<Self>`",
                 ),
+            LowerErrorKind::UnsupportedType(UnsupportedType::RecursiveBox) => formatter.write_str(
+                "a record or enum can't contain itself through `Box` or `Arc`; hold the \
+                 nested values in a `Vec` instead",
+            ),
             LowerErrorKind::UnsupportedType(unsupported) => {
                 write!(
                     formatter,
@@ -449,6 +453,8 @@ pub enum UnsupportedType {
     /// A Rust-owned pointer container appeared where only callback-handle
     /// carrier spellings are supported.
     OpaqueRustContainer,
+    /// A record or enum field holds its own declaration through `Box` or `Arc`.
+    RecursiveBox,
     /// A stream item type was not wire-encodable.
     StreamItem,
     /// A custom type converter cannot be represented as a binding converter.
@@ -477,6 +483,7 @@ impl fmt::Display for UnsupportedType {
             }
             Self::ClosureInValuePosition => "closure in a value-shaped position",
             Self::OpaqueRustContainer => "opaque Rust pointer container",
+            Self::RecursiveBox => "recursive `Box` field",
             Self::StreamItem => "stream item type",
             Self::CustomConverter => "custom type converter",
             Self::InternedStringCustomRepresentation => "InternedString custom type representation",

@@ -119,7 +119,7 @@ fn lower_data<S: SurfaceLower>(
             .iter()
             .enumerate()
             .map(|(variant_index, variant)| {
-                lower_variant(index, ids, variant_index, variant)
+                lower_variant(index, ids, enumeration.id.as_str(), variant_index, variant)
                     .map_err(|error| error.in_member(variant.name.spelling()))
             })
             .collect::<Result<Vec<_>, LowerError>>()?
@@ -146,13 +146,14 @@ fn lower_data<S: SurfaceLower>(
 fn lower_variant(
     index: &Index,
     ids: &DeclarationIds,
+    owner: &str,
     variant_index: usize,
     variant: &SourceVariant,
 ) -> Result<DataVariantDecl, LowerError> {
     Ok(DataVariantDecl::new(
         CanonicalName::from(&variant.name),
         VariantTag::from_index(variant_index).ok_or_else(LowerError::variant_tag_overflow)?,
-        lower_payload(index, ids, &variant.payload)?,
+        lower_payload(index, ids, owner, &variant.payload)?,
         metadata::element_meta(variant.doc.as_ref(), None),
     ))
 }
@@ -160,6 +161,7 @@ fn lower_variant(
 fn lower_payload(
     index: &Index,
     ids: &DeclarationIds,
+    owner: &str,
     payload: &SourcePayload,
 ) -> Result<DataVariantPayload, LowerError> {
     match payload {
@@ -168,7 +170,8 @@ fn lower_payload(
             .iter()
             .enumerate()
             .map(|(field_index, type_expr)| {
-                lower_tuple_field(index, ids, field_index, type_expr)
+                records::reject_boxed_self(type_expr, owner)
+                    .and_then(|()| lower_tuple_field(index, ids, field_index, type_expr))
                     .map_err(|error| error.at(SourcePosition::Field(field_index)))
             })
             .collect::<Result<Vec<_>, LowerError>>()
@@ -177,7 +180,8 @@ fn lower_payload(
             .iter()
             .enumerate()
             .map(|(field_index, field)| {
-                records::lower_encoded_field(index, ids, field)
+                records::reject_boxed_self(&field.type_expr, owner)
+                    .and_then(|()| records::lower_encoded_field(index, ids, field))
                     .map_err(|error| error.at(SourcePosition::Field(field_index)))
             })
             .collect::<Result<Vec<_>, LowerError>>()
