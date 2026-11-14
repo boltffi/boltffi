@@ -197,6 +197,11 @@ impl fmt::Display for LowerError {
                 "a `&mut self` method needs `#[export(single_threaded)]` on its class's struct or \
                  enum, since a thread-safe class can be borrowed from many threads at once",
             ),
+            LowerErrorKind::UnsupportedType(UnsupportedType::InvalidCallbackReceiver) => formatter
+                .write_str(
+                    "a callback trait method must take `&self`, the only receiver a foreign \
+                     implementation can be called through",
+                ),
             LowerErrorKind::UnsupportedType(unsupported) => {
                 write!(
                     formatter,
