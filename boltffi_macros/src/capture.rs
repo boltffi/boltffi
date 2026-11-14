@@ -246,7 +246,7 @@ pub(crate) fn scaffolding_tokens() -> TokenStream {
     });
     quote! {
         #[doc(hidden)]
-        pub enum __BoltffiTag {}
+        pub enum BoltffiScaffolding {}
         #linkage
         #store
     }
@@ -420,12 +420,12 @@ pub(crate) fn custom_type_tokens(item: proc_macro::TokenStream) -> TokenStream {
     quote! {
         #[allow(deprecated)]
         const _: () = {
-            impl #facade::__private::capture::TypeInfo<crate::__BoltffiTag> for #remote {
+            impl #facade::__private::capture::TypeInfo<crate::BoltffiScaffolding> for #remote {
                 const MODULE: &'static str = ::core::module_path!();
                 const NAME: &'static str = #name;
             }
 
-            impl #facade::__private::capture::TypeDesc<crate::__BoltffiTag> for #remote {
+            impl #facade::__private::capture::TypeDesc<crate::BoltffiScaffolding> for #remote {
                 const DESC: #facade::__private::capture::DescBuf = #desc;
             }
         };

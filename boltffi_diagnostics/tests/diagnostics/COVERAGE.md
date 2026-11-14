@@ -39,7 +39,7 @@ Several of these rows have one cause. When a type has no BoltFFI declaration, th
 
 | Mistake | Today | Should say |
 |---|---|---|
-| Forgot `scaffolding!()` | ``cannot find type `__BoltffiTag` in the crate root`` | Add `boltffi::scaffolding!();` at the crate root |
+| Forgot `scaffolding!()` | ``cannot find type `BoltffiScaffolding` in the crate root``. A missing `crate::` path can't carry a custom message, so only the name hints at the fix | Add `boltffi::scaffolding!();` at the crate root |
 | Undeclared trait in a signature | ``cannot find macro `Listener` in this scope`` | `Listener` is not declared, add `#[export]` |
 | `pub type Id = u64;` in a signature | ``cannot find macro `Id` in this scope`` | BoltFFI can't follow this alias, write `u64` |
 | `type Result<T> = ...` | ``unsupported source type `Result<i32>` `` | BoltFFI can't follow this alias |

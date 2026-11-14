@@ -1,4 +1,4 @@
-error[E0425]: cannot find type `__BoltffiTag` in the crate root
+error[E0425]: cannot find type `BoltffiScaffolding` in the crate root
  --> tests/diagnostics/scaffolding/called_inside_a_module.rs:4:1
   |
 4 | #[boltffi::data]
@@ -7,10 +7,10 @@ error[E0425]: cannot find type `__BoltffiTag` in the crate root
   = note: this error originates in the attribute macro `boltffi::data` (in Nightly builds, run with -Z macro-backtrace for more info)
 help: consider importing this enum
   |
-1 + use crate::a::__BoltffiTag;
+1 + use crate::a::BoltffiScaffolding;
   |
 
-error[E0425]: cannot find type `__BoltffiTag` in the crate root
+error[E0425]: cannot find type `BoltffiScaffolding` in the crate root
  --> tests/diagnostics/scaffolding/called_inside_a_module.rs:9:1
   |
 9 | #[boltffi::export]
@@ -19,5 +19,5 @@ error[E0425]: cannot find type `__BoltffiTag` in the crate root
   = note: this error originates in the attribute macro `boltffi::export` (in Nightly builds, run with -Z macro-backtrace for more info)
 help: consider importing this enum
   |
-1 + use crate::a::__BoltffiTag;
+1 + use crate::a::BoltffiScaffolding;
   |

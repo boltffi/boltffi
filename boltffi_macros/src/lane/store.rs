@@ -256,9 +256,9 @@ pub fn crate_tag(id: &str, krate: &str) -> TokenStream {
     match id.split_once("::").map(|(owner, _)| owner) {
         Some(owner) if owner != krate => {
             let owner = format_ident!("{owner}");
-            quote! { ::#owner::__BoltffiTag }
+            quote! { ::#owner::BoltffiScaffolding }
         }
-        _ => quote! { crate::__BoltffiTag },
+        _ => quote! { crate::BoltffiScaffolding },
     }
 }
 

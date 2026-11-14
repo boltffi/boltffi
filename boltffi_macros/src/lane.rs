@@ -196,7 +196,7 @@ pub(crate) fn start(kind: Kind, attribute: TokenStream, item: TokenStream) -> To
     }
     let scaffolded = (kind != Kind::Pool).then(|| {
         quote! {
-            const _: ::core::marker::PhantomData<crate::__BoltffiTag> = ::core::marker::PhantomData;
+            const _: ::core::marker::PhantomData<crate::BoltffiScaffolding> = ::core::marker::PhantomData;
         }
     });
     if Build::current() == Build::SourceRecords {
@@ -796,7 +796,7 @@ fn repr_tag(
         .filter_map(|(position, tag)| Some((position, tag?)))
         .map(|(position, tag)| {
             quote! {
-                impl ::boltffi::__private::CustomReprTag<crate::__BoltffiTag, #position> for #target {
+                impl ::boltffi::__private::CustomReprTag<crate::BoltffiScaffolding, #position> for #target {
                     type Tag = #tag;
                 }
             }
@@ -1263,7 +1263,7 @@ fn lane_definition(
         #[allow(non_local_definitions)]
         #[macro_export]
         macro_rules! #macro_name {
-            (@tag) => { $crate::__BoltffiTag };
+            (@tag) => { $crate::BoltffiScaffolding };
             ([$($callback:tt)*] { $($state:tt)* }) => {
                 $($callback)*! { $($state)* #literal }
             };
