@@ -208,6 +208,11 @@ impl fmt::Display for LowerError {
                      Trait>`, or `Arc<dyn Trait>` instead of a reference",
                 )
             }
+            LowerErrorKind::UnsupportedType(UnsupportedType::SelfInCallbackTrait) => formatter
+                .write_str(
+                    "`Self` can't appear in a callback trait method, since a foreign \
+                     implementation has no Rust type to stand in for it; use a concrete type",
+                ),
             LowerErrorKind::UnsupportedType(unsupported) => {
                 write!(
                     formatter,
