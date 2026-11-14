@@ -1,4 +1,4 @@
-error: BoltFFI: `function f` cannot use generics
+error: BoltFFI: `function f` cannot have lifetime parameters; values are copied across the boundary, so use owned types such as `String`
  --> tests/diagnostics/functions/explicit_lifetime.rs:3:9
   |
 3 | pub fn f<'a>(s: &'a str) -> &'a str { s }

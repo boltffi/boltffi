@@ -51,7 +51,6 @@ Most of these rows have one cause. When a type has no BoltFFI declaration, the l
 | `[u8; 4]` or `-> !` | ``unsupported source type `unrecognized type` `` | Name the type, and suggest `Vec<u8>` for arrays |
 | `#[data]` record that derives `Clone` but not `Copy` | Several E0277 errors naming `Blittable` | This record needs `#[derive(Clone, Copy)]` |
 | `#[data]` on an `impl` | Several E0119 errors naming `Passable` and `Blittable` | Use `#[data(impl)]` |
-| Generic method | ``method $slot:0::g cannot use generics`` | `g` can't be generic |
 
 `#[error]` from `use boltffi::*;` also conflicts with `#[derive(thiserror::Error)]`, and rustc reports ``E0659: `error` is ambiguous``. Importing names and writing `#[boltffi::error]` works. No case covers this yet because it needs `thiserror` as a dev-dependency.
 

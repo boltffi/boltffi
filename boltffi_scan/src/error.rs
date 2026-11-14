@@ -65,6 +65,9 @@ pub enum ScanError {
     UnsupportedGenerics {
         item: String,
     },
+    UnsupportedLifetimes {
+        item: String,
+    },
     UnsupportedUnsafe {
         item: String,
     },
@@ -248,7 +251,18 @@ impl fmt::Display for ScanError {
                 )
             }
             Self::UnsupportedGenerics { item } => {
-                write!(formatter, "`{item}` cannot use generics")
+                write!(
+                    formatter,
+                    "`{item}` cannot be generic; export a separate non-generic item for each type \
+                     you need"
+                )
+            }
+            Self::UnsupportedLifetimes { item } => {
+                write!(
+                    formatter,
+                    "`{item}` cannot have lifetime parameters; values are copied across the \
+                     boundary, so use owned types such as `String`"
+                )
             }
             Self::UnsupportedUnsafe { item } => {
                 write!(formatter, "`{item}` cannot be unsafe")
@@ -424,7 +438,8 @@ mod tests {
                 item: "function make".to_owned()
             }
             .to_string(),
-            "`function make` cannot use generics"
+            "`function make` cannot be generic; export a separate non-generic item for each \
+             type you need"
         );
         assert_eq!(
             ScanError::UnsupportedUnsafe {

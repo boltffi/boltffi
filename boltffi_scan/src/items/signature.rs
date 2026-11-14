@@ -32,7 +32,7 @@ pub(super) fn method(
     returns: MethodReturns,
 ) -> Result<MethodDef, ScanError> {
     let ident = &signature.ident;
-    validate(signature, format!("method {parent}::{ident}"))?;
+    validate(signature, format!("method {ident}"))?;
     let mut method = MethodDef::new(
         MethodId::new(format!("{parent}::{ident}")),
         name::source(ident),

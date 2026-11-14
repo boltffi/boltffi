@@ -1,4 +1,4 @@
-error: BoltFFI: `class Holder<T>` cannot use generics
+error: BoltFFI: `class Holder<T>` cannot be generic; export a separate non-generic item for each type you need
  --> tests/diagnostics/classes/generic_class_impl.rs:8:5
   |
 8 | impl<T> Holder<T> {

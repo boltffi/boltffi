@@ -86,6 +86,16 @@ pub(crate) fn has_bound_modifier(bound: &syn::TraitBound) -> bool {
 }
 
 pub fn generics(generics: &syn::Generics, item: &str) -> Result<(), ScanError> {
+    let only_lifetimes = generics
+        .params
+        .iter()
+        .all(|parameter| matches!(parameter, syn::GenericParam::Lifetime(_)));
+    if !generics.params.is_empty() && only_lifetimes && generics.where_clause.is_none() {
+        return Err(ScanError::UnsupportedLifetimes {
+            item: item.to_owned(),
+        }
+        .at(generics));
+    }
     if !generics.params.is_empty() || generics.where_clause.is_some() {
         return Err(ScanError::UnsupportedGenerics {
             item: item.to_owned(),

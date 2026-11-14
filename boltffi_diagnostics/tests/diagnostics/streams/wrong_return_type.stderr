@@ -1,4 +1,4 @@
-error: BoltFFI: invalid stream declaration: `stream $slot:0::s` must return Arc<EventSubscription<T>>
+error: BoltFFI: invalid stream declaration: `stream s` must return Arc<EventSubscription<T>>
  --> tests/diagnostics/streams/wrong_return_type.rs:6:18
   |
 6 |  pub fn s(&self) -> u32 { 0 } }

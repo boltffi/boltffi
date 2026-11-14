@@ -825,7 +825,7 @@ mod tests {
         assert!(
             matches!(
                 crate::error::unlocated(capture_class_methods(&generic_impl)),
-                Err(ScanError::UnsupportedGenerics { .. })
+                Err(ScanError::UnsupportedLifetimes { .. })
             ),
             "generic blocks stay unsupported"
         );

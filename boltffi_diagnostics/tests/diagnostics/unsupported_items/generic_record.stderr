@@ -1,4 +1,4 @@
-error: BoltFFI: `record Pair` cannot use generics
+error: BoltFFI: `record Pair` cannot be generic; export a separate non-generic item for each type you need
  --> tests/diagnostics/unsupported_items/generic_record.rs:5:16
   |
 5 | pub struct Pair<T> {

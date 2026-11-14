@@ -1,4 +1,4 @@
-error: BoltFFI: `enum E` cannot use generics
+error: BoltFFI: `enum E` cannot be generic; export a separate non-generic item for each type you need
  --> tests/diagnostics/errors/generic_error_enum.rs:4:11
   |
 4 | pub enum E<T> { A(T) }

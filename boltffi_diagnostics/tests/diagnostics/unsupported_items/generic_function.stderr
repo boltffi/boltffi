@@ -1,4 +1,4 @@
-error: BoltFFI: `function first` cannot use generics
+error: BoltFFI: `function first` cannot be generic; export a separate non-generic item for each type you need
  --> tests/diagnostics/unsupported_items/generic_function.rs:4:13
   |
 4 | pub fn first<T>(items: Vec<T>) -> Option<T> {
