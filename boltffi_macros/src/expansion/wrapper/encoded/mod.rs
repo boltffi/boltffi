@@ -48,9 +48,11 @@ impl RuntimeWireCodec {
                 self.require_supported_map_key(key)?;
                 self.require_supported(value)
             }
-            CodecNode::ClassHandle(_) | CodecNode::CallbackHandle(_) | _ => {
-                Err(Error::UnsupportedExpansion("codec node"))
-            }
+            CodecNode::ClassHandle(_) | CodecNode::CallbackHandle(_) => Err(Error::Unsupported(
+                "a class or callback trait object crosses only on its own, not in a field or \
+                 inside a `Vec`, tuple, or map",
+            )),
+            _ => Err(Error::UnsupportedExpansion("codec node")),
         }
     }
 
