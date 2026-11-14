@@ -1767,8 +1767,9 @@ impl RustOwnedClosure {
             (rust_api::ClosureSourceForm::BoxedDyn, ClosureForm::FnOnce) => {
                 Ok(quote! { Some(#value) })
             }
-            _ => Err(Error::UnsupportedExpansion(
-                "outgoing closure parameter form",
+            _ => Err(Error::Unsupported(
+                "a callback trait method can't take an optional closure yet; take \
+                 `Box<dyn Fn(..)>` instead",
             )),
         }
     }
