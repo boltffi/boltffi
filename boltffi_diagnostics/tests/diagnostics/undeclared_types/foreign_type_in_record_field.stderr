@@ -9,3 +9,17 @@ note: `IpAddr` is imported here, but it is an enum, not a macro
   |
 3 | use std::net::IpAddr;
   |     ^^^^^^^^^^^^^^^^
+
+error[E0277]: `IpAddr` is not declared for BoltFFI
+ --> tests/diagnostics/undeclared_types/foreign_type_in_record_field.rs:8:18
+  |
+8 |     pub address: IpAddr,
+  |                  ^^^^^^ not declared
+  |
+  = help: the trait `boltffi::__private::capture::type_info::Declared<_>` is not implemented for `IpAddr`
+  = note: add `#[data]` or `#[error]` to a record or enum, `#[export]` to a class, or declare a foreign type with `custom_type!`
+note: required by a bound in `boltffi::__private::capture::type_info::declared`
+ --> $WORKSPACE/boltffi_core/src/capture/type_info.rs
+  |
+  | pub const fn declared<T: ?Sized + Declared<Tag>, Tag>() {}
+  |                                   ^^^^^^^^^^^^^ required by this bound in `declared`

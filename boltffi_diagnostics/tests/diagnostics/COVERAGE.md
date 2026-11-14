@@ -35,14 +35,13 @@ Errors the scanner reports point at the parameter, field, or method at fault. Lo
 
 ## Most common bad messages
 
-Most of these rows have one cause. When a type has no BoltFFI declaration, the lookup fails and rustc reports a missing macro. Replacing that error is the most valuable single fix.
+Several of these rows have one cause. When a type has no BoltFFI declaration, the lookup fails and rustc reports a missing macro. For a struct or enum, a second error now says ``` `Point` is not declared for BoltFFI ``` at the same type. rustc's own error can't be suppressed, and traits and aliases still get only rustc's.
 
 | Mistake | Today | Should say |
 |---|---|---|
 | Forgot `scaffolding!()` | ``cannot find type `__BoltffiTag` in the crate root`` | Add `boltffi::scaffolding!();` at the crate root |
-| Undeclared struct or trait in a signature | ``cannot find macro `Point` in this scope`` | `Point` is not declared, add `#[data]` or `#[export]` |
+| Undeclared trait in a signature | ``cannot find macro `Listener` in this scope`` | `Listener` is not declared, add `#[export]` |
 | `pub type Id = u64;` in a signature | ``cannot find macro `Id` in this scope`` | BoltFFI can't follow this alias, write `u64` |
-| Undeclared error type | ``cannot find macro `E` in this scope`` | `E` is not declared, add `#[error]` |
 | `type Result<T> = ...` | ``unsupported source type `Result<i32>` `` | BoltFFI can't follow this alias |
 | `Arc<Point>`, `Box<i32>`, `-> Arc<Self>` | `opaque Rust pointer container cannot be represented in binding IR yet` | Name the type, and suggest `Self` for constructors |
 | `#[data]` record that derives `Clone` but not `Copy` | Several E0277 errors naming `Blittable` | This record needs `#[derive(Clone, Copy)]` |

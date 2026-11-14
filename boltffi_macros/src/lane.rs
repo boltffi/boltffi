@@ -243,8 +243,10 @@ pub(crate) fn start(kind: Kind, attribute: TokenStream, item: TokenStream) -> To
         }),
     };
     let expanded = expanded.unwrap_or_else(|message| compile_error(&message));
+    let declared = declared_checks(kind, &fragments);
     quote! {
         #scaffolded
+        #declared
         #expanded
     }
 }
@@ -459,6 +461,43 @@ fn spelling(slot: &SlotSource) -> String {
         SlotSource::Type(ty) => ty.to_token_stream().to_string(),
         SlotSource::TraitValue(path) => path.to_token_stream().to_string(),
     }
+}
+
+/// A check per type the fragments name, so a type no declaration covers reports that
+/// where the signature names it, beside rustc's failed lane lookup. An `#[export] impl`
+/// target is left out, since its class check already reports it.
+fn declared_checks(kind: Kind, fragments: &Fragments) -> TokenStream {
+    let facade = capture::facade();
+    let class_target = match (kind, fragments.first()) {
+        (Kind::ExportMethods, Some((SourceFragment::Methods { .. }, slots))) => {
+            slots.first().map(spelling)
+        }
+        _ => None,
+    };
+    spelled_slots(fragments)
+        .into_iter()
+        .filter(|slot| class_target.as_ref() != Some(&spelling(slot)))
+        .filter_map(|slot| match slot {
+            SlotSource::Type(ty) if !names_self(ty) => Some(ty),
+            _ => None,
+        })
+        .map(|ty| {
+            quote::quote_spanned! { syn::spanned::Spanned::span(&**ty) =>
+                const _: () = #facade::__private::capture::declared::<#ty, _>();
+            }
+        })
+        .collect()
+}
+
+fn names_self(ty: &syn::Type) -> bool {
+    fn any_self(tokens: TokenStream) -> bool {
+        tokens.into_iter().any(|token| match token {
+            TokenTree::Ident(ident) => ident == "Self",
+            TokenTree::Group(group) => any_self(group.stream()),
+            _ => false,
+        })
+    }
+    any_self(ty.to_token_stream())
 }
 
 /// The name the invocation's own declaration goes by, when it declares a type.
