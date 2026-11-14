@@ -561,8 +561,13 @@ runtime_identifiers = ["osx-arm64", "linux-x64", "win-x64", "win-arm64"]
 
 `runtime_identifiers` controls which native assets are built and bundled into the NuGet package.
 `current` resolves to the active host RID; canonical values are `osx-arm64`, `osx-x64`,
-`linux-x64`, `linux-arm64`, `win-x64`, and `win-arm64`. Windows hosts can build both
-Windows architectures when the corresponding Rust target and Visual Studio C++ components are installed.
+`linux-x64`, `linux-arm64`, `win-x86`, `win-x64`, and `win-arm64`. Windows hosts can build every
+Windows architecture when the corresponding Rust target and Visual Studio C++ components are installed.
+
+The bindings are generated once and shared by every runtime identifier, including 32-bit `win-x86`.
+This is safe because a record is only passed by value when its layout is identical under every
+supported ABI: records with pointer-sized fields, or with 64-bit fields that the 32-bit x86 ABI
+would align differently, are encoded instead. All native entry points use the `cdecl` calling convention.
 
 ### Output Structure
 
@@ -606,6 +611,51 @@ double distance = MyLib.Distance(a, b);
 The native runtime assets are loaded automatically from the NuGet `runtimes/<rid>/native/`
 folder. Classes implement `IDisposable`; streams return `IAsyncEnumerable<T>` and can be consumed
 with `await foreach`.
+
+### Targeting .NET Framework
+
+`target_framework` also decides which .NET APIs the generated C# may use, so the same crate can be
+packaged for applications that still run on .NET Framework:
+
+```toml
+[targets.csharp]
+enabled = true
+target_framework = "net461"
+runtime_identifiers = ["win-x86", "win-x64"]
+```
+
+| `target_framework` | Generated for | Extra package references | Streams |
+|---|---|---|---|
+| `net5.0` and newer, `netcoreapp3.0`, `netcoreapp3.1`, `netstandard2.1` | Modern .NET | None | `IAsyncEnumerable<T>` |
+| `net461` to `net481`, `netstandard2.0` | .NET Framework 4.6.1+ | `Microsoft.Bcl.AsyncInterfaces`, `System.Memory`, `System.Threading.Tasks.Extensions`, `System.ValueTuple` | `IAsyncEnumerable<T>` |
+| `net45`, `net451`, `net452`, `net46` | .NET Framework 4.5 to 4.6 | `System.ValueTuple` | Not generated |
+
+Other values are rejected when the configuration is loaded.
+
+For the .NET Framework profiles the generated code avoids APIs that only exist on modern .NET, and
+the package gains a `Polyfills.cs` with the compiler attributes that records rely on. The public API
+is the same as on modern .NET, apart from streams before 4.6.1. Output for modern target frameworks
+is unaffected by these profiles.
+
+Before 4.6.1 there is no `IAsyncEnumerable<T>`: the package that provides it starts at 4.6.1, so
+stream methods are skipped. They are listed in the generation coverage summary, and
+`--deny-skipped` turns them into an error. Async results that complete on a native thread are
+handed to the thread pool before continuations run, because 4.5 has no
+`TaskCreationOptions.RunContinuationsAsynchronously`.
+
+To ship one package for both .NET Framework and modern .NET, list several frameworks with
+`target_frameworks` instead:
+
+```toml
+[targets.csharp]
+enabled = true
+target_frameworks = ["net461", "net8.0"]
+```
+
+The project becomes multi-targeted, so NuGet gives each consumer the assembly built for its runtime.
+The C# is generated once for the most restrictive entry, here `net461`, and the same sources are
+compiled for every framework. The compatibility packages are only referenced by the .NET Framework
+builds.
 
 ### Source-Only Generation
 

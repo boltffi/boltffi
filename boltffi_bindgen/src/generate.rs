@@ -54,6 +54,7 @@ pub struct Generation {
     csharp_namespace: Option<String>,
     csharp_module_class: Option<String>,
     csharp_native_library: Option<String>,
+    csharp_target_framework: Option<String>,
     dart_package: Option<String>,
     dart_native_artifact: Option<String>,
     dart_standalone_pubspec: bool,
@@ -110,6 +111,7 @@ impl Generation {
             csharp_namespace: None,
             csharp_module_class: None,
             csharp_native_library: None,
+            csharp_target_framework: None,
             dart_package: None,
             dart_native_artifact: None,
             dart_standalone_pubspec: false,
@@ -423,6 +425,12 @@ impl Generation {
     /// Sets the class containing generated C# free functions and constants.
     pub fn csharp_module_class(mut self, module_class: Option<String>) -> Self {
         self.csharp_module_class = module_class;
+        self
+    }
+
+    /// Sets the target framework the generated C# source compiles against.
+    pub fn csharp_target_framework(mut self, target_framework: Option<String>) -> Self {
+        self.csharp_target_framework = target_framework;
         self
     }
 
@@ -847,6 +855,12 @@ impl Generation {
             .unwrap_or_default();
         let host = match self.csharp_module_class.as_deref() {
             Some(name) => host.module_class(name).map_err(GenerationError::Render)?,
+            None => host,
+        };
+        let host = match self.csharp_target_framework.as_deref() {
+            Some(framework) => host
+                .target_framework(framework)
+                .map_err(GenerationError::Render)?,
             None => host,
         };
         Ok(self

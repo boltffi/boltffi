@@ -141,9 +141,12 @@ pub(crate) fn pack_ruby(
 /// Windows host before it generates or builds anything.
 fn supported_host(host: Option<NativeHostPlatform>) -> Result<NativeHostPlatform> {
     match host {
-        Some(NativeHostPlatform::WindowsX86_64 | NativeHostPlatform::WindowsAarch64) | None => {
-            Err(failed("pack ruby supports only macOS and Linux hosts"))
-        }
+        Some(
+            NativeHostPlatform::WindowsX86
+            | NativeHostPlatform::WindowsX86_64
+            | NativeHostPlatform::WindowsAarch64,
+        )
+        | None => Err(failed("pack ruby supports only macOS and Linux hosts")),
         Some(host) => Ok(host),
     }
 }

@@ -5,13 +5,14 @@ use boltffi_binding::{
 
 use crate::{
     bridge::c::CBridgeContract,
-    core::{Emitted, RenderContext, Result},
+    core::{Emitted, Result},
 };
 
 use super::super::{
     name_style::{Name, Namespace},
     type_name,
 };
+use super::Context;
 use super::{Documentation, Function, default_value::DefaultExpression};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -28,7 +29,7 @@ impl Constant {
         declaration: &ConstantDecl<Native>,
         namespace: &Namespace,
         bridge: &CBridgeContract,
-        context: &RenderContext<Native>,
+        context: &Context,
     ) -> Result<Self> {
         match declaration.value() {
             ConstantValueDecl::Inline { ty, value, .. } => {
@@ -81,7 +82,7 @@ impl AssociatedConstants {
         owner: ConstantOwner,
         namespace: &Namespace,
         bridge: &CBridgeContract,
-        context: &RenderContext<Native>,
+        context: &Context,
     ) -> Result<Self> {
         context
             .associated_constants(owner)
@@ -104,10 +105,7 @@ impl AssociatedConstants {
     }
 }
 
-fn is_compile_time_constant(
-    declaration: &ConstantValueDecl<Native>,
-    context: &RenderContext<Native>,
-) -> bool {
+fn is_compile_time_constant(declaration: &ConstantValueDecl<Native>, context: &Context) -> bool {
     let ConstantValueDecl::Inline { ty, value, .. } = declaration else {
         return false;
     };

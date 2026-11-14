@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use askama::Template;
+use boltffi_backend::target::csharp::CSharpProfile;
 use boltffi_bindgen::cargo::LibraryCargoArgs;
 
 use crate::build::{
@@ -117,7 +118,8 @@ struct CSharpPackagingTarget {
 struct CSharpPackagingPlan {
     package_id: String,
     package_version: String,
-    target_framework: String,
+    target_frameworks: Vec<String>,
+    profile: CSharpProfile,
     artifact_name: String,
     source_directory: PathBuf,
     generation_cargo_args: Vec<String>,
@@ -185,7 +187,7 @@ impl CSharpPackagingPlan {
                 })?;
         let current_host = NativeHostPlatform::current().ok_or_else(|| CliError::CommandFailed {
             command:
-                "C# packaging is only supported on osx-arm64, osx-x64, linux-x64, linux-arm64, win-x64, and win-arm64 hosts".to_string(),
+                "C# packaging is only supported on osx-arm64, osx-x64, linux-x64, linux-arm64, win-x86, win-x64, and win-arm64 hosts".to_string(),
             status: None,
         })?;
         let build_profile = resolve_build_profile(release, &build_cargo_args);
@@ -245,12 +247,19 @@ impl CSharpPackagingPlan {
             root_directory,
         };
 
+        let profile = CSharpProfile::from_target_framework(&config.csharp_target_framework())
+            .map_err(|error| CliError::CommandFailed {
+                command: error.to_string(),
+                status: None,
+            })?;
+
         Ok(Self {
             package_id: config.csharp_package_id(),
             package_version: config
                 .package_version()
                 .unwrap_or_else(|| "0.1.0".to_string()),
-            target_framework: config.csharp_target_framework(),
+            target_frameworks: config.csharp_target_frameworks(),
+            profile,
             artifact_name,
             source_directory,
             generation_cargo_args: cargo_command_args,
@@ -443,6 +452,20 @@ fn sync_csharp_project(config: &Config, plan: &CSharpPackagingPlan) -> Result<()
         }
     })?;
 
+    if !plan.profile.features().needs_polyfills() {
+        let polyfills = plan.layout.source_directory.join("Polyfills.cs");
+        match std::fs::remove_file(&polyfills) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(source) => {
+                return Err(CliError::WriteFailed {
+                    path: polyfills,
+                    source,
+                });
+            }
+        }
+    }
+
     let project = render_csharp_project(config, plan)?;
     std::fs::write(&plan.layout.project_path, project).map_err(|source| CliError::WriteFailed {
         path: plan.layout.project_path.clone(),
@@ -453,7 +476,9 @@ fn sync_csharp_project(config: &Config, plan: &CSharpPackagingPlan) -> Result<()
 #[derive(Template)]
 #[template(path = "BoltFFI.CSharp.csproj.xml", escape = "html")]
 struct CSharpProjectTemplate<'a> {
-    target_framework: &'a str,
+    target_frameworks: &'a [String],
+    package_references: &'a [(&'a str, &'a str)],
+    framework_package_references: &'a [(&'a str, &'static [(&'static str, &'static str)])],
     runtime_identifiers: &'a [CSharpRuntimeIdentifier],
     package_id: &'a str,
     package_version: &'a str,
@@ -587,6 +612,19 @@ impl CSharpPackageFile {
     }
 }
 
+fn csharp_package_references(profile: CSharpProfile) -> &'static [(&'static str, &'static str)] {
+    match profile {
+        CSharpProfile::NetFx46 => &[
+            ("Microsoft.Bcl.AsyncInterfaces", "6.0.0"),
+            ("System.Memory", "4.5.5"),
+            ("System.Threading.Tasks.Extensions", "4.5.4"),
+            ("System.ValueTuple", "4.5.0"),
+        ],
+        CSharpProfile::NetFx45 => &[("System.ValueTuple", "4.5.0")],
+        _ => &[],
+    }
+}
+
 fn render_csharp_project(config: &Config, plan: &CSharpPackagingPlan) -> Result<String> {
     let runtime_identifiers = plan
         .packaging_targets
@@ -594,9 +632,27 @@ fn render_csharp_project(config: &Config, plan: &CSharpPackagingPlan) -> Result<
         .map(|target| target.runtime_identifier)
         .collect::<Vec<_>>();
     let nuget = CSharpNugetProjectMetadata::from_config(config, plan)?;
+    let package_references = csharp_package_references(plan.profile);
+    let framework_package_references = match plan.target_frameworks.as_slice() {
+        [_] => Vec::new(),
+        target_frameworks => target_frameworks
+            .iter()
+            .filter(|target_framework| {
+                CSharpProfile::from_target_framework(target_framework)
+                    .is_ok_and(|profile| profile != CSharpProfile::Modern)
+            })
+            .map(|target_framework| (target_framework.as_str(), package_references))
+            .filter(|(_, references)| !references.is_empty())
+            .collect(),
+    };
 
     CSharpProjectTemplate {
-        target_framework: &plan.target_framework,
+        target_frameworks: &plan.target_frameworks,
+        package_references: match plan.target_frameworks.len() {
+            1 => package_references,
+            _ => &[],
+        },
+        framework_package_references: &framework_package_references,
         runtime_identifiers: &runtime_identifiers,
         package_id: &plan.package_id,
         package_version: &plan.package_version,
@@ -714,8 +770,8 @@ fn dotnet_pack(plan: &CSharpPackagingPlan, step: &Step) -> Result<PathBuf> {
 mod tests {
     use super::{
         CSharpCargoContext, CSharpPackageLayout, CSharpPackagingPlan, CSharpPackagingTarget,
-        csharp_no_build_config_args, pack_csharp, remove_stale_csharp_runtime_assets,
-        render_csharp_project,
+        copy_csharp_native_asset, csharp_no_build_config_args, pack_csharp,
+        remove_stale_csharp_runtime_assets, render_csharp_project, sync_csharp_project,
     };
     use crate::build::CargoBuildProfile;
     use crate::cargo::{Cargo, CargoCrateType};
@@ -726,6 +782,7 @@ mod tests {
     };
     use crate::reporter::{Reporter, Verbosity};
     use crate::target::{CSharpRuntimeIdentifier, NativeHostPlatform};
+    use boltffi_backend::target::csharp::CSharpProfile;
     use std::path::{Path, PathBuf};
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -861,7 +918,8 @@ mod tests {
         CSharpPackagingPlan {
             package_id: "Demo.Runtime".to_string(),
             package_version: "1.2.3".to_string(),
-            target_framework: "net10.0".to_string(),
+            target_frameworks: vec!["net10.0".to_string()],
+            profile: CSharpProfile::Modern,
             artifact_name: "demo".to_string(),
             source_directory: PathBuf::from("/tmp/demo"),
             generation_cargo_args: Vec::new(),
@@ -898,9 +956,9 @@ mod tests {
 
     fn unsupported_csharp_runtime_identifier() -> CSharpRuntimeIdentifier {
         match NativeHostPlatform::current().expect("supported host for C# packaging tests") {
-            NativeHostPlatform::WindowsX86_64 | NativeHostPlatform::WindowsAarch64 => {
-                CSharpRuntimeIdentifier::OsxArm64
-            }
+            NativeHostPlatform::WindowsX86
+            | NativeHostPlatform::WindowsX86_64
+            | NativeHostPlatform::WindowsAarch64 => CSharpRuntimeIdentifier::OsxArm64,
             _ => CSharpRuntimeIdentifier::WinX64,
         }
     }
@@ -916,6 +974,7 @@ mod tests {
             CSharpRuntimeIdentifier::OsxX64 => "x86_64-apple-darwin",
             CSharpRuntimeIdentifier::LinuxX64 => "x86_64-unknown-linux-gnu",
             CSharpRuntimeIdentifier::LinuxArm64 => "aarch64-unknown-linux-gnu",
+            CSharpRuntimeIdentifier::WinX86 => "i686-pc-windows-msvc",
             CSharpRuntimeIdentifier::WinX64 => "x86_64-pc-windows-msvc",
             CSharpRuntimeIdentifier::WinArm64 => "aarch64-pc-windows-msvc",
         }
@@ -979,6 +1038,12 @@ mod tests {
                 .shared_library_filename("demo"),
             "demo.dll"
         );
+        assert_eq!(
+            CSharpRuntimeIdentifier::WinX86
+                .native_host_platform()
+                .shared_library_filename("demo"),
+            "demo.dll"
+        );
     }
 
     #[test]
@@ -1005,6 +1070,112 @@ mod tests {
         assert!(project.contains("<Description>Demo &#60;runtime&#62;</Description>"));
         assert!(project.contains("<PackageLicenseExpression>MIT</PackageLicenseExpression>"));
         assert!(project.contains("<RepositoryUrl>https://example.com/demo</RepositoryUrl>"));
+    }
+
+    #[test]
+    fn csharp_project_references_no_packages_for_the_modern_profile() {
+        let plan = csharp_packaging_plan(PathBuf::from("/tmp/dist/csharp"));
+
+        let project = render_csharp_project(&config(), &plan).expect("C# project should render");
+
+        assert!(!project.contains("<PackageReference"));
+        assert!(project.contains("<LangVersion>latest</LangVersion>"));
+    }
+
+    #[test]
+    fn csharp_project_references_compatibility_packages_for_net_framework() {
+        let mut plan = csharp_packaging_plan(PathBuf::from("/tmp/dist/csharp"));
+        plan.target_frameworks = vec!["net48".to_string()];
+        plan.profile = CSharpProfile::NetFx46;
+
+        let project = render_csharp_project(&config(), &plan).expect("C# project should render");
+
+        assert!(project.contains("<TargetFramework>net48</TargetFramework>"));
+        assert!(project.contains("<LangVersion>latest</LangVersion>"));
+        for (name, version) in [
+            ("Microsoft.Bcl.AsyncInterfaces", "6.0.0"),
+            ("System.Memory", "4.5.5"),
+            ("System.Threading.Tasks.Extensions", "4.5.4"),
+            ("System.ValueTuple", "4.5.0"),
+        ] {
+            assert!(
+                project.contains(&format!(
+                    r#"<PackageReference Include="{name}" Version="{version}" />"#
+                )),
+                "missing {name}"
+            );
+        }
+    }
+
+    #[test]
+    fn csharp_project_for_net_framework_45_omits_packages_it_cannot_use() {
+        let mut plan = csharp_packaging_plan(PathBuf::from("/tmp/dist/csharp"));
+        plan.target_frameworks = vec!["net45".to_string()];
+        plan.profile = CSharpProfile::NetFx45;
+
+        let project = render_csharp_project(&config(), &plan).expect("C# project should render");
+
+        assert!(project.contains("<TargetFramework>net45</TargetFramework>"));
+        assert!(project.contains("<LangVersion>latest</LangVersion>"));
+        assert!(
+            project.contains(r#"<PackageReference Include="System.ValueTuple" Version="4.5.0" />"#)
+        );
+        for name in [
+            "Microsoft.Bcl.AsyncInterfaces",
+            "System.Memory",
+            "System.Threading.Tasks.Extensions",
+        ] {
+            assert!(!project.contains(name), "unexpected {name}");
+        }
+    }
+
+    #[test]
+    fn csharp_project_multi_targets_with_framework_specific_packages() {
+        let mut plan = csharp_packaging_plan(PathBuf::from("/tmp/dist/csharp"));
+        plan.target_frameworks = vec!["net461".to_string(), "net8.0".to_string()];
+        plan.profile = CSharpProfile::NetFx46;
+
+        let project = render_csharp_project(&config(), &plan).expect("C# project should render");
+
+        assert!(project.contains("<TargetFrameworks>net461;net8.0</TargetFrameworks>"));
+        assert!(!project.contains("<TargetFramework>"));
+        let (common, conditional) = project
+            .split_once(r#"<ItemGroup Condition="'$(TargetFramework)' == 'net461'">"#)
+            .expect("net461 package group");
+        assert!(!common.contains("<PackageReference"));
+        assert!(!project.contains("'net8.0'"));
+        for name in [
+            "Microsoft.Bcl.AsyncInterfaces",
+            "System.Memory",
+            "System.Threading.Tasks.Extensions",
+            "System.ValueTuple",
+        ] {
+            assert!(
+                conditional.contains(&format!(r#"<PackageReference Include="{name}""#)),
+                "missing {name}"
+            );
+        }
+    }
+
+    #[test]
+    fn syncing_the_project_removes_stale_polyfills_for_the_modern_profile() {
+        let root = unique_temp_dir("boltffi-csharp-polyfill-test");
+        let mut plan = csharp_packaging_plan(root.clone());
+        let polyfills = plan.layout.source_directory.join("Polyfills.cs");
+
+        plan.target_frameworks = vec!["net48".to_string()];
+        plan.profile = CSharpProfile::NetFx46;
+        sync_csharp_project(&config(), &plan).expect("sync legacy project");
+        std::fs::write(&polyfills, "").expect("write polyfills");
+        sync_csharp_project(&config(), &plan).expect("sync legacy project again");
+        assert!(polyfills.exists());
+
+        plan.target_frameworks = vec!["net10.0".to_string()];
+        plan.profile = CSharpProfile::Modern;
+        sync_csharp_project(&config(), &plan).expect("sync modern project");
+        assert!(!polyfills.exists());
+
+        std::fs::remove_dir_all(root).expect("cleanup polyfill test directory");
     }
 
     #[test]
@@ -1149,6 +1320,62 @@ mod tests {
         );
 
         std::fs::remove_dir_all(project).expect("cleanup temp cdylib project");
+    }
+
+    #[test]
+    fn csharp_no_build_plan_maps_win_x86_to_the_i686_msvc_triple() {
+        let project = temp_cdylib_project();
+        let manifest_path = project.join("Cargo.toml");
+        let mut config = config();
+        config.targets.csharp.runtime_identifiers = Some(vec![
+            CSharpRuntimeIdentifier::WinX86,
+            CSharpRuntimeIdentifier::WinX64,
+        ]);
+
+        let plan = CSharpPackagingPlan::from_config(
+            &config,
+            false,
+            &cargo_args_for_manifest(&manifest_path),
+            true,
+        )
+        .expect("win-x86 should resolve without a build");
+
+        assert_eq!(
+            plan.packaging_targets
+                .iter()
+                .map(|target| (
+                    target.runtime_identifier.canonical_name(),
+                    target.cargo_context.rust_target_triple.as_str()
+                ))
+                .collect::<Vec<_>>(),
+            [
+                ("win-x86", "i686-pc-windows-msvc"),
+                ("win-x64", "x86_64-pc-windows-msvc")
+            ]
+        );
+
+        std::fs::remove_dir_all(project).expect("cleanup temp cdylib project");
+    }
+
+    #[test]
+    fn copies_win_x86_native_assets_under_their_runtime_directory() {
+        let root = unique_temp_dir("boltffi-csharp-win-x86-asset-test");
+        std::fs::create_dir_all(&root).expect("create asset test directory");
+        let library = root.join("demo.dll");
+        std::fs::write(&library, "dll").expect("write native library");
+        let plan = csharp_packaging_plan(root.clone());
+
+        let copied = copy_csharp_native_asset(
+            &plan.layout,
+            &packaging_target(CSharpRuntimeIdentifier::WinX86),
+            &library,
+        )
+        .expect("copy native asset");
+
+        assert_eq!(copied, root.join("runtimes/win-x86/native/demo.dll"));
+        assert!(copied.exists());
+
+        std::fs::remove_dir_all(root).expect("cleanup asset test directory");
     }
 
     #[test]
