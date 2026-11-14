@@ -16,25 +16,19 @@ pub struct ActiveCfg {
 }
 
 impl ActiveCfg {
+    #[cfg(test)]
     pub fn with_feature(mut self, feature: impl AsRef<str>) -> Self {
         self.features.insert(Self::feature_name(feature.as_ref()));
         self
     }
 
-    pub(crate) fn for_package(&self, features: impl IntoIterator<Item = impl AsRef<str>>) -> Self {
-        let mut package_cfg = self.clone();
-        package_cfg.features = features
-            .into_iter()
-            .map(|feature| Self::feature_name(feature.as_ref()))
-            .collect();
-        package_cfg
-    }
-
+    #[cfg(test)]
     pub fn with_name(mut self, name: impl AsRef<str>) -> Self {
         self.names.insert(Self::cfg_name(name.as_ref()));
         self
     }
 
+    #[cfg(test)]
     pub fn with_value(mut self, name: impl AsRef<str>, value: impl Into<String>) -> Self {
         self.values
             .entry(Self::cfg_name(name.as_ref()))
@@ -306,22 +300,6 @@ mod tests {
         let active = ActiveCfg::default().with_feature("native_ffi");
 
         assert!(matches(&active, "#[cfg(feature = \"native-ffi\")]"));
-    }
-
-    #[test]
-    fn package_features_replace_root_features_without_losing_target_cfg() {
-        let root = ActiveCfg::default()
-            .with_feature("root-only")
-            .with_name("unix");
-        let dependency = root.for_package(["dependency-only"]);
-
-        assert!(matches(&root, "#[cfg(feature = \"root-only\")]"));
-        assert!(!matches(&dependency, "#[cfg(feature = \"root-only\")]"));
-        assert!(matches(
-            &dependency,
-            "#[cfg(feature = \"dependency-only\")]"
-        ));
-        assert!(matches(&dependency, "#[cfg(unix)]"));
     }
 
     #[test]
