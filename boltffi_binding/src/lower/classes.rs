@@ -1,10 +1,17 @@
-use boltffi_ast::{ClassDef as SourceClass, ClassThreadSafety as SourceClassThreadSafety};
+use boltffi_ast::{
+    ClassDef as SourceClass, ClassThreadSafety as SourceClassThreadSafety, Receiver,
+};
 
 use crate::{CanonicalName, ClassDecl, ClassDeclParts, ClassThreadSafety, InvalidClassDecl};
 
 use super::{
-    LowerError, error::UnsupportedType, ids::DeclarationIds, index::Index, metadata, methods,
-    surface::SurfaceLower, symbol::SymbolAllocator,
+    LowerError,
+    error::{SourcePosition, UnsupportedType},
+    ids::DeclarationIds,
+    index::Index,
+    metadata, methods,
+    surface::SurfaceLower,
+    symbol::SymbolAllocator,
 };
 
 /// Lowers every class in the source contract.
@@ -24,7 +31,9 @@ pub fn lower<S: SurfaceLower>(
         .classes()
         .iter()
         .filter(|class| index.lowers(class.id.as_str()))
-        .map(|class| lower_one(index, ids, allocator, class))
+        .map(|class| {
+            lower_one(index, ids, allocator, class).map_err(|error| error.in_declaration(&class.id))
+        })
         .collect()
 }
 
@@ -50,7 +59,7 @@ fn lower_one<S: SurfaceLower>(
         initializers,
         methods: class_methods,
     })
-    .map_err(lower_invalid_class)
+    .map_err(|error| lower_invalid_class(class, error))
 }
 
 impl From<SourceClassThreadSafety> for ClassThreadSafety {
@@ -62,12 +71,22 @@ impl From<SourceClassThreadSafety> for ClassThreadSafety {
     }
 }
 
-fn lower_invalid_class(error: InvalidClassDecl) -> LowerError {
+fn lower_invalid_class(class: &SourceClass, error: InvalidClassDecl) -> LowerError {
     match error {
         InvalidClassDecl::MutableReceiverRequiresUnsafeSingleThreaded => {
-            LowerError::unsupported_type(
+            let error = LowerError::unsupported_type(
                 UnsupportedType::MutableClassReceiverRequiresUnsafeSingleThreaded,
-            )
+            );
+            match class
+                .methods
+                .iter()
+                .find(|method| method.receiver == Receiver::Mutable)
+            {
+                Some(method) => error
+                    .in_member(method.name.spelling())
+                    .at(SourcePosition::Receiver),
+                None => error,
+            }
         }
     }
 }

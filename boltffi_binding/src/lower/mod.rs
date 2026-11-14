@@ -67,7 +67,9 @@ use boltffi_ast::SourceContract;
 use crate::{BindingError, Bindings, CanonicalName, Decl, PackageInfo};
 
 pub use self::callbacks::has_local_protocol;
-pub use self::error::{DeclarationFamily, LowerError, LowerErrorKind, UnsupportedType};
+pub use self::error::{
+    DeclarationFamily, LowerError, LowerErrorKind, SourceLocation, SourcePosition, UnsupportedType,
+};
 pub use self::records::direct_record_fields;
 pub use self::surface::SurfaceLower;
 pub use self::symbol::linkage_anchor;

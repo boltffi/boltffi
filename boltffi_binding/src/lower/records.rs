@@ -1,5 +1,5 @@
 use boltffi_ast::{
-    Primitive as SourcePrimitive, RecordDef as SourceRecord, ReprAttr, ReprItem, TypeExpr,
+    FieldDef, Primitive as SourcePrimitive, RecordDef as SourceRecord, ReprAttr, ReprItem, TypeExpr,
 };
 
 use crate::{
@@ -9,9 +9,16 @@ use crate::{
 };
 
 use super::{
-    LowerError, codecs, error::UnsupportedType, ids::DeclarationIds, index::Index, layout,
-    layout::PortableAlignment, metadata, methods, primitive, surface::SurfaceLower,
-    symbol::SymbolAllocator, types,
+    LowerError, codecs,
+    error::{SourcePosition, UnsupportedType},
+    ids::DeclarationIds,
+    index::Index,
+    layout,
+    layout::PortableAlignment,
+    metadata, methods, primitive,
+    surface::SurfaceLower,
+    symbol::SymbolAllocator,
+    types,
 };
 
 /// Lowers every record in the source contract.
@@ -32,7 +39,10 @@ pub fn lower<S: SurfaceLower>(
         .records()
         .iter()
         .filter(|record| index.lowers(record.id.as_str()))
-        .map(|record| lower_one(index, ids, allocator, record))
+        .map(|record| {
+            lower_one(index, ids, allocator, record)
+                .map_err(|error| error.in_declaration(&record.id))
+        })
         .collect()
 }
 
@@ -127,19 +137,10 @@ fn lower_direct<S: SurfaceLower>(
     let fields = record
         .fields
         .iter()
-        .map(|field| {
-            Ok(DirectFieldDecl::new(
-                FieldKey::from(field),
-                primitive::direct_field_type(&field.type_expr)
-                    .ok_or_else(|| LowerError::unsupported_type(UnsupportedType::RecordField))?,
-                metadata::value_meta(
-                    index,
-                    &field.type_expr,
-                    field.doc.as_ref(),
-                    None,
-                    field.default.as_ref(),
-                )?,
-            ))
+        .enumerate()
+        .map(|(position, field)| {
+            lower_direct_field(index, field)
+                .map_err(|error| error.at(SourcePosition::Field(position)))
         })
         .collect::<Result<Vec<_>, LowerError>>()?;
 
@@ -167,23 +168,10 @@ fn lower_encoded<S: SurfaceLower>(
         record
             .fields
             .iter()
-            .map(|field| {
-                let key = FieldKey::from(field);
-                let value = ValueRef::self_value().field(key.clone());
-                let ty = types::lower(ids, &field.type_expr)?;
-                let codec = codecs::plan(index, ids, &field.type_expr, value)?;
-                Ok(EncodedFieldDecl::new(
-                    key,
-                    ty,
-                    codec,
-                    metadata::value_meta(
-                        index,
-                        &field.type_expr,
-                        field.doc.as_ref(),
-                        None,
-                        field.default.as_ref(),
-                    )?,
-                ))
+            .enumerate()
+            .map(|(position, field)| {
+                lower_encoded_field(index, ids, field)
+                    .map_err(|error| error.at(SourcePosition::Field(position)))
             })
             .collect::<Result<Vec<_>, LowerError>>()?
     };
@@ -203,6 +191,44 @@ fn lower_encoded<S: SurfaceLower>(
                 boltffi_ast::Path::single(record.name.spelling()),
             ),
             ValueRef::self_value(),
+        )?,
+    ))
+}
+
+fn lower_direct_field(index: &Index, field: &FieldDef) -> Result<DirectFieldDecl, LowerError> {
+    Ok(DirectFieldDecl::new(
+        FieldKey::from(field),
+        primitive::direct_field_type(&field.type_expr)
+            .ok_or_else(|| LowerError::unsupported_type(UnsupportedType::RecordField))?,
+        metadata::value_meta(
+            index,
+            &field.type_expr,
+            field.doc.as_ref(),
+            None,
+            field.default.as_ref(),
+        )?,
+    ))
+}
+
+pub(super) fn lower_encoded_field(
+    index: &Index,
+    ids: &DeclarationIds,
+    field: &FieldDef,
+) -> Result<EncodedFieldDecl, LowerError> {
+    let key = FieldKey::from(field);
+    let value = ValueRef::self_value().field(key.clone());
+    let ty = types::lower(ids, &field.type_expr)?;
+    let codec = codecs::plan(index, ids, &field.type_expr, value)?;
+    Ok(EncodedFieldDecl::new(
+        key,
+        ty,
+        codec,
+        metadata::value_meta(
+            index,
+            &field.type_expr,
+            field.doc.as_ref(),
+            None,
+            field.default.as_ref(),
         )?,
     ))
 }
@@ -1951,6 +1977,7 @@ mod tests {
     #[test]
     fn closure_inside_record_field_is_rejected() {
         let mut record = point_record();
+        let position = record.fields.len();
         record.fields.push(field(
             "on_change",
             closure(vec![TypeExpr::Primitive(Primitive::F64)], ReturnDef::Void),
@@ -1963,6 +1990,10 @@ mod tests {
             error.kind(),
             LowerErrorKind::UnsupportedType(UnsupportedType::ClosureInValuePosition)
         ));
+        assert_eq!(
+            error.location().position(),
+            Some(crate::SourcePosition::Field(position))
+        );
     }
 
     #[test]

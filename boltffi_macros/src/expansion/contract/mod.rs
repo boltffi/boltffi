@@ -2868,8 +2868,10 @@ mod tests {
             .expect_err("custom map keys must reject");
 
         assert!(matches!(
-            error,
-            Error::UnsupportedExpansion("custom encoded map key")
+            &error,
+            Error::Located(cause, location)
+                if matches!(**cause, Error::UnsupportedExpansion("custom encoded map key"))
+                    && location.position() == Some(boltffi_binding::SourcePosition::Parameter(0))
         ));
     }
 
@@ -2888,8 +2890,10 @@ mod tests {
             .expect_err("custom map keys must reject");
 
         assert!(matches!(
-            error,
-            Error::UnsupportedExpansion("custom encoded map key")
+            &error,
+            Error::Located(cause, location)
+                if matches!(**cause, Error::UnsupportedExpansion("custom encoded map key"))
+                    && location.position() == Some(boltffi_binding::SourcePosition::Return)
         ));
     }
 
@@ -2908,8 +2912,10 @@ mod tests {
             .expect_err("floating-point map keys must reject");
 
         assert!(matches!(
-            error,
-            Error::UnsupportedExpansion("floating-point encoded map key")
+            &error,
+            Error::Located(cause, location)
+                if matches!(**cause, Error::UnsupportedExpansion("floating-point encoded map key"))
+                    && location.position() == Some(boltffi_binding::SourcePosition::Parameter(0))
         ));
     }
 
@@ -2928,8 +2934,10 @@ mod tests {
             .expect_err("oversized tuple must reject");
 
         assert!(matches!(
-            error,
-            Error::UnsupportedExpansion("encoded tuple arity")
+            &error,
+            Error::Located(cause, location)
+                if matches!(**cause, Error::UnsupportedExpansion("encoded tuple arity"))
+                    && location.position() == Some(boltffi_binding::SourcePosition::Parameter(0))
         ));
     }
 
@@ -2946,11 +2954,15 @@ mod tests {
             .expect_err("`&mut Vec<u8>` params must reject");
 
         assert!(matches!(
-            error,
-            Error::UnsupportedExpansion(
-                "`&mut Vec<u8>` parameters are not supported; \
-                 use `&mut [u8]` for in-place mutation or return `Vec<u8>`"
-            )
+            &error,
+            Error::Located(cause, location)
+                if matches!(
+                    **cause,
+                    Error::UnsupportedExpansion(
+                        "`&mut Vec<u8>` parameters are not supported; \
+                         use `&mut [u8]` for in-place mutation or return `Vec<u8>`"
+                    )
+                ) && location.position() == Some(boltffi_binding::SourcePosition::Parameter(0))
         ));
     }
 

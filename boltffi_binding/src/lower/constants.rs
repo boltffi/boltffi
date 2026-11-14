@@ -65,7 +65,10 @@ pub fn lower<S: SurfaceLower>(
                     .as_ref()
                     .is_some_and(|owner| index.lowers(owner.as_str()))
         })
-        .map(|constant| lower_one::<S>(index, ids, allocator, constant))
+        .map(|constant| {
+            lower_one::<S>(index, ids, allocator, constant)
+                .map_err(|error| error.in_declaration(&constant.id))
+        })
         .collect()
 }
 

@@ -11,11 +11,30 @@ use crate::BindingError;
 #[derive(Debug)]
 pub struct LowerError {
     kind: LowerErrorKind,
+    location: Box<SourceLocation>,
 }
 
 impl LowerError {
     pub(crate) fn new(kind: LowerErrorKind) -> Self {
-        Self { kind }
+        Self {
+            kind,
+            location: Box::default(),
+        }
+    }
+
+    pub(crate) fn in_declaration(mut self, id: impl fmt::Display) -> Self {
+        self.location.declaration = Some(id.to_string());
+        self
+    }
+
+    pub(crate) fn in_member(mut self, name: impl fmt::Display) -> Self {
+        self.location.member = Some(name.to_string());
+        self
+    }
+
+    pub(crate) fn at(mut self, position: SourcePosition) -> Self {
+        self.location.position = Some(position);
+        self
     }
 
     pub(crate) fn unsupported_declaration(family: DeclarationFamily) -> Self {
@@ -101,6 +120,69 @@ impl LowerError {
     pub fn kind(&self) -> &LowerErrorKind {
         &self.kind
     }
+
+    /// Returns where in the source lowering failed.
+    pub fn location(&self) -> &SourceLocation {
+        &self.location
+    }
+}
+
+/// Where in the source a declaration failed to lower, as far as the pass knew it.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[non_exhaustive]
+pub struct SourceLocation {
+    declaration: Option<String>,
+    member: Option<String>,
+    position: Option<SourcePosition>,
+}
+
+impl SourceLocation {
+    /// Names the declaration by its source id, replacing any earlier one.
+    pub fn in_declaration(mut self, id: impl fmt::Display) -> Self {
+        self.declaration = Some(id.to_string());
+        self
+    }
+
+    /// Names the method or variant by its source spelling, replacing any earlier one.
+    pub fn in_member(mut self, name: impl fmt::Display) -> Self {
+        self.member = Some(name.to_string());
+        self
+    }
+
+    /// Records the position inside the member or declaration, replacing any earlier one.
+    pub fn at(mut self, position: SourcePosition) -> Self {
+        self.position = Some(position);
+        self
+    }
+
+    /// Returns the source id of the declaration that failed.
+    pub fn declaration(&self) -> Option<&str> {
+        self.declaration.as_deref()
+    }
+
+    /// Returns the method or variant that failed.
+    pub fn member(&self) -> Option<&str> {
+        self.member.as_deref()
+    }
+
+    /// Returns the position that failed.
+    pub fn position(&self) -> Option<SourcePosition> {
+        self.position
+    }
+}
+
+/// A position inside a declaration or member.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[non_exhaustive]
+pub enum SourcePosition {
+    /// The method's receiver.
+    Receiver,
+    /// A parameter, counted after the receiver.
+    Parameter(usize),
+    /// The return type.
+    Return,
+    /// A record or variant field, counted in source order.
+    Field(usize),
 }
 
 impl fmt::Display for LowerError {
