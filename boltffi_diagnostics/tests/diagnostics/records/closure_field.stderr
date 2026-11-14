@@ -1,4 +1,4 @@
-error: BoltFFI: closure in a value-shaped position cannot be represented in binding IR yet
+error: BoltFFI: a closure crosses only on its own, as an `impl Fn` or `Box<dyn Fn>` parameter or return value, not behind a reference or `Arc`, in a field, or inside a `Vec`, tuple, or map
  --> tests/diagnostics/records/closure_field.rs:3:16
   |
 3 | pub struct P { pub c: Box<dyn Fn(i32)> }

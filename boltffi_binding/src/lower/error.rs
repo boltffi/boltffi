@@ -228,6 +228,12 @@ impl fmt::Display for LowerError {
                 "a record or enum can't contain itself through `Box` or `Arc`; hold the \
                  nested values in a `Vec` instead",
             ),
+            LowerErrorKind::UnsupportedType(UnsupportedType::ClosureInValuePosition) => formatter
+                .write_str(
+                    "a closure crosses only on its own, as an `impl Fn` or `Box<dyn Fn>` \
+                     parameter or return value, not behind a reference or `Arc`, in a field, or \
+                     inside a `Vec`, tuple, or map",
+                ),
             LowerErrorKind::UnsupportedType(unsupported) => {
                 write!(
                     formatter,
