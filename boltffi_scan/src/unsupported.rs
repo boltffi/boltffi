@@ -36,12 +36,15 @@ impl UnsupportedFeature {
             Self::TupleStruct => UnsupportedInfo {
                 error: "tuple_struct",
                 example: "#[data] pub struct Point(f64, f64);",
-                message: "tuple structs are not represented by the record AST",
+                message: "a record needs named fields, as in \
+                          `pub struct Point { pub x: f64, pub y: f64 }`; \
+                          BoltFFI can't read a tuple struct yet",
             },
             Self::UnitStruct => UnsupportedInfo {
                 error: "unit_struct",
                 example: "#[data] pub struct Marker;",
-                message: "unit structs are not represented by the record AST",
+                message: "a record needs braces, as in `pub struct Marker {}`; \
+                          BoltFFI can't read a unit struct yet",
             },
             Self::NonLiteralEnumDiscriminant => UnsupportedInfo {
                 error: "non_literal_enum_discriminant",
@@ -150,7 +153,9 @@ mod tests {
             UnsupportedInfo {
                 error: "tuple_struct",
                 example: "#[data] pub struct Point(f64, f64);",
-                message: "tuple structs are not represented by the record AST",
+                message: "a record needs named fields, as in \
+                          `pub struct Point { pub x: f64, pub y: f64 }`; \
+                          BoltFFI can't read a tuple struct yet",
             }
         );
         assert_eq!(

@@ -6,8 +6,14 @@ use crate::{
 };
 
 use super::super::{
-    LowerError, codecs, enums, error::UnsupportedType, ids::DeclarationIds, index::Index, records,
-    surface::SurfaceLower, symbol::SymbolAllocator, types,
+    LowerError, codecs, enums,
+    error::{SourcePosition, UnsupportedType},
+    ids::DeclarationIds,
+    index::Index,
+    records,
+    surface::SurfaceLower,
+    symbol::SymbolAllocator,
+    types,
 };
 
 use super::{
@@ -36,6 +42,21 @@ pub type Lowered<S, D> = (ReturnDecl<S, D>, ErrorDecl<S, D>);
 /// structurally whether the invoke contract is foreign- or
 /// Rust-implemented.
 pub fn lower<S: SurfaceLower, D: Direction + LowerClosure<S>>(
+    index: &Index,
+    ids: &DeclarationIds,
+    allocator: &mut SymbolAllocator,
+    owner: CallableOwner,
+    root_encoding: codecs::RootEncoding,
+    return_def: &ReturnDef,
+) -> Result<Lowered<S, D>, LowerError>
+where
+    D::Opposite: ParamDirection<S>,
+{
+    lower_return::<S, D>(index, ids, allocator, owner, root_encoding, return_def)
+        .map_err(|error| error.at(SourcePosition::Return))
+}
+
+fn lower_return<S: SurfaceLower, D: Direction + LowerClosure<S>>(
     index: &Index,
     ids: &DeclarationIds,
     allocator: &mut SymbolAllocator,

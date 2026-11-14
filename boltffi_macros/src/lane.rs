@@ -33,7 +33,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 
 use crate::capture::{self, Capture, Fragments};
-use crate::expansion::{contract::Expansion, expander::Expander};
+use crate::expansion::{contract::Expansion, error::Error, expander::Expander, location};
 
 pub(crate) use self::store::Store;
 
@@ -853,8 +853,15 @@ fn render(
         .customs
         .iter_mut()
         .for_each(|custom| convert_through_site_path(custom, &customs));
-    let native = render_surface::<Native>(kind, &contract, selected, shallow)?;
-    let wasm32 = render_surface::<Wasm32>(kind, &contract, selected, shallow)?;
+    let surfaces =
+        render_surface::<Native>(kind, &contract, selected, shallow).and_then(|native| {
+            render_surface::<Wasm32>(kind, &contract, selected, shallow)
+                .map(|wasm32| (native, wasm32))
+        });
+    let (native, wasm32) = match surfaces {
+        Ok(surfaces) => surfaces,
+        Err(error) => return Ok(location::compile_error(item, &error)),
+    };
     let Some(module) = item.and_then(|item| invocation_module(kind, item)) else {
         return Ok(quote! {
             #[cfg(any(not(target_arch = "wasm32"), target_os = "wasi"))]
@@ -1001,13 +1008,12 @@ fn render_surface<S: SurfaceLower>(
     contract: &boltffi_ast::SourceContract,
     selected: &[String],
     shallow: &HashSet<String>,
-) -> Result<TokenStream, String>
+) -> Result<TokenStream, Error>
 where
     for<'lowered> Expander<'lowered>: SurfaceRender<'lowered, S>,
 {
     let selection = selected.iter().cloned().collect::<HashSet<_>>();
-    let lowered =
-        lower_invocation::<S>(contract, &selection, shallow).map_err(|error| error.to_string())?;
+    let lowered = lower_invocation::<S>(contract, &selection, shallow)?;
     let expansion = Expansion::invocation(&lowered).with_lookup_traits(contract);
     let expander = Expander::invocation(contract, selected.iter().cloned());
     let expander = match kind {
@@ -1027,12 +1033,10 @@ where
                 } else {
                     expander.enumeration_runtime(&boltffi_ast::EnumId::new(id.clone()), &expansion)
                 };
-                runtime.map_err(|error| error.to_string())
+                runtime.map_err(|error| error.in_declaration(id))
             })
             .collect(),
-        Kind::Export | Kind::ExportMethods | Kind::DataImpl => expander
-            .surface(&expansion)
-            .map_err(|error| error.to_string()),
+        Kind::Export | Kind::ExportMethods | Kind::DataImpl => expander.surface(&expansion),
         Kind::CustomFfi | Kind::CustomType | Kind::Pool => Ok(TokenStream::new()),
     }
 }

@@ -1,6 +1,6 @@
 use boltffi_binding::{CodecNode, Primitive};
 
-use crate::expansion::error::Error;
+use crate::expansion::error::{Error, FLOAT_MAP_KEY};
 
 pub mod callback_error;
 pub mod incoming;
@@ -48,17 +48,19 @@ impl RuntimeWireCodec {
                 self.require_supported_map_key(key)?;
                 self.require_supported(value)
             }
-            CodecNode::ClassHandle(_) | CodecNode::CallbackHandle(_) | _ => {
-                Err(Error::UnsupportedExpansion("codec node"))
-            }
+            CodecNode::ClassHandle(_) | CodecNode::CallbackHandle(_) => Err(Error::Unsupported(
+                "a class or callback trait object crosses only on its own, not in a field or \
+                 inside a `Vec`, tuple, or map",
+            )),
+            _ => Err(Error::UnsupportedExpansion("codec node")),
         }
     }
 
     fn require_supported_map_key(&self, codec: &CodecNode) -> Result<(), Error> {
         match codec {
-            CodecNode::Primitive(Primitive::F32 | Primitive::F64) => Err(
-                Error::UnsupportedExpansion("floating-point encoded map key"),
-            ),
+            CodecNode::Primitive(Primitive::F32 | Primitive::F64) => {
+                Err(Error::Unsupported(FLOAT_MAP_KEY))
+            }
             CodecNode::Custom { .. } => Err(Error::UnsupportedExpansion("custom encoded map key")),
             CodecNode::Map { .. } => Err(Error::UnsupportedExpansion("nested encoded map key")),
             CodecNode::Optional(inner) | CodecNode::Sequence { element: inner, .. } => {

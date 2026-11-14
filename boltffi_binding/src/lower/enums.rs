@@ -9,8 +9,13 @@ use crate::{
 };
 
 use super::{
-    LowerError, codecs, error::UnsupportedType, ids::DeclarationIds, index::Index, metadata,
-    methods, primitive, surface::SurfaceLower, symbol::SymbolAllocator,
+    LowerError, codecs,
+    error::{SourcePosition, UnsupportedType},
+    ids::DeclarationIds,
+    index::Index,
+    metadata, methods, primitive, records,
+    surface::SurfaceLower,
+    symbol::SymbolAllocator,
 };
 
 /// Lowers every enum in the source contract.
@@ -31,7 +36,10 @@ pub fn lower<S: SurfaceLower>(
         .enums()
         .iter()
         .filter(|enumeration| index.lowers(enumeration.id.as_str()))
-        .map(|enumeration| lower_one(index, ids, allocator, enumeration))
+        .map(|enumeration| {
+            lower_one(index, ids, allocator, enumeration)
+                .map_err(|error| error.in_declaration(&enumeration.id))
+        })
         .collect()
 }
 
@@ -110,7 +118,10 @@ fn lower_data<S: SurfaceLower>(
             .variants
             .iter()
             .enumerate()
-            .map(|(variant_index, variant)| lower_variant(index, ids, variant_index, variant))
+            .map(|(variant_index, variant)| {
+                lower_variant(index, ids, enumeration.id.as_str(), variant_index, variant)
+                    .map_err(|error| error.in_member(variant.name.spelling()))
+            })
             .collect::<Result<Vec<_>, LowerError>>()?
     };
     Ok(DataEnumDecl::new(
@@ -135,13 +146,14 @@ fn lower_data<S: SurfaceLower>(
 fn lower_variant(
     index: &Index,
     ids: &DeclarationIds,
+    owner: &str,
     variant_index: usize,
     variant: &SourceVariant,
 ) -> Result<DataVariantDecl, LowerError> {
     Ok(DataVariantDecl::new(
         CanonicalName::from(&variant.name),
         VariantTag::from_index(variant_index).ok_or_else(LowerError::variant_tag_overflow)?,
-        lower_payload(index, ids, &variant.payload)?,
+        lower_payload(index, ids, owner, &variant.payload)?,
         metadata::element_meta(variant.doc.as_ref(), None),
     ))
 }
@@ -149,6 +161,7 @@ fn lower_variant(
 fn lower_payload(
     index: &Index,
     ids: &DeclarationIds,
+    owner: &str,
     payload: &SourcePayload,
 ) -> Result<DataVariantPayload, LowerError> {
     match payload {
@@ -157,38 +170,36 @@ fn lower_payload(
             .iter()
             .enumerate()
             .map(|(field_index, type_expr)| {
-                let key = FieldKey::position(field_index)
-                    .ok_or_else(LowerError::field_position_overflow)?;
-                let value = ValueRef::self_value().field(key.clone());
-                let ty = super::types::lower(ids, type_expr)?;
-                let codec = codecs::plan(index, ids, type_expr, value)?;
-                Ok(EncodedFieldDecl::new(key, ty, codec, Default::default()))
+                records::reject_boxed_self(type_expr, owner)
+                    .and_then(|()| lower_tuple_field(index, ids, field_index, type_expr))
+                    .map_err(|error| error.at(SourcePosition::Field(field_index)))
             })
             .collect::<Result<Vec<_>, LowerError>>()
             .map(DataVariantPayload::Tuple),
         SourcePayload::Struct(fields) => fields
             .iter()
-            .map(|field| {
-                let key = FieldKey::from(field);
-                let value = ValueRef::self_value().field(key.clone());
-                let ty = super::types::lower(ids, &field.type_expr)?;
-                let codec = codecs::plan(index, ids, &field.type_expr, value)?;
-                Ok(EncodedFieldDecl::new(
-                    key,
-                    ty,
-                    codec,
-                    metadata::value_meta(
-                        index,
-                        &field.type_expr,
-                        field.doc.as_ref(),
-                        None,
-                        field.default.as_ref(),
-                    )?,
-                ))
+            .enumerate()
+            .map(|(field_index, field)| {
+                records::reject_boxed_self(&field.type_expr, owner)
+                    .and_then(|()| records::lower_encoded_field(index, ids, field))
+                    .map_err(|error| error.at(SourcePosition::Field(field_index)))
             })
             .collect::<Result<Vec<_>, LowerError>>()
             .map(DataVariantPayload::Struct),
     }
+}
+
+fn lower_tuple_field(
+    index: &Index,
+    ids: &DeclarationIds,
+    field_index: usize,
+    type_expr: &TypeExpr,
+) -> Result<EncodedFieldDecl, LowerError> {
+    let key = FieldKey::position(field_index).ok_or_else(LowerError::field_position_overflow)?;
+    let value = ValueRef::self_value().field(key.clone());
+    let ty = super::types::lower(ids, type_expr)?;
+    let codec = codecs::plan(index, ids, type_expr, value)?;
+    Ok(EncodedFieldDecl::new(key, ty, codec, Default::default()))
 }
 
 fn effective_integer_repr(enumeration: &SourceEnum) -> Option<IntegerRepr> {

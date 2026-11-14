@@ -1,4 +1,4 @@
-use boltffi_binding::{ExecutionDecl, ExportedCallable};
+use boltffi_binding::{ExecutionDecl, ExportedCallable, SourcePosition};
 use proc_macro2::TokenStream;
 
 use crate::expansion::{contract::Expansion, error::Error, rust_api, wrapper};
@@ -79,10 +79,12 @@ impl<'expansion, 'lowered> Input<'expansion, 'lowered, boltffi_binding::Native> 
             .params()
             .iter()
             .zip(self.source.parameters())
-            .map(|(param, source)| {
+            .enumerate()
+            .map(|(position, (param, source))| {
                 wrapper::param::Input::new(param, source, self.failure.clone(), self.expansion)
                     .with_capture(self.capture)
                     .render()
+                    .map_err(|error| error.at(SourcePosition::Parameter(position)))
             })
             .collect::<Result<Vec<_>, _>>()?;
         Ok(Tokens::from_parameters(params))
@@ -108,10 +110,12 @@ impl<'expansion, 'lowered> Input<'expansion, 'lowered, boltffi_binding::Wasm32> 
             .params()
             .iter()
             .zip(self.source.parameters())
-            .map(|(param, source)| {
+            .enumerate()
+            .map(|(position, (param, source))| {
                 wrapper::param::Input::new(param, source, self.failure.clone(), self.expansion)
                     .with_capture(self.capture)
                     .render()
+                    .map_err(|error| error.at(SourcePosition::Parameter(position)))
             })
             .collect::<Result<Vec<_>, _>>()?;
         Ok(Tokens::from_parameters(params))

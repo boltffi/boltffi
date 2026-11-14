@@ -38,7 +38,14 @@ pub fn lower<S: SurfaceLower>(
         .streams()
         .iter()
         .filter(|stream| index.lowers(stream.id.as_str()))
-        .map(|stream| lower_one::<S>(index, ids, allocator, stream))
+        .map(|stream| {
+            lower_one::<S>(index, ids, allocator, stream).map_err(|error| match &stream.owner {
+                Some(owner) => error
+                    .in_declaration(owner)
+                    .in_member(stream.name.spelling()),
+                None => error.in_declaration(&stream.id),
+            })
+        })
         .collect()
 }
 

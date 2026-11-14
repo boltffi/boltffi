@@ -1,7 +1,5 @@
-error: BoltFFI: unsupported expansion: codec node
- --> tests/diagnostics/classes/vec_of_self_return.rs:6:1
+error: BoltFFI: a class or callback trait object crosses only on its own, not in a field or inside a `Vec`, tuple, or map
+ --> tests/diagnostics/classes/vec_of_self_return.rs:8:21
   |
-6 | #[boltffi::export]
-  | ^^^^^^^^^^^^^^^^^^
-  |
-  = note: this error originates in the macro `::boltffi::__private::lane_resume` (in Nightly builds, run with -Z macro-backtrace for more info)
+8 |     pub fn v(&self) -> Vec<Self> {
+  |                     ^^^^^^^^^^^^

@@ -1,7 +1,5 @@
-error: BoltFFI: unsupported expansion: floating-point encoded map key
- --> tests/diagnostics/unsupported_signatures/float_map_key.rs:5:1
+error: BoltFFI: a map key can't be `f32` or `f64`, since floats are not `Eq` or `Hash`; use an integer or `String` key
+ --> tests/diagnostics/unsupported_signatures/float_map_key.rs:6:37
   |
-5 | #[boltffi::export]
-  | ^^^^^^^^^^^^^^^^^^
-  |
-  = note: this error originates in the attribute macro `boltffi::export` (in Nightly builds, run with -Z macro-backtrace for more info)
+6 | pub fn histogram(samples: Vec<f64>) -> HashMap<f64, u32> {
+  |                                     ^^^^^^^^^^^^^^^^^^^^

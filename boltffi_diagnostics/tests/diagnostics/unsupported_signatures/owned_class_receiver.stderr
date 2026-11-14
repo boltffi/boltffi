@@ -1,7 +1,5 @@
-error: BoltFFI: owned class receiver cannot be represented in binding IR yet
- --> tests/diagnostics/unsupported_signatures/owned_class_receiver.rs:8:1
-  |
-8 | #[boltffi::export]
-  | ^^^^^^^^^^^^^^^^^^
-  |
-  = note: this error originates in the macro `::boltffi::__private::lane_resume` (in Nightly builds, run with -Z macro-backtrace for more info)
+error: BoltFFI: a class method must take `&self`, `&mut self`, or no receiver; taking `self` would consume a handle the foreign side still holds
+  --> tests/diagnostics/unsupported_signatures/owned_class_receiver.rs:14:19
+   |
+14 |     pub fn finish(self) -> u32 {
+   |                   ^^^^

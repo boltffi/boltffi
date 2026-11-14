@@ -7,7 +7,7 @@ use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{Ident, Type, parse_str, parse2};
 
-use crate::expansion::error::Error;
+use crate::expansion::error::{Error, FLOAT_MAP_KEY};
 
 pub struct TypeTokens {
     ty: Type,
@@ -183,9 +183,9 @@ impl MapKey {
 
     fn require_key_type(&self, type_expr: &TypeExpr) -> Result<(), Error> {
         match type_expr {
-            TypeExpr::Primitive(Primitive::F32 | Primitive::F64) => Err(
-                Error::UnsupportedExpansion("floating-point encoded map key"),
-            ),
+            TypeExpr::Primitive(Primitive::F32 | Primitive::F64) => {
+                Err(Error::Unsupported(FLOAT_MAP_KEY))
+            }
             TypeExpr::Custom { .. } => Err(Error::UnsupportedExpansion("custom encoded map key")),
             TypeExpr::Str | TypeExpr::Slice(_) => {
                 Err(Error::UnsupportedExpansion("unsized encoded map key"))
