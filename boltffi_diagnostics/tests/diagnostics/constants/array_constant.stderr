@@ -1,4 +1,4 @@
-error: BoltFFI: unsupported source type `unrecognized type`
+error: BoltFFI: `[u8; 2]` cannot cross the boundary; use `Vec<u8>`
  --> tests/diagnostics/constants/array_constant.rs:3:14
   |
 3 | pub const A: [u8; 2] = [0, 1];

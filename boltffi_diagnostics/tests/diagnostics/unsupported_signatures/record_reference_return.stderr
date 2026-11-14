@@ -1,4 +1,4 @@
-error: BoltFFI: unsupported source type `&Point`
+error: BoltFFI: `&Point` cannot cross the boundary; only `&str` and `&[u8]` can be returned by reference, so return `Point`
  --> tests/diagnostics/unsupported_signatures/record_reference_return.rs:9:15
   |
 9 | pub fn f() -> &'static Point {

@@ -413,7 +413,7 @@ mod tests {
 
         assert!(matches!(
             error.unlocated(),
-            ScanError::UnsupportedType { spelling } if spelling == "&mut str"
+            ScanError::UnsupportedRustType { spelling, .. } if spelling == "&mut str"
         ));
     }
 

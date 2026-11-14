@@ -47,6 +47,22 @@ impl<'a> Scanner<'a> {
             syn::Type::Path(type_path) => self.path(type_path, ty),
             syn::Type::TraitObject(trait_object) => self.dyn_trait(trait_object, ty),
             syn::Type::Tuple(tuple) => self.tuple(tuple),
+            syn::Type::Array(array) => Err(ScanError::unsupported_rust_type(
+                ty,
+                format!("use `Vec<{}>`", crate::spelling::ty(&array.elem)),
+            )),
+            syn::Type::Never(_) => Err(ScanError::unsupported_rust_type(
+                ty,
+                "an exported function must return a value or `()`",
+            )),
+            syn::Type::Ptr(_) => Err(ScanError::unsupported_rust_type(
+                ty,
+                "pass an owned value, a reference, or `Vec<u8>`",
+            )),
+            syn::Type::Reference(reference) => Err(ScanError::unsupported_rust_type(
+                ty,
+                format!("use the owned type `{}`", owned(reference)),
+            )),
             _ => Err(ScanError::unsupported_type(ty)),
         }
     }
@@ -88,7 +104,13 @@ impl<'a> Scanner<'a> {
             {
                 Ok(TypeExpr::Slice(element))
             }
-            _ => Err(ScanError::unsupported_type(source)),
+            _ => Err(ScanError::unsupported_rust_type(
+                source,
+                format!(
+                    "only `&str` and `&[u8]` can be returned by reference, so return `{}`",
+                    owned(reference)
+                ),
+            )),
         }
     }
 
@@ -196,6 +218,9 @@ impl<'a> Scanner<'a> {
     }
 
     fn named(&self, type_path: &syn::TypePath, source: &syn::Type) -> Result<TypeExpr, ScanError> {
+        if let Some(advice) = unsupported_standard_type(&type_path.path) {
+            return Err(ScanError::unsupported_rust_type(source, advice));
+        }
         if type_path
             .path
             .segments
@@ -313,6 +338,12 @@ impl<'a> Scanner<'a> {
         bound: &syn::TraitBound,
         source: &syn::Type,
     ) -> Result<TraitBoundPart, ScanError> {
+        if is_standard_error_trait(&bound.path) {
+            return Err(ScanError::unsupported_rust_type(
+                source,
+                "return `Result<T, String>` or a `#[error]` type",
+            ));
+        }
         if let Some(base) = self.base_trait(bound)? {
             return Ok(TraitBoundPart::Base(base));
         }
@@ -572,6 +603,59 @@ pub fn primitive_path(path: &syn::Path) -> Option<Primitive> {
             && path.segments[1].ident == "primitive")
             .then_some(primitive),
         _ => None,
+    }
+}
+
+/// What to use instead of a standard-library type that has no boundary mapping.
+fn unsupported_standard_type(path: &syn::Path) -> Option<&'static str> {
+    let names = path
+        .segments
+        .iter()
+        .map(|segment| segment.ident.to_string())
+        .collect::<Vec<_>>();
+    let leaf = names.last()?.as_str();
+    let primitive_form = names.len() == 1
+        || (names.len() == 3
+            && matches!(names[0].as_str(), "std" | "core")
+            && names[1] == "primitive");
+    if primitive_form {
+        return match leaf {
+            "char" => Some("use `u32` for a code point or `String` for text"),
+            "i128" | "u128" => Some("use `i64` or `u64`, or `String` for larger values"),
+            _ => None,
+        };
+    }
+    if !matches!(names[0].as_str(), "std" | "core" | "alloc") {
+        return None;
+    }
+    match leaf {
+        "HashSet" | "BTreeSet" | "VecDeque" | "LinkedList" | "BinaryHeap" => Some("use `Vec<T>`"),
+        "PathBuf" | "Path" | "OsString" | "OsStr" | "CString" | "CStr" => Some("use `String`"),
+        "Rc" | "Cell" | "RefCell" | "Mutex" | "RwLock" => {
+            Some("pass the value itself, or keep shared state in an exported class")
+        }
+        "Result" => Some("use `Result<T, E>` with `String` or a `#[error]` type as `E`"),
+        _ => None,
+    }
+}
+
+fn is_standard_error_trait(path: &syn::Path) -> bool {
+    let names = path
+        .segments
+        .iter()
+        .map(|segment| segment.ident.to_string())
+        .collect::<Vec<_>>();
+    names.len() == 3
+        && matches!(names[0].as_str(), "std" | "core")
+        && names[1..] == ["error", "Error"]
+}
+
+/// The owned type to use instead of a reference.
+fn owned(reference: &syn::TypeReference) -> String {
+    match unwrapped(&reference.elem) {
+        syn::Type::Path(path) if path.path.is_ident("str") => "String".to_owned(),
+        syn::Type::Slice(slice) => format!("Vec<{}>", crate::spelling::ty(&slice.elem)),
+        elem => crate::spelling::ty(elem),
     }
 }
 
@@ -840,6 +924,22 @@ mod tests {
 
     fn ty(source: &str) -> syn::Type {
         syn::parse_str(source).expect("valid type")
+    }
+
+    #[test]
+    fn standard_types_without_a_mapping_get_advice_and_user_paths_do_not() {
+        let advice = |source: &str| match ty(source) {
+            syn::Type::Path(path) => unsupported_standard_type(&path.path),
+            _ => panic!("path type"),
+        };
+
+        assert_eq!(advice("char"), advice("std::primitive::char"));
+        assert!(advice("char").is_some());
+        assert!(advice("std::collections::HashSet<String>").is_some());
+        assert!(advice("std::io::Result<i32>").is_some());
+        assert_eq!(advice("geometry::HashSet"), None);
+        assert_eq!(advice("HashSet<String>"), None);
+        assert_eq!(advice("std::string::String"), None);
     }
 
     fn item(source: &str) -> syn::Item {

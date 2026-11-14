@@ -22,6 +22,10 @@ pub enum ScanError {
     UnsupportedType {
         spelling: String,
     },
+    UnsupportedRustType {
+        spelling: String,
+        advice: String,
+    },
     InvalidMarker {
         attribute: String,
     },
@@ -140,6 +144,14 @@ impl ScanError {
         .at(ty)
     }
 
+    pub(super) fn unsupported_rust_type(ty: &syn::Type, advice: impl Into<String>) -> Self {
+        Self::UnsupportedRustType {
+            spelling: crate::spelling::ty(ty),
+            advice: advice.into(),
+        }
+        .at(ty)
+    }
+
     /// This error, about `node`. An error that already has a location keeps it.
     pub(crate) fn at(self, node: impl ToTokens) -> Self {
         match self {
@@ -191,6 +203,12 @@ impl fmt::Display for ScanError {
             }
             Self::UnsupportedType { spelling } => {
                 write!(formatter, "unsupported source type `{spelling}`")
+            }
+            Self::UnsupportedRustType { spelling, advice } => {
+                write!(
+                    formatter,
+                    "`{spelling}` cannot cross the boundary; {advice}"
+                )
             }
             Self::InvalidMarker { attribute } => {
                 write!(formatter, "invalid BoltFFI marker `{attribute}`")

@@ -1,4 +1,4 @@
-error: BoltFFI: unsupported source type `unrecognized type`
+error: BoltFFI: `!` cannot cross the boundary; an exported function must return a value or `()`
  --> tests/diagnostics/unsupported_signatures/never_return.rs:3:15
   |
 3 | pub fn f() -> ! {

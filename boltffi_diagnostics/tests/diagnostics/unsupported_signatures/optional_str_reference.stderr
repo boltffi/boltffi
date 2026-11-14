@@ -1,4 +1,4 @@
-error: BoltFFI: unsupported source type `&str`
+error: BoltFFI: `&str` cannot cross the boundary; use the owned type `String`
  --> tests/diagnostics/unsupported_signatures/optional_str_reference.rs:3:20
   |
 3 | pub fn f(a: Option<&str>) {}

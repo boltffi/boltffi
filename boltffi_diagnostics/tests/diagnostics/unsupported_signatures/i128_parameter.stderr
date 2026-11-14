@@ -1,7 +1,5 @@
-error: cannot find macro `i128` in this scope
+error: BoltFFI: `i128` cannot cross the boundary; use `i64` or `u64`, or `String` for larger values
  --> tests/diagnostics/unsupported_signatures/i128_parameter.rs:3:13
   |
 3 | pub fn f(a: i128) -> i128 {
   |             ^^^^
-  |
-  = note: `i128` is in scope, but it is a builtin type, not a macro

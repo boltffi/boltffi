@@ -41,14 +41,10 @@ Most of these rows have one cause. When a type has no BoltFFI declaration, the l
 |---|---|---|
 | Forgot `scaffolding!()` | ``cannot find type `__BoltffiTag` in the crate root`` | Add `boltffi::scaffolding!();` at the crate root |
 | Undeclared struct or trait in a signature | ``cannot find macro `Point` in this scope`` | `Point` is not declared, add `#[data]` or `#[export]` |
-| `char` or `i128` | ``cannot find macro `char` in this scope`` | `char` can't cross the boundary, use `u32` or `String` |
 | `pub type Id = u64;` in a signature | ``cannot find macro `Id` in this scope`` | BoltFFI can't follow this alias, write `u64` |
-| `std::collections::HashSet` or another unsupported type by full path | ``cannot find `HashSet` in `collections` ``, which is false | `HashSet` can't cross the boundary, use `Vec` |
-| `std::io::Result<T>` | ``cannot find `Result` in `io` `` | The error type must be `String` or a declared type |
 | Undeclared error type | ``cannot find macro `E` in this scope`` | `E` is not declared, add `#[error]` |
 | `type Result<T> = ...` | ``unsupported source type `Result<i32>` `` | BoltFFI can't follow this alias |
 | `Arc<Point>`, `Box<i32>`, `-> Arc<Self>` | `opaque Rust pointer container cannot be represented in binding IR yet` | Name the type, and suggest `Self` for constructors |
-| `[u8; 4]` or `-> !` | ``unsupported source type `unrecognized type` `` | Name the type, and suggest `Vec<u8>` for arrays |
 | `#[data]` record that derives `Clone` but not `Copy` | Several E0277 errors naming `Blittable` | This record needs `#[derive(Clone, Copy)]` |
 | `#[data]` on an `impl` | Several E0119 errors naming `Passable` and `Blittable` | Use `#[data(impl)]` |
 
@@ -78,7 +74,6 @@ A case records each of these.
 | Input | Today | Likelihood | Relevance | Fix |
 |---|---|---|---|---|
 | Trait with `fn f();` or `&mut self` | `callback method receiver cannot be represented...` | High | Medium | List the allowed receivers |
-| `Option<&str>` | ``unsupported source type `&str` ``, although `&str` works elsewhere | High | Medium | Name `Option<&str>` and suggest `Option<String>` |
 | `&dyn Trait` parameter | `borrowed callback parameter cannot be...` | Medium | Medium | Suggest `Box<dyn T>` or `Arc<dyn T>` |
 | `fn(i32) -> i32` parameter | `unsupported expansion: function-pointer closure parameter` | Medium | Medium | Suggest `impl Fn` |
 | `-> Vec<Self>` | `unsupported expansion: codec node` | Medium | Medium | Name the return type |

@@ -1,4 +1,4 @@
-error: BoltFFI: unsupported source type `&Self`
+error: BoltFFI: `&Self` cannot cross the boundary; only `&str` and `&[u8]` can be returned by reference, so return `Self`
  --> tests/diagnostics/classes/method_returning_self_reference.rs:8:25
   |
 8 |     pub fn me(&self) -> &Self {
