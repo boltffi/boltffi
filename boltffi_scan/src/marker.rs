@@ -164,6 +164,7 @@ pub(crate) fn export_marker_from_args(
         ScanError::InvalidMarker {
             attribute: format!("export({tokens})"),
         }
+        .at(&tokens)
     })
 }
 
@@ -171,6 +172,7 @@ fn invalid(attr: &syn::Attribute) -> ScanError {
     ScanError::InvalidMarker {
         attribute: crate::spelling::attr(attr),
     }
+    .at(attr)
 }
 
 #[cfg(test)]
@@ -259,13 +261,15 @@ mod tests {
     #[test]
     fn rejects_unknown_marker_arguments() {
         assert_eq!(
-            Marker::detect(&struct_attrs("#[data(foo)] struct S { x: i32 }")),
+            crate::error::unlocated(Marker::detect(&struct_attrs(
+                "#[data(foo)] struct S { x: i32 }"
+            ))),
             Err(ScanError::InvalidMarker {
                 attribute: "data(foo)".to_owned()
             })
         );
         assert_eq!(
-            Marker::detect(&fn_attrs("#[export(foo)] fn f() {}")),
+            crate::error::unlocated(Marker::detect(&fn_attrs("#[export(foo)] fn f() {}"))),
             Err(ScanError::InvalidMarker {
                 attribute: "export(foo)".to_owned()
             })
@@ -341,9 +345,9 @@ mod tests {
             .into_iter()
             .for_each(|arguments| {
                 assert_eq!(
-                    Marker::detect(&struct_attrs(&format!(
+                    crate::error::unlocated(Marker::detect(&struct_attrs(&format!(
                         "#[boltffi::error({arguments})] struct ServiceError {{ message: String }}"
-                    ))),
+                    )))),
                     Err(ScanError::InvalidMarker {
                         attribute: format!("boltffi::error({arguments})"),
                     }),
@@ -391,7 +395,7 @@ mod tests {
             Ok(Some(Marker::Skip))
         );
         assert_eq!(
-            Marker::detect(&fn_attrs("#[skip(reason)] fn f() {}")),
+            crate::error::unlocated(Marker::detect(&fn_attrs("#[skip(reason)] fn f() {}"))),
             Err(ScanError::InvalidMarker {
                 attribute: "skip(reason)".to_owned()
             })

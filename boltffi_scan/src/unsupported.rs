@@ -86,10 +86,22 @@ pub(crate) fn has_bound_modifier(bound: &syn::TraitBound) -> bool {
 }
 
 pub fn generics(generics: &syn::Generics, item: &str) -> Result<(), ScanError> {
+    let only_lifetimes = generics
+        .params
+        .iter()
+        .all(|parameter| matches!(parameter, syn::GenericParam::Lifetime(_)));
+    if !generics.params.is_empty() && only_lifetimes && generics.where_clause.is_none() {
+        return Err(ScanError::UnsupportedLifetimes {
+            item: item.to_owned(),
+        }
+        .at(generics));
+    }
     if !generics.params.is_empty() || generics.where_clause.is_some() {
         return Err(ScanError::UnsupportedGenerics {
             item: item.to_owned(),
-        });
+        }
+        .at(generics)
+        .at(&generics.where_clause));
     }
     Ok(())
 }
@@ -102,19 +114,21 @@ pub fn safety(safety: &syn::Safety, item: &str) -> Result<(), ScanError> {
 }
 
 pub fn unsafety(unsafety: Option<&syn::token::Unsafe>, item: &str) -> Result<(), ScanError> {
-    if unsafety.is_some() {
+    if let Some(token) = unsafety {
         return Err(ScanError::UnsupportedUnsafe {
             item: item.to_owned(),
-        });
+        }
+        .at(token));
     }
     Ok(())
 }
 
 pub fn extern_abi(abi: Option<&syn::Abi>, item: &str) -> Result<(), ScanError> {
-    if abi.is_some() {
+    if let Some(abi) = abi {
         return Err(ScanError::UnsupportedExternAbi {
             item: item.to_owned(),
-        });
+        }
+        .at(abi));
     }
     Ok(())
 }

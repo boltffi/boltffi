@@ -77,7 +77,7 @@ pub fn distance(a: Point, b: Point) -> f64 {
 ```
 
 `boltffi::scaffolding!()` goes once in `src/lib.rs` of every crate that uses BoltFFI. Without
-it, every annotated item fails to build with ``cannot find type `__BoltffiTag` in the crate root``.
+it, every annotated item fails to build with ``cannot find type `BoltffiScaffolding` in the crate root``.
 
 A signature can name a declared type by its own name, a path, a `use` rename or a `type` alias.
 After `type Coordinate = Point;`, a signature taking `Coordinate` works once `boltffi generate`,

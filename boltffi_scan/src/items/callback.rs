@@ -73,13 +73,15 @@ fn supertraits(
 ) -> Result<(), ScanError> {
     bounds
         .iter()
-        .all(|bound| match bound {
-            syn::TypeParamBound::Trait(bound) => is_supported_supertrait(bound),
-            _ => false,
+        .find(|bound| match bound {
+            syn::TypeParamBound::Trait(bound) => !is_supported_supertrait(bound),
+            _ => true,
         })
-        .then_some(())
-        .ok_or_else(|| ScanError::UnsupportedSupertraits {
-            item: item.to_owned(),
+        .map_or(Ok(()), |bound| {
+            Err(ScanError::UnsupportedSupertraits {
+                item: item.to_owned(),
+            }
+            .at(bound))
         })
 }
 
@@ -111,10 +113,11 @@ fn method_from_signature(
     trait_name: &str,
     scanner: &Scanner<'_>,
 ) -> Result<MethodDef, ScanError> {
-    if method.default.is_some() {
+    if let Some(body) = &method.default {
         return Err(ScanError::UnsupportedTraitMethodBody {
             item: format!("trait {trait_name}::{}", method.sig.ident),
-        });
+        }
+        .at(body));
     }
     signature::method(
         &method.sig,
@@ -130,6 +133,7 @@ fn unsupported_trait_item(item: &syn::TraitItem, parent: &str) -> ScanError {
     ScanError::UnsupportedTraitItem {
         item: format!("trait {parent}::{}", trait_item_name(item)),
     }
+    .at(item)
 }
 
 fn trait_item_name(item: &syn::TraitItem) -> String {
@@ -256,19 +260,19 @@ mod tests {
             scan("trait Listener: Display { fn call(&self); }").expect_err("supertrait rejected");
 
         assert_eq!(
-            generic,
+            generic.unlocated().clone(),
             ScanError::UnsupportedGenerics {
                 item: "trait Listener".to_owned()
             }
         );
         assert_eq!(
-            unsafe_trait,
+            unsafe_trait.unlocated().clone(),
             ScanError::UnsupportedUnsafe {
                 item: "trait Listener".to_owned()
             }
         );
         assert_eq!(
-            supertrait,
+            supertrait.unlocated().clone(),
             ScanError::UnsupportedSupertraits {
                 item: "trait Listener".to_owned()
             }
@@ -284,19 +288,19 @@ mod tests {
         let default_body = scan("trait Listener { fn call(&self) {} }").expect_err("body rejected");
 
         assert_eq!(
-            associated_type,
+            associated_type.unlocated().clone(),
             ScanError::UnsupportedTraitItem {
                 item: "trait Listener::Value".to_owned()
             }
         );
         assert_eq!(
-            associated_const,
+            associated_const.unlocated().clone(),
             ScanError::UnsupportedTraitItem {
                 item: "trait Listener::LIMIT".to_owned()
             }
         );
         assert_eq!(
-            default_body,
+            default_body.unlocated().clone(),
             ScanError::UnsupportedTraitMethodBody {
                 item: "trait Listener::call".to_owned()
             }

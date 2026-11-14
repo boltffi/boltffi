@@ -1,7 +1,5 @@
-error: cannot find macro `char` in this scope
+error: BoltFFI: `char` cannot cross the boundary; use `u32` for a code point or `String` for text
  --> tests/diagnostics/unsupported_signatures/char_parameter.rs:3:13
   |
 3 | pub fn f(a: char) -> char {
   |             ^^^^
-  |
-  = note: `char` is in scope, but it is a builtin type, not a macro

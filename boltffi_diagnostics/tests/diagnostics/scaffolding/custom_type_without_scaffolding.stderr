@@ -1,4 +1,4 @@
-error[E0425]: cannot find type `__BoltffiTag` in the crate root
+error[E0425]: cannot find type `BoltffiScaffolding` in the crate root
   --> tests/diagnostics/scaffolding/custom_type_without_scaffolding.rs:5:1
    |
  5 | / boltffi::custom_type!(

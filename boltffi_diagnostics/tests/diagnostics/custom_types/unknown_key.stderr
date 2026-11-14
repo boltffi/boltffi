@@ -1,10 +1,8 @@
 error: BoltFFI: invalid custom type declaration: unknown custom_type! key `nope`
- --> tests/diagnostics/custom_types/unknown_key.rs:3:1
+ --> tests/diagnostics/custom_types/unknown_key.rs:3:59
   |
-3 | boltffi::custom_type! { pub L, remote = R, repr = String, nope = 1, into_ffi = |s: &R| String::new(), try_from_ffi = |s: String| Ok(R), }
-  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  |
-  = note: this error originates in the macro `boltffi::custom_type` (in Nightly builds, run with -Z macro-backtrace for more info)
+3 | boltffi::custom_type! { pub L, remote = R, repr = String, nope = 1, into_ffi = |s: &R| String::new(), try_from_ffi = |s: String| Ok(R...
+  |                                                           ^^^^
 
 warning: unused variable: `s`
  --> tests/diagnostics/custom_types/unknown_key.rs:3:81

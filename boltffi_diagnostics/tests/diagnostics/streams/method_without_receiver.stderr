@@ -1,0 +1,5 @@
+error: BoltFFI: invalid stream declaration: `stream events` must be a public `&self` method with no parameters
+  --> tests/diagnostics/streams/method_without_receiver.rs:15:12
+   |
+15 |     pub fn events() -> Arc<EventSubscription<i32>> {
+   |            ^^^^^^

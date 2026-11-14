@@ -125,7 +125,11 @@ impl Kind {
 }
 
 /// The fragments one invocation declares, whatever macro it came from.
-fn fragments(kind: Kind, attribute: &TokenStream, item: &TokenStream) -> Result<Fragments, String> {
+fn fragments(
+    kind: Kind,
+    attribute: &TokenStream,
+    item: &TokenStream,
+) -> Result<Fragments, syn::Error> {
     match kind {
         Kind::Pool => boltffi_scan::capture_interned_string_pool(item.clone())
             .map(|pool| {
@@ -137,21 +141,20 @@ fn fragments(kind: Kind, attribute: &TokenStream, item: &TokenStream) -> Result<
                     Vec::new(),
                 )]
             })
-            .map_err(|error| error.to_string()),
+            .map_err(|error| refusal(&error)),
         Kind::CustomType => boltffi_scan::capture_custom(item.clone())
             .map(|captured| vec![(SourceFragment::Custom(captured.def), captured.slots)])
-            .map_err(|error| error.to_string()),
+            .map_err(|error| refusal(&error)),
         Kind::CustomFfi => {
-            let item =
-                syn::parse2::<syn::ItemImpl>(item.clone()).map_err(|error| error.to_string())?;
+            let item = syn::parse2::<syn::ItemImpl>(item.clone()).map_err(prefixed)?;
             boltffi_scan::capture_custom_ffi(&item)
                 .map(|captured| vec![(SourceFragment::Custom(captured.def), captured.slots)])
-                .map_err(|error| error.to_string())
+                .map_err(|error| refusal(&error))
         }
         _ => {
-            let parsed =
-                syn::parse2::<syn::Item>(item.clone()).map_err(|error| error.to_string())?;
+            let parsed = syn::parse2::<syn::Item>(item.clone()).map_err(prefixed)?;
             capture::fragments(&parsed, &kind.capture(attribute), kind == Kind::Error)
+                .map_err(|error| refusal(&error))
         }
     }
 }
@@ -182,14 +185,18 @@ impl Build {
 /// data type.
 pub(crate) fn start(kind: Kind, attribute: TokenStream, item: TokenStream) -> TokenStream {
     if let Some(name) = own_name(kind, &item).filter(is_builtin_name) {
-        return compile_error(&format!(
-            "a declared type named `{name}` shadows the builtin `{name}`, which every signature \
-             spelling `{name}` crosses as; rename the type"
-        ));
+        return syn::Error::new(
+            name.span(),
+            format!(
+                "BoltFFI: a declared type named `{name}` shadows the builtin `{name}`, which every \
+                 signature spelling `{name}` crosses as; rename the type"
+            ),
+        )
+        .to_compile_error();
     }
     let scaffolded = (kind != Kind::Pool).then(|| {
         quote! {
-            const _: ::core::marker::PhantomData<crate::__BoltffiTag> = ::core::marker::PhantomData;
+            const _: ::core::marker::PhantomData<crate::BoltffiScaffolding> = ::core::marker::PhantomData;
         }
     });
     if Build::current() == Build::SourceRecords {
@@ -204,15 +211,15 @@ pub(crate) fn start(kind: Kind, attribute: TokenStream, item: TokenStream) -> To
     }
     let fragments = match fragments(kind, &attribute, &item) {
         Ok(fragments) => fragments,
-        Err(message) => return compile_error(&message),
+        Err(error) => return error.to_compile_error(),
     };
     let store = Store::find();
     let expanded = match store.as_ref().and_then(|store| store.resolve(&fragments)) {
         Some(resolution) => resolution.and_then(|resolution| {
             let expanded = finish(
                 kind,
-                &attribute,
                 &item,
+                &fragments,
                 &resolution.references,
                 Resolved::FromStore,
             )?;
@@ -228,7 +235,9 @@ pub(crate) fn start(kind: Kind, attribute: TokenStream, item: TokenStream) -> To
                 .map(|store| store.stale_warning(&fragments))
                 .unwrap_or_default();
             let chain = step(kind, &attribute, &item, Vec::new(), lane_paths(&fragments));
+            let declared = declared_checks(kind, &fragments);
             quote! {
+                #declared
                 #lane
                 #stale
                 #chain
@@ -350,10 +359,13 @@ fn step(
     pending: Vec<TokenStream>,
 ) -> TokenStream {
     let Some((next, rest)) = pending.split_first() else {
-        return fragments(kind, attribute, item)
-            .and_then(|fragments| Reference::through_lanes(&fragments, &resolved))
+        let fragments = match fragments(kind, attribute, item) {
+            Ok(fragments) => fragments,
+            Err(error) => return error.to_compile_error(),
+        };
+        return Reference::through_lanes(&fragments, &resolved)
             .and_then(|references| {
-                finish(kind, attribute, item, &references, Resolved::ThroughLanes)
+                finish(kind, item, &fragments, &references, Resolved::ThroughLanes)
             })
             .unwrap_or_else(|message| compile_error(&message));
     };
@@ -449,6 +461,43 @@ fn spelling(slot: &SlotSource) -> String {
         SlotSource::Type(ty) => ty.to_token_stream().to_string(),
         SlotSource::TraitValue(path) => path.to_token_stream().to_string(),
     }
+}
+
+/// A check per type the fragments name, so a type no declaration covers reports that
+/// where the signature names it, beside rustc's failed lane lookup. A store resolution
+/// checks its slots itself, and an `#[export] impl` target has its class check.
+fn declared_checks(kind: Kind, fragments: &Fragments) -> TokenStream {
+    let facade = capture::facade();
+    let class_target = match (kind, fragments.first()) {
+        (Kind::ExportMethods, Some((SourceFragment::Methods { .. }, slots))) => {
+            slots.first().map(spelling)
+        }
+        _ => None,
+    };
+    spelled_slots(fragments)
+        .into_iter()
+        .filter(|slot| class_target.as_ref() != Some(&spelling(slot)))
+        .filter_map(|slot| match slot {
+            SlotSource::Type(ty) if !names_self(ty) => Some(ty),
+            _ => None,
+        })
+        .map(|ty| {
+            quote::quote_spanned! { syn::spanned::Spanned::span(&**ty) =>
+                const _: () = <#ty as #facade::__private::capture::Declared<_>>::DECLARED;
+            }
+        })
+        .collect()
+}
+
+fn names_self(ty: &syn::Type) -> bool {
+    fn any_self(tokens: TokenStream) -> bool {
+        tokens.into_iter().any(|token| match token {
+            TokenTree::Ident(ident) => ident == "Self",
+            TokenTree::Group(group) => any_self(group.stream()),
+            _ => false,
+        })
+    }
+    any_self(ty.to_token_stream())
 }
 
 /// The name the invocation's own declaration goes by, when it declares a type.
@@ -551,15 +600,14 @@ impl Reference {
 
 fn finish(
     kind: Kind,
-    attribute: &TokenStream,
     item: &TokenStream,
+    fragments: &Fragments,
     references: &[Reference],
     resolved: Resolved,
 ) -> Result<TokenStream, String> {
     let parsed = syn::parse2::<syn::Item>(item.clone()).ok();
-    let fragments = fragments(kind, attribute, item)?;
     let krate = crate_name()?;
-    check_methods_target(kind, &fragments, references)?;
+    check_methods_target(kind, fragments, references)?;
     let own = fragments
         .iter()
         .map(|(fragment, slots)| {
@@ -647,7 +695,7 @@ fn finish(
         }
         _ => TokenStream::new(),
     };
-    let repr_tag = repr_tag(kind, item, &fragments, references)?;
+    let repr_tag = repr_tag(kind, item, fragments, references)?;
     Ok(quote! {
         #expanded
         #lane
@@ -748,7 +796,7 @@ fn repr_tag(
         .filter_map(|(position, tag)| Some((position, tag?)))
         .map(|(position, tag)| {
             quote! {
-                impl ::boltffi::__private::CustomReprTag<crate::__BoltffiTag, #position> for #target {
+                impl ::boltffi::__private::CustomReprTag<crate::BoltffiScaffolding, #position> for #target {
                     type Tag = #tag;
                 }
             }
@@ -1215,7 +1263,7 @@ fn lane_definition(
         #[allow(non_local_definitions)]
         #[macro_export]
         macro_rules! #macro_name {
-            (@tag) => { $crate::__BoltffiTag };
+            (@tag) => { $crate::BoltffiScaffolding };
             ([$($callback:tt)*] { $($state:tt)* }) => {
                 $($callback)*! { $($state)* #literal }
             };
@@ -1253,6 +1301,19 @@ fn raw_text(literal: &Literal) -> Result<String, String> {
 
 fn crate_name() -> Result<String, String> {
     std::env::var("CARGO_CRATE_NAME").map_err(|_| "`CARGO_CRATE_NAME` is not set".to_owned())
+}
+
+/// The compile error a scan refusal reports, at the source it is about when it knows it.
+fn refusal(error: &boltffi_scan::ScanError) -> syn::Error {
+    let message = format!("BoltFFI: {error}");
+    match error.location() {
+        Some(location) => syn::Error::new_spanned(location.tokens(), message),
+        None => syn::Error::new(Span::call_site(), message),
+    }
+}
+
+fn prefixed(error: syn::Error) -> syn::Error {
+    syn::Error::new(error.span(), format!("BoltFFI: {error}"))
 }
 
 fn compile_error(message: &str) -> TokenStream {

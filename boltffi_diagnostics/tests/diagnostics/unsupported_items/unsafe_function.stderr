@@ -1,7 +1,5 @@
 error: BoltFFI: `function read` cannot be unsafe
- --> tests/diagnostics/unsupported_items/unsafe_function.rs:3:1
+ --> tests/diagnostics/unsupported_items/unsafe_function.rs:4:5
   |
-3 | #[boltffi::export]
-  | ^^^^^^^^^^^^^^^^^^
-  |
-  = note: this error originates in the attribute macro `boltffi::export` (in Nightly builds, run with -Z macro-backtrace for more info)
+4 | pub unsafe fn read(address: usize) -> u8 {
+  |     ^^^^^^
