@@ -209,11 +209,16 @@ for selected_platform in "${selected_platforms[@]}"; do
             run_step "c demo" "$c_dir/test-demo.sh"
             ;;
         ruby)
-            run_step "pack ruby" run_boltffi pack ruby --release --experimental
+            # pack ruby keeps an existing gemspec and lib/ entry file. The demo
+            # checks the current starter files, so it removes the earlier output.
+            rm -rf "$ruby_dir/dist"
+            run_step "pack ruby" run_boltffi pack ruby --experimental --allow-external-path-dependencies
             if [[ -n "$ruby_interpreter" ]]; then
                 run_step "ruby demo" "$ruby_dir/test-demo.sh" --ruby "$ruby_interpreter"
+                run_step "ruby fixture" "$ruby_dir/test-fixture.sh" --ruby "$ruby_interpreter"
             else
                 run_step "ruby demo" "$ruby_dir/test-demo.sh"
+                run_step "ruby fixture" "$ruby_dir/test-fixture.sh"
             fi
             ;;
         *)
