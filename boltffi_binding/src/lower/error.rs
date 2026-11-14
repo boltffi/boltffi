@@ -234,6 +234,10 @@ impl fmt::Display for LowerError {
                      parameter or return value, not behind a reference or `Arc`, in a field, or \
                      inside a `Vec`, tuple, or map",
                 ),
+            LowerErrorKind::UnsupportedType(UnsupportedType::DefaultValue) => formatter.write_str(
+                "a default must be a `true` or `false`, number, or string literal, `None` for \
+                 an `Option`, or a variant of its enum type",
+            ),
             LowerErrorKind::UnsupportedType(unsupported) => {
                 write!(
                     formatter,

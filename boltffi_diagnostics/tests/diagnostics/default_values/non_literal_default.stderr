@@ -1,4 +1,4 @@
-error: BoltFFI: default value cannot be represented in binding IR yet
+error: BoltFFI: a default must be a `true` or `false`, number, or string literal, `None` for an `Option`, or a variant of its enum type
  --> tests/diagnostics/default_values/non_literal_default.rs:4:10
   |
 4 | pub fn f(#[boltffi::default(D)] a: i32) -> i32 { a }
