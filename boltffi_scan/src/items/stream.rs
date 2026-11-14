@@ -202,10 +202,11 @@ fn validate(
         return Err(Attribute::invalid(format!(
             "`{item}` must be a public `&self` method with no parameters"
         ))
-        .at(&method.sig.inputs));
+        .at(&method.sig.inputs)
+        .at(&method.sig.ident));
     }
     let returned = subscription_item(&method.sig.output, scope, &item, scanner.is_deferred())
-        .map_err(|error| error.at(&method.sig.output))?;
+        .map_err(|error| error.at(&method.sig.output).at(&method.sig.ident))?;
     let declared_item = StreamItem::from_boundary(scanner.scan(attribute.item())?);
     let returned_item = scanner.scan(returned)?;
     if declared_item.storage() != &returned_item {

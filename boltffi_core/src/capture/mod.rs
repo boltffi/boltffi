@@ -9,6 +9,6 @@ pub use record::{
     record, record_len,
 };
 pub use type_info::{
-    ClassDesc, DESC_CAPACITY, Declared, DescBuf, TraitDesc, TypeDesc, TypeInfo, declared,
-    expect_descriptor, trait_desc,
+    ClassDesc, DESC_CAPACITY, Declared, DescBuf, TraitDesc, TypeDesc, TypeInfo, expect_descriptor,
+    trait_desc,
 };

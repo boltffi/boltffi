@@ -100,7 +100,8 @@ pub fn generics(generics: &syn::Generics, item: &str) -> Result<(), ScanError> {
         return Err(ScanError::UnsupportedGenerics {
             item: item.to_owned(),
         }
-        .at(generics));
+        .at(generics)
+        .at(&generics.where_clause));
     }
     Ok(())
 }

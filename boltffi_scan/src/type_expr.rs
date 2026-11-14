@@ -597,28 +597,29 @@ pub fn primitive_path(path: &syn::Path) -> Option<Primitive> {
         return None;
     }
     let primitive = Primitive::from_rust_name(&path.segments.last()?.ident.to_string())?;
-    match path.segments.len() {
-        1 => Some(primitive),
-        3 => ((path.segments[0].ident == "std" || path.segments[0].ident == "core")
-            && path.segments[1].ident == "primitive")
-            .then_some(primitive),
-        _ => None,
-    }
+    is_primitive_form(&segment_names(path)).then_some(primitive)
+}
+
+fn segment_names(path: &syn::Path) -> Vec<String> {
+    path.segments
+        .iter()
+        .map(|segment| segment.ident.to_string())
+        .collect()
+}
+
+/// Whether a path spells its leaf bare or as `std::primitive::` / `core::primitive::`.
+fn is_primitive_form(names: &[String]) -> bool {
+    names.len() == 1
+        || (names.len() == 3
+            && matches!(names[0].as_str(), "std" | "core")
+            && names[1] == "primitive")
 }
 
 /// What to use instead of a standard-library type that has no boundary mapping.
 fn unsupported_standard_type(path: &syn::Path) -> Option<&'static str> {
-    let names = path
-        .segments
-        .iter()
-        .map(|segment| segment.ident.to_string())
-        .collect::<Vec<_>>();
+    let names = segment_names(path);
     let leaf = names.last()?.as_str();
-    let primitive_form = names.len() == 1
-        || (names.len() == 3
-            && matches!(names[0].as_str(), "std" | "core")
-            && names[1] == "primitive");
-    if primitive_form {
+    if is_primitive_form(&names) {
         return match leaf {
             "char" => Some("use `u32` for a code point or `String` for text"),
             "i128" | "u128" => Some("use `i64` or `u64`, or `String` for larger values"),
@@ -640,11 +641,7 @@ fn unsupported_standard_type(path: &syn::Path) -> Option<&'static str> {
 }
 
 fn is_standard_error_trait(path: &syn::Path) -> bool {
-    let names = path
-        .segments
-        .iter()
-        .map(|segment| segment.ident.to_string())
-        .collect::<Vec<_>>();
+    let names = segment_names(path);
     names.len() == 3
         && matches!(names[0].as_str(), "std" | "core")
         && names[1..] == ["error", "Error"]
@@ -655,6 +652,11 @@ fn owned(reference: &syn::TypeReference) -> String {
     match unwrapped(&reference.elem) {
         syn::Type::Path(path) if path.path.is_ident("str") => "String".to_owned(),
         syn::Type::Slice(slice) => format!("Vec<{}>", crate::spelling::ty(&slice.elem)),
+        elem @ syn::Type::TraitObject(_) => format!("Box<{}>", crate::spelling::ty(elem)),
+        elem @ syn::Type::ImplTrait(_) => {
+            let spelled = crate::spelling::ty(elem);
+            format!("Box<dyn {}>", spelled.trim_start_matches("impl "))
+        }
         elem => crate::spelling::ty(elem),
     }
 }
@@ -924,6 +926,19 @@ mod tests {
 
     fn ty(source: &str) -> syn::Type {
         syn::parse_str(source).expect("valid type")
+    }
+
+    #[test]
+    fn references_to_trait_objects_suggest_a_box() {
+        let owned_of = |source: &str| match ty(source) {
+            syn::Type::Reference(reference) => owned(&reference),
+            _ => panic!("reference type"),
+        };
+
+        assert_eq!(owned_of("&dyn Listener"), "Box<dyn Listener>");
+        assert_eq!(owned_of("&impl Fn()"), "Box<dyn Fn()>");
+        assert_eq!(owned_of("&[u8]"), "Vec<u8>");
+        assert_eq!(owned_of("&str"), "String");
     }
 
     #[test]

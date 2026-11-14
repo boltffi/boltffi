@@ -152,13 +152,16 @@ impl ScanError {
         .at(ty)
     }
 
-    /// This error, about `node`. An error that already has a location keeps it.
+    /// This error, about `node`. An error that already has a location keeps it, and a node
+    /// with no tokens adds none, so an outer caller can still place it.
     pub(crate) fn at(self, node: impl ToTokens) -> Self {
+        let tokens = node.into_token_stream();
         match self {
             Self::Located { .. } => self,
+            error if tokens.is_empty() => error,
             error => Self::Located {
                 error: Box::new(error),
-                location: Location(node.into_token_stream()),
+                location: Location(tokens),
             },
         }
     }

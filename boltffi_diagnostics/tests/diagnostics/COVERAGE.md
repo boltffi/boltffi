@@ -6,7 +6,7 @@ The findings come from `main` at f0da5b12 on rustc 1.97.1. Each "Today" entry is
 
 ## How the suite works
 
-Each case in `diagnostics/<rule>/<what_the_user_did>.rs` must fail to compile, and its `.stderr` file records the output. There are 111 of these, and many record bad messages on purpose, so a fix shows up as a `.stderr` diff.
+Each case in `diagnostics/<rule>/<what_the_user_did>.rs` must fail to compile, and its `.stderr` file records the output. There are 113 of these, and many record bad messages on purpose, so a fix shows up as a `.stderr` diff.
 
 The 8 cases in `tests/accepted/` compile today and should not. When a rule lands, move its case to `diagnostics/` and record the error.
 

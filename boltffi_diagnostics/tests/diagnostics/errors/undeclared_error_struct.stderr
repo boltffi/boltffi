@@ -18,8 +18,3 @@ help: the trait `boltffi::__private::capture::type_info::Declared<_>` is not imp
 2 | pub struct E;
   | ^^^^^^^^^^^^
   = note: add `#[data]` or `#[error]` to a record or enum, `#[export]` to a class, or declare a foreign type with `custom_type!`
-note: required by a bound in `boltffi::__private::capture::type_info::declared`
- --> $WORKSPACE/boltffi_core/src/capture/type_info.rs
-  |
-  | pub const fn declared<T: ?Sized + Declared<Tag>, Tag>() {}
-  |                                   ^^^^^^^^^^^^^ required by this bound in `declared`

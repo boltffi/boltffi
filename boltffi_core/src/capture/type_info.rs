@@ -77,13 +77,13 @@ pub trait TraitDesc {
     note = "add `#[data]` or `#[error]` to a record or enum, `#[export]` to a class, or declare a \
             foreign type with `custom_type!`"
 )]
-pub trait Declared<Tag> {}
+pub trait Declared<Tag> {
+    /// Names the impl, so a use site checks a type with `<T as Declared<_>>::DECLARED`.
+    const DECLARED: () = ();
+}
 
 #[diagnostic::do_not_recommend]
 impl<T: ?Sized + TypeDesc<Tag>, Tag> Declared<Tag> for T {}
-
-/// Fails to compile unless `T` is [`Declared`].
-pub const fn declared<T: ?Sized + Declared<Tag>, Tag>() {}
 
 /// Reads the descriptor of the trait whose marker value `marker` is.
 pub const fn trait_desc<M: TraitDesc>(_marker: &M) -> DescBuf {

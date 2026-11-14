@@ -235,7 +235,9 @@ pub(crate) fn start(kind: Kind, attribute: TokenStream, item: TokenStream) -> To
                 .map(|store| store.stale_warning(&fragments))
                 .unwrap_or_default();
             let chain = step(kind, &attribute, &item, Vec::new(), lane_paths(&fragments));
+            let declared = declared_checks(kind, &fragments);
             quote! {
+                #declared
                 #lane
                 #stale
                 #chain
@@ -243,10 +245,8 @@ pub(crate) fn start(kind: Kind, attribute: TokenStream, item: TokenStream) -> To
         }),
     };
     let expanded = expanded.unwrap_or_else(|message| compile_error(&message));
-    let declared = declared_checks(kind, &fragments);
     quote! {
         #scaffolded
-        #declared
         #expanded
     }
 }
@@ -464,8 +464,8 @@ fn spelling(slot: &SlotSource) -> String {
 }
 
 /// A check per type the fragments name, so a type no declaration covers reports that
-/// where the signature names it, beside rustc's failed lane lookup. An `#[export] impl`
-/// target is left out, since its class check already reports it.
+/// where the signature names it, beside rustc's failed lane lookup. A store resolution
+/// checks its slots itself, and an `#[export] impl` target has its class check.
 fn declared_checks(kind: Kind, fragments: &Fragments) -> TokenStream {
     let facade = capture::facade();
     let class_target = match (kind, fragments.first()) {
@@ -483,7 +483,7 @@ fn declared_checks(kind: Kind, fragments: &Fragments) -> TokenStream {
         })
         .map(|ty| {
             quote::quote_spanned! { syn::spanned::Spanned::span(&**ty) =>
-                const _: () = #facade::__private::capture::declared::<#ty, _>();
+                const _: () = <#ty as #facade::__private::capture::Declared<_>>::DECLARED;
             }
         })
         .collect()
