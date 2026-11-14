@@ -218,6 +218,12 @@ impl fmt::Display for LowerError {
                     "a class method must take `&self`, `&mut self`, or no receiver; taking `self` \
                      would consume a handle the foreign side still holds",
                 ),
+            LowerErrorKind::UnsupportedType(UnsupportedType::OpaqueRustContainer) => formatter
+                .write_str(
+                    "`Box` and `Arc` cross only around a trait object, such as `Box<dyn Trait>`; \
+                     in a parameter or return, pass the inner type itself, for example `Self` \
+                     instead of `Arc<Self>`",
+                ),
             LowerErrorKind::UnsupportedType(unsupported) => {
                 write!(
                     formatter,
