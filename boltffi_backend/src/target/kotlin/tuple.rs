@@ -34,6 +34,13 @@ impl Arity {
         ))
     }
 
+    pub fn fields(self) -> &'static [&'static str] {
+        match self {
+            Self::Pair => &["first", "second"],
+            Self::Triple => &["first", "second", "third"],
+        }
+    }
+
     fn constructor(self) -> &'static str {
         match self {
             Self::Pair => "Pair",
@@ -49,9 +56,6 @@ impl Arity {
     }
 
     fn count(self) -> usize {
-        match self {
-            Self::Pair => 2,
-            Self::Triple => 3,
-        }
+        self.fields().len()
     }
 }

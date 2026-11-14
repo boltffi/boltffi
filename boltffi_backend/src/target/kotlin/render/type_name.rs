@@ -14,9 +14,9 @@ use crate::{
         primitive::KotlinPrimitive,
         render::{
             callback::CallbackHandle, class::ClassHandle, direct_vector::DirectVector,
-            enumeration::Enumeration, record::Record,
+            enumeration::Enumeration, equality::Comparison, record::Record,
         },
-        syntax::TypeName,
+        syntax::{Identifier, TypeName},
         tuple::Arity,
     },
 };
@@ -89,6 +89,11 @@ impl KotlinType {
             .map(ApiType::into_type)
     }
 
+    pub fn comparison(ty: &TypeRef, context: &RenderContext<Native>) -> Result<Comparison> {
+        ty.render_with(&mut KotlinTypeRef::new(context))
+            .map(|ty| ty.comparison)
+    }
+
     pub fn type_ref_with_package(
         ty: &TypeRef,
         context: &RenderContext<Native>,
@@ -114,6 +119,7 @@ struct KotlinTypeRef<'context> {
 struct ApiType {
     ty: TypeName,
     primitive: Option<Primitive>,
+    comparison: Comparison,
 }
 
 impl<'context> KotlinTypeRef<'context> {
@@ -143,6 +149,10 @@ impl TypeRefRender for KotlinTypeRef<'_> {
         KotlinType::primitive(primitive).map(|ty| ApiType {
             ty,
             primitive: Some(primitive),
+            comparison: match primitive {
+                Primitive::F32 | Primitive::F64 => Comparison::Float { nullable: false },
+                _ => Comparison::Value,
+            },
         })
     }
 
@@ -159,7 +169,7 @@ impl TypeRefRender for KotlinTypeRef<'_> {
     }
 
     fn bytes(&mut self) -> Self::Output {
-        Ok(ApiType::new(TypeName::byte_array(false)))
+        Ok(ApiType::new(TypeName::byte_array(false)).compared(Comparison::Array))
     }
 
     fn record(&mut self, id: RecordId) -> Self::Output {
@@ -189,7 +199,7 @@ impl TypeRefRender for KotlinTypeRef<'_> {
             .map(|custom_type| custom_type.representation())
             .ok_or(KotlinHost::unsupported("custom type without declaration"))?
             .render_with(self)
-            .map(|inner| ApiType::new(inner.ty))
+            .map(|inner| ApiType::new(inner.ty).compared(inner.comparison))
     }
 
     fn builtin(&mut self, kind: BuiltinType) -> Self::Output {
@@ -197,7 +207,7 @@ impl TypeRefRender for KotlinTypeRef<'_> {
     }
 
     fn optional(&mut self, inner: Self::Output) -> Self::Output {
-        inner.map(|inner| ApiType::new(inner.ty.nullable()))
+        inner.map(|inner| ApiType::new(inner.ty.nullable()).compared(inner.comparison.optional()))
     }
 
     fn sequence(&mut self, element: Self::Output) -> Self::Output {
@@ -205,27 +215,37 @@ impl TypeRefRender for KotlinTypeRef<'_> {
         match element.primitive {
             Some(primitive) => KotlinPrimitive::new(primitive)
                 .direct_vector_type()
-                .map(ApiType::new),
-            None => Ok(ApiType::new(TypeName::list(element.ty))),
+                .map(|ty| ApiType::new(ty).compared(Comparison::Array)),
+            None => Ok(ApiType::new(TypeName::list(element.ty))
+                .compared(Comparison::sequence(element.comparison))),
         }
     }
 
     fn tuple(&mut self, elements: Vec<Self::Output>) -> Self::Output {
         let arity = Arity::from_count(elements.len())?;
-        elements
-            .into_iter()
-            .map(|element| element.map(ApiType::into_type))
-            .collect::<Result<Vec<_>>>()
-            .and_then(|elements| arity.type_name(elements))
-            .map(ApiType::new)
+        let elements = elements.into_iter().collect::<Result<Vec<_>>>()?;
+        let ty = arity.type_name(elements.iter().map(|element| element.ty.clone()).collect())?;
+        let fields = arity
+            .fields()
+            .iter()
+            .zip(elements)
+            .map(|(field, element)| Ok((Identifier::parse(*field)?, element.comparison)))
+            .collect::<Result<Vec<_>>>()?;
+        Ok(ApiType::new(ty).compared(Comparison::tuple(fields)))
     }
 
     fn result(&mut self, ok: Self::Output, err: Self::Output) -> Self::Output {
-        Ok(ApiType::new(TypeName::result(ok?.ty, err?.ty)))
+        let ok = ok?;
+        let err = err?;
+        Ok(ApiType::new(TypeName::result(ok.ty, err.ty))
+            .compared(Comparison::result(ok.comparison, err.comparison)))
     }
 
     fn map(&mut self, key: Self::Output, value: Self::Output) -> Self::Output {
-        Ok(ApiType::new(TypeName::map(key?.ty, value?.ty)))
+        let key = key?;
+        let value = value?;
+        Ok(ApiType::new(TypeName::map(key.ty, value.ty))
+            .compared(Comparison::map(key.comparison, value.comparison)))
     }
 }
 
@@ -234,7 +254,13 @@ impl ApiType {
         Self {
             ty,
             primitive: None,
+            comparison: Comparison::Value,
         }
+    }
+
+    fn compared(mut self, comparison: Comparison) -> Self {
+        self.comparison = comparison;
+        self
     }
 
     fn into_type(self) -> TypeName {

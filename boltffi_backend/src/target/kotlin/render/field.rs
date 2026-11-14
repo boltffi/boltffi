@@ -5,9 +5,8 @@ use crate::{
     target::kotlin::{
         KotlinHost,
         codec::{Reader, Sizer, Writer},
-        name_style::KotlinPackage,
-        name_style::Name,
-        render::{Documentation, type_name::KotlinType},
+        name_style::{KotlinPackage, Name},
+        render::{Documentation, equality::Comparison, type_name::KotlinType},
         syntax::{Expression, Identifier, Statement, TypeName},
     },
 };
@@ -17,6 +16,7 @@ pub struct EncodedField {
     name: Identifier,
     documentation: Documentation,
     ty: TypeName,
+    comparison: Comparison,
     read: Expression,
     write: Statement,
     size: Expression,
@@ -78,20 +78,18 @@ impl EncodedField {
             .into_iter()
             .map(|write| write.map(|write| write.into_statement()))
             .collect::<Result<Vec<_>>>()?;
-        match write.as_slice() {
-            [write] => Ok(Self {
-                name: Self::identifier(field.key())?,
-                documentation: Documentation::new(field.meta().doc()),
-                ty,
-                read: field.read().render_with(&mut reader)?.into_expression(),
-                write: write.clone(),
-                size: field
-                    .write()
-                    .size_with(&mut Sizer::new(host, context)?.current(current))?
-                    .into_expression(),
-            }),
-            _ => Err(KotlinHost::unsupported("multi-statement encoded field")),
-        }
+        Ok(Self {
+            name: Self::identifier(field.key())?,
+            documentation: Documentation::new(field.meta().doc()),
+            ty,
+            comparison: KotlinType::comparison(field.ty(), context)?,
+            read: field.read().render_with(&mut reader)?.into_expression(),
+            write: Statement::sequence(write),
+            size: field
+                .write()
+                .size_with(&mut Sizer::new(host, context)?.current(current))?
+                .into_expression(),
+        })
     }
 
     pub fn name(&self) -> &Identifier {
@@ -104,6 +102,10 @@ impl EncodedField {
 
     pub fn ty(&self) -> &TypeName {
         &self.ty
+    }
+
+    pub fn comparison(&self) -> &Comparison {
+        &self.comparison
     }
 
     pub(crate) fn requalified(mut self, ty: TypeName) -> Self {
