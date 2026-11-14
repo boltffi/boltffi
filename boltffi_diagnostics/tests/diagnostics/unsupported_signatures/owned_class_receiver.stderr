@@ -1,4 +1,4 @@
-error: BoltFFI: owned class receiver cannot be represented in binding IR yet
+error: BoltFFI: a class method must take `&self`, `&mut self`, or no receiver; taking `self` would consume a handle the foreign side still holds
   --> tests/diagnostics/unsupported_signatures/owned_class_receiver.rs:14:19
    |
 14 |     pub fn finish(self) -> u32 {

@@ -213,6 +213,11 @@ impl fmt::Display for LowerError {
                     "`Self` can't appear in a callback trait method, since a foreign \
                      implementation has no Rust type to stand in for it; use a concrete type",
                 ),
+            LowerErrorKind::UnsupportedType(UnsupportedType::OwnedClassReceiver) => formatter
+                .write_str(
+                    "a class method must take `&self`, `&mut self`, or no receiver; taking `self` \
+                     would consume a handle the foreign side still holds",
+                ),
             LowerErrorKind::UnsupportedType(unsupported) => {
                 write!(
                     formatter,
