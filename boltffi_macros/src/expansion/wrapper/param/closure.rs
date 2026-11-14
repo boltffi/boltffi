@@ -1319,9 +1319,12 @@ impl ClosureBinding {
             (HandlePresence::Nullable, rust_api::ClosureSourceForm::NullableBoxedDyn) => {
                 Ok(Self::NullableBoxed(signature, source.ty()?))
             }
-            (HandlePresence::Required, rust_api::ClosureSourceForm::FunctionPointer) => Err(
-                Error::UnsupportedExpansion("function-pointer closure parameter"),
-            ),
+            (HandlePresence::Required, rust_api::ClosureSourceForm::FunctionPointer) => {
+                Err(Error::Unsupported(
+                    "a `fn` pointer parameter can't cross yet; take `impl Fn(..)` or \
+                     `Box<dyn Fn(..)>` instead",
+                ))
+            }
             _ => Err(Error::SourceSyntaxMismatch(
                 "source closure parameter form does not match binding closure",
             )),

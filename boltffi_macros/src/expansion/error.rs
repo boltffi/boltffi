@@ -17,6 +17,8 @@ pub enum Error {
 
     UnsupportedExpansion(&'static str),
 
+    Unsupported(&'static str),
+
     Located(Box<Error>, SourceLocation),
 }
 
@@ -70,6 +72,7 @@ impl fmt::Display for Error {
             }
             Self::SourceSyntaxMismatch(message) => formatter.write_str(message),
             Self::UnsupportedExpansion(kind) => write!(formatter, "unsupported expansion: {kind}"),
+            Self::Unsupported(message) => formatter.write_str(message),
             Self::Located(error, _) => error.fmt(formatter),
         }
     }
