@@ -86,9 +86,11 @@ impl Attribute {
                 "`{}` is not a valid stream attribute: {error}",
                 spelling::attr(attr)
             ))
+            .at_span(error.span())
         })?;
         Ok(Self {
-            item: item.ok_or_else(|| Self::invalid("ffi_stream requires item = <type>"))?,
+            item: item
+                .ok_or_else(|| Self::invalid("ffi_stream requires item = <type>").at(attr))?,
             mode: mode.unwrap_or(StreamMode::Async),
         })
     }
@@ -194,15 +196,17 @@ fn validate(
     unsupported::generics(&method.sig.generics, &item)?;
     unsupported::safety(&method.sig.safety, &item)?;
     unsupported::extern_abi(method.sig.abi.as_ref(), &item)?;
-    if method.sig.asyncness.is_some() {
-        return Err(Attribute::invalid(format!("`{item}` cannot be async")));
+    if let Some(asyncness) = method.sig.asyncness {
+        return Err(Attribute::invalid(format!("`{item}` cannot be async")).at(asyncness));
     }
     if !has_shared_receiver_only(method) {
         return Err(Attribute::invalid(format!(
             "`{item}` must be a public `&self` method with no parameters"
-        )));
+        ))
+        .at(&method.sig.inputs));
     }
-    let returned = subscription_item(&method.sig.output, scope, &item, scanner.is_deferred())?;
+    let returned = subscription_item(&method.sig.output, scope, &item, scanner.is_deferred())
+        .map_err(|error| error.at(&method.sig.output))?;
     let declared_item = StreamItem::from_boundary(scanner.scan(attribute.item())?);
     let returned_item = scanner.scan(returned)?;
     if declared_item.storage() != &returned_item {
@@ -210,7 +214,8 @@ fn validate(
             "`{item}` declares item `{}` but returns `{}`",
             spelling::ty(attribute.item()),
             spelling::ty(returned)
-        )));
+        ))
+        .at(returned));
     }
     Ok(declared_item)
 }
@@ -439,7 +444,7 @@ mod tests {
         };
 
         assert_eq!(
-            error,
+            error.unlocated().clone(),
             ScanError::InvalidStream {
                 message: "ffi_stream requires item = <type>".to_owned()
             }
@@ -455,7 +460,7 @@ mod tests {
             Err(error) => error,
         };
 
-        assert!(matches!(error, ScanError::InvalidStream { .. }));
+        assert!(matches!(error.unlocated(), ScanError::InvalidStream { .. }));
     }
 
     #[test]
@@ -467,7 +472,7 @@ mod tests {
         let error = validate_method(&method, "demo::Engine").expect_err("receiver is required");
 
         assert_eq!(
-            error,
+            error.unlocated().clone(),
             ScanError::InvalidStream {
                 message:
                     "`stream demo::Engine::events` must be a public `&self` method with no parameters"
@@ -485,7 +490,7 @@ mod tests {
         let error = validate_method(&method, "demo::Engine").expect_err("parameters are rejected");
 
         assert_eq!(
-            error,
+            error.unlocated().clone(),
             ScanError::InvalidStream {
                 message:
                     "`stream demo::Engine::events` must be a public `&self` method with no parameters"
@@ -501,7 +506,7 @@ mod tests {
         let error = validate_method(&method, "demo::Engine").expect_err("return shape rejected");
 
         assert_eq!(
-            error,
+            error.unlocated().clone(),
             ScanError::InvalidStream {
                 message: "`stream demo::Engine::events` must return Arc<EventSubscription<T>>"
                     .to_owned()
@@ -518,7 +523,7 @@ mod tests {
         let error = validate_method(&method, "demo::Engine").expect_err("item mismatch rejected");
 
         assert_eq!(
-            error,
+            error.unlocated().clone(),
             ScanError::InvalidStream {
                 message: "`stream demo::Engine::events` declares item `i32` but returns `u32`"
                     .to_owned()
@@ -656,7 +661,7 @@ mod tests {
         let error = scan(marked.classes(), &declared_types).expect_err("local Arc rejected");
 
         assert_eq!(
-            error,
+            error.unlocated().clone(),
             ScanError::InvalidStream {
                 message: "`stream demo::Engine::values` must return Arc<EventSubscription<T>>"
                     .to_owned()
@@ -688,7 +693,7 @@ mod tests {
             scan(marked.classes(), &declared_types).expect_err("other subscription rejected");
 
         assert_eq!(
-            error,
+            error.unlocated().clone(),
             ScanError::InvalidStream {
                 message: "`stream demo::Engine::values` must return Arc<EventSubscription<T>>"
                     .to_owned()

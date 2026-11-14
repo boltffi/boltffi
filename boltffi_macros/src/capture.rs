@@ -61,7 +61,7 @@ pub(crate) fn item_tokens(
     let described =
         fragments(&item, &capture, error).map_err(|reason| SourceFragment::Unsupported {
             name: name.clone(),
-            reason,
+            reason: reason.to_string(),
         });
     let fingerprint = match &described {
         Ok(fragments) => fingerprint(fragments.iter().map(|(fragment, _)| fragment)),
@@ -135,8 +135,8 @@ pub(crate) fn fragments(
     item: &syn::Item,
     capture: &Capture,
     error: bool,
-) -> Result<Fragments, String> {
-    let failed = |error: boltffi_scan::ScanError| error.to_string();
+) -> Result<Fragments, boltffi_scan::ScanError> {
+    let failed = |error| error;
     if let (Some(declaration), Capture::Class(marker_args)) = (ClassDeclaration::of(item), capture)
     {
         return capture_class(declaration, marker_args.clone())
@@ -445,7 +445,7 @@ pub(crate) fn trait_identity_tokens(item: &syn::ItemTrait) -> TokenStream {
         Ok(fragments) => fingerprint(fragments.iter().map(|(fragment, _)| fragment)),
         Err(reason) => fingerprint([&SourceFragment::Unsupported {
             name: name.clone(),
-            reason,
+            reason: reason.to_string(),
         }]),
     };
     let facade = facade();

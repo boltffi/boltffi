@@ -1,7 +1,5 @@
 error: BoltFFI: unsupported source type `unrecognized type`
- --> tests/diagnostics/constants/array_constant.rs:2:1
+ --> tests/diagnostics/constants/array_constant.rs:3:14
   |
-2 | #[boltffi::export]
-  | ^^^^^^^^^^^^^^^^^^
-  |
-  = note: this error originates in the attribute macro `boltffi::export` (in Nightly builds, run with -Z macro-backtrace for more info)
+3 | pub const A: [u8; 2] = [0, 1];
+  |              ^^^^^^^

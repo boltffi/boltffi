@@ -332,7 +332,7 @@ mod tests {
         .expect_err("unqualified cross-module reference must reject");
 
         assert!(matches!(
-            error,
+            error.unlocated(),
             ScanError::UnsupportedType { spelling } if spelling == "Point"
         ));
     }
@@ -712,7 +712,7 @@ mod tests {
         .expect_err("unmarked local source type must reject");
 
         assert!(matches!(
-            error,
+            error.unlocated(),
             ScanError::UnsupportedType { spelling } if spelling == "Timestamp"
         ));
     }
@@ -964,7 +964,7 @@ mod tests {
         .expect_err("explicit imports must block glob fallback");
 
         assert!(matches!(
-            error,
+            error.unlocated(),
             ScanError::UnsupportedType { spelling } if spelling == "Point"
         ));
     }
@@ -1022,7 +1022,7 @@ mod tests {
         .expect_err("local unmarked type must win over glob declared type");
 
         assert!(matches!(
-            error,
+            error.unlocated(),
             ScanError::UnsupportedType { spelling } if spelling == "Point"
         ));
     }
@@ -1083,7 +1083,7 @@ mod tests {
         .expect_err("explicit imports must block shape fallback");
 
         assert!(matches!(
-            error,
+            error.unlocated(),
             ScanError::UnsupportedType { spelling } if spelling == "DateTime<Utc>"
         ));
     }
@@ -1245,7 +1245,7 @@ mod tests {
         .expect_err("trait impl cannot declare a class");
 
         assert_eq!(
-            error,
+            error.unlocated().clone(),
             ScanError::UnsupportedClassImplShape {
                 target: "Engine".to_owned(),
             }
@@ -1504,7 +1504,7 @@ mod tests {
             .expect_err("invalid marker argument must reject");
 
         assert_eq!(
-            error,
+            error.unlocated().clone(),
             ScanError::InvalidMarker {
                 attribute: "data(foo)".to_owned()
             }
@@ -1570,7 +1570,7 @@ mod tests {
         .expect_err("reference to an unmarked type must reject");
 
         assert!(matches!(
-            error,
+            error.unlocated(),
             ScanError::UnsupportedType { spelling } if spelling == "Point"
         ));
     }

@@ -53,7 +53,7 @@ fn parameters(sig: &syn::Signature, scanner: &Scanner<'_>) -> Result<Vec<Paramet
         .iter()
         .map(|argument| match argument {
             syn::FnArg::Typed(typed) => signature::parameter(typed, scanner),
-            syn::FnArg::Receiver(_) => Err(ScanError::ReceiverOnFreeFunction),
+            syn::FnArg::Receiver(receiver) => Err(ScanError::ReceiverOnFreeFunction.at(receiver)),
         })
         .collect()
 }
@@ -231,7 +231,7 @@ mod tests {
         let error = scan("pub fn make(point: Point) {}").expect_err("unregistered type rejects");
 
         assert!(matches!(
-            error,
+            error.unlocated(),
             ScanError::UnsupportedType { spelling } if spelling == "Point"
         ));
     }
@@ -285,7 +285,7 @@ mod tests {
     fn rejects_receiver_on_free_function() {
         let error = scan("pub fn distance(&self) -> f64 { 0.0 }").expect_err("receiver rejected");
 
-        assert_eq!(error, ScanError::ReceiverOnFreeFunction);
+        assert_eq!(error.unlocated().clone(), ScanError::ReceiverOnFreeFunction);
     }
 
     #[test]
@@ -293,7 +293,7 @@ mod tests {
         let error =
             scan("pub fn sum((x, y): (i32, i32)) -> i32 { x + y }").expect_err("pattern rejected");
 
-        assert_eq!(error, ScanError::UnnamedParameter);
+        assert_eq!(error.unlocated().clone(), ScanError::UnnamedParameter);
     }
 
     #[test]
@@ -301,7 +301,7 @@ mod tests {
         let error = scan("pub fn make<T>() -> i32 { 0 }").expect_err("generic rejected");
 
         assert_eq!(
-            error,
+            error.unlocated().clone(),
             ScanError::UnsupportedGenerics {
                 item: "function make".to_owned()
             }
@@ -313,7 +313,7 @@ mod tests {
         let error = scan("pub unsafe fn free_handle(handle: i32) {}").expect_err("unsafe rejected");
 
         assert_eq!(
-            error,
+            error.unlocated().clone(),
             ScanError::UnsupportedUnsafe {
                 item: "function free_handle".to_owned()
             }
@@ -326,7 +326,7 @@ mod tests {
             .expect_err("extern rejected");
 
         assert_eq!(
-            error,
+            error.unlocated().clone(),
             ScanError::UnsupportedExternAbi {
                 item: "function add".to_owned()
             }

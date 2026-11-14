@@ -1,7 +1,5 @@
 error: BoltFFI: `function f` cannot declare an extern ABI
- --> tests/diagnostics/functions/extern_function.rs:2:1
+ --> tests/diagnostics/functions/extern_function.rs:3:5
   |
-2 | #[boltffi::export]
-  | ^^^^^^^^^^^^^^^^^^
-  |
-  = note: this error originates in the attribute macro `boltffi::export` (in Nightly builds, run with -Z macro-backtrace for more info)
+3 | pub extern "C" fn f() {}
+  |     ^^^^^^^^^^

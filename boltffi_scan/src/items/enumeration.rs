@@ -108,17 +108,15 @@ fn discriminant_value(expr: &syn::Expr) -> Result<i128, ScanError> {
         syn::Expr::Lit(syn::ExprLit {
             lit: syn::Lit::Int(literal),
             ..
-        }) => literal
-            .base10_parse::<i128>()
-            .map_err(|_| unsupported::feature(UnsupportedFeature::NonLiteralEnumDiscriminant)),
+        }) => literal.base10_parse::<i128>().map_err(|_| {
+            unsupported::feature(UnsupportedFeature::NonLiteralEnumDiscriminant).at(literal)
+        }),
         syn::Expr::Unary(syn::ExprUnary {
             op: syn::UnOp::Neg(_),
             expr,
             ..
         }) => Ok(-discriminant_value(expr)?),
-        _ => Err(unsupported::feature(
-            UnsupportedFeature::NonLiteralEnumDiscriminant,
-        )),
+        _ => Err(unsupported::feature(UnsupportedFeature::NonLiteralEnumDiscriminant).at(expr)),
     }
 }
 
@@ -200,7 +198,7 @@ mod tests {
         let error = scan("pub enum Mask { A = 1 << 2 }").expect_err("non-literal must reject");
 
         assert_eq!(
-            error,
+            error.unlocated().clone(),
             unsupported::feature(UnsupportedFeature::NonLiteralEnumDiscriminant)
         );
     }
@@ -210,7 +208,7 @@ mod tests {
         let error = scan("pub enum Boxed<T> { Value(T) }").expect_err("generic rejected");
 
         assert_eq!(
-            error,
+            error.unlocated().clone(),
             ScanError::UnsupportedGenerics {
                 item: "enum Boxed".to_owned()
             }

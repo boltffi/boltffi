@@ -87,7 +87,7 @@ fn receiver(signature: &syn::Signature) -> Result<Receiver, ScanError> {
             syn::ReceiverKind::Reference(_, _, Some(_)) => Ok(Receiver::Mutable),
             syn::ReceiverKind::Reference(_, _, None) => Ok(Receiver::Shared),
             syn::ReceiverKind::Value | syn::ReceiverKind::Typed(..) => Ok(Receiver::Owned),
-            _ => Err(unsupported::feature(UnsupportedFeature::ReceiverKind)),
+            _ => Err(unsupported::feature(UnsupportedFeature::ReceiverKind).at(receiver)),
         },
         _ => Ok(Receiver::None),
     }
@@ -123,7 +123,7 @@ fn parameter_type(ty: &syn::Type) -> (&syn::Type, ParameterPassing) {
 fn parameter_name(pat: &syn::Pat) -> Result<SourceName, ScanError> {
     match pat {
         syn::Pat::Ident(binding) => Ok(name::source(&binding.ident)),
-        _ => Err(ScanError::UnnamedParameter),
+        pattern => Err(ScanError::UnnamedParameter.at(pattern)),
     }
 }
 
@@ -196,19 +196,19 @@ mod tests {
             syn::parse_str::<syn::Signature>("extern \"C\" fn add()").expect("extern signature");
 
         assert_eq!(
-            validate(&generic, "function make".to_owned()),
+            crate::error::unlocated(validate(&generic, "function make".to_owned())),
             Err(ScanError::UnsupportedGenerics {
                 item: "function make".to_owned()
             })
         );
         assert_eq!(
-            validate(&unsafe_signature, "function free".to_owned()),
+            crate::error::unlocated(validate(&unsafe_signature, "function free".to_owned())),
             Err(ScanError::UnsupportedUnsafe {
                 item: "function free".to_owned()
             })
         );
         assert_eq!(
-            validate(&extern_signature, "function add".to_owned()),
+            crate::error::unlocated(validate(&extern_signature, "function add".to_owned())),
             Err(ScanError::UnsupportedExternAbi {
                 item: "function add".to_owned()
             })

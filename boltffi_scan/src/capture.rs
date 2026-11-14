@@ -817,14 +817,14 @@ mod tests {
 
         assert!(
             matches!(
-                capture_class_methods(&trait_impl),
+                crate::error::unlocated(capture_class_methods(&trait_impl)),
                 Err(ScanError::UnsupportedClassImplShape { .. })
             ),
             "a trait impl exports nothing, so it fails instead"
         );
         assert!(
             matches!(
-                capture_class_methods(&generic_impl),
+                crate::error::unlocated(capture_class_methods(&generic_impl)),
                 Err(ScanError::UnsupportedGenerics { .. })
             ),
             "generic blocks stay unsupported"

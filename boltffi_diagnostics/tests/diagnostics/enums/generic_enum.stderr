@@ -1,10 +1,8 @@
 error: BoltFFI: `enum E` cannot use generics
- --> tests/diagnostics/enums/generic_enum.rs:2:1
+ --> tests/diagnostics/enums/generic_enum.rs:4:11
   |
-2 | #[boltffi::data]
-  | ^^^^^^^^^^^^^^^^
-  |
-  = note: this error originates in the attribute macro `boltffi::data` (in Nightly builds, run with -Z macro-backtrace for more info)
+4 | pub enum E<T> { A(T) }
+  |           ^^^
 
 error[E0107]: missing generics for enum `E`
  --> tests/diagnostics/enums/generic_enum.rs:4:10

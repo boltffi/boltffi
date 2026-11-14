@@ -1,5 +1,8 @@
 use std::fmt;
 
+use proc_macro2::TokenStream;
+use quote::ToTokens;
+
 use crate::UnsupportedFeature;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -86,7 +89,31 @@ pub enum ScanError {
     UnsupportedFeature {
         feature: UnsupportedFeature,
     },
+    /// Another error, with the source tokens it is about.
+    Located {
+        error: Box<ScanError>,
+        location: Location,
+    },
 }
+
+/// The source tokens an error is about. Two locations always compare equal, so an error
+/// equals itself wherever it was written.
+#[derive(Clone, Debug)]
+pub struct Location(TokenStream);
+
+impl Location {
+    pub fn tokens(&self) -> &TokenStream {
+        &self.0
+    }
+}
+
+impl PartialEq for Location {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+impl Eq for Location {}
 
 impl ScanError {
     pub(super) fn read(path: &std::path::Path, error: &std::io::Error) -> Self {
@@ -106,6 +133,39 @@ impl ScanError {
     pub(super) fn unsupported_type(ty: &syn::Type) -> Self {
         Self::UnsupportedType {
             spelling: crate::spelling::ty(ty),
+        }
+        .at(ty)
+    }
+
+    /// This error, about `node`. An error that already has a location keeps it.
+    pub(crate) fn at(self, node: impl ToTokens) -> Self {
+        match self {
+            Self::Located { .. } => self,
+            error => Self::Located {
+                error: Box::new(error),
+                location: Location(node.into_token_stream()),
+            },
+        }
+    }
+
+    /// This error, at `span`, for errors that know a span but no tokens.
+    pub(crate) fn at_span(self, span: proc_macro2::Span) -> Self {
+        self.at(proc_macro2::Ident::new("located", span))
+    }
+
+    /// The source tokens this error is about, if it knows them.
+    pub fn location(&self) -> Option<&Location> {
+        match self {
+            Self::Located { location, .. } => Some(location),
+            _ => None,
+        }
+    }
+
+    /// This error without its location.
+    pub fn unlocated(&self) -> &Self {
+        match self {
+            Self::Located { error, .. } => error.unlocated(),
+            error => error,
         }
     }
 }
@@ -217,11 +277,17 @@ impl fmt::Display for ScanError {
                 formatter.write_str("free function cannot have a receiver")
             }
             Self::UnsupportedFeature { feature } => formatter.write_str(feature.info().message),
+            Self::Located { error, .. } => error.fmt(formatter),
         }
     }
 }
 
 impl std::error::Error for ScanError {}
+
+#[cfg(test)]
+pub(crate) fn unlocated<T>(result: Result<T, ScanError>) -> Result<T, ScanError> {
+    result.map_err(|error| error.unlocated().clone())
+}
 
 #[cfg(test)]
 mod tests {
@@ -234,7 +300,9 @@ mod tests {
     #[test]
     fn unsupported_path_type_preserves_qualified_spelling() {
         assert_eq!(
-            ScanError::unsupported_type(&ty("crate::domain::Point")),
+            ScanError::unsupported_type(&ty("crate::domain::Point"))
+                .unlocated()
+                .clone(),
             ScanError::UnsupportedType {
                 spelling: "crate::domain::Point".to_owned()
             }
@@ -244,7 +312,9 @@ mod tests {
     #[test]
     fn unsupported_reference_type_preserves_reference_shape() {
         assert_eq!(
-            ScanError::unsupported_type(&ty("&Point")),
+            ScanError::unsupported_type(&ty("&Point"))
+                .unlocated()
+                .clone(),
             ScanError::UnsupportedType {
                 spelling: "&Point".to_owned()
             }

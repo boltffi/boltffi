@@ -399,22 +399,23 @@ impl<'a> Scanner<'a> {
         if fn_ptr.lifetimes.is_some() {
             return Err(crate::unsupported::feature(
                 UnsupportedFeature::HigherRankedFunctionPointer,
-            ));
+            )
+            .at(fn_ptr));
         }
         if fn_ptr.unsafety.is_some() {
-            return Err(crate::unsupported::feature(
-                UnsupportedFeature::UnsafeFunctionPointer,
-            ));
+            return Err(
+                crate::unsupported::feature(UnsupportedFeature::UnsafeFunctionPointer).at(fn_ptr),
+            );
         }
         if fn_ptr.abi.is_some() {
-            return Err(crate::unsupported::feature(
-                UnsupportedFeature::ExternFunctionPointer,
-            ));
+            return Err(
+                crate::unsupported::feature(UnsupportedFeature::ExternFunctionPointer).at(fn_ptr),
+            );
         }
         if fn_ptr.variadic.is_some() {
-            return Err(crate::unsupported::feature(
-                UnsupportedFeature::VariadicFunctionPointer,
-            ));
+            return Err(
+                crate::unsupported::feature(UnsupportedFeature::VariadicFunctionPointer).at(fn_ptr),
+            );
         }
         let parameters = fn_ptr
             .inputs

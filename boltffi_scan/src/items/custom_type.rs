@@ -343,7 +343,10 @@ impl ParsedFields {
                 input.parse()?,
                 input,
             ),
-            other => Err(input.error(format!("unknown custom_type! key `{other}`"))),
+            other => Err(syn::Error::new(
+                key.span(),
+                format!("unknown custom_type! key `{other}`"),
+            )),
         }
     }
 
@@ -1121,7 +1124,7 @@ impl PathParts {
 }
 
 fn invalid_custom_type(error: syn::Error) -> ScanError {
-    invalid_custom_type_message(error.to_string())
+    invalid_custom_type_message(error.to_string()).at_span(error.span())
 }
 
 fn invalid_custom_type_message(message: impl Into<String>) -> ScanError {
@@ -1210,11 +1213,11 @@ mod tests {
     #[test]
     fn rejects_missing_required_fields() {
         assert!(matches!(
-            scan("custom_type!(UtcDateTime, repr = i64, into_ffi = to_millis, try_from_ffi = from_millis);"),
+            crate::error::unlocated(scan("custom_type!(UtcDateTime, repr = i64, into_ffi = to_millis, try_from_ffi = from_millis);")),
             Err(ScanError::InvalidCustomType { message }) if message.contains("missing `remote = ...`")
         ));
         assert!(matches!(
-            scan("custom_type!(UtcDateTime, remote = DateTime<Utc>, repr = i64, into_ffi = to_millis);"),
+            crate::error::unlocated(scan("custom_type!(UtcDateTime, remote = DateTime<Utc>, repr = i64, into_ffi = to_millis);")),
             Err(ScanError::InvalidCustomType { message }) if message.contains("missing `try_from_ffi = ...`")
         ));
     }
@@ -1222,11 +1225,11 @@ mod tests {
     #[test]
     fn rejects_unknown_and_duplicate_keys() {
         assert!(matches!(
-            scan("custom_type!(UtcDateTime, remote = DateTime<Utc>, repr = i64, into_ffi = to_millis, try_from_ffi = from_millis, typo = true);"),
+            crate::error::unlocated(scan("custom_type!(UtcDateTime, remote = DateTime<Utc>, repr = i64, into_ffi = to_millis, try_from_ffi = from_millis, typo = true);")),
             Err(ScanError::InvalidCustomType { message }) if message.contains("unknown custom_type! key `typo`")
         ));
         assert!(matches!(
-            scan("custom_type!(UtcDateTime, remote = DateTime<Utc>, remote = Timestamp, repr = i64, into_ffi = to_millis, try_from_ffi = from_millis);"),
+            crate::error::unlocated(scan("custom_type!(UtcDateTime, remote = DateTime<Utc>, remote = Timestamp, repr = i64, into_ffi = to_millis, try_from_ffi = from_millis);")),
             Err(ScanError::InvalidCustomType { message }) if message.contains("duplicate custom_type! key `remote`")
         ));
     }

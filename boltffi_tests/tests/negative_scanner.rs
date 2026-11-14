@@ -43,6 +43,7 @@ impl Fixture {
 
 impl ExpectedError {
     fn assert_scan_error(self, name: &str, error: ScanError) {
+        let error = error.unlocated().clone();
         match self {
             Self::UnsupportedFeature(expected) => assert_eq!(
                 error,

@@ -1,7 +1,5 @@
 error: BoltFFI: `class Holder<T>` cannot use generics
- --> tests/diagnostics/classes/generic_class_impl.rs:7:1
+ --> tests/diagnostics/classes/generic_class_impl.rs:8:5
   |
-7 | #[boltffi::export]
-  | ^^^^^^^^^^^^^^^^^^
-  |
-  = note: this error originates in the attribute macro `boltffi::export` (in Nightly builds, run with -Z macro-backtrace for more info)
+8 | impl<T> Holder<T> {
+  |     ^^^

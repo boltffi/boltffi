@@ -46,10 +46,11 @@ fn attach_impl(
 
 fn validate(item: &syn::ItemImpl, target: &str) -> Result<(), ScanError> {
     unsupported::generics(&item.generics, &format!("impl {target}"))?;
-    if item.trait_.is_some() {
+    if let Some((path, _)) = &item.trait_ {
         return Err(ScanError::UnsupportedMarkedImpl {
             target: target.to_owned(),
-        });
+        }
+        .at(path));
     }
     Ok(())
 }
@@ -158,7 +159,7 @@ mod tests {
             .expect_err("generic rejected");
 
         assert_eq!(
-            error,
+            error.unlocated().clone(),
             ScanError::UnsupportedGenerics {
                 item: "impl Point".to_owned()
             }
@@ -181,7 +182,7 @@ mod tests {
             .expect_err("trait impl rejected");
 
         assert_eq!(
-            error,
+            error.unlocated().clone(),
             ScanError::UnsupportedMarkedImpl {
                 target: "Point".to_owned()
             }

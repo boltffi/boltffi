@@ -25,7 +25,7 @@ pub use capture::{
     capture_struct, capture_trait,
 };
 pub(crate) use cfg::ActiveCfg;
-pub use error::ScanError;
+pub use error::{Location, ScanError};
 pub use items::class::ClassDeclaration;
 pub use repr::scan as scan_repr;
 pub use scan::{scan_file, scan_source};

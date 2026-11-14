@@ -1,10 +1,8 @@
 error: BoltFFI: `record P` cannot use generics
- --> tests/diagnostics/records/lifetime_parameter.rs:2:1
+ --> tests/diagnostics/records/lifetime_parameter.rs:4:13
   |
-2 | #[boltffi::data]
-  | ^^^^^^^^^^^^^^^^
-  |
-  = note: this error originates in the attribute macro `boltffi::data` (in Nightly builds, run with -Z macro-backtrace for more info)
+4 | pub struct P<'a> { pub x: &'a str }
+  |             ^^^^
 
 error[E0726]: implicit elided lifetime not allowed here
  --> tests/diagnostics/records/lifetime_parameter.rs:4:12

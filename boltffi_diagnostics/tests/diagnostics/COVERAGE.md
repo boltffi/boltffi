@@ -31,7 +31,7 @@ We compiled 217 small crates, one mistake or feature each:
 
 Of the 119 rejected crates, 61 print a message that users can't act on without knowing how BoltFFI works.
 
-68 of the 69 `BoltFFI:` errors point at the `#[export]` or `#[data]` attribute instead of the parameter, field, or method at fault. In a large `impl` block, users have to guess which method is wrong.
+Errors the scanner reports point at the parameter, field, or method at fault. Lowering errors still point at the `#[export]` or `#[data]` attribute, 25 of the 68 `BoltFFI:` errors in the suite, so in a large `impl` block users have to guess which method is wrong.
 
 ## Most common bad messages
 
