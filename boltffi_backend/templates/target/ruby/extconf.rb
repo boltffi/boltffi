@@ -32,6 +32,12 @@ module BoltFFIExtconf
   FEATURE_ARGUMENTS = [{{ feature_arguments|join(", ") }}].freeze
   # The kinds that cargo's `rustc-link-search=[KIND=]PATH` accepts.
   LINK_SEARCH_KINDS = %w[native crate dependency framework all].freeze
+  # The record store that `boltffi pack ruby` wrote into the crate copy. The
+  # install build has no store in its build folder, so the build names this
+  # file. An export that names a type through an alias then still expands.
+  # The macros skip a named store file that does not exist.
+  RECORD_STORE = File.join(CRATE, {{ record_store_file }})
+  RECORD_STORE_ENV = {{ record_store_env }}
 
   class << self
     def configure
@@ -90,7 +96,7 @@ module BoltFFIExtconf
     def build_crate_in(target_directory)
       stderr_text = +""
       status = nil
-      Open3.popen3(*cargo_command(target_directory), chdir: CRATE) do |stdin, out, err, wait_thread|
+      Open3.popen3({ RECORD_STORE_ENV => RECORD_STORE }, *cargo_command(target_directory), chdir: CRATE) do |stdin, out, err, wait_thread|
         stdin.close
         err_thread = Thread.new do
           err.each_line do |line|
