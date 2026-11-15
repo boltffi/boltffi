@@ -53,7 +53,10 @@ pub fn lower<S: SurfaceLower>(
         .traits()
         .iter()
         .filter(|callback| index.lowers(callback.id.as_str()))
-        .map(|callback| lower_one::<S>(index, ids, allocator, callback))
+        .map(|callback| {
+            lower_one::<S>(index, ids, allocator, callback)
+                .map_err(|error| error.in_declaration(&callback.id))
+        })
         .collect()
 }
 
@@ -119,7 +122,8 @@ fn local_protocol<S: SurfaceLower>(
                     allocator,
                     callable::CallableOwner::Trait(callback),
                     method,
-                )?,
+                )
+                .map_err(|error| error.in_member(method.name.spelling()))?,
             ))
         })
         .collect::<Result<Vec<_>, LowerError>>()?;
@@ -1687,6 +1691,13 @@ mod tests {
             error.kind(),
             LowerErrorKind::UnsupportedType(UnsupportedType::InvalidCallbackReceiver)
         ));
+        assert_eq!(
+            error.location(),
+            &crate::SourceLocation::default()
+                .in_declaration("demo::Listener")
+                .in_member("update")
+                .at(crate::SourcePosition::Receiver)
+        );
     }
 
     #[test]

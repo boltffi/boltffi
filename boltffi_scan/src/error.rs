@@ -273,7 +273,9 @@ mod tests {
                 feature: UnsupportedFeature::TupleStruct,
             }
             .to_string(),
-            "tuple structs are not represented by the record AST"
+            "a record needs named fields, as in \
+             `pub struct Point { pub x: f64, pub y: f64 }`; \
+             BoltFFI can't read a tuple struct yet"
         );
         assert_eq!(
             ScanError::InvalidMarker {
