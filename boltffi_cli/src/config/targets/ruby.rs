@@ -3,7 +3,12 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 /// `[targets.ruby]` configuration for the experimental Ruby target.
+///
+/// Unknown keys fail. BoltFFI 0.32 had a `version` key in this table. The
+/// source gem takes its version from the starter gemspec, so a `version`
+/// key now fails instead of doing nothing.
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct RubyConfig {
     #[serde(default)]
     pub enabled: bool,
@@ -17,9 +22,6 @@ pub struct RubyConfig {
     /// `MyLib::Native`. Defaults to the package name in `UpperCamelCase`.
     #[serde(default)]
     pub module_name: Option<String>,
-    /// Gem version. Defaults to the Cargo package version.
-    #[serde(default)]
-    pub version: Option<String>,
     /// Cargo arguments for every cargo invocation that builds this target.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub cargo_args: Vec<String>,
@@ -32,7 +34,6 @@ impl Default for RubyConfig {
             output: default_ruby_output(),
             gem_name: None,
             module_name: None,
-            version: None,
             cargo_args: Vec::new(),
         }
     }
