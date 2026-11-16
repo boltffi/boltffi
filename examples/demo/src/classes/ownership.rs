@@ -63,13 +63,13 @@ impl Drop for OwnedMessage {
 }
 
 #[export(single_threaded)]
-pub struct MutableMessage {
+pub struct MutableOwnedMessage {
     text: String,
     lifetime: Arc<MessageLifetime>,
 }
 
 #[export]
-impl MutableMessage {
+impl MutableOwnedMessage {
     pub fn new(text: String, drops: &MessageDrops) -> Self {
         Self {
             text,
@@ -82,7 +82,7 @@ impl MutableMessage {
     }
 }
 
-impl Drop for MutableMessage {
+impl Drop for MutableOwnedMessage {
     fn drop(&mut self) {
         self.lifetime.dropped.fetch_add(1, Ordering::SeqCst);
     }
@@ -179,7 +179,7 @@ pub fn borrow_message(message: &OwnedMessage) -> u32 {
 }
 
 #[export]
-pub fn mutate_message(message: &mut MutableMessage) {
+pub fn mutate_message(message: &mut MutableOwnedMessage) {
     message.text.push('!');
 }
 

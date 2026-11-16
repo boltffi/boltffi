@@ -144,6 +144,7 @@ fn lower_plan<S: SurfaceLower, D: Direction>(
     receive: Receive,
 ) -> Result<ParamPlan<S, D>, LowerError> {
     if let Some(handle) = ClassHandleSource::from_type_expr(type_expr) {
+        let target = ids.class(handle.id)?;
         if matches!(receive, Receive::ByMutRef)
             && !index
                 .class(handle.id)
@@ -154,7 +155,7 @@ fn lower_plan<S: SurfaceLower, D: Direction>(
             ));
         }
         return Ok(ParamPlan::Handle {
-            target: HandleTarget::Class(ids.class(handle.id)?),
+            target: HandleTarget::Class(target),
             carrier: S::class_handle_carrier(),
             presence: handle.presence,
             receive: D::receive_from(receive),

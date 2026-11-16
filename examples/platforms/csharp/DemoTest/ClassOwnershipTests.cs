@@ -109,7 +109,7 @@ internal static class ClassOwnershipTests
     private static void MutableBorrowPreservesMessage()
     {
         using var drops = new MessageDrops();
-        var message = new MutableMessage("borrowed", drops);
+        var message = new MutableOwnedMessage("borrowed", drops);
         MutateMessage(message);
         Require(message.Length() == 9 && drops.Count() == 0, "mutable borrow preserves ownership");
         message.Dispose();

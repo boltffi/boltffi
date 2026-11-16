@@ -1336,6 +1336,25 @@ mod tests {
     }
 
     #[test]
+    fn mutable_param_of_an_unknown_class_reports_the_unknown_class() {
+        let mut contract = mutating_counter(ClassThreadSafety::RequireSendSync);
+        contract.source.classes.clear();
+        let error = contract
+            .lower::<Native>()
+            .expect_err("an undeclared class must not lower");
+
+        assert!(
+            !matches!(
+                error.kind(),
+                LowerErrorKind::UnsupportedType(
+                    UnsupportedType::MutableClassParameterRequiresUnsafeSingleThreaded
+                )
+            ),
+            "an unknown class must not be blamed on thread safety: {error:?}"
+        );
+    }
+
+    #[test]
     fn mutable_class_param_on_single_threaded_class_lowers() {
         let bindings =
             mutating_counter(ClassThreadSafety::UnsafeSingleThreaded).lower_ok::<Native>();

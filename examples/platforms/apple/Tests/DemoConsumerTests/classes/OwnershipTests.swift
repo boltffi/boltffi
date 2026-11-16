@@ -22,7 +22,7 @@ final class OwnershipTests: DemoTestCase {
         XCTAssertEqual(drops.count(), 4)
 
         let mutableDrops = MessageDrops()
-        var mutable: MutableMessage? = MutableMessage(text: "hello", drops: mutableDrops)
+        var mutable: MutableOwnedMessage? = MutableOwnedMessage(text: "hello", drops: mutableDrops)
         mutateMessage(message: mutable!)
         XCTAssertEqual(mutable!.length(), 6)
         mutable = nil

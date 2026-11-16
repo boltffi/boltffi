@@ -19,7 +19,7 @@ export async function run() {
   borrowed.dispose();
   assert.equal(drops.count(), 4);
   const mutableDrops = demo.MessageDrops.new();
-  const mutable = demo.MutableMessage.new("hello", mutableDrops);
+  const mutable = demo.MutableOwnedMessage.new("hello", mutableDrops);
   demo.mutateMessage(mutable);
   assert.equal(mutable.length(), 6);
   mutable.dispose();
