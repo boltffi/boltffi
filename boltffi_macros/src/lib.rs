@@ -34,7 +34,45 @@ pub fn derive_ffi_type(input: TokenStream) -> TokenStream {
 /// See [Streaming](https://boltffi.dev/docs/streaming).
 #[proc_macro_attribute]
 pub fn ffi_stream(_attribute: TokenStream, item: TokenStream) -> TokenStream {
-    item
+    misplaced(STREAM_PLACEMENT, item)
+}
+
+const STREAM_PLACEMENT: &str = "`#[ffi_stream]` goes on a method of an `#[export] impl` block";
+
+const DEFAULT_PLACEMENT: &str =
+    "`#[boltffi::default]` goes on a parameter or on a field of a `#[data]` type";
+
+/// Refuses a helper attribute that expanded on its own, so no BoltFFI marker read it.
+fn misplaced(message: &str, item: TokenStream) -> TokenStream {
+    let error = syn::Error::new(proc_macro2::Span::call_site(), message).to_compile_error();
+    let item = proc_macro2::TokenStream::from(item);
+    quote! { #error #item }.into()
+}
+
+/// Errors for `#[ffi_stream]` and `#[boltffi::default]` on `item` itself, where the marker
+/// that expands first would drop them unread.
+fn misplaced_helpers(item: &syn::Item) -> proc_macro2::TokenStream {
+    let attrs = match item {
+        syn::Item::Const(item) => &item.attrs,
+        syn::Item::Enum(item) => &item.attrs,
+        syn::Item::Fn(item) => &item.attrs,
+        syn::Item::Impl(item) => &item.attrs,
+        syn::Item::Struct(item) => &item.attrs,
+        syn::Item::Trait(item) => &item.attrs,
+        _ => return proc_macro2::TokenStream::new(),
+    };
+    attrs
+        .iter()
+        .filter(|attr| is_boltffi_helper_attr(attr))
+        .filter_map(
+            |attr| match attr.path().segments.last()?.ident.to_string().as_str() {
+                "ffi_stream" => Some(syn::Error::new_spanned(attr, STREAM_PLACEMENT)),
+                "default" => Some(syn::Error::new_spanned(attr, DEFAULT_PLACEMENT)),
+                _ => None,
+            },
+        )
+        .map(|error| error.to_compile_error())
+        .collect()
 }
 
 /// Exposes a type you own through its `CustomFfiConvertible` impl; put it on that impl.
@@ -133,22 +171,23 @@ fn unknown_class_argument(attribute: &TokenStream) -> Option<proc_macro2::TokenS
     }
 }
 
-/// Refuses `#[data]` or `#[error]` on a function, trait or constant, which `#[export]` declares.
+/// Refuses `#[data]` or `#[error]` on a function, trait, constant or union.
 fn refuse_export_item(
     kind: lane::Kind,
     parsed: &syn::Item,
     item: &TokenStream,
 ) -> Option<TokenStream> {
-    let noun = match parsed {
-        syn::Item::Fn(_) => "function",
-        syn::Item::Trait(_) => "trait",
-        syn::Item::Const(_) => "constant",
+    let advice = match parsed {
+        syn::Item::Fn(_) => "use `#[export]` on a function",
+        syn::Item::Trait(_) => "use `#[export]` on a trait",
+        syn::Item::Const(_) => "use `#[export]` on a constant",
+        syn::Item::Union(_) => "BoltFFI can't pass a union",
         _ => return None,
     };
     let error = syn::Error::new(
         proc_macro2::Span::call_site(),
         format!(
-            "`#[{}]` declares a struct or enum; use `#[export]` on a {noun}",
+            "`#[{}]` declares a struct or enum; {advice}",
             kind.keyword()
         ),
     )
@@ -350,6 +389,7 @@ pub fn cfg_eval(input: TokenStream) -> TokenStream {
 /// compiler has settled which of its members exist.
 fn invocation(kind: lane::Kind, attribute: TokenStream, item: TokenStream) -> TokenStream {
     let parsed = syn::parse::<syn::Item>(item.clone()).ok();
+    let misplaced = parsed.as_ref().map(misplaced_helpers).unwrap_or_default();
     let emitted = match kind {
         lane::Kind::Data | lane::Kind::Error => match data::repr::materialize(item.clone()) {
             Ok(item) => strip_boltffi_attrs(item),
@@ -373,7 +413,7 @@ fn invocation(kind: lane::Kind, attribute: TokenStream, item: TokenStream) -> To
             quote!(#records #chain)
         }
     };
-    quote!(#emitted #identity #described).into()
+    quote!(#misplaced #emitted #identity #described).into()
 }
 
 /// The source records bindgen reads for one invocation.
@@ -445,7 +485,7 @@ pub fn name(_attribute: TokenStream, item: TokenStream) -> TokenStream {
 /// [Functions](https://boltffi.dev/docs/functions).
 #[proc_macro_attribute]
 pub fn default(_attribute: TokenStream, item: TokenStream) -> TokenStream {
-    item
+    misplaced(DEFAULT_PLACEMENT, item)
 }
 
 fn strip_boltffi_attrs(item: TokenStream) -> TokenStream {

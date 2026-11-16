@@ -1,0 +1,5 @@
+error: `#[ffi_stream]` goes on a method of an `#[export] impl` block
+ --> tests/diagnostics/streams/stream_attribute_on_a_function.rs:3:1
+  |
+3 | #[ffi_stream(item = i32)]
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^

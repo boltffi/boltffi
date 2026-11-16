@@ -1,0 +1,7 @@
+error: `#[data]` declares a struct or enum; BoltFFI can't pass a union
+ --> tests/diagnostics/attributes/data_on_a_union.rs:2:1
+  |
+2 | #[boltffi::data]
+  | ^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `boltffi::data` (in Nightly builds, run with -Z macro-backtrace for more info)
