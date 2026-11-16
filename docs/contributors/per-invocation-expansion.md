@@ -275,7 +275,7 @@ Symbols follow, as in `boltffi_function_4demo3add`: each part keeps its Rust spe
 behind its length, so `foo_bar::baz` and `foo::bar_baz` stay apart. An invocation cannot know its module
 path, and the foreign namespace is flat by name anyway. So two types or exports with the
 same name in one crate fail to build: every lane also defines a crate-root
-`__boltffi_declared_<Name>` macro, and every export a symbol.
+`<Name>_is_declared_twice_for_BoltFFI` macro, and every export a symbol.
 
 Some generated items belong to one invocation and are used by another. These are reached
 through the declaring type rather than by name:
