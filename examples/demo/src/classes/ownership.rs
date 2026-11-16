@@ -32,7 +32,7 @@ impl MessageDrops {
     }
 }
 
-#[export]
+#[export(single_threaded)]
 pub struct OwnedMessage {
     text: String,
     lifetime: Arc<MessageLifetime>,
