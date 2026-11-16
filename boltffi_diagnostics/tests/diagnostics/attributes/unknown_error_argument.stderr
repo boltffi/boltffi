@@ -1,0 +1,5 @@
+error: `#[error]` takes no arguments
+ --> tests/diagnostics/attributes/unknown_error_argument.rs:2:18
+  |
+2 | #[boltffi::error(code)]
+  |                  ^^^^

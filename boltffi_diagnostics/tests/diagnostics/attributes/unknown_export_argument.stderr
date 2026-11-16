@@ -1,0 +1,5 @@
+error: `#[export]` on a function takes no arguments
+ --> tests/diagnostics/attributes/unknown_export_argument.rs:2:19
+  |
+2 | #[boltffi::export(fast)]
+  |                   ^^^^
