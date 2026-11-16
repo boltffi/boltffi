@@ -34,7 +34,7 @@ quote = "1.0"
 proc-macro2 = { version = "1.0", features = ["span-locations"] }
 walkdir = "2.4"
 tokio = "1"
-object = { version = "0.40", features = ["wasm"] }
+object = { version = "0.41", features = ["wasm"] }
 insta = "1.46"
 
 [workspace.lints.rust]
