@@ -6,7 +6,7 @@ The findings come from `main` at f0da5b12 on rustc 1.97.1. Each "Today" entry is
 
 ## How the suite works
 
-Each case in `diagnostics/<rule>/<what_the_user_did>.rs` must fail to compile, and its `.stderr` file records the output. There are 125 of these, and many record bad messages on purpose, so a fix shows up as a `.stderr` diff.
+Each case in `diagnostics/<rule>/<what_the_user_did>.rs` must fail to compile, and its `.stderr` file records the output. There are 126 of these, and many record bad messages on purpose, so a fix shows up as a `.stderr` diff.
 
 The 2 cases in `tests/accepted/` compile today and should not. When a rule lands, move its case to `diagnostics/` and record the error.
 
@@ -30,7 +30,7 @@ We compiled 217 small crates, one mistake or feature each:
 
 Of the 119 rejected crates, 38 print a message that users can't act on without knowing how BoltFFI works.
 
-Errors point at the parameter, field, or method at fault. 7 of the suite's 76 `BoltFFI:` errors point at an attribute, and in 6 of those the attribute is the mistake. The exception is a constant whose value doesn't fit its type, which points at `#[export]`.
+Errors point at the code at fault: the parameter, field, or method, or the attribute when the attribute is the mistake. The exception is a constant whose value doesn't fit its type, which points at `#[export]`.
 
 ## Most common bad messages
 
@@ -66,4 +66,3 @@ A case records each of these.
 | `#[export]` on a method in a plain `impl` | Three errors about `use` and `mod` in impls | Medium | Medium | Suggest `#[export]` on the `impl` |
 | `#[export]` inside a function | `cannot find function inner in module super` | Low | Medium | Say it must be at module level |
 | Same `#[export] struct` in two modules | E0428 on `__boltffi_declared_C` | Low | Medium | Report it like same-named records |
-| Empty `#[data] enum` | E0084 and E0004 on generated code | Low | Low | Print one error |

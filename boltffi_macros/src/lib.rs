@@ -132,7 +132,7 @@ pub fn data(attribute: TokenStream, item: TokenStream) -> TokenStream {
         .ok()
         .and_then(|mut parsed| {
             refuse_data_on_impl(&parsed, &attribute, &item)
-                .or_else(|| refuse_export_item(lane::Kind::Data, &parsed, &item))
+                .or_else(|| refuse_item(lane::Kind::Data, &parsed, &item))
                 .or_else(|| refuse_second_marker(lane::Kind::Data, &attribute, &mut parsed))
         })
         .unwrap_or_else(|| match attribute.is_empty() {
@@ -197,26 +197,26 @@ fn unknown_class_argument(attribute: &TokenStream) -> Option<proc_macro2::TokenS
     }
 }
 
-/// Refuses `#[data]` or `#[error]` on a function, trait, constant or union.
-fn refuse_export_item(
-    kind: lane::Kind,
-    parsed: &syn::Item,
-    item: &TokenStream,
-) -> Option<TokenStream> {
-    let advice = match parsed {
-        syn::Item::Fn(_) => "use `#[export]` on a function",
-        syn::Item::Trait(_) => "use `#[export]` on a trait",
-        syn::Item::Const(_) => "use `#[export]` on a constant",
-        syn::Item::Union(_) => "BoltFFI can't pass a union",
-        _ => return None,
+/// Refuses `#[data]` or `#[error]` on a function, trait, constant, union or empty enum.
+fn refuse_item(kind: lane::Kind, parsed: &syn::Item, item: &TokenStream) -> Option<TokenStream> {
+    let keyword = kind.keyword();
+    let misplaced = |advice: &str| {
+        syn::Error::new(
+            proc_macro2::Span::call_site(),
+            format!("`#[{keyword}]` declares a struct or enum; {advice}"),
+        )
     };
-    let error = syn::Error::new(
-        proc_macro2::Span::call_site(),
-        format!(
-            "`#[{}]` declares a struct or enum; {advice}",
-            kind.keyword()
+    let error = match parsed {
+        syn::Item::Fn(_) => misplaced("use `#[export]` on a function"),
+        syn::Item::Trait(_) => misplaced("use `#[export]` on a trait"),
+        syn::Item::Const(_) => misplaced("use `#[export]` on a constant"),
+        syn::Item::Union(_) => misplaced("BoltFFI can't pass a union"),
+        syn::Item::Enum(enumeration) if enumeration.variants.is_empty() => syn::Error::new_spanned(
+            &enumeration.ident,
+            format!("a `#[{keyword}]` enum needs at least one variant"),
         ),
-    )
+        _ => return None,
+    }
     .to_compile_error();
     let item = proc_macro2::TokenStream::from(strip_boltffi_attrs(item.clone()));
     Some(quote! { #error #item }.into())
@@ -301,7 +301,7 @@ pub fn error(attribute: TokenStream, item: TokenStream) -> TokenStream {
     syn::parse::<syn::Item>(item.clone())
         .ok()
         .and_then(|mut parsed| {
-            refuse_export_item(lane::Kind::Error, &parsed, &item)
+            refuse_item(lane::Kind::Error, &parsed, &item)
                 .or_else(|| refuse_second_marker(lane::Kind::Error, &attribute, &mut parsed))
         })
         .unwrap_or_else(|| match attribute.is_empty() {

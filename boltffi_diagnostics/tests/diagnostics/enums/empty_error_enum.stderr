@@ -1,0 +1,5 @@
+error: a `#[error]` enum needs at least one variant
+ --> tests/diagnostics/enums/empty_error_enum.rs:4:10
+  |
+4 | pub enum E {}
+  |          ^
