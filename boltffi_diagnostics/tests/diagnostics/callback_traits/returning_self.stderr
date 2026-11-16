@@ -1,7 +1,5 @@
-error: BoltFFI: Self in callback trait method cannot be represented in binding IR yet
- --> tests/diagnostics/callback_traits/returning_self.rs:2:1
+error: BoltFFI: `Self` can't appear in a callback trait method, since a foreign implementation has no Rust type to stand in for it; use a concrete type
+ --> tests/diagnostics/callback_traits/returning_self.rs:3:27
   |
-2 | #[boltffi::export]
-  | ^^^^^^^^^^^^^^^^^^
-  |
-  = note: this error originates in the attribute macro `boltffi::export` (in Nightly builds, run with -Z macro-backtrace for more info)
+3 | pub trait T { fn f(&self) -> Self; }
+  |                           ^^^^^^^

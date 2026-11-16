@@ -22,16 +22,15 @@ We compiled 217 small crates, one mistake or feature each:
 
 | Outcome | Crates | Example |
 |---|---:|---|
-| Clear message | 45 | ``export can only be applied to const, enum, fn, impl, struct, or trait`` |
+| Clear message | 68 | ``export can only be applied to const, enum, fn, impl, struct, or trait`` |
 | rustc error | 13 | `` `Rc<u32>` cannot be sent between threads safely `` |
-| Compiler internals | 23 | `cannot be represented in binding IR yet` |
 | Failed macro lookup | 34 | ``cannot find macro `Point` in this scope`` |
 | Internal id | 4 | ``method $slot:0::g cannot use generics`` |
 | Accepted | 98 | Most are valid code, the rest are in "Accepted mistakes" |
 
-Of the 119 rejected crates, 61 print a message that users can't act on without knowing how BoltFFI works.
+Of the 119 rejected crates, 38 print a message that users can't act on without knowing how BoltFFI works.
 
-Errors the scanner reports point at the parameter, field, or method at fault. Lowering errors still point at the `#[export]` or `#[data]` attribute, 25 of the 68 `BoltFFI:` errors in the suite, so in a large `impl` block users have to guess which method is wrong.
+Errors point at the parameter, field, or method at fault. 7 of the suite's 76 `BoltFFI:` errors point at an attribute, and in 6 of those the attribute is the mistake. The exception is a constant whose value doesn't fit its type, which points at `#[export]`.
 
 ## Most common bad messages
 
@@ -43,7 +42,6 @@ Several of these rows have one cause. When a type has no BoltFFI declaration, th
 | Undeclared trait in a signature | ``cannot find macro `Listener` in this scope`` | `Listener` is not declared, add `#[export]` |
 | `pub type Id = u64;` in a signature | ``cannot find macro `Id` in this scope`` | BoltFFI can't follow this alias, write `u64` |
 | `type Result<T> = ...` | ``unsupported source type `Result<i32>` `` | BoltFFI can't follow this alias |
-| `Arc<Point>`, `Box<i32>`, `-> Arc<Self>` | `opaque Rust pointer container cannot be represented in binding IR yet` | Name the type, and suggest `Self` for constructors |
 | `#[data]` record that derives `Clone` but not `Copy` | Several E0277 errors naming `Blittable` | This record needs `#[derive(Clone, Copy)]` |
 | `#[data]` on an `impl` | Several E0119 errors naming `Passable` and `Blittable` | Use `#[data(impl)]` |
 
@@ -72,14 +70,8 @@ A case records each of these.
 
 | Input | Today | Likelihood | Relevance | Fix |
 |---|---|---|---|---|
-| Trait with `fn f();` or `&mut self` | `callback method receiver cannot be represented...` | High | Medium | List the allowed receivers |
-| `&dyn Trait` parameter | `borrowed callback parameter cannot be...` | Medium | Medium | Suggest `Box<dyn T>` or `Arc<dyn T>` |
-| `fn(i32) -> i32` parameter | `unsupported expansion: function-pointer closure parameter` | Medium | Medium | Suggest `impl Fn` |
-| `-> Vec<Self>` | `unsupported expansion: codec node` | Medium | Medium | Name the return type |
-| `self: Arc<Self>` | `owned class receiver...` | Medium | Medium | List the allowed receivers |
+| `Option<&str>` | ``BoltFFI: `&str` cannot cross the boundary; use the owned type `String` ``, although `&str` works elsewhere | High | Medium | Name `Option<&str>` and suggest `Option<String>` |
 | `#[export]` on a method in a plain `impl` | Three errors about `use` and `mod` in impls | Medium | Medium | Suggest `#[export]` on the `impl` |
-| Recursive `Box<T>` field | `opaque Rust pointer container...` | Medium | Medium | Say that the record can't contain itself by `Box` |
-| `Option<Box<dyn Fn>>` on a trait method | `unsupported expansion: outgoing closure parameter form` | Low | Medium | Say it is not supported |
 | `#[export]` inside a function | `cannot find function inner in module super` | Low | Medium | Say it must be at module level |
 | Same `#[export] struct` in two modules | E0428 on `__boltffi_declared_C` | Low | Medium | Report it like same-named records |
 | Empty `#[data] enum` | E0084 and E0004 on generated code | Low | Low | Print one error |

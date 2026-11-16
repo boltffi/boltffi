@@ -42,13 +42,24 @@ thread_local! {
 }
 
 impl Store {
-    /// The newest store in the build directory that covers the crate being compiled.
+    /// The store that covers the crate being compiled.
+    ///
+    /// A store file that [`RecordStore::PORTABLE_ENV`] names comes first. A packager
+    /// ships that file with a copied crate, whose build directory has no store. Otherwise
+    /// the newest store in the build directory that covers the crate wins.
     pub fn find() -> Option<Rc<Self>> {
         if Build::current() == Build::SourceRecords {
             return None;
         }
         let crate_directory =
             std::fs::canonicalize(std::env::var_os("CARGO_MANIFEST_DIR")?).ok()?;
+        let portable = std::env::var_os(RecordStore::PORTABLE_ENV)
+            .map(PathBuf::from)
+            .and_then(Self::load)
+            .filter(|store| store.contents.covers(&crate_directory));
+        if portable.is_some() {
+            return portable;
+        }
         let directory = Path::new(env!("OUT_DIR"))
             .ancestors()
             .map(|directory| directory.join(RecordStore::DIRECTORY))
@@ -86,8 +97,12 @@ impl Store {
         })
     }
 
+    /// Reads one store file. A portable store lists its crates relative to its own
+    /// folder, so the read resolves them against that folder.
     fn read(path: PathBuf, modified: SystemTime) -> Option<Self> {
-        let contents = RecordStore::from_json(&std::fs::read_to_string(&path).ok()?)?;
+        let folder = std::fs::canonicalize(path.parent()?).ok()?;
+        let contents = RecordStore::from_json(&std::fs::read_to_string(&path).ok()?)?
+            .resolved_against(&folder);
         let records = contents.records();
         let by_fragment = records
             .iter()

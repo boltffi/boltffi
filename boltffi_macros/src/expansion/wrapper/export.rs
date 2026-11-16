@@ -1,4 +1,4 @@
-use boltffi_binding::{ExecutionDecl, ExportedCallable, NativeSymbol, Receive};
+use boltffi_binding::{ExecutionDecl, ExportedCallable, NativeSymbol, Receive, SourcePosition};
 use proc_macro2::TokenStream;
 use quote::quote;
 
@@ -86,6 +86,7 @@ impl<'expansion, 'lowered> Export<'expansion, 'lowered, boltffi_binding::Native>
             return Err(Error::UnsupportedExpansion("async exported callable"));
         }
 
+        let at_return = |error: Error| error.at(SourcePosition::Return);
         let cfg = quote! { #[cfg(any(not(target_arch = "wasm32"), target_os = "wasi"))] };
         let failure = self.failure()?;
         let wrapper_arguments =
@@ -118,11 +119,12 @@ impl<'expansion, 'lowered> Export<'expansion, 'lowered, boltffi_binding::Native>
             self.callable.returns(),
             self.callable.error(),
             self.source.returns(),
-            self.source.returns().written_type()?,
+            self.source.returns().written_type().map_err(at_return)?,
             rust_invocation,
             self.expansion,
         )
-        .render()?;
+        .render()
+        .map_err(at_return)?;
         let export_ident = names::Symbol::new(self.symbol).ident();
         let ffi_parameters = self
             .receiver
@@ -199,6 +201,7 @@ impl<'expansion, 'lowered> Export<'expansion, 'lowered, boltffi_binding::Wasm32>
             return Err(Error::UnsupportedExpansion("async exported callable"));
         }
 
+        let at_return = |error: Error| error.at(SourcePosition::Return);
         let cfg = quote! { #[cfg(target_arch = "wasm32")] };
         let failure = self.failure()?;
         let wrapper_arguments =
@@ -231,11 +234,12 @@ impl<'expansion, 'lowered> Export<'expansion, 'lowered, boltffi_binding::Wasm32>
             self.callable.returns(),
             self.callable.error(),
             self.source.returns(),
-            self.source.returns().written_type()?,
+            self.source.returns().written_type().map_err(at_return)?,
             rust_invocation,
             self.expansion,
         )
-        .render()?;
+        .render()
+        .map_err(at_return)?;
         let export_ident = names::Symbol::new(self.symbol).ident();
         let ffi_parameters = self
             .receiver

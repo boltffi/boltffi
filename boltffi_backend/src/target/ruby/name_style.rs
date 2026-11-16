@@ -63,6 +63,12 @@ pub fn extension_stem(gem: &str) -> String {
         .collect()
 }
 
+/// The folder in the gem that holds the extension sources, such as
+/// `ext/my_lib` for the gem `my-lib`.
+pub fn extension_directory(gem: &str) -> String {
+    format!("ext/{}", extension_stem(gem))
+}
+
 #[cfg(test)]
 mod tests {
     use boltffi_binding::{CanonicalName, NamePart};

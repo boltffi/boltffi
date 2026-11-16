@@ -1095,10 +1095,10 @@ fn all_primitives() -> &'static [Primitive] {
     ]
 }
 fn package_pascal(context: &RenderContext<Native>) -> String {
-    Name::new(context.bindings().package().name()).r#type()
+    Name::package(context).r#type()
 }
 fn package_member(context: &RenderContext<Native>) -> String {
-    Name::new(context.bindings().package().name()).member()
+    Name::package(context).member()
 }
 fn unsupported<T>(shape: &'static str) -> Result<T> {
     Err(Error::UnsupportedTarget { target: "c", shape })

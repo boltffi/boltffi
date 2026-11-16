@@ -1,0 +1,14 @@
+# Its own workspace: the repository root must not adopt a fixture as a member.
+[package]
+name = "ruby_alias_pack_fixture"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+boltffi = { path = "../../../../boltffi", default-features = false }
+
+[workspace]
