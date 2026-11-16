@@ -18,10 +18,15 @@ final class OwnershipTests: DemoTestCase {
         XCTAssertEqual(drops.count(), 3)
         var borrowed: OwnedMessage? = OwnedMessage(text: "hello", drops: drops)
         XCTAssertEqual(borrowMessage(message: borrowed!), 5)
-        mutateMessage(message: borrowed!)
-        XCTAssertEqual(borrowed!.length(), 6)
         borrowed = nil
         XCTAssertEqual(drops.count(), 4)
+
+        let mutableDrops = MessageDrops()
+        var mutable: MutableOwnedMessage? = MutableOwnedMessage(text: "hello", drops: mutableDrops)
+        mutateMessage(message: mutable!)
+        XCTAssertEqual(mutable!.length(), 6)
+        mutable = nil
+        XCTAssertEqual(mutableDrops.count(), 1)
 
         var returned: OwnedMessage? = returnMessage(message: OwnedMessage(text: "hello", drops: drops))
         XCTAssertEqual(returned!.length(), 5)

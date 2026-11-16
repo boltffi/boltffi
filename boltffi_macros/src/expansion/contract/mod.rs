@@ -5143,7 +5143,8 @@ mod tests {
 
     #[test]
     fn async_mutably_borrowed_class_param_expansion_is_rejected() {
-        let source = async_borrowed_class_param_contract(ParameterPassing::RefMut);
+        let mut source = async_borrowed_class_param_contract(ParameterPassing::RefMut);
+        source.classes[0].thread_safety = ClassThreadSafety::UnsafeSingleThreaded;
         let lowered = lower_with_declarations::<Native>(&source).expect("lowered bindings");
         let expansion = Expansion::new(&lowered);
         let syntax = syn::parse_quote! {

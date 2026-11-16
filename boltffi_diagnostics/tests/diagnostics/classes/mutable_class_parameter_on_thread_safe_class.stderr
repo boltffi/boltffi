@@ -1,0 +1,5 @@
+error: BoltFFI: a `&mut` class parameter needs `#[export(single_threaded)]` on the class's struct or enum, since a thread-safe class can be borrowed from many threads at once
+ --> tests/diagnostics/classes/mutable_class_parameter_on_thread_safe_class.rs:7:10
+  |
+7 | pub fn f(c: &mut Counter) {
+  |          ^^^^^^^^^^^^^^^
