@@ -142,10 +142,16 @@ impl<'a> Scanner<'a> {
                 .single_type_argument(segment, source)
                 .and_then(|argument| self.scan(argument))
                 .map(TypeExpr::vec),
-            StandardType::Option => self
-                .single_type_argument(segment, source)
-                .and_then(|argument| self.scan(argument))
-                .map(TypeExpr::option),
+            StandardType::Option => {
+                let argument = self.single_type_argument(segment, source)?;
+                if let syn::Type::Reference(reference) = unwrapped(argument) {
+                    return Err(ScanError::unsupported_rust_type(
+                        source,
+                        format!("use `Option<{}>`", owned(reference)),
+                    ));
+                }
+                self.scan(argument).map(TypeExpr::option)
+            }
             StandardType::Result => {
                 let (ok, err) = self.two_type_arguments(segment, source)?;
                 Ok(TypeExpr::result(self.scan(ok)?, self.scan(err)?))

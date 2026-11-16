@@ -63,7 +63,6 @@ A case records each of these.
 
 | Input | Today | Likelihood | Relevance | Fix |
 |---|---|---|---|---|
-| `Option<&str>` | ``BoltFFI: `&str` cannot cross the boundary; use the owned type `String` ``, although `&str` works elsewhere | High | Medium | Name `Option<&str>` and suggest `Option<String>` |
 | `#[export]` on a method in a plain `impl` | Three errors about `use` and `mod` in impls | Medium | Medium | Suggest `#[export]` on the `impl` |
 | `#[export]` inside a function | `cannot find function inner in module super` | Low | Medium | Say it must be at module level |
 | Same `#[export] struct` in two modules | E0428 on `__boltffi_declared_C` | Low | Medium | Report it like same-named records |
