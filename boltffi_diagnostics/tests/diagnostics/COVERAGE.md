@@ -6,7 +6,7 @@ The findings come from `main` at f0da5b12 on rustc 1.97.1. Each "Today" entry is
 
 ## How the suite works
 
-Each case in `diagnostics/<rule>/<what_the_user_did>.rs` must fail to compile, and its `.stderr` file records the output. There are 129 of these, and many record bad messages on purpose, so a fix shows up as a `.stderr` diff.
+Each case in `diagnostics/<rule>/<what_the_user_did>.rs` must fail to compile, and its `.stderr` file records the output. There are 130 of these, and many record bad messages on purpose, so a fix shows up as a `.stderr` diff.
 
 The 2 cases in `tests/accepted/` compile today and should not. When a rule lands, move its case to `diagnostics/` and record the error.
 
@@ -40,8 +40,7 @@ Several of these rows have one cause. When a type has no BoltFFI declaration, th
 |---|---|---|
 | Forgot `scaffolding!()` | ``cannot find type `BoltffiScaffolding` in the crate root``. A missing `crate::` path can't carry a custom message, so only the name hints at the fix | Add `boltffi::scaffolding!();` at the crate root |
 | Undeclared trait in a signature | ``cannot find macro `Listener` in this scope``, with rustc's note that `Listener` is a trait. A trait is found through a value, so the `Declared` check can't cover it: an undeclared value gives E0423, which can't carry a custom message, and checking `dyn Listener` instead fails on async traits | `Listener` is not declared, add `#[export]` |
-| `pub type Id = u64;` in a signature | ``cannot find macro `Id` in this scope`` | BoltFFI can't follow this alias, write `u64` |
-| `type Result<T> = ...` | ``unsupported source type `Result<i32>` `` | BoltFFI can't follow this alias |
+| `pub type Id = u64;` in a signature | ``cannot find macro `Id` in this scope``, with rustc's note that `Id` is a type alias. To a check, `type P = Point;` and `use Point as P;` name the same type, and only the `use` brings the macro, so nothing can report the alias alone | BoltFFI can't follow this alias, write `u64` |
 | `#[data]` record that derives `Clone` but not `Copy` | Several E0277 errors naming `Blittable` | This record needs `#[derive(Clone, Copy)]` |
 
 `#[error]` from `use boltffi::*;` also conflicts with `#[derive(thiserror::Error)]`, and rustc reports ``E0659: `error` is ambiguous``. Importing names and writing `#[boltffi::error]` works. No case covers this yet because it needs `thiserror` as a dev-dependency.

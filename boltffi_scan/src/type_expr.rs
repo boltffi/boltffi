@@ -195,6 +195,17 @@ impl<'a> Scanner<'a> {
         let Some(standard_type) = StandardType::from_leaf(&segment.ident.to_string()) else {
             return Ok(None);
         };
+        if let (StandardType::Result, [ok]) = (standard_type, type_arguments(segment).as_slice())
+            && unsupported_standard_type(&type_path.path).is_none()
+        {
+            return Err(ScanError::unsupported_rust_type(
+                source,
+                format!(
+                    "BoltFFI can't see through a `Result` alias, so write `Result<{}, E>`",
+                    crate::spelling::ty(ok)
+                ),
+            ));
+        }
         if self.declared_types.is_deferred() {
             return Ok(standard_type
                 .accepts_path(&path_without_arguments(&type_path.path))
