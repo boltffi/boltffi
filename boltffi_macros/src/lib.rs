@@ -131,7 +131,8 @@ pub fn data(attribute: TokenStream, item: TokenStream) -> TokenStream {
     syn::parse::<syn::Item>(item.clone())
         .ok()
         .and_then(|mut parsed| {
-            refuse_export_item(lane::Kind::Data, &parsed, &item)
+            refuse_data_on_impl(&parsed, &attribute, &item)
+                .or_else(|| refuse_export_item(lane::Kind::Data, &parsed, &item))
                 .or_else(|| refuse_second_marker(lane::Kind::Data, &attribute, &mut parsed))
         })
         .unwrap_or_else(|| match attribute.is_empty() {
@@ -143,6 +144,31 @@ pub fn data(attribute: TokenStream, item: TokenStream) -> TokenStream {
                 "`#[data]` takes no arguments; `#[data(impl)]` goes on a record's `impl` block",
             ),
         })
+}
+
+/// Refuses bare `#[data]` on an `impl` block, and expands the block as `#[data(impl)]`.
+fn refuse_data_on_impl(
+    parsed: &syn::Item,
+    attribute: &TokenStream,
+    item: &TokenStream,
+) -> Option<TokenStream> {
+    let syn::Item::Impl(_) = parsed else {
+        return None;
+    };
+    if !attribute.is_empty() {
+        return None;
+    }
+    let error = syn::Error::new(
+        proc_macro2::Span::call_site(),
+        "`#[data]` on an `impl` block is written `#[data(impl)]`",
+    )
+    .to_compile_error();
+    let expanded = proc_macro2::TokenStream::from(invocation(
+        lane::Kind::DataImpl,
+        quote!(impl).into(),
+        item.clone(),
+    ));
+    Some(quote! { #error #expanded }.into())
 }
 
 /// Refuses arguments `kind`'s marker does not take, and expands the item without them.
