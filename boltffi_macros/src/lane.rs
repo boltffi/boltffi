@@ -1257,7 +1257,7 @@ fn lane_definition(
         "__boltffi_lane_{krate}_{bare}_{}",
         LANES.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     );
-    let declared = format_ident!("__boltffi_declared_{bare}");
+    let declared = format_ident!("{bare}_is_declared_twice_for_BoltFFI");
     Ok(quote! {
         #[doc(hidden)]
         #[allow(non_local_definitions)]

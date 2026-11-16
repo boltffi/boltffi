@@ -1,0 +1,5 @@
+error: `#[data]` takes no arguments; `#[data(impl)]` goes on a record's `impl` block
+ --> tests/diagnostics/attributes/unknown_data_argument.rs:2:17
+  |
+2 | #[boltffi::data(compact)]
+  |                 ^^^^^^^

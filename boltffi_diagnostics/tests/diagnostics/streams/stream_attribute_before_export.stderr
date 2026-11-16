@@ -1,0 +1,7 @@
+error: `#[ffi_stream]` goes on a method of an `#[export] impl` block
+ --> tests/diagnostics/streams/stream_attribute_before_export.rs:2:1
+  |
+2 | #[boltffi::ffi_stream(item = i32)]
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `boltffi::ffi_stream` (in Nightly builds, run with -Z macro-backtrace for more info)

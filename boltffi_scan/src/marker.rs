@@ -136,6 +136,9 @@ impl ExportMarker {
     }
 }
 
+/// The arguments `#[export]` takes on a struct or enum that declares a class.
+pub const CLASS_EXPORT_ARGUMENTS: [&str; 2] = ["single_threaded", "thread_unsafe"];
+
 fn parse_data_impl(input: syn::parse::ParseStream<'_>) -> syn::Result<()> {
     input.parse::<syn::Token![impl]>()?;
     Ok(())
@@ -146,7 +149,7 @@ fn parse_export_args(input: syn::parse::ParseStream<'_>) -> syn::Result<ExportMa
     if !args.is_empty()
         && args
             .iter()
-            .all(|ident| ident == "single_threaded" || ident == "thread_unsafe")
+            .all(|ident| CLASS_EXPORT_ARGUMENTS.iter().any(|known| ident == known))
     {
         Ok(ExportMarker::single_threaded())
     } else {

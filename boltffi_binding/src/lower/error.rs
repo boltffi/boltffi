@@ -92,6 +92,10 @@ impl LowerError {
         Self::new(LowerErrorKind::InvalidConstantValue(id.to_string()))
     }
 
+    pub(crate) fn mismatched_default(expected: String) -> Self {
+        Self::new(LowerErrorKind::MismatchedDefault(expected))
+    }
+
     pub(crate) fn unknown_stream(id: impl fmt::Display) -> Self {
         Self::new(LowerErrorKind::UnknownStream(id.to_string()))
     }
@@ -283,6 +287,10 @@ impl fmt::Display for LowerError {
                     "constant `{constant}` value does not match its declared type"
                 )
             }
+            LowerErrorKind::MismatchedDefault(expected) => write!(
+                formatter,
+                "this default doesn't fit its type, which takes {expected}"
+            ),
             LowerErrorKind::UnknownStream(stream) => {
                 write!(formatter, "unknown stream id `{stream}`")
             }
@@ -355,6 +363,8 @@ pub enum LowerErrorKind {
     UnknownConstant(String),
     /// A constant literal cannot inhabit its declared type.
     InvalidConstantValue(String),
+    /// A literal default does not fit its type, which takes the literal named.
+    MismatchedDefault(String),
     /// A stream reference could not be resolved inside the source contract.
     UnknownStream(String),
     /// A free function reference could not be resolved inside the source contract.

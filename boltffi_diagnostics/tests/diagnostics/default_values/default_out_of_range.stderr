@@ -1,0 +1,5 @@
+error: BoltFFI: this default doesn't fit its type, which takes an integer from 0 to 255
+ --> tests/diagnostics/default_values/default_out_of_range.rs:3:10
+  |
+3 | pub fn f(#[boltffi::default(300)] a: u8) -> u8 {
+  |          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

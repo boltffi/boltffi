@@ -1,0 +1,5 @@
+error: `#[data]` on an `impl` block is written `#[data(impl)]`
+ --> tests/diagnostics/records/data_with_an_argument_on_an_impl.rs:5:17
+  |
+5 | #[boltffi::data(imp)]
+  |                 ^^^

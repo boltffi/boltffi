@@ -1,0 +1,5 @@
+error: BoltFFI: a `#[data(impl)]` block cannot implement a trait; export the method from `impl Point` instead
+ --> tests/diagnostics/records/data_impl_of_a_trait.rs:8:6
+  |
+8 | impl Default for Point {
+  |      ^^^^^^^

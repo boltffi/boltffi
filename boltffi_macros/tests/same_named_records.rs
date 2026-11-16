@@ -23,7 +23,7 @@ fn same_named_records_fail_to_compile_even_with_equal_content() {
         "same-named records fixture compiled\nstderr\n{stderr}"
     );
     assert!(
-        stderr.contains("the name `__boltffi_declared_Point` is defined multiple times"),
+        stderr.contains("the name `Point_is_declared_twice_for_BoltFFI` is defined multiple times"),
         "same-named records fixture failed for another reason\nstderr\n{stderr}"
     );
 }
