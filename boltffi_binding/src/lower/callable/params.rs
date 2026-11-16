@@ -145,9 +145,9 @@ fn lower_plan<S: SurfaceLower, D: Direction>(
 ) -> Result<ParamPlan<S, D>, LowerError> {
     if let Some(handle) = ClassHandleSource::from_type_expr(type_expr) {
         if matches!(receive, Receive::ByMutRef)
-            && index
+            && !index
                 .class(handle.id)
-                .is_some_and(|class| class.thread_safety == ClassThreadSafety::RequireSendSync)
+                .is_some_and(|class| class.thread_safety == ClassThreadSafety::UnsafeSingleThreaded)
         {
             return Err(LowerError::unsupported_type(
                 UnsupportedType::MutableClassParameterRequiresUnsafeSingleThreaded,

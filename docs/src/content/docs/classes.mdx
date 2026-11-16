@@ -1169,16 +1169,17 @@ demo_safe_counter_free(&counter);`}
 
 ## Single-threaded mode
 
-By default, BoltFFI enforces two safety rules:
+By default, BoltFFI enforces three safety rules:
 
 1. Classes must be `Send + Sync`
 2. Methods cannot take `&mut self`
+3. Functions and methods cannot take a `&mut` class parameter
 
-Both rules exist because the target language can call your methods from any thread. Without synchronization, concurrent `&mut self` calls cause undefined behavior.
+These rules exist because the target language can call your methods from any thread. Without synchronization, concurrent `&mut` borrows cause undefined behavior.
 
 But synchronization has a cost. If you control thread access in the target language - for example, you only use the object from the main thread, or you wrap it in your own synchronization - you're paying for locks you don't need.
 
-`#[export(single_threaded)]` disables both checks:
+`#[export(single_threaded)]` disables these checks:
 
 ```rust
 #[export(single_threaded)]
