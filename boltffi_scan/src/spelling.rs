@@ -41,6 +41,17 @@ pub(super) fn ty(ty: &syn::Type) -> String {
             None => format!("&{}", self::ty(&reference.elem)),
         },
         syn::Type::Slice(slice) => format!("[{}]", self::ty(&slice.elem)),
+        syn::Type::Array(array) => format!(
+            "[{}; {}]",
+            self::ty(&array.elem),
+            array.len.to_token_stream()
+        ),
+        syn::Type::Never(_) => "!".to_owned(),
+        syn::Type::Ptr(pointer) => format!(
+            "*{} {}",
+            pointer.mutability.to_token_stream(),
+            self::ty(&pointer.elem)
+        ),
         syn::Type::TraitObject(object) => format!(
             "dyn {}",
             object
@@ -178,6 +189,8 @@ mod tests {
 
     #[test]
     fn renders_unrecognized_types_with_a_stable_label() {
-        assert_eq!(super::ty(&parse_type("[u8; 4]")), "unrecognized type");
+        assert_eq!(super::ty(&parse_type("[u8; 4]")), "[u8; 4]");
+        assert_eq!(super::ty(&parse_type("*const u8")), "*const u8");
+        assert_eq!(super::ty(&parse_type("_")), "unrecognized type");
     }
 }

@@ -1,7 +1,5 @@
 error: BoltFFI: parameter pattern is not a plain name
- --> tests/diagnostics/unsupported_signatures/destructured_parameter.rs:3:1
+ --> tests/diagnostics/unsupported_signatures/destructured_parameter.rs:4:12
   |
-3 | #[boltffi::export]
-  | ^^^^^^^^^^^^^^^^^^
-  |
-  = note: this error originates in the attribute macro `boltffi::export` (in Nightly builds, run with -Z macro-backtrace for more info)
+4 | pub fn sum((left, right): (i32, i32)) -> i32 {
+  |            ^^^^^^^^^^^^^

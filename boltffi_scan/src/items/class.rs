@@ -314,13 +314,13 @@ mod tests {
             .expect_err("generic target rejected");
 
         assert_eq!(
-            generic,
+            generic.unlocated().clone(),
             ScanError::UnsupportedGenerics {
                 item: "class Engine".to_owned()
             }
         );
         assert_eq!(
-            trait_impl,
+            trait_impl.unlocated().clone(),
             ScanError::UnsupportedClassImplShape {
                 target: "Engine".to_owned()
             }

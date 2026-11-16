@@ -30,26 +30,20 @@ We compiled 217 small crates, one mistake or feature each:
 
 Of the 119 rejected crates, 38 print a message that users can't act on without knowing how BoltFFI works.
 
-Lowering errors point at the parameter, field, or method at fault. 41 of the suite's 66 `BoltFFI:` errors still point at the `#[export]` or `#[data]` attribute, most of them from the scanner. In a large `impl` block, users have to guess which method is wrong.
+Errors point at the parameter, field, or method at fault. 7 of the suite's 76 `BoltFFI:` errors point at an attribute, and in 6 of those the attribute is the mistake. The exception is a constant whose value doesn't fit its type, which points at `#[export]`.
 
 ## Most common bad messages
 
-Most of these rows have one cause. When a type has no BoltFFI declaration, the lookup fails and rustc reports a missing macro. Replacing that error is the most valuable single fix.
+Several of these rows have one cause. When a type has no BoltFFI declaration, the lookup fails and rustc reports a missing macro. For a struct or enum, a second error now says ``` `Point` is not declared for BoltFFI ``` at the same type. rustc's own error can't be suppressed, and traits and aliases still get only rustc's.
 
 | Mistake | Today | Should say |
 |---|---|---|
-| Forgot `scaffolding!()` | ``cannot find type `__BoltffiTag` in the crate root`` | Add `boltffi::scaffolding!();` at the crate root |
-| Undeclared struct or trait in a signature | ``cannot find macro `Point` in this scope`` | `Point` is not declared, add `#[data]` or `#[export]` |
-| `char` or `i128` | ``cannot find macro `char` in this scope`` | `char` can't cross the boundary, use `u32` or `String` |
+| Forgot `scaffolding!()` | ``cannot find type `BoltffiScaffolding` in the crate root``. A missing `crate::` path can't carry a custom message, so only the name hints at the fix | Add `boltffi::scaffolding!();` at the crate root |
+| Undeclared trait in a signature | ``cannot find macro `Listener` in this scope`` | `Listener` is not declared, add `#[export]` |
 | `pub type Id = u64;` in a signature | ``cannot find macro `Id` in this scope`` | BoltFFI can't follow this alias, write `u64` |
-| `std::collections::HashSet` or another unsupported type by full path | ``cannot find `HashSet` in `collections` ``, which is false | `HashSet` can't cross the boundary, use `Vec` |
-| `std::io::Result<T>` | ``cannot find `Result` in `io` `` | The error type must be `String` or a declared type |
-| Undeclared error type | ``cannot find macro `E` in this scope`` | `E` is not declared, add `#[error]` |
 | `type Result<T> = ...` | ``unsupported source type `Result<i32>` `` | BoltFFI can't follow this alias |
-| `[u8; 4]` or `-> !` | ``unsupported source type `unrecognized type` `` | Name the type, and suggest `Vec<u8>` for arrays |
 | `#[data]` record that derives `Clone` but not `Copy` | Several E0277 errors naming `Blittable` | This record needs `#[derive(Clone, Copy)]` |
 | `#[data]` on an `impl` | Several E0119 errors naming `Passable` and `Blittable` | Use `#[data(impl)]` |
-| Generic method | ``method $slot:0::g cannot use generics`` | `g` can't be generic |
 
 `#[error]` from `use boltffi::*;` also conflicts with `#[derive(thiserror::Error)]`, and rustc reports ``E0659: `error` is ambiguous``. Importing names and writing `#[boltffi::error]` works. No case covers this yet because it needs `thiserror` as a dev-dependency.
 
@@ -76,7 +70,7 @@ A case records each of these.
 
 | Input | Today | Likelihood | Relevance | Fix |
 |---|---|---|---|---|
-| `Option<&str>` | ``unsupported source type `&str` ``, although `&str` works elsewhere | High | Medium | Name `Option<&str>` and suggest `Option<String>` |
+| `Option<&str>` | ``BoltFFI: `&str` cannot cross the boundary; use the owned type `String` ``, although `&str` works elsewhere | High | Medium | Name `Option<&str>` and suggest `Option<String>` |
 | `#[export]` on a method in a plain `impl` | Three errors about `use` and `mod` in impls | Medium | Medium | Suggest `#[export]` on the `impl` |
 | `#[export]` inside a function | `cannot find function inner in module super` | Low | Medium | Say it must be at module level |
 | Same `#[export] struct` in two modules | E0428 on `__boltffi_declared_C` | Low | Medium | Report it like same-named records |

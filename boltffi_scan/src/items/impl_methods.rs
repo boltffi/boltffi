@@ -368,7 +368,7 @@ mod tests {
         .expect_err("malformed skip marker must reject");
 
         assert_eq!(
-            error,
+            error.unlocated().clone(),
             ScanError::InvalidMarker {
                 attribute: "skip(reason)".to_owned()
             }

@@ -100,7 +100,7 @@ so every type BoltFFI declares also emits a macro under the type's own name:
 // emitted by #[data] Point, beside the struct
 #[macro_export]
 macro_rules! __boltffi_lane_geo_Point_0 {
-    (@tag) => { $crate::__BoltffiTag };
+    (@tag) => { $crate::BoltffiScaffolding };
     ([$($callback:tt)*] { $($state:tt)* }) => {
         $($callback)*! { $($state)* r#"{"id":"geo::Point","entries":[…]}"# }
     };
@@ -255,7 +255,7 @@ dependency's artifact. `boltffi generate` binds:
 - the root crate and every path dependency it reaches through normal dependencies, in full;
 - registry and git crates only for the declarations the bound ones reach.
 
-A `custom_type!` implements its conversion for the declaring crate's `__BoltffiTag`,
+A `custom_type!` implements its conversion for the declaring crate's `BoltffiScaffolding`,
 which keeps a foreign remote inside the orphan rule. A site reaches that tag through the
 type's lane, `Stamp!(@tag)`, whose `$crate` names the declaring crate however the root
 spells it. A custom whose repr holds another, `repr = Vec<Stamp>`, records the held type's

@@ -1,7 +1,5 @@
 error: BoltFFI: invalid stream declaration: `ffi_stream(item = i32, mode = "nope")` is not a valid stream attribute: unsupported stream mode
- --> tests/diagnostics/streams/unknown_mode.rs:4:1
+ --> tests/diagnostics/streams/unknown_mode.rs:5:41
   |
-4 | #[boltffi::export]
-  | ^^^^^^^^^^^^^^^^^^
-  |
-  = note: this error originates in the attribute macro `boltffi::export` (in Nightly builds, run with -Z macro-backtrace for more info)
+5 | impl Counter { #[ffi_stream(item = i32, mode = "nope")]
+  |                                         ^^^^

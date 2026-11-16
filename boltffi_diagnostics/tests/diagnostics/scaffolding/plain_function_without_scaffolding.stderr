@@ -1,4 +1,4 @@
-error[E0425]: cannot find type `__BoltffiTag` in the crate root
+error[E0425]: cannot find type `BoltffiScaffolding` in the crate root
  --> tests/diagnostics/scaffolding/plain_function_without_scaffolding.rs:1:1
   |
 1 | #[boltffi::export]
