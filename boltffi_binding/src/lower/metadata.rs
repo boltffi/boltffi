@@ -1,6 +1,6 @@
 use boltffi_ast::{
     DefaultValue as SourceDefaultValue, DeprecationInfo as SourceDeprecationInfo,
-    DocComment as SourceDocComment, FloatLiteral as SourceFloatLiteral, TypeExpr,
+    DocComment as SourceDocComment, FloatLiteral as SourceFloatLiteral, Primitive, TypeExpr,
 };
 
 use crate::{
@@ -77,6 +77,9 @@ fn lower_default(
     type_expr: &TypeExpr,
     default: &SourceDefaultValue,
 ) -> Result<DefaultValue, LowerError> {
+    if let Some(expected) = literal_mismatch(index, type_expr, default) {
+        return Err(LowerError::mismatched_default(expected));
+    }
     match (type_expr, default) {
         (TypeExpr::Enum { id, .. }, SourceDefaultValue::Path(path)) => index
             .enumeration(id)
@@ -92,6 +95,42 @@ fn lower_default(
         }
         (_, default) => DefaultValue::try_from(default),
     }
+}
+
+/// The literal `type_expr` takes, when `default` is a literal of another kind.
+fn literal_mismatch(
+    index: &Index,
+    type_expr: &TypeExpr,
+    default: &SourceDefaultValue,
+) -> Option<&'static str> {
+    let expected = match type_expr {
+        TypeExpr::Option(inner) => return literal_mismatch(index, inner, default),
+        TypeExpr::Custom { id, .. } => {
+            return index
+                .custom(id)
+                .and_then(|custom| literal_mismatch(index, &custom.repr, default));
+        }
+        TypeExpr::Primitive(Primitive::Bool) => "`true` or `false`",
+        TypeExpr::Primitive(Primitive::F32 | Primitive::F64) => "a number literal",
+        TypeExpr::Primitive(_) => "an integer literal",
+        TypeExpr::String | TypeExpr::Str => "a string literal",
+        _ => return None,
+    };
+    let fits = match (type_expr, default) {
+        (
+            _,
+            SourceDefaultValue::None | SourceDefaultValue::Path(_) | SourceDefaultValue::Bytes(_),
+        ) => true,
+        (TypeExpr::Primitive(Primitive::Bool), SourceDefaultValue::Bool(_)) => true,
+        (TypeExpr::Primitive(Primitive::F32 | Primitive::F64), SourceDefaultValue::Float(_)) => {
+            true
+        }
+        (TypeExpr::Primitive(Primitive::Bool), _) => false,
+        (TypeExpr::Primitive(_), SourceDefaultValue::Integer(_)) => true,
+        (TypeExpr::String | TypeExpr::Str, SourceDefaultValue::String(_)) => true,
+        _ => false,
+    };
+    (!fits).then_some(expected)
 }
 
 /// Whether `type_expr` crosses as an `Option`: a custom type does when its
