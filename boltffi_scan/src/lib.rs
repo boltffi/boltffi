@@ -27,6 +27,7 @@ pub use capture::{
 pub(crate) use cfg::ActiveCfg;
 pub use error::{Location, ScanError};
 pub use items::class::ClassDeclaration;
+pub use marker::CLASS_EXPORT_ARGUMENTS;
 pub use repr::scan as scan_repr;
 pub use scan::{scan_file, scan_source};
 pub use type_expr::primitive_path;

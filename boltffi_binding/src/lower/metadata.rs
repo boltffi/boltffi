@@ -97,12 +97,12 @@ fn lower_default(
     }
 }
 
-/// The literal `type_expr` takes, when `default` is a literal of another kind.
+/// The literal `type_expr` takes, when `default` is a literal it can't hold.
 fn literal_mismatch(
     index: &Index,
     type_expr: &TypeExpr,
     default: &SourceDefaultValue,
-) -> Option<&'static str> {
+) -> Option<String> {
     let expected = match type_expr {
         TypeExpr::Option(inner) => return literal_mismatch(index, inner, default),
         TypeExpr::Custom { id, .. } => {
@@ -110,10 +110,16 @@ fn literal_mismatch(
                 .custom(id)
                 .and_then(|custom| literal_mismatch(index, &custom.repr, default));
         }
-        TypeExpr::Primitive(Primitive::Bool) => "`true` or `false`",
-        TypeExpr::Primitive(Primitive::F32 | Primitive::F64) => "a number literal",
-        TypeExpr::Primitive(_) => "an integer literal",
-        TypeExpr::String | TypeExpr::Str => "a string literal",
+        TypeExpr::Primitive(Primitive::Bool) => "`true` or `false`".to_owned(),
+        TypeExpr::Primitive(Primitive::F32 | Primitive::F64) => "a number literal".to_owned(),
+        TypeExpr::Primitive(primitive) => {
+            let (min, max) = integer_bounds(*primitive);
+            match default {
+                SourceDefaultValue::Integer(_) => format!("an integer from {min} to {max}"),
+                _ => "an integer literal".to_owned(),
+            }
+        }
+        TypeExpr::String | TypeExpr::Str => "a string literal".to_owned(),
         _ => return None,
     };
     let fits = match (type_expr, default) {
@@ -122,15 +128,35 @@ fn literal_mismatch(
             SourceDefaultValue::None | SourceDefaultValue::Path(_) | SourceDefaultValue::Bytes(_),
         ) => true,
         (TypeExpr::Primitive(Primitive::Bool), SourceDefaultValue::Bool(_)) => true,
+        (TypeExpr::Primitive(Primitive::Bool), _) => false,
         (TypeExpr::Primitive(Primitive::F32 | Primitive::F64), SourceDefaultValue::Float(_)) => {
             true
         }
-        (TypeExpr::Primitive(Primitive::Bool), _) => false,
-        (TypeExpr::Primitive(_), SourceDefaultValue::Integer(_)) => true,
+        (TypeExpr::Primitive(Primitive::F32 | Primitive::F64), SourceDefaultValue::Integer(_)) => {
+            true
+        }
+        (TypeExpr::Primitive(primitive), SourceDefaultValue::Integer(value)) => {
+            let (min, max) = integer_bounds(*primitive);
+            (min..=max).contains(&value.value)
+        }
         (TypeExpr::String | TypeExpr::Str, SourceDefaultValue::String(_)) => true,
         _ => false,
     };
     (!fits).then_some(expected)
+}
+
+/// The values an integer primitive holds, taking `isize` and `usize` at 64 bits.
+fn integer_bounds(primitive: Primitive) -> (i128, i128) {
+    match primitive {
+        Primitive::I8 => (i8::MIN.into(), i8::MAX.into()),
+        Primitive::U8 => (0, u8::MAX.into()),
+        Primitive::I16 => (i16::MIN.into(), i16::MAX.into()),
+        Primitive::U16 => (0, u16::MAX.into()),
+        Primitive::I32 => (i32::MIN.into(), i32::MAX.into()),
+        Primitive::U32 => (0, u32::MAX.into()),
+        Primitive::U64 | Primitive::USize => (0, u64::MAX.into()),
+        _ => (i64::MIN.into(), i64::MAX.into()),
+    }
 }
 
 /// Whether `type_expr` crosses as an `Option`: a custom type does when its

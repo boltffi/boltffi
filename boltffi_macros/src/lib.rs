@@ -125,61 +125,53 @@ pub fn interned_string_pool(item: TokenStream) -> TokenStream {
 /// See [Records](https://boltffi.dev/docs/records) and [Types](https://boltffi.dev/docs/types).
 #[proc_macro_attribute]
 pub fn data(attribute: TokenStream, item: TokenStream) -> TokenStream {
+    let parsed = syn::parse::<syn::Item>(item.clone()).ok();
     if attribute.to_string().trim() == "impl" {
         return invocation(lane::Kind::DataImpl, attribute, item);
     }
-    syn::parse::<syn::Item>(item.clone())
-        .ok()
-        .and_then(|mut parsed| {
-            refuse_data_on_impl(&parsed, &attribute, &item)
-                .or_else(|| refuse_item(lane::Kind::Data, &parsed, &item))
-                .or_else(|| refuse_second_marker(lane::Kind::Data, &attribute, &mut parsed))
-        })
-        .unwrap_or_else(|| match attribute.is_empty() {
-            true => invocation(lane::Kind::Data, attribute, item),
-            false => refuse_arguments(
-                lane::Kind::Data,
-                proc_macro2::TokenStream::from(attribute),
+    match parsed {
+        Some(syn::Item::Impl(_)) => {
+            let message = "`#[data]` on an `impl` block is written `#[data(impl)]`";
+            let error = match attribute.is_empty() {
+                true => syn::Error::new(proc_macro2::Span::call_site(), message),
+                false => {
+                    syn::Error::new_spanned(proc_macro2::TokenStream::from(attribute), message)
+                }
+            }
+            .to_compile_error();
+            let expanded = proc_macro2::TokenStream::from(invocation(
+                lane::Kind::DataImpl,
+                quote!(impl).into(),
                 item,
-                "`#[data]` takes no arguments; `#[data(impl)]` goes on a record's `impl` block",
-            ),
-        })
-}
-
-/// Refuses bare `#[data]` on an `impl` block, and expands the block as `#[data(impl)]`.
-fn refuse_data_on_impl(
-    parsed: &syn::Item,
-    attribute: &TokenStream,
-    item: &TokenStream,
-) -> Option<TokenStream> {
-    let syn::Item::Impl(_) = parsed else {
-        return None;
-    };
-    if !attribute.is_empty() {
-        return None;
+            ));
+            quote! { #error #expanded }.into()
+        }
+        Some(mut parsed) => refuse_item(lane::Kind::Data, &parsed, &item)
+            .or_else(|| refuse_second_marker(lane::Kind::Data, &attribute, &mut parsed))
+            .unwrap_or_else(|| match attribute.is_empty() {
+                true => invocation(lane::Kind::Data, attribute, item),
+                false => refuse_arguments(
+                    lane::Kind::Data,
+                    proc_macro2::TokenStream::from(attribute),
+                    TokenStream::new(),
+                    item,
+                    "`#[data]` takes no arguments; `#[data(impl)]` goes on a record's `impl` block",
+                ),
+            }),
+        None => invocation(lane::Kind::Data, attribute, item),
     }
-    let error = syn::Error::new(
-        proc_macro2::Span::call_site(),
-        "`#[data]` on an `impl` block is written `#[data(impl)]`",
-    )
-    .to_compile_error();
-    let expanded = proc_macro2::TokenStream::from(invocation(
-        lane::Kind::DataImpl,
-        quote!(impl).into(),
-        item.clone(),
-    ));
-    Some(quote! { #error #expanded }.into())
 }
 
-/// Refuses arguments `kind`'s marker does not take, and expands the item without them.
+/// Refuses arguments `kind`'s marker does not take, and expands the item with `kept` instead.
 fn refuse_arguments(
     kind: lane::Kind,
     arguments: impl ToTokens,
+    kept: TokenStream,
     item: TokenStream,
     message: impl std::fmt::Display,
 ) -> TokenStream {
     let error = syn::Error::new_spanned(arguments, message).to_compile_error();
-    let expanded = proc_macro2::TokenStream::from(invocation(kind, TokenStream::new(), item));
+    let expanded = proc_macro2::TokenStream::from(invocation(kind, kept, item));
     quote! { #error #expanded }.into()
 }
 
@@ -191,7 +183,11 @@ fn unknown_class_argument(attribute: &TokenStream) -> Option<proc_macro2::TokenS
     match syn::parse::Parser::parse2(parser, attribute.clone()) {
         Ok(arguments) => arguments
             .into_iter()
-            .find(|argument| argument != "single_threaded" && argument != "thread_unsafe")
+            .find(|argument| {
+                !boltffi_scan::CLASS_EXPORT_ARGUMENTS
+                    .iter()
+                    .any(|known| argument == known)
+            })
             .map(|argument| argument.to_token_stream()),
         Err(_) => Some(attribute),
     }
@@ -309,6 +305,7 @@ pub fn error(attribute: TokenStream, item: TokenStream) -> TokenStream {
             false => refuse_arguments(
                 lane::Kind::Error,
                 proc_macro2::TokenStream::from(attribute),
+                TokenStream::new(),
                 item,
                 "`#[error]` takes no arguments",
             ),
@@ -368,6 +365,7 @@ pub fn export(attribute: TokenStream, item: TokenStream) -> TokenStream {
             refuse_arguments(
                 lane::Kind::Export,
                 proc_macro2::TokenStream::from(attribute),
+                TokenStream::new(),
                 item,
                 format!("`#[export]` on a {noun} takes no arguments"),
             )
@@ -376,6 +374,7 @@ pub fn export(attribute: TokenStream, item: TokenStream) -> TokenStream {
             Some(argument) => refuse_arguments(
                 lane::Kind::Export,
                 &argument,
+                quote!(single_threaded).into(),
                 item,
                 format!(
                     "`{argument}` is not an `#[export]` argument; a class takes `single_threaded`"
@@ -419,7 +418,10 @@ fn invocation(kind: lane::Kind, attribute: TokenStream, item: TokenStream) -> To
     let emitted = match kind {
         lane::Kind::Data | lane::Kind::Error => match data::repr::materialize(item.clone()) {
             Ok(item) => strip_boltffi_attrs(item),
-            Err(error) => return error,
+            Err(error) => {
+                let error = proc_macro2::TokenStream::from(error);
+                return quote!(#misplaced #error).into();
+            }
         },
         _ => strip_boltffi_attrs(item.clone()),
     };

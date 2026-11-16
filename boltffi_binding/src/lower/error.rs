@@ -92,7 +92,7 @@ impl LowerError {
         Self::new(LowerErrorKind::InvalidConstantValue(id.to_string()))
     }
 
-    pub(crate) fn mismatched_default(expected: &'static str) -> Self {
+    pub(crate) fn mismatched_default(expected: String) -> Self {
         Self::new(LowerErrorKind::MismatchedDefault(expected))
     }
 
@@ -364,7 +364,7 @@ pub enum LowerErrorKind {
     /// A constant literal cannot inhabit its declared type.
     InvalidConstantValue(String),
     /// A literal default does not fit its type, which takes the literal named.
-    MismatchedDefault(&'static str),
+    MismatchedDefault(String),
     /// A stream reference could not be resolved inside the source contract.
     UnknownStream(String),
     /// A free function reference could not be resolved inside the source contract.

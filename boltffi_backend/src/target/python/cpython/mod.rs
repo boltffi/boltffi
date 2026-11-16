@@ -2097,40 +2097,25 @@ Coordinates are plain `f64`.
 
     #[test]
     fn python_target_rejects_out_of_range_direct_record_defaults() {
-        let cases = [
-            (
-                r#"
-                #[data]
-                pub struct InvalidIntegerDefault {
-                    #[boltffi::default(300)]
-                    pub value: u8,
-                }
-                "#,
-                "out-of-range u8 default",
-            ),
-            (
-                r#"
-                #[data]
-                pub struct InvalidFloatDefault {
-                    #[boltffi::default(3.5e38)]
-                    pub value: f32,
-                }
-                "#,
-                "out-of-range f32 default",
-            ),
-        ];
+        let source = r#"
+            #[data]
+            pub struct InvalidFloatDefault {
+                #[boltffi::default(3.5e38)]
+                pub value: f32,
+            }
+        "#;
 
-        for (source, description) in cases {
-            let error = target().render(&bindings(source)).expect_err(description);
+        let error = target()
+            .render(&bindings(source))
+            .expect_err("out-of-range f32 default");
 
-            assert_eq!(
-                error,
-                Error::UnsupportedTarget {
-                    target: "python",
-                    shape: "direct record field default range",
-                }
-            );
-        }
+        assert_eq!(
+            error,
+            Error::UnsupportedTarget {
+                target: "python",
+                shape: "direct record field default range",
+            }
+        );
     }
 
     #[test]

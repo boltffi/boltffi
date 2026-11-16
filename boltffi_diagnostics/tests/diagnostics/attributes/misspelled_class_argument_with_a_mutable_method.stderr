@@ -1,0 +1,5 @@
+error: `single_thread` is not an `#[export]` argument; a class takes `single_threaded`
+ --> tests/diagnostics/attributes/misspelled_class_argument_with_a_mutable_method.rs:2:19
+  |
+2 | #[boltffi::export(single_thread)]
+  |                   ^^^^^^^^^^^^^
