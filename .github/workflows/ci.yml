@@ -236,7 +236,7 @@ jobs:
         os: [macos-latest, ubuntu-latest, windows-latest]
     env:
       BOLTFFI_CACHE_DIR: ${{ github.workspace }}/.cache/boltffi
-      DEMO_PYTHON_VERSION: '3.14.8' # renovate: datasource=python-version depName=python
+      DEMO_PYTHON_VERSION: '3.15.2' # renovate: datasource=python-version depName=python
     steps:
       - uses: actions/checkout@v7
       - uses: actions-rust-lang/setup-rust-toolchain@v2
