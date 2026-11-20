@@ -20,10 +20,11 @@ impl<'source> Target<'source> {
     pub(super) fn class(item: &'source syn::ItemImpl) -> Result<Self, ScanError> {
         let target = Self::scan(item);
         unsupported::generics(&item.generics, &format!("class {}", target.spelling()))?;
-        if item.trait_.is_some() {
+        if let Some((path, _)) = &item.trait_ {
             return Err(ScanError::UnsupportedClassImplShape {
                 target: target.spelling().to_owned(),
-            });
+            }
+            .at(path));
         }
         Ok(target)
     }

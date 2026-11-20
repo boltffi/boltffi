@@ -8,7 +8,7 @@ expression: "rendered_source(SourceFixture::many([\"enums/role\", \"records/enco
 package com.boltffi.demo
 @Suppress("FunctionName")
 private object Native {
-    @JvmStatic external fun boltffi_function_demo_echo_user(user: java.nio.ByteBuffer, __boltffi_user_len: Int): ByteArray?
+    @JvmStatic external fun boltffi_function_4demo9echo_user(user: java.nio.ByteBuffer, __boltffi_user_len: Int): ByteArray?
 }
 
 
@@ -76,7 +76,7 @@ fun echoUser(user: User): User {
     val __boltffi_user_writer = __boltffi_user_wire.writer
     user.writeTo(__boltffi_user_writer)
     try {
-        val __boltffi_result = Native.boltffi_function_demo_echo_user(__boltffi_user_wire.directBuffer(), __boltffi_user_wire.size()) ?: throw IllegalStateException("null buffer returned")
+        val __boltffi_result = Native.boltffi_function_4demo9echo_user(__boltffi_user_wire.directBuffer(), __boltffi_user_wire.size()) ?: throw IllegalStateException("null buffer returned")
         val __boltffi_reader = WireReader(__boltffi_result)
         return User.fromReader(__boltffi_reader)
     } finally {

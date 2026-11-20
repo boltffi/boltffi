@@ -3,6 +3,8 @@
 //! The custom backend is selected by the test, through `RUSTFLAGS`; a real
 //! crate would put `--cfg getrandom_backend="custom"` in `.cargo/config.toml`.
 
+boltffi::scaffolding!();
+
 use boltffi::export;
 
 boltffi::wasm_getrandom_backend!();

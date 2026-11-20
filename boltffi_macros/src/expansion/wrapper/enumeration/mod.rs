@@ -179,6 +179,7 @@ impl<'expansion, 'lowered, S: boltffi_binding::SurfaceLower> CStyle<'expansion, 
             }
 
             impl ::boltffi::__private::VecTransport for #enumeration {
+                #[inline]
                 fn pack_vec(values: Vec<#enumeration>) -> ::boltffi::__private::FfiBuf {
                     let values = values
                         .into_iter()
@@ -187,6 +188,7 @@ impl<'expansion, 'lowered, S: boltffi_binding::SurfaceLower> CStyle<'expansion, 
                     ::boltffi::__private::FfiBuf::from_vec(values)
                 }
 
+                #[inline]
                 unsafe fn unpack_vec(pointer: *const u8, byte_len: usize) -> Vec<#enumeration> {
                     if byte_len == 0 {
                         return Vec::new();
@@ -343,10 +345,12 @@ impl<'expansion, 'lowered, S: boltffi_binding::SurfaceLower> Data<'expansion, 'l
             }
 
             impl ::boltffi::__private::VecTransport for #enumeration {
+                #[inline]
                 fn pack_vec(values: Vec<#enumeration>) -> ::boltffi::__private::FfiBuf {
                     ::boltffi::__private::FfiBuf::wire_encode(&values)
                 }
 
+                #[inline]
                 unsafe fn unpack_vec(pointer: *const u8, byte_len: usize) -> Vec<#enumeration> {
                     let bytes = if byte_len == 0 {
                         &[]

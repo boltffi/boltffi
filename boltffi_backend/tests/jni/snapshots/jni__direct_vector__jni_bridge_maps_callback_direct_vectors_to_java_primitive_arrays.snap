@@ -9,8 +9,8 @@ typedef struct {
     uint64_t (*clone)(uint64_t);
     void (*on_values)(uint64_t, const int32_t *, uintptr_t);
 } ___CollectorVTable;
-void boltffi_register_callback_demo_collector(const ___CollectorVTable *vtable);
-BoltFFICallbackHandle boltffi_create_callback_demo_collector(uint64_t handle);
+void boltffi_register_callback_4demo9Collector(const ___CollectorVTable *vtable);
+BoltFFICallbackHandle boltffi_create_callback_4demo9Collector(uint64_t handle);
 
 ===== jni/jni_glue.c =====
 <jni source includes>
@@ -113,7 +113,7 @@ static bool boltffi_jni_load____CollectorVTable_callbacks(JNIEnv *env) {
     if (!boltffi_jni_lookup_static_method_with_diagnostic(env, g____CollectorVTable_class, "com/boltffi/demo/CollectorCallbacks", "on_values", "on_values", "(J[I)V", "(J[I)V", &g____CollectorVTable_on_values_method)) {
         goto fail;
     }
-    boltffi_register_callback_demo_collector(&g____CollectorVTable_vtable);
+    boltffi_register_callback_4demo9Collector(&g____CollectorVTable_vtable);
     return true;
 fail:
     (*env)->DeleteGlobalRef(env, g____CollectorVTable_class);

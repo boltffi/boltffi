@@ -1,0 +1,2 @@
+boltffi_backend/templates/target/dart/*.dart text eol=lf
+boltffi_backend/templates/target/dart_web/* text eol=lf

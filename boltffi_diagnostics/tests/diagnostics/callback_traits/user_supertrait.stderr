@@ -1,0 +1,5 @@
+error: BoltFFI: `trait T` cannot use supertraits
+ --> tests/diagnostics/callback_traits/user_supertrait.rs:4:14
+  |
+4 | pub trait T: B { fn f(&self); }
+  |              ^

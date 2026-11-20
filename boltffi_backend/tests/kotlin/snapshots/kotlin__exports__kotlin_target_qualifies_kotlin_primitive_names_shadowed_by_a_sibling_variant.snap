@@ -8,8 +8,8 @@ expression: "rendered_fixture(\"enums/primitive_shadow\")"
 package com.boltffi.demo
 @Suppress("FunctionName")
 private object Native {
-    @JvmStatic external fun boltffi_init_enum_demo_primitive_value_new(value: Int): ByteArray?
-    @JvmStatic external fun boltffi_method_enum_demo_primitive_value_scaled(`receiver`: java.nio.ByteBuffer, __boltffi_receiver_len: Int, factor: Int): Int
+    @JvmStatic external fun boltffi_init_enum_4demo14PrimitiveValue3new(value: Int): ByteArray?
+    @JvmStatic external fun boltffi_method_enum_4demo14PrimitiveValue6scaled(`receiver`: java.nio.ByteBuffer, __boltffi_receiver_len: Int, factor: Int): Int
 }
 
 
@@ -120,7 +120,7 @@ sealed class PrimitiveValue {
         }
 
         fun new(value: kotlin.Int): com.boltffi.demo.PrimitiveValue {
-            val __boltffi_result = Native.boltffi_init_enum_demo_primitive_value_new(value) ?: throw IllegalStateException("null buffer returned")
+            val __boltffi_result = Native.boltffi_init_enum_4demo14PrimitiveValue3new(value) ?: throw IllegalStateException("null buffer returned")
             val __boltffi_reader = WireReader(__boltffi_result)
             return com.boltffi.demo.PrimitiveValue.fromReader(__boltffi_reader)
         }
@@ -131,7 +131,7 @@ sealed class PrimitiveValue {
         val __boltffi_primitiveValue_writer = __boltffi_primitiveValue_wire.writer
         this.writeTo(__boltffi_primitiveValue_writer)
         try {
-            return Native.boltffi_method_enum_demo_primitive_value_scaled(__boltffi_primitiveValue_wire.directBuffer(), __boltffi_primitiveValue_wire.size(), factor)
+            return Native.boltffi_method_enum_4demo14PrimitiveValue6scaled(__boltffi_primitiveValue_wire.directBuffer(), __boltffi_primitiveValue_wire.size(), factor)
         } finally {
             __boltffi_primitiveValue_wire.close()
         }

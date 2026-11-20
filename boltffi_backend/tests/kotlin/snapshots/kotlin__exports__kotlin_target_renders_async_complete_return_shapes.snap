@@ -10,36 +10,36 @@ package com.boltffi.demo
 import kotlinx.coroutines.launch
 @Suppress("FunctionName")
 private object Native {
-    @JvmStatic external fun boltffi_function_demo_refresh(): Long
-    @JvmStatic external fun boltffi_async_function_demo_refresh_poll(handle: Long, callback_data: Long): Byte
-    @JvmStatic external fun boltffi_async_function_demo_refresh_complete(handle: Long): Unit
-    @JvmStatic external fun boltffi_async_function_demo_refresh_cancel(handle: Long): Unit
-    @JvmStatic external fun boltffi_async_function_demo_refresh_free(handle: Long): Unit
-    @JvmStatic external fun boltffi_async_function_demo_refresh_panic_message(handle: Long): ByteArray?
-    @JvmStatic external fun boltffi_function_demo_load_name(): Long
-    @JvmStatic external fun boltffi_async_function_demo_load_name_poll(handle: Long, callback_data: Long): Byte
-    @JvmStatic external fun boltffi_async_function_demo_load_name_complete(handle: Long): ByteArray?
-    @JvmStatic external fun boltffi_async_function_demo_load_name_cancel(handle: Long): Unit
-    @JvmStatic external fun boltffi_async_function_demo_load_name_free(handle: Long): Unit
-    @JvmStatic external fun boltffi_async_function_demo_load_name_panic_message(handle: Long): ByteArray?
-    @JvmStatic external fun boltffi_function_demo_load_point(): Long
-    @JvmStatic external fun boltffi_async_function_demo_load_point_poll(handle: Long, callback_data: Long): Byte
-    @JvmStatic external fun boltffi_async_function_demo_load_point_complete(handle: Long): ByteArray?
-    @JvmStatic external fun boltffi_async_function_demo_load_point_cancel(handle: Long): Unit
-    @JvmStatic external fun boltffi_async_function_demo_load_point_free(handle: Long): Unit
-    @JvmStatic external fun boltffi_async_function_demo_load_point_panic_message(handle: Long): ByteArray?
-    @JvmStatic external fun boltffi_function_demo_save(): Long
-    @JvmStatic external fun boltffi_async_function_demo_save_poll(handle: Long, callback_data: Long): Byte
-    @JvmStatic external fun boltffi_async_function_demo_save_complete(handle: Long): Unit
-    @JvmStatic external fun boltffi_async_function_demo_save_cancel(handle: Long): Unit
-    @JvmStatic external fun boltffi_async_function_demo_save_free(handle: Long): Unit
-    @JvmStatic external fun boltffi_async_function_demo_save_panic_message(handle: Long): ByteArray?
-    @JvmStatic external fun boltffi_function_demo_save_checked(value: Int): Long
-    @JvmStatic external fun boltffi_async_function_demo_save_checked_poll(handle: Long, callback_data: Long): Byte
-    @JvmStatic external fun boltffi_async_function_demo_save_checked_complete(handle: Long): Int
-    @JvmStatic external fun boltffi_async_function_demo_save_checked_cancel(handle: Long): Unit
-    @JvmStatic external fun boltffi_async_function_demo_save_checked_free(handle: Long): Unit
-    @JvmStatic external fun boltffi_async_function_demo_save_checked_panic_message(handle: Long): ByteArray?
+    @JvmStatic external fun boltffi_function_4demo7refresh(): Long
+    @JvmStatic external fun boltffi_async_function_4demo7refresh_poll(handle: Long, callback_data: Long): Byte
+    @JvmStatic external fun boltffi_async_function_4demo7refresh_complete(handle: Long): Unit
+    @JvmStatic external fun boltffi_async_function_4demo7refresh_cancel(handle: Long): Unit
+    @JvmStatic external fun boltffi_async_function_4demo7refresh_free(handle: Long): Unit
+    @JvmStatic external fun boltffi_async_function_4demo7refresh_panic_message(handle: Long): ByteArray?
+    @JvmStatic external fun boltffi_function_4demo9load_name(): Long
+    @JvmStatic external fun boltffi_async_function_4demo9load_name_poll(handle: Long, callback_data: Long): Byte
+    @JvmStatic external fun boltffi_async_function_4demo9load_name_complete(handle: Long): ByteArray?
+    @JvmStatic external fun boltffi_async_function_4demo9load_name_cancel(handle: Long): Unit
+    @JvmStatic external fun boltffi_async_function_4demo9load_name_free(handle: Long): Unit
+    @JvmStatic external fun boltffi_async_function_4demo9load_name_panic_message(handle: Long): ByteArray?
+    @JvmStatic external fun boltffi_function_4demo10load_point(): Long
+    @JvmStatic external fun boltffi_async_function_4demo10load_point_poll(handle: Long, callback_data: Long): Byte
+    @JvmStatic external fun boltffi_async_function_4demo10load_point_complete(handle: Long): ByteArray?
+    @JvmStatic external fun boltffi_async_function_4demo10load_point_cancel(handle: Long): Unit
+    @JvmStatic external fun boltffi_async_function_4demo10load_point_free(handle: Long): Unit
+    @JvmStatic external fun boltffi_async_function_4demo10load_point_panic_message(handle: Long): ByteArray?
+    @JvmStatic external fun boltffi_function_4demo4save(): Long
+    @JvmStatic external fun boltffi_async_function_4demo4save_poll(handle: Long, callback_data: Long): Byte
+    @JvmStatic external fun boltffi_async_function_4demo4save_complete(handle: Long): Unit
+    @JvmStatic external fun boltffi_async_function_4demo4save_cancel(handle: Long): Unit
+    @JvmStatic external fun boltffi_async_function_4demo4save_free(handle: Long): Unit
+    @JvmStatic external fun boltffi_async_function_4demo4save_panic_message(handle: Long): ByteArray?
+    @JvmStatic external fun boltffi_function_4demo12save_checked(value: Int): Long
+    @JvmStatic external fun boltffi_async_function_4demo12save_checked_poll(handle: Long, callback_data: Long): Byte
+    @JvmStatic external fun boltffi_async_function_4demo12save_checked_complete(handle: Long): Int
+    @JvmStatic external fun boltffi_async_function_4demo12save_checked_cancel(handle: Long): Unit
+    @JvmStatic external fun boltffi_async_function_4demo12save_checked_free(handle: Long): Unit
+    @JvmStatic external fun boltffi_async_function_4demo12save_checked_panic_message(handle: Long): ByteArray?
 
     @JvmStatic fun boltffiFutureContinuationCallback(handle: Long, pollResult: Byte) {
         BoltFfiAsync.resume(handle, pollResult)
@@ -108,72 +108,72 @@ sealed class SaveError(val value: Int) : Exception() {
 suspend fun refresh() {
     boltffiCallAsync(
         createFuture = {
-            Native.boltffi_function_demo_refresh()
+            Native.boltffi_function_4demo7refresh()
         },
-        poll = { future, contHandle -> Native.boltffi_async_function_demo_refresh_poll(future, contHandle) },
+        poll = { future, contHandle -> Native.boltffi_async_function_4demo7refresh_poll(future, contHandle) },
         complete = { future ->
-            Native.boltffi_async_function_demo_refresh_complete(future)
+            Native.boltffi_async_function_4demo7refresh_complete(future)
         },
-        free = { future -> Native.boltffi_async_function_demo_refresh_free(future) },
-        cancel = { future -> Native.boltffi_async_function_demo_refresh_cancel(future) },
+        free = { future -> Native.boltffi_async_function_4demo7refresh_free(future) },
+        cancel = { future -> Native.boltffi_async_function_4demo7refresh_cancel(future) },
     )
 }
 
 suspend fun loadName(): String {
     return boltffiCallAsync(
         createFuture = {
-            Native.boltffi_function_demo_load_name()
+            Native.boltffi_function_4demo9load_name()
         },
-        poll = { future, contHandle -> Native.boltffi_async_function_demo_load_name_poll(future, contHandle) },
+        poll = { future, contHandle -> Native.boltffi_async_function_4demo9load_name_poll(future, contHandle) },
         complete = { future ->
-            val __boltffi_result = Native.boltffi_async_function_demo_load_name_complete(future) ?: throw IllegalStateException("null buffer returned")
+            val __boltffi_result = Native.boltffi_async_function_4demo9load_name_complete(future) ?: throw IllegalStateException("null buffer returned")
             val __boltffi_reader = WireReader(__boltffi_result)
             __boltffi_reader.readString()
         },
-        free = { future -> Native.boltffi_async_function_demo_load_name_free(future) },
-        cancel = { future -> Native.boltffi_async_function_demo_load_name_cancel(future) },
+        free = { future -> Native.boltffi_async_function_4demo9load_name_free(future) },
+        cancel = { future -> Native.boltffi_async_function_4demo9load_name_cancel(future) },
     )
 }
 
 suspend fun loadPoint(): Point {
     return boltffiCallAsync(
         createFuture = {
-            Native.boltffi_function_demo_load_point()
+            Native.boltffi_function_4demo10load_point()
         },
-        poll = { future, contHandle -> Native.boltffi_async_function_demo_load_point_poll(future, contHandle) },
+        poll = { future, contHandle -> Native.boltffi_async_function_4demo10load_point_poll(future, contHandle) },
         complete = { future ->
-            val __boltffi_result = Native.boltffi_async_function_demo_load_point_complete(future) ?: throw IllegalStateException("null buffer returned")
+            val __boltffi_result = Native.boltffi_async_function_4demo10load_point_complete(future) ?: throw IllegalStateException("null buffer returned")
             Point.fromByteArray(__boltffi_result)
         },
-        free = { future -> Native.boltffi_async_function_demo_load_point_free(future) },
-        cancel = { future -> Native.boltffi_async_function_demo_load_point_cancel(future) },
+        free = { future -> Native.boltffi_async_function_4demo10load_point_free(future) },
+        cancel = { future -> Native.boltffi_async_function_4demo10load_point_cancel(future) },
     )
 }
 
 suspend fun save() {
     boltffiCallAsync(
         createFuture = {
-            Native.boltffi_function_demo_save()
+            Native.boltffi_function_4demo4save()
         },
-        poll = { future, contHandle -> Native.boltffi_async_function_demo_save_poll(future, contHandle) },
+        poll = { future, contHandle -> Native.boltffi_async_function_4demo4save_poll(future, contHandle) },
         complete = { future ->
-            try { Native.boltffi_async_function_demo_save_complete(future) } catch (__boltffi_error: BoltFfiErrorBufferException) { run { val __boltffi_error_reader = WireReader(__boltffi_error.bytes); throw SaveError.fromValue(__boltffi_error_reader.readI32()) } }
+            try { Native.boltffi_async_function_4demo4save_complete(future) } catch (__boltffi_error: BoltFfiErrorBufferException) { run { val __boltffi_error_reader = WireReader(__boltffi_error.bytes); throw SaveError.fromValue(__boltffi_error_reader.readI32()) } }
         },
-        free = { future -> Native.boltffi_async_function_demo_save_free(future) },
-        cancel = { future -> Native.boltffi_async_function_demo_save_cancel(future) },
+        free = { future -> Native.boltffi_async_function_4demo4save_free(future) },
+        cancel = { future -> Native.boltffi_async_function_4demo4save_cancel(future) },
     )
 }
 
 suspend fun saveChecked(value: Int): Int {
     return boltffiCallAsync(
         createFuture = {
-            Native.boltffi_function_demo_save_checked(value)
+            Native.boltffi_function_4demo12save_checked(value)
         },
-        poll = { future, contHandle -> Native.boltffi_async_function_demo_save_checked_poll(future, contHandle) },
+        poll = { future, contHandle -> Native.boltffi_async_function_4demo12save_checked_poll(future, contHandle) },
         complete = { future ->
-            try { Native.boltffi_async_function_demo_save_checked_complete(future) } catch (__boltffi_error: BoltFfiErrorBufferException) { run { val __boltffi_error_reader = WireReader(__boltffi_error.bytes); throw SaveError.fromValue(__boltffi_error_reader.readI32()) } }
+            try { Native.boltffi_async_function_4demo12save_checked_complete(future) } catch (__boltffi_error: BoltFfiErrorBufferException) { run { val __boltffi_error_reader = WireReader(__boltffi_error.bytes); throw SaveError.fromValue(__boltffi_error_reader.readI32()) } }
         },
-        free = { future -> Native.boltffi_async_function_demo_save_checked_free(future) },
-        cancel = { future -> Native.boltffi_async_function_demo_save_checked_cancel(future) },
+        free = { future -> Native.boltffi_async_function_4demo12save_checked_free(future) },
+        cancel = { future -> Native.boltffi_async_function_4demo12save_checked_cancel(future) },
     )
 }

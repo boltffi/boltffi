@@ -18,7 +18,9 @@ if (!FIXTURE && process.env.CI) {
 type RandomU64 = () => bigint;
 
 function randomU64(exports: Record<string, WebAssembly.ExportValue>): RandomU64 {
-  const name = Object.keys(exports).find((key) => key.endsWith("_random_u64"));
+  const name = Object.keys(exports).find(
+    (key) => key.startsWith("boltffi_function_") && key.endsWith("random_u64")
+  );
   expect(name, "the fixture exports random_u64").toBeDefined();
   return exports[name!] as RandomU64;
 }

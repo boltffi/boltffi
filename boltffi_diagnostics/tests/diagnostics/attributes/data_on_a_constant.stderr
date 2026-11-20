@@ -1,0 +1,7 @@
+error: `#[data]` declares a struct or enum; use `#[export]` on a constant
+ --> tests/diagnostics/attributes/data_on_a_constant.rs:2:1
+  |
+2 | #[boltffi::data]
+  | ^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `boltffi::data` (in Nightly builds, run with -Z macro-backtrace for more info)

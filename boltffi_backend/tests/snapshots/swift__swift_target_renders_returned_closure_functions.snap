@@ -34,7 +34,7 @@ public func makeCounter() -> (UInt32) -> UInt32 {
         }
     }
     var boltffiResult: BoltFFIReturnedClosureU32ToU32 = BoltFFIReturnedClosureU32ToU32()
-    let boltffiClosureStatus = boltffi_function_demo_make_counter(&boltffiResult)
+    let boltffiClosureStatus = boltffi_function_4demo12make_counter(&boltffiResult)
     guard boltffiClosureStatus.code == 0 else {
         fatalError("returned closure registration failed with code \(boltffiClosureStatus.code)")
     }

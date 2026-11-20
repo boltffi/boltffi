@@ -8,7 +8,7 @@ expression: "rendered_fixture(\"callback/foreign_callback_parameter\")"
 package com.boltffi.demo
 @Suppress("FunctionName")
 private object Native {
-    @JvmStatic external fun boltffi_function_demo_install(listener: Long): Unit
+    @JvmStatic external fun boltffi_function_4demo7install(listener: Long): Unit
 }
 
 fun interface Listener {
@@ -60,5 +60,5 @@ object ListenerBridge {
 }
 
 fun install(listener: Listener) {
-    Native.boltffi_function_demo_install(ListenerBridge.create(listener))
+    Native.boltffi_function_4demo7install(ListenerBridge.create(listener))
 }

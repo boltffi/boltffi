@@ -100,7 +100,7 @@ custom_type!(
 #[data]
 pub struct Event {
     pub name: String,
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: UtcDateTime,
 }
 
 #[demo_bench_macros::demo_case(
@@ -144,7 +144,7 @@ pub fn email_domain(email: Email) -> String {
     )
 )]
 #[export]
-pub fn echo_datetime(dt: DateTime<Utc>) -> DateTime<Utc> {
+pub fn echo_datetime(dt: UtcDateTime) -> UtcDateTime {
     dt
 }
 
@@ -159,7 +159,7 @@ pub fn echo_datetime(dt: DateTime<Utc>) -> DateTime<Utc> {
     )
 )]
 #[export]
-pub fn datetime_to_millis(dt: DateTime<Utc>) -> i64 {
+pub fn datetime_to_millis(dt: UtcDateTime) -> i64 {
     dt.timestamp_millis()
 }
 
@@ -174,7 +174,7 @@ pub fn datetime_to_millis(dt: DateTime<Utc>) -> i64 {
     )
 )]
 #[export]
-pub fn format_timestamp(timestamp: DateTime<Utc>) -> String {
+pub fn format_timestamp(timestamp: UtcDateTime) -> String {
     timestamp.to_rfc3339()
 }
 
@@ -234,6 +234,6 @@ pub fn echo_emails(emails: Vec<Email>) -> Vec<Email> {
     )
 )]
 #[export]
-pub fn echo_datetimes(dts: Vec<DateTime<Utc>>) -> Vec<DateTime<Utc>> {
+pub fn echo_datetimes(dts: Vec<UtcDateTime>) -> Vec<UtcDateTime> {
     dts
 }

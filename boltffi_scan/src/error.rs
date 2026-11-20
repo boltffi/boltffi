@@ -1,5 +1,8 @@
 use std::fmt;
 
+use proc_macro2::TokenStream;
+use quote::ToTokens;
+
 use crate::UnsupportedFeature;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -16,11 +19,12 @@ pub enum ScanError {
         module: String,
         searched: Vec<String>,
     },
-    PackageGraph {
-        message: String,
-    },
     UnsupportedType {
         spelling: String,
+    },
+    UnsupportedRustType {
+        spelling: String,
+        advice: String,
     },
     InvalidMarker {
         attribute: String,
@@ -65,6 +69,9 @@ pub enum ScanError {
     UnsupportedGenerics {
         item: String,
     },
+    UnsupportedLifetimes {
+        item: String,
+    },
     UnsupportedUnsafe {
         item: String,
     },
@@ -89,7 +96,31 @@ pub enum ScanError {
     UnsupportedFeature {
         feature: UnsupportedFeature,
     },
+    /// Another error, with the source tokens it is about.
+    Located {
+        error: Box<ScanError>,
+        location: Location,
+    },
 }
+
+/// The source tokens an error is about. Two locations always compare equal, so an error
+/// equals itself wherever it was written.
+#[derive(Clone, Debug)]
+pub struct Location(TokenStream);
+
+impl Location {
+    pub fn tokens(&self) -> &TokenStream {
+        &self.0
+    }
+}
+
+impl PartialEq for Location {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+impl Eq for Location {}
 
 impl ScanError {
     pub(super) fn read(path: &std::path::Path, error: &std::io::Error) -> Self {
@@ -110,6 +141,50 @@ impl ScanError {
         Self::UnsupportedType {
             spelling: crate::spelling::ty(ty),
         }
+        .at(ty)
+    }
+
+    pub(super) fn unsupported_rust_type(ty: &syn::Type, advice: impl Into<String>) -> Self {
+        Self::UnsupportedRustType {
+            spelling: crate::spelling::ty(ty),
+            advice: advice.into(),
+        }
+        .at(ty)
+    }
+
+    /// This error, about `node`. An error that already has a location keeps it, and a node
+    /// with no tokens adds none, so an outer caller can still place it.
+    pub(crate) fn at(self, node: impl ToTokens) -> Self {
+        let tokens = node.into_token_stream();
+        match self {
+            Self::Located { .. } => self,
+            error if tokens.is_empty() => error,
+            error => Self::Located {
+                error: Box::new(error),
+                location: Location(tokens),
+            },
+        }
+    }
+
+    /// This error, at `span`, for errors that know a span but no tokens.
+    pub(crate) fn at_span(self, span: proc_macro2::Span) -> Self {
+        self.at(proc_macro2::Ident::new("located", span))
+    }
+
+    /// The source tokens this error is about, if it knows them.
+    pub fn location(&self) -> Option<&Location> {
+        match self {
+            Self::Located { location, .. } => Some(location),
+            _ => None,
+        }
+    }
+
+    /// This error without its location.
+    pub fn unlocated(&self) -> &Self {
+        match self {
+            Self::Located { error, .. } => error.unlocated(),
+            error => error,
+        }
     }
 }
 
@@ -129,11 +204,14 @@ impl fmt::Display for ScanError {
                     searched.join(", ")
                 )
             }
-            Self::PackageGraph { message } => {
-                write!(formatter, "cannot load Cargo package graph: {message}")
-            }
             Self::UnsupportedType { spelling } => {
                 write!(formatter, "unsupported source type `{spelling}`")
+            }
+            Self::UnsupportedRustType { spelling, advice } => {
+                write!(
+                    formatter,
+                    "`{spelling}` cannot cross the boundary; {advice}"
+                )
             }
             Self::InvalidMarker { attribute } => {
                 write!(formatter, "invalid BoltFFI marker `{attribute}`")
@@ -194,7 +272,18 @@ impl fmt::Display for ScanError {
                 )
             }
             Self::UnsupportedGenerics { item } => {
-                write!(formatter, "`{item}` cannot use generics")
+                write!(
+                    formatter,
+                    "`{item}` cannot be generic; export a separate non-generic item for each type \
+                     you need"
+                )
+            }
+            Self::UnsupportedLifetimes { item } => {
+                write!(
+                    formatter,
+                    "`{item}` cannot have lifetime parameters; values are copied across the \
+                     boundary, so use owned types such as `String`"
+                )
             }
             Self::UnsupportedUnsafe { item } => {
                 write!(formatter, "`{item}` cannot be unsafe")
@@ -223,11 +312,17 @@ impl fmt::Display for ScanError {
                 formatter.write_str("free function cannot have a receiver")
             }
             Self::UnsupportedFeature { feature } => formatter.write_str(feature.info().message),
+            Self::Located { error, .. } => error.fmt(formatter),
         }
     }
 }
 
 impl std::error::Error for ScanError {}
+
+#[cfg(test)]
+pub(crate) fn unlocated<T>(result: Result<T, ScanError>) -> Result<T, ScanError> {
+    result.map_err(|error| error.unlocated().clone())
+}
 
 #[cfg(test)]
 mod tests {
@@ -240,7 +335,9 @@ mod tests {
     #[test]
     fn unsupported_path_type_preserves_qualified_spelling() {
         assert_eq!(
-            ScanError::unsupported_type(&ty("crate::domain::Point")),
+            ScanError::unsupported_type(&ty("crate::domain::Point"))
+                .unlocated()
+                .clone(),
             ScanError::UnsupportedType {
                 spelling: "crate::domain::Point".to_owned()
             }
@@ -250,7 +347,9 @@ mod tests {
     #[test]
     fn unsupported_reference_type_preserves_reference_shape() {
         assert_eq!(
-            ScanError::unsupported_type(&ty("&Point")),
+            ScanError::unsupported_type(&ty("&Point"))
+                .unlocated()
+                .clone(),
             ScanError::UnsupportedType {
                 spelling: "&Point".to_owned()
             }
@@ -279,7 +378,9 @@ mod tests {
                 feature: UnsupportedFeature::TupleStruct,
             }
             .to_string(),
-            "tuple structs are not represented by the record AST"
+            "a record needs named fields, as in \
+             `pub struct Point { pub x: f64, pub y: f64 }`; \
+             BoltFFI can't read a tuple struct yet"
         );
         assert_eq!(
             ScanError::InvalidMarker {
@@ -360,7 +461,8 @@ mod tests {
                 item: "function make".to_owned()
             }
             .to_string(),
-            "`function make` cannot use generics"
+            "`function make` cannot be generic; export a separate non-generic item for each \
+             type you need"
         );
         assert_eq!(
             ScanError::UnsupportedUnsafe {

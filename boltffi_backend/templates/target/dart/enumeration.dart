@@ -7,14 +7,16 @@
   final int value;
   const {{ enumeration.name() }}(this.value);
 
-  static {{ enumeration.name() }} _m$fromDiscriminant(int value) => values.firstWhere(
-    (variant) => variant.value == value,
-    orElse: () => throw ArgumentError.value(
+  static {{ enumeration.name() }} _m$fromDiscriminant(int value) => switch (value) {
+{%- for variant in enumeration.c_style_body().variants() %}
+    {{ variant.discriminant() }} => {{ variant.name() }},
+{%- endfor %}
+    _ => throw ArgumentError.value(
       value,
       'value',
       'unknown {{ enumeration.name() }} discriminant',
     ),
-  );
+  };
 
   static {{ enumeration.name() }} _m$wireDecode(_$$BoltWireDecoder _p$reader) =>
       _m$fromDiscriminant(_p$reader.{{ enumeration.c_style_body().read_method() }}());
@@ -34,7 +36,7 @@
   const {{ enumeration.name() }}();
 {%- for variant in enumeration.data_body().variants() %}
 
-{{ variant.member_documentation() }}  factory {{ enumeration.name() }}.{{ variant.name() }}({% if !variant.unit() %}{
+{{ variant.member_documentation() }}  const factory {{ enumeration.name() }}.{{ variant.name() }}({% if !variant.unit() %}{
 {%- for field in variant.fields() %}
     required {{ field.ty() }} {{ field.name() }},{% endfor %}
   }{% endif %}) = {{ variant.class_name() }};

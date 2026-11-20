@@ -1,0 +1,8 @@
+error: BoltFFI: `trait Listener::on_event` cannot define a default body
+ --> tests/diagnostics/unsupported_items/trait_method_with_default_body.rs:5:35
+  |
+5 |       fn on_event(&self, code: u32) {
+  |  ___________________________________^
+6 | |         let _ = code;
+7 | |     }
+  | |_____^

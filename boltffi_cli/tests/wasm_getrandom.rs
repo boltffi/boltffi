@@ -91,9 +91,10 @@ fn the_getrandom_backend_imports_only_the_runtime_entropy_source() {
         String::from_utf8_lossy(&output.stderr),
     );
 
-    let module =
-        std::fs::read(target_dir.join("wasm32-unknown-unknown/debug/wasm_getrandom_fixture.wasm"))
-            .expect("the build wrote the module");
+    let module = std::fs::read(
+        target_dir.join("wasm32-unknown-unknown/release/wasm_getrandom_fixture.wasm"),
+    )
+    .expect("the build wrote the module");
     assert_eq!(
         imports(&module),
         [("env".to_owned(), "__boltffi_getrandom".to_owned())],

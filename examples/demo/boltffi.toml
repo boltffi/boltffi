@@ -68,3 +68,7 @@ output = "../platforms/csharp/dist"
 [targets.c]
 enabled = true
 output = "../platforms/c/generated"
+
+[targets.ruby]
+enabled = true
+output = "../platforms/ruby/dist"

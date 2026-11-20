@@ -4,9 +4,9 @@ expression: "rendered_fixture(\"exports/closure_class_handle_return\")"
 ---
 ===== jni/demo.h =====
 <c abi support declarations>
-void boltffi_release_class_demo_engine(uint64_t handle);
-uint64_t boltffi_init_class_demo_engine_new(void);
-FfiStatus boltffi_function_demo_install(uint64_t (*callback_call)(void *), void *callback_context, void (*callback_release)(void *));
+void boltffi_release_class_4demo6Engine(uint64_t handle);
+uint64_t boltffi_init_class_4demo6Engine3new(void);
+FfiStatus boltffi_function_4demo7install(uint64_t (*callback_call)(void *), void *callback_context, void (*callback_release)(void *));
 
 ===== jni/jni_glue.c =====
 <jni source includes>
@@ -113,28 +113,28 @@ JNIEXPORT void JNICALL JNI_OnUnload(JavaVM *vm, void *reserved) {
     boltffi_jni_native_class = NULL;
 }
 
-JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1release_1class_1demo_1engine(JNIEnv *env, jclass cls, jlong handle) {
+JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1release_1class_14demo6Engine(JNIEnv *env, jclass cls, jlong handle) {
     (void)cls;
 
     (void)env;
-    boltffi_release_class_demo_engine(handle);
+    boltffi_release_class_4demo6Engine(handle);
 
     return;
 }
 
-JNIEXPORT jlong JNICALL Java_com_boltffi_demo_Native_boltffi_1init_1class_1demo_1engine_1new(JNIEnv *env, jclass cls) {
+JNIEXPORT jlong JNICALL Java_com_boltffi_demo_Native_boltffi_1init_1class_14demo6Engine3new(JNIEnv *env, jclass cls) {
     (void)cls;
 
     (void)env;
-    uint64_t __boltffi_result = boltffi_init_class_demo_engine_new();
+    uint64_t __boltffi_result = boltffi_init_class_4demo6Engine3new();
 
     return (jlong)__boltffi_result;
 }
 
-JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1function_1demo_1install(JNIEnv *env, jclass cls, jlong callback) {
+JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1function_14demo7install(JNIEnv *env, jclass cls, jlong callback) {
     (void)cls;
 
-    FfiStatus __boltffi_status = boltffi_function_demo_install(boltffi_jni____closure__to_demo_engine_call, (void *)callback, boltffi_jni____closure__to_demo_engine_release);
+    FfiStatus __boltffi_status = boltffi_function_4demo7install(boltffi_jni____closure__to_demo_engine_call, (void *)callback, boltffi_jni____closure__to_demo_engine_release);
 
     if (__boltffi_status.code != 0) {
         boltffi_jni_throw_status(env, __boltffi_status);

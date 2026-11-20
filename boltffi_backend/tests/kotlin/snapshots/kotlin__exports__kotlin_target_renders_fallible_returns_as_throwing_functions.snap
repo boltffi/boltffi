@@ -8,10 +8,10 @@ expression: "rendered_fixture(\"exports/fallible_returns\")"
 package com.boltffi.demo
 @Suppress("FunctionName")
 private object Native {
-    @JvmStatic external fun boltffi_function_demo_checked_add(left: Int, right: Int): Int
-    @JvmStatic external fun boltffi_function_demo_parse_point(text: java.nio.ByteBuffer, __boltffi_text_len: Int): ByteArray?
-    @JvmStatic external fun boltffi_function_demo_validate_name(name: java.nio.ByteBuffer, __boltffi_name_len: Int): ByteArray?
-    @JvmStatic external fun boltffi_function_demo_store_name(name: java.nio.ByteBuffer, __boltffi_name_len: Int): Unit
+    @JvmStatic external fun boltffi_function_4demo11checked_add(left: Int, right: Int): Int
+    @JvmStatic external fun boltffi_function_4demo11parse_point(text: java.nio.ByteBuffer, __boltffi_text_len: Int): ByteArray?
+    @JvmStatic external fun boltffi_function_4demo13validate_name(name: java.nio.ByteBuffer, __boltffi_name_len: Int): ByteArray?
+    @JvmStatic external fun boltffi_function_4demo10store_name(name: java.nio.ByteBuffer, __boltffi_name_len: Int): Unit
 }
 
 
@@ -74,7 +74,7 @@ sealed class MathError(val value: Int) : Exception() {
 }
 
 fun checkedAdd(left: Int, right: Int): Int {
-    return try { Native.boltffi_function_demo_checked_add(left, right) } catch (__boltffi_error: BoltFfiErrorBufferException) { run { val __boltffi_error_reader = WireReader(__boltffi_error.bytes); throw MathError.fromValue(__boltffi_error_reader.readI32()) } }
+    return try { Native.boltffi_function_4demo11checked_add(left, right) } catch (__boltffi_error: BoltFfiErrorBufferException) { run { val __boltffi_error_reader = WireReader(__boltffi_error.bytes); throw MathError.fromValue(__boltffi_error_reader.readI32()) } }
 }
 
 fun parsePoint(text: String): Point {
@@ -82,7 +82,7 @@ fun parsePoint(text: String): Point {
     val __boltffi_text_writer = __boltffi_text_wire.writer
     __boltffi_text_writer.writeString(text)
     try {
-        val __boltffi_result = try { Native.boltffi_function_demo_parse_point(__boltffi_text_wire.directBuffer(), __boltffi_text_wire.size()) } catch (__boltffi_error: BoltFfiErrorBufferException) { run { val __boltffi_error_reader = WireReader(__boltffi_error.bytes); throw MathError.fromValue(__boltffi_error_reader.readI32()) } } ?: throw IllegalStateException("null buffer returned")
+        val __boltffi_result = try { Native.boltffi_function_4demo11parse_point(__boltffi_text_wire.directBuffer(), __boltffi_text_wire.size()) } catch (__boltffi_error: BoltFfiErrorBufferException) { run { val __boltffi_error_reader = WireReader(__boltffi_error.bytes); throw MathError.fromValue(__boltffi_error_reader.readI32()) } } ?: throw IllegalStateException("null buffer returned")
         return Point.fromByteArray(__boltffi_result)
     } finally {
         __boltffi_text_wire.close()
@@ -94,7 +94,7 @@ fun validateName(name: String): String {
     val __boltffi_name_writer = __boltffi_name_wire.writer
     __boltffi_name_writer.writeString(name)
     try {
-        val __boltffi_result = try { Native.boltffi_function_demo_validate_name(__boltffi_name_wire.directBuffer(), __boltffi_name_wire.size()) } catch (__boltffi_error: BoltFfiErrorBufferException) { run { val __boltffi_error_reader = WireReader(__boltffi_error.bytes); throw MathError.fromValue(__boltffi_error_reader.readI32()) } } ?: throw IllegalStateException("null buffer returned")
+        val __boltffi_result = try { Native.boltffi_function_4demo13validate_name(__boltffi_name_wire.directBuffer(), __boltffi_name_wire.size()) } catch (__boltffi_error: BoltFfiErrorBufferException) { run { val __boltffi_error_reader = WireReader(__boltffi_error.bytes); throw MathError.fromValue(__boltffi_error_reader.readI32()) } } ?: throw IllegalStateException("null buffer returned")
         val __boltffi_reader = WireReader(__boltffi_result)
         return __boltffi_reader.readString()
     } finally {
@@ -107,7 +107,7 @@ fun storeName(name: String) {
     val __boltffi_name_writer = __boltffi_name_wire.writer
     __boltffi_name_writer.writeString(name)
     try {
-        try { Native.boltffi_function_demo_store_name(__boltffi_name_wire.directBuffer(), __boltffi_name_wire.size()) } catch (__boltffi_error: BoltFfiErrorBufferException) { run { val __boltffi_error_reader = WireReader(__boltffi_error.bytes); throw MathError.fromValue(__boltffi_error_reader.readI32()) } }
+        try { Native.boltffi_function_4demo10store_name(__boltffi_name_wire.directBuffer(), __boltffi_name_wire.size()) } catch (__boltffi_error: BoltFfiErrorBufferException) { run { val __boltffi_error_reader = WireReader(__boltffi_error.bytes); throw MathError.fromValue(__boltffi_error_reader.readI32()) } }
     } finally {
         __boltffi_name_wire.close()
     }
