@@ -219,11 +219,11 @@ impl<'context> Writer<'context> {
     }
 
     fn single_statement(statements: Vec<Result<WriteStatement>>) -> Result<Statement> {
-        let mut statements = statements.into_iter().collect::<Result<Vec<_>>>()?;
-        match statements.len() {
-            1 => Ok(statements.remove(0).into_statement()),
-            _ => Err(KotlinHost::unsupported("multi-statement wire writer")),
-        }
+        statements
+            .into_iter()
+            .map(|statement| statement.map(WriteStatement::into_statement))
+            .collect::<Result<Vec<_>>>()
+            .map(Statement::sequence)
     }
 
     fn with_current(

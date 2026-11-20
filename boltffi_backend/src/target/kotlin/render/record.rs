@@ -16,9 +16,11 @@ use crate::{
         render::{
             AssociatedConstants, Documentation,
             default_value::DefaultExpression,
+            equality::{Comparison, StructuralEquality},
             field::EncodedField,
             function::{ExportedCall, ExportedCallRenderer, ReceiverCarrier, ReceiverMutation},
             signature::validate_exception_fields,
+            type_name::KotlinType,
         },
         syntax::{ArgumentList, Expression, Identifier, Statement, TypeName},
     },
@@ -29,6 +31,7 @@ use crate::{
 struct RecordTemplate {
     record: Record,
     constants: Vec<String>,
+    equality: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -43,6 +46,7 @@ pub struct Record {
     initializers: Vec<ExportedCall>,
     static_methods: Vec<ExportedCall>,
     instance_methods: Vec<ExportedCall>,
+    equality: Option<StructuralEquality>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -68,6 +72,7 @@ pub struct Field {
     name: Identifier,
     documentation: Documentation,
     ty: TypeName,
+    comparison: Comparison,
     read: Expression,
     read_from_base: Option<Expression>,
     write: Statement,
@@ -97,16 +102,29 @@ impl Record {
                     .map(|field| (field.name(), field.ty())),
             )?;
         }
+        record.equality = StructuralEquality::new(
+            record.name.clone(),
+            record
+                .fields
+                .iter()
+                .map(|field| (&field.name, &field.comparison)),
+        )?;
         Ok(record)
     }
 
     pub fn render(self) -> Result<Emitted> {
         let prefix = if self.empty() { "    " } else { "        " };
         let constants = self.constants.render(prefix)?;
+        let equality = self
+            .equality
+            .as_ref()
+            .map(|equality| equality.render("    "))
+            .transpose()?;
         Ok(Emitted::primary(
             RecordTemplate {
                 record: self,
                 constants,
+                equality,
             }
             .render()?,
         ))
@@ -303,6 +321,7 @@ impl Record {
                 bridge,
                 context,
             )?,
+            equality: None,
         })
     }
 
@@ -356,6 +375,7 @@ impl Record {
                 bridge,
                 context,
             )?,
+            equality: None,
         })
     }
 
@@ -537,6 +557,7 @@ impl Field {
         Ok(Self {
             documentation: Documentation::new(field.meta().doc()),
             ty: KotlinPrimitive::new(primitive).api_type()?,
+            comparison: KotlinType::comparison(&TypeRef::Primitive(primitive), context)?,
             read: Expression::call(
                 padded(reader, "skip")?,
                 Identifier::parse(format!("read{wire_method_suffix}"))?,
@@ -584,6 +605,7 @@ impl Field {
         Ok(Self {
             documentation,
             ty: field.ty().clone(),
+            comparison: field.comparison().clone(),
             read: field.read().clone(),
             read_from_base: None,
             write: field.write().clone(),
