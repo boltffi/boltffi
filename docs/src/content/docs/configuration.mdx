@@ -41,7 +41,7 @@ name = "mylib"
 crate = "my_lib"
 ```
 
-BoltFFI scans and builds the crate specified by `crate`, but uses `name` for all generated module names and paths.
+BoltFFI builds the crate specified by `crate` and reads its bindings from it, but uses `name` for all generated module names and paths.
 
 ## Cargo Arguments
 
@@ -327,14 +327,14 @@ Upload `MyLib.xcframework.zip` to your GitHub release. Consumers can then add yo
 
 ### Type Mappings
 
-If you use custom types that should map to native Swift types, configure type mappings. For example, if your Rust code uses a `Uuid` type that should become Swift's `UUID`:
+If you use custom types that should map to native Swift types, configure type mappings. Each key names a type declared with `custom_type!`. For example, if your crate declares an `ItemId` custom type with a `String` repr that holds a UUID, map it to Swift's `UUID`:
 
 ```toml
 [targets.apple.swift.type_mappings]
-Uuid = { type = "UUID", conversion = "uuid_string" }
+ItemId = { type = "UUID", conversion = "uuid_string" }
 ```
 
-The generated Swift uses `UUID` directly instead of a wrapper type. BoltFFI handles the string conversion automatically at the FFI boundary.
+The generated Swift uses `UUID` directly instead of a wrapper type. BoltFFI handles the string conversion automatically at the FFI boundary. The builtin `uuid::Uuid` and `url::Url` already map to native types and need no mapping.
 
 Available conversions:
 - `uuid_string`: Converts between String and UUID
@@ -738,7 +738,7 @@ Map custom types to native TypeScript types:
 
 ```toml
 [targets.wasm.typescript.type_mappings]
-Uuid = { type = "string", conversion = "uuid_string" }
+ItemId = { type = "string", conversion = "uuid_string" }
 ```
 
 Since TypeScript doesn't have native UUID or URL types, these typically map to `string`.
@@ -825,7 +825,7 @@ macos_architectures = ["arm64", "x86_64"]
 module_name = "MyLib"
 
 [targets.apple.swift.type_mappings]
-Uuid = { type = "UUID", conversion = "uuid_string" }
+ItemId = { type = "UUID", conversion = "uuid_string" }
 
 [targets.apple.spm]
 layout = "ffi-only"

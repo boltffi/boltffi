@@ -6,10 +6,32 @@ expression: "rendered_fixture(\"enums/transparent\")"
 @file:OptIn(kotlin.ExperimentalUnsignedTypes::class)
 
 package com.boltffi.demo
+
+import kotlinx.coroutines.launch
 @Suppress("FunctionName")
 private object Native {
-    @JvmStatic external fun boltffi_function_demo_echo_envelope(envelope: java.nio.ByteBuffer, __boltffi_envelope_len: Int): ByteArray?
-    @JvmStatic external fun boltffi_function_demo_echo_envelopes(envelopes: java.nio.ByteBuffer, __boltffi_envelopes_len: Int): ByteArray?
+    @JvmStatic external fun boltffi_init_enum_4demo8Envelope3new(sequence: Int): ByteArray?
+    @JvmStatic external fun boltffi_init_enum_4demo8Envelope4load(sequence: Int): Long
+    @JvmStatic external fun boltffi_async_init_enum_4demo8Envelope4load_poll(handle: Long, callback_data: Long): Byte
+    @JvmStatic external fun boltffi_async_init_enum_4demo8Envelope4load_complete(handle: Long): ByteArray?
+    @JvmStatic external fun boltffi_async_init_enum_4demo8Envelope4load_cancel(handle: Long): Unit
+    @JvmStatic external fun boltffi_async_init_enum_4demo8Envelope4load_free(handle: Long): Unit
+    @JvmStatic external fun boltffi_async_init_enum_4demo8Envelope4load_panic_message(handle: Long): ByteArray?
+    @JvmStatic external fun boltffi_method_enum_4demo8Envelope12default_step(step: Int): Int
+    @JvmStatic external fun boltffi_method_enum_4demo8Envelope6offset(`receiver`: java.nio.ByteBuffer, __boltffi_receiver_len: Int, step: Int): Int
+    @JvmStatic external fun boltffi_method_enum_4demo8Envelope12async_offset(`receiver`: java.nio.ByteBuffer, __boltffi_receiver_len: Int, step: Int): Long
+    @JvmStatic external fun boltffi_async_method_enum_4demo8Envelope12async_offset_poll(handle: Long, callback_data: Long): Byte
+    @JvmStatic external fun boltffi_async_method_enum_4demo8Envelope12async_offset_complete(handle: Long): Int
+    @JvmStatic external fun boltffi_async_method_enum_4demo8Envelope12async_offset_cancel(handle: Long): Unit
+    @JvmStatic external fun boltffi_async_method_enum_4demo8Envelope12async_offset_free(handle: Long): Unit
+    @JvmStatic external fun boltffi_async_method_enum_4demo8Envelope12async_offset_panic_message(handle: Long): ByteArray?
+    @JvmStatic external fun boltffi_method_enum_4demo5Reply12reply_offset(`receiver`: java.nio.ByteBuffer, __boltffi_receiver_len: Int, step: Int): Int
+    @JvmStatic external fun boltffi_function_4demo13echo_envelope(envelope: java.nio.ByteBuffer, __boltffi_envelope_len: Int): ByteArray?
+    @JvmStatic external fun boltffi_function_4demo14echo_envelopes(envelopes: java.nio.ByteBuffer, __boltffi_envelopes_len: Int): ByteArray?
+
+    @JvmStatic fun boltffiFutureContinuationCallback(handle: Long, pollResult: Byte) {
+        BoltFfiAsync.resume(handle, pollResult)
+    }
 }
 
 
@@ -168,6 +190,64 @@ sealed interface Envelope {
             val reader = WireReader(bytes)
             return fromReader(reader)
         }
+
+        fun new(sequence: UInt = 7u): com.boltffi.demo.Envelope {
+            val __boltffi_result = Native.boltffi_init_enum_4demo8Envelope3new(sequence.toInt()) ?: throw IllegalStateException("null buffer returned")
+            val __boltffi_reader = WireReader(__boltffi_result)
+            return com.boltffi.demo.Envelope.fromReader(__boltffi_reader)
+        }
+
+        suspend fun load(sequence: UInt = 9u): com.boltffi.demo.Envelope {
+            return boltffiCallAsync(
+                createFuture = {
+                    Native.boltffi_init_enum_4demo8Envelope4load(sequence.toInt())
+                },
+                poll = { future, contHandle -> Native.boltffi_async_init_enum_4demo8Envelope4load_poll(future, contHandle) },
+                complete = { future ->
+                    val __boltffi_result = Native.boltffi_async_init_enum_4demo8Envelope4load_complete(future) ?: throw IllegalStateException("null buffer returned")
+                    val __boltffi_reader = WireReader(__boltffi_result)
+                    com.boltffi.demo.Envelope.fromReader(__boltffi_reader)
+                },
+                free = { future -> Native.boltffi_async_init_enum_4demo8Envelope4load_free(future) },
+                cancel = { future -> Native.boltffi_async_init_enum_4demo8Envelope4load_cancel(future) },
+            )
+        }
+
+        fun defaultStep(step: UInt = 3u): UInt {
+            return Native.boltffi_method_enum_4demo8Envelope12default_step(step.toInt()).toUInt()
+        }
+    }
+
+    fun offset(step: UInt = 3u): UInt {
+        val __boltffi_envelope_wire = WireWriterPool.acquire(Envelope.wireSize(this))
+        val __boltffi_envelope_writer = __boltffi_envelope_wire.writer
+        Envelope.writeTo(this, __boltffi_envelope_writer)
+        try {
+            return Native.boltffi_method_enum_4demo8Envelope6offset(__boltffi_envelope_wire.directBuffer(), __boltffi_envelope_wire.size(), step.toInt()).toUInt()
+        } finally {
+            __boltffi_envelope_wire.close()
+        }
+    }
+
+    suspend fun asyncOffset(step: UInt = 5u): UInt {
+        return boltffiCallAsync(
+            createFuture = {
+                val __boltffi_envelope_wire = WireWriterPool.acquire(Envelope.wireSize(this))
+                val __boltffi_envelope_writer = __boltffi_envelope_wire.writer
+                Envelope.writeTo(this, __boltffi_envelope_writer)
+                try {
+                    Native.boltffi_method_enum_4demo8Envelope12async_offset(__boltffi_envelope_wire.directBuffer(), __boltffi_envelope_wire.size(), step.toInt())
+                } finally {
+                    __boltffi_envelope_wire.close()
+                }
+            },
+            poll = { future, contHandle -> Native.boltffi_async_method_enum_4demo8Envelope12async_offset_poll(future, contHandle) },
+            complete = { future ->
+                Native.boltffi_async_method_enum_4demo8Envelope12async_offset_complete(future).toUInt()
+            },
+            free = { future -> Native.boltffi_async_method_enum_4demo8Envelope12async_offset_free(future) },
+            cancel = { future -> Native.boltffi_async_method_enum_4demo8Envelope12async_offset_cancel(future) },
+        )
     }
 }
 
@@ -221,6 +301,17 @@ sealed interface Reply {
             return fromReader(reader)
         }
     }
+
+    fun replyOffset(step: UInt = 11u): UInt {
+        val __boltffi_reply_wire = WireWriterPool.acquire(Reply.wireSize(this))
+        val __boltffi_reply_writer = __boltffi_reply_wire.writer
+        Reply.writeTo(this, __boltffi_reply_writer)
+        try {
+            return Native.boltffi_method_enum_4demo5Reply12reply_offset(__boltffi_reply_wire.directBuffer(), __boltffi_reply_wire.size(), step.toInt()).toUInt()
+        } finally {
+            __boltffi_reply_wire.close()
+        }
+    }
 }
 
 fun echoEnvelope(envelope: Envelope): Envelope {
@@ -228,7 +319,7 @@ fun echoEnvelope(envelope: Envelope): Envelope {
     val __boltffi_envelope_writer = __boltffi_envelope_wire.writer
     Envelope.writeTo(envelope, __boltffi_envelope_writer)
     try {
-        val __boltffi_result = Native.boltffi_function_demo_echo_envelope(__boltffi_envelope_wire.directBuffer(), __boltffi_envelope_wire.size()) ?: throw IllegalStateException("null buffer returned")
+        val __boltffi_result = Native.boltffi_function_4demo13echo_envelope(__boltffi_envelope_wire.directBuffer(), __boltffi_envelope_wire.size()) ?: throw IllegalStateException("null buffer returned")
         val __boltffi_reader = WireReader(__boltffi_result)
         return Envelope.fromReader(__boltffi_reader)
     } finally {
@@ -241,7 +332,7 @@ fun echoEnvelopes(envelopes: List<Envelope>): List<Envelope> {
     val __boltffi_envelopes_writer = __boltffi_envelopes_wire.writer
     __boltffi_envelopes_writer.writeSequence(envelopes, envelopes.size, { __boltffi_envelopes_writer, __boltffi_value_0 -> Envelope.writeTo(__boltffi_value_0, __boltffi_envelopes_writer) })
     try {
-        val __boltffi_result = Native.boltffi_function_demo_echo_envelopes(__boltffi_envelopes_wire.directBuffer(), __boltffi_envelopes_wire.size()) ?: throw IllegalStateException("null buffer returned")
+        val __boltffi_result = Native.boltffi_function_4demo14echo_envelopes(__boltffi_envelopes_wire.directBuffer(), __boltffi_envelopes_wire.size()) ?: throw IllegalStateException("null buffer returned")
         val __boltffi_reader = WireReader(__boltffi_result)
         return __boltffi_reader.readSequence({ __boltffi_reader -> Envelope.fromReader(__boltffi_reader) })
     } finally {

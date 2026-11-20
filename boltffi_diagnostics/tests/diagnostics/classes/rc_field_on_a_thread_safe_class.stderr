@@ -1,0 +1,47 @@
+error[E0277]: `Rc<u32>` cannot be sent between threads safely
+ --> tests/diagnostics/classes/rc_field_on_a_thread_safe_class.rs:2:1
+  |
+2 | #[boltffi::export]
+  | ^^^^^^^^^^^^^^^^^^ `Rc<u32>` cannot be sent between threads safely
+  |
+  = help: within `C`, the trait `Send` is not implemented for `Rc<u32>`
+note: required because it appears within the type `C`
+ --> tests/diagnostics/classes/rc_field_on_a_thread_safe_class.rs:3:12
+  |
+3 | pub struct C {
+  |            ^
+note: required for `C` to implement `BoltFFIThreadSafe`
+ --> tests/diagnostics/classes/rc_field_on_a_thread_safe_class.rs:2:1
+  |
+2 | #[boltffi::export]
+  | ^^^^^^^^^^^^^^^^^^
+note: required by a bound in `_assert`
+ --> tests/diagnostics/classes/rc_field_on_a_thread_safe_class.rs:2:1
+  |
+2 | #[boltffi::export]
+  | ^^^^^^^^^^^^^^^^^^ required by this bound in `_assert`
+  = note: this error originates in the attribute macro `boltffi::export` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: `Rc<u32>` cannot be shared between threads safely
+ --> tests/diagnostics/classes/rc_field_on_a_thread_safe_class.rs:2:1
+  |
+2 | #[boltffi::export]
+  | ^^^^^^^^^^^^^^^^^^ `Rc<u32>` cannot be shared between threads safely
+  |
+  = help: within `C`, the trait `Sync` is not implemented for `Rc<u32>`
+note: required because it appears within the type `C`
+ --> tests/diagnostics/classes/rc_field_on_a_thread_safe_class.rs:3:12
+  |
+3 | pub struct C {
+  |            ^
+note: required for `C` to implement `BoltFFIThreadSafe`
+ --> tests/diagnostics/classes/rc_field_on_a_thread_safe_class.rs:2:1
+  |
+2 | #[boltffi::export]
+  | ^^^^^^^^^^^^^^^^^^
+note: required by a bound in `_assert`
+ --> tests/diagnostics/classes/rc_field_on_a_thread_safe_class.rs:2:1
+  |
+2 | #[boltffi::export]
+  | ^^^^^^^^^^^^^^^^^^ required by this bound in `_assert`
+  = note: this error originates in the attribute macro `boltffi::export` (in Nightly builds, run with -Z macro-backtrace for more info)

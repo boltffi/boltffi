@@ -1,0 +1,12 @@
+[package]
+name = "boltffi_diagnostics"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dev-dependencies]
+boltffi.workspace = true
+trybuild = "1.0.121"
+
+[lints]
+workspace = true

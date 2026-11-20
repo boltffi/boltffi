@@ -22,16 +22,21 @@ pub struct CustomTypeDef {
     /// Rust source representation type used at the FFI surface.
     pub repr: TypeExpr,
     /// Error type returned by the fallible representation-to-remote converter.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<CustomRemoteType>,
     /// Converter functions supplied by the source declaration.
     pub converters: CustomTypeConverters,
     /// User attributes preserved from the custom type declaration.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub user_attrs: Vec<UserAttr>,
     /// Documentation attached to the custom type.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub doc: Option<DocComment>,
     /// Deprecation metadata attached to the custom type.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub deprecated: Option<DeprecationInfo>,
     /// Visibility and source location for diagnostics.
+    #[serde(default, skip_serializing_if = "Source::is_exported")]
     pub source: Source,
     /// Span available during macro expansion.
     #[serde(default, skip_serializing, skip_deserializing)]
@@ -126,6 +131,7 @@ pub struct CustomRemotePathSegment {
     /// The canonical spelling of this path segment.
     pub name: NamePart,
     /// Generic arguments attached to this segment.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub arguments: Vec<CustomRemoteGenericArgument>,
 }
 

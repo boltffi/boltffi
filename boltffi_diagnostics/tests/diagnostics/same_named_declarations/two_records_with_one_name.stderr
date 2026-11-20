@@ -1,0 +1,11 @@
+error[E0428]: the name `__boltffi_declared_Point` is defined multiple times
+  --> tests/diagnostics/same_named_declarations/two_records_with_one_name.rs:13:5
+   |
+ 4 |     #[boltffi::data]
+   |     ---------------- previous definition of the macro `__boltffi_declared_Point` here
+...
+13 |     #[boltffi::data]
+   |     ^^^^^^^^^^^^^^^^ `__boltffi_declared_Point` redefined here
+   |
+   = note: `__boltffi_declared_Point` must be defined only once in the macro namespace of this module
+   = note: this error originates in the attribute macro `boltffi::data` (in Nightly builds, run with -Z macro-backtrace for more info)

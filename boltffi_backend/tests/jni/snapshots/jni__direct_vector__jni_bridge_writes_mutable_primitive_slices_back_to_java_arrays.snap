@@ -4,13 +4,13 @@ expression: "rendered_fixture(\"direct_vector/mutable_primitive_slice_parameter\
 ---
 ===== jni/demo.h =====
 <c abi support declarations>
-FfiStatus boltffi_function_demo_increment(uint64_t *values_ptr, uintptr_t values_len);
+FfiStatus boltffi_function_4demo9increment(uint64_t *values_ptr, uintptr_t values_len);
 
 ===== jni/jni_glue.c =====
 <jni source includes>
 <jni exception helpers>
 <jni status helper>
-JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1function_1demo_1increment(JNIEnv *env, jclass cls, jlongArray values) {
+JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1function_14demo9increment(JNIEnv *env, jclass cls, jlongArray values) {
     (void)cls;
 
     jlong *__boltffi_values_ptr = NULL;
@@ -26,7 +26,7 @@ JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1function_1demo_1inc
         goto __boltffi_error;
     }
 
-    FfiStatus __boltffi_status = boltffi_function_demo_increment((uint64_t *)__boltffi_values_ptr, (uintptr_t)__boltffi_values_len);
+    FfiStatus __boltffi_status = boltffi_function_4demo9increment((uint64_t *)__boltffi_values_ptr, (uintptr_t)__boltffi_values_len);
 
     if (__boltffi_values_ptr != NULL) {
         (*env)->ReleaseLongArrayElements(env, values, __boltffi_values_ptr, 0);

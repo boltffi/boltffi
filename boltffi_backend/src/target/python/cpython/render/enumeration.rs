@@ -298,7 +298,7 @@ impl Enumeration {
         Ok(Self {
             symbols,
             shape: Shape::Data {
-                transparent: enumeration.has_transparent_variants(),
+                transparent: context.enum_is_transparent(enumeration.id()),
             },
             method,
             callables,

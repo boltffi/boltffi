@@ -91,7 +91,11 @@ fn generated_files(output: GeneratedOutput) -> Vec<(String, String)> {
         .iter()
         .map(|file| {
             (
-                file.path().as_path().display().to_string(),
+                file.path()
+                    .as_path()
+                    .display()
+                    .to_string()
+                    .replace('\\', "/"),
                 file.contents().to_owned(),
             )
         })

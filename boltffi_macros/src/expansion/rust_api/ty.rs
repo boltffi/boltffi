@@ -7,7 +7,7 @@ use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{Ident, Type, parse_str, parse2};
 
-use crate::expansion::error::Error;
+use crate::expansion::error::{Error, FLOAT_MAP_KEY};
 
 pub struct TypeTokens {
     ty: Type,
@@ -183,9 +183,9 @@ impl MapKey {
 
     fn require_key_type(&self, type_expr: &TypeExpr) -> Result<(), Error> {
         match type_expr {
-            TypeExpr::Primitive(Primitive::F32 | Primitive::F64) => Err(
-                Error::UnsupportedExpansion("floating-point encoded map key"),
-            ),
+            TypeExpr::Primitive(Primitive::F32 | Primitive::F64) => {
+                Err(Error::Unsupported(FLOAT_MAP_KEY))
+            }
             TypeExpr::Custom { .. } => Err(Error::UnsupportedExpansion("custom encoded map key")),
             TypeExpr::Str | TypeExpr::Slice(_) => {
                 Err(Error::UnsupportedExpansion("unsized encoded map key"))
@@ -372,7 +372,7 @@ impl TypeTokens {
         })
     }
 
-    fn path_tokens(path: &Path) -> Result<TokenStream, Error> {
+    pub(crate) fn path_tokens(path: &Path) -> Result<TokenStream, Error> {
         let path = Self::path_string(path)?;
         parse_str::<Type>(&path)
             .map(|ty| quote!(#ty))
@@ -467,10 +467,9 @@ impl TypeTokens {
 
 #[cfg(test)]
 mod tests {
-    use boltffi_ast::{PackageInfo, Path, PathRoot, PathSegment, ReturnDef, TypeExpr};
+    use boltffi_ast::{Path, PathRoot, PathSegment, TypeExpr};
 
     use super::TypeTokens;
-    use crate::expansion::rust_api::crate_root::RootModuleTypes;
 
     #[test]
     fn renders_interned_string_with_typed_crate_rooted_pool_path() {
@@ -492,48 +491,6 @@ mod tests {
 
         let rendered = TypeTokens::tokens(&type_expr)
             .expect("typed pool path should render")
-            .to_string();
-        assert_eq!(
-            rendered,
-            ":: boltffi :: InternedString < crate :: pools :: BrowserName >"
-        );
-    }
-
-    #[test]
-    fn scan_root_and_render_preserves_nested_pool_path() {
-        let source = boltffi_scan::scan_file(
-            syn::parse_str(
-                r#"
-                mod pools {
-                    boltffi::interned_string_pool! {
-                        pub BrowserName {
-                            CHROME = "Chrome",
-                        }
-                    }
-                }
-
-                mod api {
-                    use boltffi::InternedString;
-                    use crate::pools::BrowserName;
-
-                    #[export]
-                    pub fn browser() -> InternedString<BrowserName> {
-                        BrowserName::CHROME
-                    }
-                }
-                "#,
-            )
-            .expect("valid source"),
-            PackageInfo::new("demo", None),
-        )
-        .expect("source should scan");
-        let rooted = RootModuleTypes::new(&source.package).contract(&source);
-        let ReturnDef::Value(return_type) = &rooted.functions[0].returns else {
-            panic!("expected value return");
-        };
-
-        let rendered = TypeTokens::tokens(return_type)
-            .expect("scanned interned string should render")
             .to_string();
         assert_eq!(
             rendered,

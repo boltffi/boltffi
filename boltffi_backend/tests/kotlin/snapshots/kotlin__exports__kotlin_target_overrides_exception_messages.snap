@@ -8,12 +8,12 @@ expression: "rendered_fixture(\"enums/error_message\")"
 package com.boltffi.demo
 @Suppress("FunctionName")
 private object Native {
-    @JvmStatic external fun boltffi_function_demo_fail(): Unit
-    @JvmStatic external fun boltffi_function_demo_fail_record(): Unit
-    @JvmStatic external fun boltffi_function_demo_fail_optional_record(): Unit
-    @JvmStatic external fun boltffi_function_demo_fail_shadowed(): Unit
-    @JvmStatic external fun boltffi_function_demo_echo_message(message: java.nio.ByteBuffer, __boltffi_message_len: Int): ByteArray?
-    @JvmStatic external fun boltffi_function_demo_echo_message_record(record: java.nio.ByteBuffer, __boltffi_record_len: Int): ByteArray?
+    @JvmStatic external fun boltffi_function_4demo4fail(): Unit
+    @JvmStatic external fun boltffi_function_4demo11fail_record(): Unit
+    @JvmStatic external fun boltffi_function_4demo20fail_optional_record(): Unit
+    @JvmStatic external fun boltffi_function_4demo13fail_shadowed(): Unit
+    @JvmStatic external fun boltffi_function_4demo12echo_message(message: java.nio.ByteBuffer, __boltffi_message_len: Int): ByteArray?
+    @JvmStatic external fun boltffi_function_4demo19echo_message_record(record: java.nio.ByteBuffer, __boltffi_record_len: Int): ByteArray?
 }
 
 
@@ -351,19 +351,19 @@ sealed class Message {
 }
 
 fun fail() {
-    try { Native.boltffi_function_demo_fail() } catch (__boltffi_error: BoltFfiErrorBufferException) { run { val __boltffi_error_reader = WireReader(__boltffi_error.bytes); throw ServiceError.fromReader(__boltffi_error_reader) } }
+    try { Native.boltffi_function_4demo4fail() } catch (__boltffi_error: BoltFfiErrorBufferException) { run { val __boltffi_error_reader = WireReader(__boltffi_error.bytes); throw ServiceError.fromReader(__boltffi_error_reader) } }
 }
 
 fun failRecord() {
-    try { Native.boltffi_function_demo_fail_record() } catch (__boltffi_error: BoltFfiErrorBufferException) { run { val __boltffi_error_reader = WireReader(__boltffi_error.bytes); throw RecordError.fromReader(__boltffi_error_reader) } }
+    try { Native.boltffi_function_4demo11fail_record() } catch (__boltffi_error: BoltFfiErrorBufferException) { run { val __boltffi_error_reader = WireReader(__boltffi_error.bytes); throw RecordError.fromReader(__boltffi_error_reader) } }
 }
 
 fun failOptionalRecord() {
-    try { Native.boltffi_function_demo_fail_optional_record() } catch (__boltffi_error: BoltFfiErrorBufferException) { run { val __boltffi_error_reader = WireReader(__boltffi_error.bytes); throw OptionalRecordError.fromReader(__boltffi_error_reader) } }
+    try { Native.boltffi_function_4demo20fail_optional_record() } catch (__boltffi_error: BoltFfiErrorBufferException) { run { val __boltffi_error_reader = WireReader(__boltffi_error.bytes); throw OptionalRecordError.fromReader(__boltffi_error_reader) } }
 }
 
 fun failShadowed() {
-    try { Native.boltffi_function_demo_fail_shadowed() } catch (__boltffi_error: BoltFfiErrorBufferException) { run { val __boltffi_error_reader = WireReader(__boltffi_error.bytes); throw ShadowedError.fromReader(__boltffi_error_reader) } }
+    try { Native.boltffi_function_4demo13fail_shadowed() } catch (__boltffi_error: BoltFfiErrorBufferException) { run { val __boltffi_error_reader = WireReader(__boltffi_error.bytes); throw ShadowedError.fromReader(__boltffi_error_reader) } }
 }
 
 fun echoMessage(message: Message): Message {
@@ -371,7 +371,7 @@ fun echoMessage(message: Message): Message {
     val __boltffi_message_writer = __boltffi_message_wire.writer
     message.writeTo(__boltffi_message_writer)
     try {
-        val __boltffi_result = Native.boltffi_function_demo_echo_message(__boltffi_message_wire.directBuffer(), __boltffi_message_wire.size()) ?: throw IllegalStateException("null buffer returned")
+        val __boltffi_result = Native.boltffi_function_4demo12echo_message(__boltffi_message_wire.directBuffer(), __boltffi_message_wire.size()) ?: throw IllegalStateException("null buffer returned")
         val __boltffi_reader = WireReader(__boltffi_result)
         return Message.fromReader(__boltffi_reader)
     } finally {
@@ -384,7 +384,7 @@ fun echoMessageRecord(record: MessageRecord): MessageRecord {
     val __boltffi_record_writer = __boltffi_record_wire.writer
     record.writeTo(__boltffi_record_writer)
     try {
-        val __boltffi_result = Native.boltffi_function_demo_echo_message_record(__boltffi_record_wire.directBuffer(), __boltffi_record_wire.size()) ?: throw IllegalStateException("null buffer returned")
+        val __boltffi_result = Native.boltffi_function_4demo19echo_message_record(__boltffi_record_wire.directBuffer(), __boltffi_record_wire.size()) ?: throw IllegalStateException("null buffer returned")
         val __boltffi_reader = WireReader(__boltffi_result)
         return MessageRecord.fromReader(__boltffi_reader)
     } finally {

@@ -8,7 +8,7 @@ expression: "rendered_fixture(\"direct_vector/record_vector_parameter\")"
 package com.boltffi.demo
 @Suppress("FunctionName")
 private object Native {
-    @JvmStatic external fun boltffi_function_demo_count(values: ByteArray): Int
+    @JvmStatic external fun boltffi_function_4demo5count(values: ByteArray): Int
 }
 
 
@@ -58,5 +58,5 @@ data class Point(
 }
 
 fun count(values: List<Point>): UInt {
-    return Native.boltffi_function_demo_count(DirectVectorCodec.writeRecordList(values, 16, { item, buffer, offset -> item.writeTo(buffer, offset) })).toUInt()
+    return Native.boltffi_function_4demo5count(DirectVectorCodec.writeRecordList(values, 16, { item, buffer, offset -> item.writeTo(buffer, offset) })).toUInt()
 }

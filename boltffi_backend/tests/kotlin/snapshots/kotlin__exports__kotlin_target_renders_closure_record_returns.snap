@@ -8,7 +8,7 @@ expression: "rendered_fixture(\"exports/closure_direct_record_return\")"
 package com.boltffi.demo
 @Suppress("FunctionName")
 private object Native {
-    @JvmStatic external fun boltffi_function_demo_install(callback: Long): Unit
+    @JvmStatic external fun boltffi_function_4demo7install(callback: Long): Unit
 }
 
 fun interface ClosureToPoint {
@@ -84,5 +84,5 @@ data class Point(
 }
 
 fun install(callback: ClosureToPoint) {
-    Native.boltffi_function_demo_install(ClosureToDemoPointCallbacks.insert(callback))
+    Native.boltffi_function_4demo7install(ClosureToDemoPointCallbacks.insert(callback))
 }

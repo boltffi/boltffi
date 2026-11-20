@@ -1,0 +1,5 @@
+error: BoltFFI: a declared type named `Uuid` shadows the builtin `Uuid`, which every signature spelling `Uuid` crosses as; rename the type
+ --> tests/diagnostics/builtin_names/custom_type_named_uuid.rs:8:9
+  |
+8 |     pub Uuid,
+  |         ^^^^

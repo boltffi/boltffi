@@ -46,6 +46,14 @@ impl SyncValueCallback for Transformer {
     }
 }
 
+struct ClosureCaller;
+
+impl SyncClosureCallback for ClosureCaller {
+    fn with_closure(&self, closure: Box<dyn Fn(i32) -> i32>) -> i32 {
+        closure(10) * closure(20)
+    }
+}
+
 struct FixedProvider {
     points: Vec<FixturePoint>,
 }
@@ -717,9 +725,9 @@ mod async_fetcher_foreign_failure {
     #[tokio::test]
     async fn completion_failure_resolves_instead_of_panicking() {
         unsafe {
-            boltffi_register_callback_boltffi_tests_callbacks_async_fetcher(&FAILING_VTABLE);
+            boltffi_register_callback_13boltffi_tests12AsyncFetcher(&FAILING_VTABLE);
         }
-        let handle = boltffi_create_callback_boltffi_tests_callbacks_async_fetcher(7);
+        let handle = boltffi_create_callback_13boltffi_tests12AsyncFetcher(7);
         let fetcher = unsafe { ForeignAsyncFetcher::box_from_callback_handle(handle) };
         let result = invoke_async_impl(*fetcher, 5).await;
         assert_eq!(result, 0);
@@ -759,12 +767,15 @@ mod async_factory_foreign_failure {
     #[should_panic(expected = "required handle")]
     async fn completion_failure_panics_for_a_required_handle_return() {
         unsafe {
-            boltffi_register_callback_boltffi_tests_callbacks_async_callback_factory(
-                &FAILING_VTABLE,
-            );
+            boltffi_register_callback_13boltffi_tests20AsyncCallbackFactory(&FAILING_VTABLE);
         }
-        let handle = boltffi_create_callback_boltffi_tests_callbacks_async_callback_factory(9);
+        let handle = boltffi_create_callback_13boltffi_tests20AsyncCallbackFactory(9);
         let factory = unsafe { ForeignAsyncCallbackFactory::box_from_callback_handle(handle) };
         let _ = invoke_async_factory_impl(*factory, 5).await;
     }
+}
+
+#[test]
+fn callback_method_receives_boxed_closure() {
+    assert_eq!(invoke_sync_closure(Box::new(ClosureCaller), 1), 231);
 }

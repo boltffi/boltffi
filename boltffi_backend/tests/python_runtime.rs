@@ -1,20 +1,8 @@
-//! Builds the rendered CPython extension and runs the package, so the shapes
-//! that only exist at runtime are asserted against a real interpreter.
-//!
-//! Transparent variants are the reason this harness exists: a conforming
-//! direct record's type is built by `PyType_FromSpecWithBases` during package
-//! import, and no amount of rendered-source matching shows whether the
-//! resulting type actually inherits its bases, survives the boxer, or
-//! deallocates cleanly once the python bases pull in their GC flag.
-//!
-//! Every external tool is optional: the test returns instead of failing when
-//! `cc`, `python3` or `python3-config` is missing, the way the C# and Java
-//! smoke tests treat `dotnet` and `javac`.
-
 use std::{
     fs,
     path::{Path, PathBuf},
     process::Command,
+    sync::atomic::{AtomicU64, Ordering},
     time::UNIX_EPOCH,
 };
 
@@ -22,62 +10,14 @@ use boltffi_ast::PackageInfo;
 use boltffi_backend::{GeneratedOutput, target::python::PythonCExtHost};
 use boltffi_binding::{Bindings, Native, lower};
 
-/// Two enums share `Ping`, so the same payload carries a different tag in
-/// each — the reason the tag cannot live on the payload. `Ping` is direct
-/// (one fixed-width primitive) and `Note` is encoded, so both payload lanes
-/// are covered, alongside a wrapped scalar variant and `Unset`. `Mode` is a
-/// C-style enum payload shared the same way, and reused by a wrapped variant.
-const SOURCE: &str = r#"
-#[repr(i32)]
-#[data]
-pub enum Mode {
-    Fast = 0,
-    Slow = 1,
-}
-
-#[data]
-pub struct Ping {
-    sequence: u32,
-}
-
-#[data]
-pub struct Note {
-    body: String,
-}
-
-#[data]
-pub enum Envelope {
-    Unset,
-    #[boltffi::transparent]
-    Ping(Ping),
-    #[boltffi::transparent]
-    Note(Note),
-    Raw(String),
-    #[boltffi::transparent]
-    Mode(Mode),
-    Fallback(Mode),
-}
-
-#[data]
-pub enum Reply {
-    #[boltffi::transparent]
-    Ping(Ping),
-    Ack,
-    #[boltffi::transparent]
-    Mode(Mode),
-}
-
-#[export]
-pub fn echo_envelope(envelope: Envelope) -> Envelope {
-    envelope
-}
-"#;
+const SOURCE: &str = include_str!("fixtures/source/enums/transparent.rs");
+static NEXT_PYTHON_PACKAGE: AtomicU64 = AtomicU64::new(0);
 
 /// Exercises the package through the interpreter. Printing `ok` is the
 /// contract: a python-level assertion failure exits non-zero, and anything
 /// that silently skips the file would print nothing.
 const SCRIPT: &str = r#"
-import gc, pickle, sys
+import asyncio, gc, importlib, pickle, sys
 sys.path.insert(0, sys.argv[1])
 import demo
 
@@ -86,6 +26,26 @@ assert [c.__name__ for c in demo.Ping.__mro__] == ["Ping", "Envelope", "Reply", 
 assert [c.__name__ for c in demo.Note.__mro__] == ["Note", "Envelope", "object"], demo.Note.__mro__
 
 ping, note = demo.Ping(sequence=7), demo.Note(body="hi")
+assert demo.echo_envelope(ping) == ping
+assert demo.echo_envelope(note) == note
+values = [ping, note, demo.EnvelopeUnset(), demo.EnvelopeRaw("raw")]
+assert demo.echo_envelopes(values) == values
+assert demo.Envelope.new() == demo.Ping(sequence=7)
+assert demo.Envelope.new(13) == demo.Ping(sequence=13)
+assert demo.Envelope.default_step() == 3
+assert ping.offset() == 10
+assert ping.offset(2) == 9
+assert ping.reply_offset() == 18
+assert note.offset() == 3
+
+async def check_async():
+    assert await demo.Envelope.load() == demo.Ping(sequence=9)
+    assert await demo.Envelope.load(21) == demo.Ping(sequence=21)
+    assert await ping.async_offset() == 12
+    assert await ping.async_offset(4) == 11
+
+asyncio.run(check_async())
+
 assert isinstance(ping, demo.Envelope) and isinstance(ping, demo.Reply)
 assert isinstance(note, demo.Envelope) and not isinstance(note, demo.Reply)
 
@@ -142,6 +102,105 @@ assert not hasattr(ping, "__dict__")
 assert hash(ping) == hash(demo.Ping(sequence=7))
 assert pickle.loads(pickle.dumps(ping)) == ping
 
+# inheriting python bases makes instances GC-tracked; the dealloc must untrack
+for _ in range(50_000):
+    doomed = demo.Ping(sequence=1)
+    del doomed
+gc.collect()
+
+original_ping_type = demo.Ping
+native_module = demo._native
+
+def check_reload():
+    previous_envelope = demo.Envelope
+    previous_reply = demo.Reply
+    assert importlib.reload(demo) is demo
+    assert demo._native is native_module
+    assert demo.Ping is original_ping_type
+    assert demo.Ping.__bases__ == (demo.Envelope, demo.Reply)
+    assert demo.Envelope is not previous_envelope
+    assert demo.Reply is not previous_reply
+    assert isinstance(ping, demo.Envelope) and isinstance(ping, demo.Reply)
+    assert isinstance(sub_ping, demo.Envelope) and isinstance(sub_ping, demo.Reply)
+    assert not isinstance(ping, previous_envelope)
+    assert demo.echo_envelope(ping) == ping
+    assert demo.echo_envelope(demo.Ping(sequence=11)) == demo.Ping(sequence=11)
+    assert demo.echo_envelope(demo.Note(body="reloaded")) == demo.Note(body="reloaded")
+    assert demo.echo_envelopes([ping, demo.EnvelopeRaw("raw"), demo.EnvelopeUnset()]) == [ping, demo.EnvelopeRaw("raw"), demo.EnvelopeUnset()]
+    assert demo.Envelope._boltffi_from_wire(demo.Envelope._boltffi_wire_value(ping)) == ping
+    assert demo.Reply._boltffi_from_wire(demo.Reply._boltffi_wire_value(ping)) == ping
+    assert demo.Envelope.new() == demo.Ping(sequence=7)
+    assert ping.offset() == 10
+    assert ping.reply_offset() == 18
+    assert pickle.loads(pickle.dumps(ping)) == ping
+    asyncio.run(check_async())
+
+check_reload()
+check_reload()
+
+print("ok")
+"#;
+
+#[test]
+fn python_package_runs_transparent_variants_against_the_interpreter() {
+    PythonPackage::run(SOURCE, SCRIPT);
+}
+
+/// `Mode` is a C-style enum payload of two enums, so the same member carries a
+/// different tag in each, next to record payloads, and `Fallback` reuses it in
+/// a wrapped variant.
+const C_STYLE_SOURCE: &str = r#"
+#[repr(i32)]
+#[data]
+pub enum Mode {
+    Fast = 0,
+    Slow = 1,
+}
+
+#[data]
+#[derive(Clone, Copy)]
+pub struct Ping {
+    pub sequence: u32,
+}
+
+#[data]
+pub struct Note {
+    pub body: String,
+}
+
+#[data]
+pub enum Envelope {
+    Unset,
+    #[boltffi::transparent]
+    Ping(Ping),
+    #[boltffi::transparent]
+    Note(Note),
+    Raw(String),
+    #[boltffi::transparent]
+    Mode(Mode),
+    Fallback(Mode),
+}
+
+#[data]
+pub enum Reply {
+    #[boltffi::transparent]
+    Ping(Ping),
+    Ack,
+    #[boltffi::transparent]
+    Mode(Mode),
+}
+
+#[export]
+pub fn echo_envelope(envelope: Envelope) -> Envelope {
+    envelope
+}
+"#;
+
+const C_STYLE_SCRIPT: &str = r#"
+import pickle, sys
+sys.path.insert(0, sys.argv[1])
+import demo
+
 # a C-style enum payload is its own variant too: the IntEnum inherits the
 # bases, keeps its int semantics, and decodes back to the same member
 slow, fast = demo.Mode.SLOW, demo.Mode.FAST
@@ -161,68 +220,128 @@ fallback = demo.EnvelopeFallback(slow)
 assert demo.Envelope._boltffi_wire_value(fallback) != demo.Envelope._boltffi_wire_value(slow)
 assert demo.Envelope._boltffi_from_wire(demo.Envelope._boltffi_wire_value(fallback)) == fallback
 assert pickle.loads(pickle.dumps(slow)) is slow
-
-# inheriting python bases makes instances GC-tracked; the dealloc must untrack
-for _ in range(50_000):
-    doomed = demo.Ping(sequence=1)
-    del doomed
-gc.collect()
+assert demo.echo_envelope(slow) is slow
+assert demo.echo_envelope(fallback) == fallback
 
 print("ok")
 "#;
 
 #[test]
-fn python_package_runs_transparent_variants_against_the_interpreter() {
-    if cfg!(windows) {
-        return;
+fn python_package_runs_transparent_c_style_enum_payloads_against_the_interpreter() {
+    PythonPackage::run(C_STYLE_SOURCE, C_STYLE_SCRIPT);
+}
+
+#[test]
+fn python_package_runs_wrapped_variants_when_members_conflict() {
+    let source = format!(
+        "{SOURCE}\n#[data(impl)] impl Reply {{
+        pub fn offset(&self, #[boltffi::default(13)] step: u32) -> u32 {{
+            match self {{ Self::Ping(ping) => ping.sequence + step + 100, Self::Ack => step + 100 }}
+        }}
+    }}"
+    );
+    PythonPackage::run(
+        &source,
+        r#"
+import asyncio, sys
+sys.path.insert(0, sys.argv[1])
+import demo
+
+ping = demo.Ping(sequence=7)
+envelope = demo.EnvelopePing(ping)
+reply = demo.ReplyPing(ping)
+assert not isinstance(ping, demo.Envelope)
+assert not isinstance(ping, demo.Reply)
+assert envelope.offset() == 10
+assert reply.offset() == 120
+assert reply.reply_offset() == 18
+assert demo.echo_envelope(envelope) == envelope
+assert demo.echo_envelopes([envelope, demo.EnvelopeNote(demo.Note("hi")), demo.EnvelopeUnset()]) == [envelope, demo.EnvelopeNote(demo.Note("hi")), demo.EnvelopeUnset()]
+assert demo.Envelope.new() == envelope
+
+async def check_async():
+    assert await demo.Envelope.load() == demo.EnvelopePing(demo.Ping(sequence=9))
+    assert await envelope.async_offset() == 12
+
+asyncio.run(check_async())
+print("ok")
+"#,
+    );
+}
+
+struct PythonPackage {
+    root: PathBuf,
+}
+
+impl PythonPackage {
+    fn new() -> Self {
+        let root = std::env::temp_dir().join(format!(
+            "python-runtime-transparent-{}-{}-{}",
+            std::process::id(),
+            UNIX_EPOCH.elapsed().expect("system clock").as_nanos(),
+            NEXT_PYTHON_PACKAGE.fetch_add(1, Ordering::Relaxed),
+        ));
+        fs::create_dir(&root).expect("create unique Python package directory");
+        Self { root }
     }
-    let (Some(python), Some(includes), Some(compiler)) = (tool("python3"), includes(), tool("cc"))
-    else {
-        return;
-    };
 
-    let bindings = bindings(SOURCE);
-    let output = PythonCExtHost::new()
-        .native_library("demo")
-        .into_target(&bindings)
-        .expect("python target")
-        .render(&bindings)
-        .expect("transparent variants should render");
+    fn run(source: &str, script_source: &str) {
+        if cfg!(windows) {
+            return;
+        }
+        let (Some(python), Some(includes), Some(compiler)) =
+            (tool("python3"), includes(), tool("cc"))
+        else {
+            return;
+        };
 
-    let root = scratch("python-runtime-transparent");
-    write_package(&output, &root);
-    let extension = root.join(native_module_path(&output));
-    let package = extension.parent().expect("package directory").to_owned();
+        let bindings = bindings(source);
+        let output = PythonCExtHost::new()
+            .native_library("demo")
+            .into_target(&bindings)
+            .expect("python target")
+            .render(&bindings)
+            .expect("transparent variants should render");
 
-    // The package dlopens the cdylib on import and resolves every symbol up
-    // front, so the extension needs a library to find. Nothing here calls an
-    // export, so empty definitions are enough.
-    let stub = root.join("stub.c");
-    let native = fs::read_to_string(&extension).expect("generated extension source");
-    fs::write(&stub, stub_library(&native)).expect("write stub source");
-    build_shared_library(&compiler, &stub, &package.join(cdylib_name()), &[]);
-    build_shared_library(
-        &compiler,
-        &extension,
-        &package.join("_native.so"),
-        &[includes, extension_flags()].concat(),
-    );
+        let package = Self::new();
+        let root = &package.root;
+        write_package(&output, root);
+        let extension = root.join(native_module_path(&output));
+        let package_directory = extension.parent().expect("package directory").to_owned();
 
-    let script = root.join("check.py");
-    fs::write(&script, SCRIPT).expect("write check script");
-    let run = Command::new(&python)
-        .arg(&script)
-        .arg(&root)
-        .output()
-        .expect("run the generated package");
-    assert!(
-        run.status.success() && String::from_utf8_lossy(&run.stdout).contains("ok"),
-        "the generated package failed:\n{}\n{}",
-        String::from_utf8_lossy(&run.stdout),
-        String::from_utf8_lossy(&run.stderr),
-    );
+        build_rust_library(root, &package_directory.join(cdylib_name()), source);
+        build_shared_library(
+            &compiler,
+            &extension,
+            &package_directory.join("_native.so"),
+            &[includes, extension_flags()].concat(),
+        );
 
-    fs::remove_dir_all(&root).ok();
+        let script = root.join("check.py");
+        fs::write(&script, script_source).expect("write check script");
+        let run = Command::new(&python)
+            .arg(&script)
+            .arg(root)
+            .output()
+            .expect("run the generated package");
+        assert!(
+            run.status.success() && String::from_utf8_lossy(&run.stdout).contains("ok"),
+            "the generated package failed:\n{}\n{}",
+            String::from_utf8_lossy(&run.stdout),
+            String::from_utf8_lossy(&run.stderr),
+        );
+    }
+}
+
+impl Drop for PythonPackage {
+    fn drop(&mut self) {
+        if let Err(error) = fs::remove_dir_all(&self.root) {
+            eprintln!(
+                "removing Python package {} failed: {error}",
+                self.root.display()
+            );
+        }
+    }
 }
 
 fn bindings(source: &str) -> Bindings<Native> {
@@ -232,6 +351,55 @@ fn bindings(source: &str) -> Bindings<Native> {
     )
     .expect("source should scan");
     lower::<Native>(&source).expect("source should lower")
+}
+
+#[test]
+fn python_target_wraps_conflicting_transparent_members() {
+    [
+        ("#[data(impl)] impl Reply { pub fn offset(&self, step: u32) -> u32 { step } }", true),
+        ("#[data(impl)] impl Ping { pub fn offset(&self, step: u32) -> u32 { self.sequence + step } }", false),
+        ("#[data(impl)] impl Envelope { pub fn sequence(&self) -> u32 { 0 } }", false),
+    ]
+    .into_iter()
+    .for_each(|(conflict, both_enums)| {
+        let source = format!("{SOURCE}\n{conflict}");
+        let expected = if both_enums {
+            source.replace("#[boltffi::transparent]", "")
+        } else {
+            source.replacen("#[boltffi::transparent]", "", 2)
+        };
+        let render = |source: &str| {
+            let bindings = bindings(source);
+            PythonCExtHost::new().native_library("demo").into_target(&bindings)
+                .expect("Python target").render(&bindings)
+                .expect("unsupported transparency must use ordinary variants")
+        };
+        assert!(render(&source) == render(&expected), "ordinary variants must be used");
+    });
+}
+
+#[test]
+fn python_uses_ordinary_error_variants() {
+    let source = SOURCE.replace(
+        "#[data]\npub enum Envelope",
+        "#[boltffi::error]\npub enum Envelope",
+    );
+    let source =
+        format!("{source}\n#[export] pub fn try_envelope() -> Result<u32, Envelope> {{ Ok(1) }}");
+    let expected = source.replacen("#[boltffi::transparent]", "", 2);
+    let render = |source: &str| {
+        let bindings = bindings(source);
+        PythonCExtHost::new()
+            .native_library("demo")
+            .into_target(&bindings)
+            .expect("Python target")
+            .render(&bindings)
+            .expect("ordinary error enum")
+    };
+    assert!(
+        render(&source) == render(&expected),
+        "ordinary variants must be used"
+    );
 }
 
 /// The name of a tool on `PATH`, or `None` when it cannot be run.
@@ -261,15 +429,6 @@ fn includes() -> Option<Vec<String>> {
     )
 }
 
-fn scratch(prefix: &str) -> PathBuf {
-    let root = std::env::temp_dir().join(format!(
-        "{prefix}-{}",
-        UNIX_EPOCH.elapsed().expect("system clock").as_nanos()
-    ));
-    fs::create_dir_all(&root).expect("create scratch directory");
-    root
-}
-
 /// The rendered extension source, which the host places inside the package
 /// module rather than at the tree root.
 fn native_module_path(output: &GeneratedOutput) -> PathBuf {
@@ -282,31 +441,64 @@ fn native_module_path(output: &GeneratedOutput) -> PathBuf {
 }
 
 fn write_package(output: &GeneratedOutput, root: &Path) {
-    for file in output.files() {
+    output.files().iter().for_each(|file| {
         let path = root.join(file.path().as_path());
         fs::create_dir_all(path.parent().expect("generated file parent"))
             .expect("create package directory");
         fs::write(&path, file.contents()).expect("write generated file");
-    }
+    });
 }
 
-/// Empty definitions for every symbol the extension resolves out of the
-/// cdylib, read off the generated `dlsym` calls so the list cannot drift.
-fn stub_library(native: &str) -> String {
-    let mut symbols: Vec<&str> = native
-        .match_indices("dlsym(boltffi_python_library_handle, \"")
-        .filter_map(|(index, marker)| {
-            let rest = &native[index + marker.len()..];
-            rest.find('"').map(|end| &rest[..end])
-        })
-        .collect();
-    symbols.sort_unstable();
-    symbols.dedup();
-    assert!(!symbols.is_empty(), "the extension resolved no symbols");
-    symbols
-        .iter()
-        .map(|symbol| format!("void {symbol}(void) {{}}\n"))
-        .collect()
+fn build_rust_library(root: &Path, destination: &Path, source: &str) {
+    let crate_directory = root.join("rust");
+    fs::create_dir_all(crate_directory.join("src")).expect("create Rust fixture directory");
+    let boltffi_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("workspace root")
+        .join("boltffi");
+    fs::write(
+        crate_directory.join("Cargo.toml"),
+        format!(
+            r#"[package]
+name = "demo"
+version = "0.0.0"
+edition = "2024"
+
+[workspace]
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+boltffi = {{ path = {path:?} }}
+"#,
+            path = boltffi_path.to_str().expect("UTF-8 fixture path"),
+        ),
+    )
+    .expect("write Rust fixture manifest");
+    fs::write(
+        crate_directory.join("src/lib.rs"),
+        format!("use boltffi::{{data, export}};\nboltffi::scaffolding!();\n{source}"),
+    )
+    .expect("write Rust fixture source");
+    let target_directory = root.join("target");
+    let build = Command::new(env!("CARGO"))
+        .args(["build", "--quiet", "--manifest-path"])
+        .arg(crate_directory.join("Cargo.toml"))
+        .env("CARGO_TARGET_DIR", &target_directory)
+        .env("CARGO_BUILD_BUILD_DIR", target_directory.join("build"))
+        .output()
+        .expect("build Rust fixture");
+    assert!(
+        build.status.success(),
+        "Rust fixture failed to build:\n{}",
+        String::from_utf8_lossy(&build.stderr),
+    );
+    fs::copy(
+        target_directory.join("debug").join(cdylib_name()),
+        destination,
+    )
+    .expect("copy compiled Rust library into the generated package");
 }
 
 /// The library filename the generated package looks for, which it derives

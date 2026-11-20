@@ -29,6 +29,7 @@ pub struct EncodedWrite {
 pub struct WireBuffer {
     buffer: Identifier,
     writer: Identifier,
+    package: Option<KotlinPackage>,
 }
 
 pub struct Writer<'context> {
@@ -74,7 +75,13 @@ impl WireBuffer {
         Ok(Self {
             buffer: name.generated("wire")?,
             writer: name.generated("writer")?,
+            package: None,
         })
+    }
+
+    pub fn package(mut self, package: Option<&KotlinPackage>) -> Self {
+        self.package = package.cloned();
+        self
     }
 
     pub fn writer(&self) -> &Identifier {
@@ -102,10 +109,13 @@ impl WireBuffer {
         host: &KotlinHost,
         context: &RenderContext<Native>,
     ) -> Result<EncodedWrite> {
-        let size = plan
-            .size_with(&mut Sizer::new(host, context)?.current(value.clone()))?
-            .into_expression();
+        let mut sizer = Sizer::new(host, context)?.current(value.clone());
         let mut writer = Writer::new(self.writer.clone(), host, context)?.current(value);
+        if let Some(package) = &self.package {
+            sizer = sizer.package(package);
+            writer = writer.package(package);
+        }
+        let size = plan.size_with(&mut sizer)?.into_expression();
         let writes = plan
             .render_with(&mut writer)
             .into_iter()

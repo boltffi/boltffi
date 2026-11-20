@@ -5,6 +5,8 @@ mod cli;
 mod commands;
 mod config;
 mod pack;
+#[cfg(test)]
+mod process_environment;
 mod reporter;
 mod target;
 mod toolchain;

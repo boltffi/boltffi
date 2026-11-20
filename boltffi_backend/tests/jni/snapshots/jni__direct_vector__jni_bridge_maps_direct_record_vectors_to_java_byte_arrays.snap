@@ -8,12 +8,12 @@ typedef struct {
     double x;
     double y;
 } ___Point;
-uint32_t boltffi_function_demo_count(const uint8_t *values_ptr, uintptr_t values_byte_len);
+uint32_t boltffi_function_4demo5count(const uint8_t *values_ptr, uintptr_t values_byte_len);
 
 ===== jni/jni_glue.c =====
 <jni source includes>
 <jni exception helpers>
-JNIEXPORT jint JNICALL Java_com_boltffi_demo_Native_boltffi_1function_1demo_1count(JNIEnv *env, jclass cls, jbyteArray values) {
+JNIEXPORT jint JNICALL Java_com_boltffi_demo_Native_boltffi_1function_14demo5count(JNIEnv *env, jclass cls, jbyteArray values) {
     (void)cls;
 
     jbyte *__boltffi_values_ptr = NULL;
@@ -30,7 +30,7 @@ JNIEXPORT jint JNICALL Java_com_boltffi_demo_Native_boltffi_1function_1demo_1cou
     }
 
     (void)env;
-    uint32_t __boltffi_result = boltffi_function_demo_count((const uint8_t *)__boltffi_values_ptr, (uintptr_t)__boltffi_values_len);
+    uint32_t __boltffi_result = boltffi_function_4demo5count((const uint8_t *)__boltffi_values_ptr, (uintptr_t)__boltffi_values_len);
 
     if (__boltffi_values_ptr != NULL) {
         (*env)->ReleaseByteArrayElements(env, values, __boltffi_values_ptr, JNI_ABORT);

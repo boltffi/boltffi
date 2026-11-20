@@ -1,0 +1,13 @@
+error: BoltFFI: `Box` and `Arc` cross only around a trait object, such as `Box<dyn Trait>`; in a parameter or return, pass the inner type itself, for example `Self` instead of `Arc<Self>`
+ --> tests/diagnostics/unsupported_signatures/arc_of_a_record.rs:8:10
+  |
+8 | pub fn f(a: std::sync::Arc<Point>) {}
+  |          ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused variable: `a`
+ --> tests/diagnostics/unsupported_signatures/arc_of_a_record.rs:8:10
+  |
+8 | pub fn f(a: std::sync::Arc<Point>) {}
+  |          ^ help: if this is intentional, prefix it with an underscore: `_a`
+  |
+  = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default

@@ -8,9 +8,9 @@ expression: "rendered_fixture(\"exports/acronym_class\")"
 package com.boltffi.demo
 @Suppress("FunctionName")
 private object Native {
-    @JvmStatic external fun boltffi_release_class_demo_gps_simulator(handle: Long): Unit
-    @JvmStatic external fun boltffi_init_class_demo_gps_simulator_new(enabled: Boolean): Long
-    @JvmStatic external fun boltffi_method_class_demo_gps_simulator_enabled(`receiver`: Long): Boolean
+    @JvmStatic external fun boltffi_release_class_4demo12GPSSimulator(handle: Long): Unit
+    @JvmStatic external fun boltffi_init_class_4demo12GPSSimulator3new(enabled: Boolean): Long
+    @JvmStatic external fun boltffi_method_class_4demo12GPSSimulator7enabled(`receiver`: Long): Boolean
 }
 
 class GPSSimulator internal constructor(private val __boltffi_handle: java.util.concurrent.atomic.AtomicLong) : AutoCloseable {
@@ -18,7 +18,7 @@ class GPSSimulator internal constructor(private val __boltffi_handle: java.util.
     override fun close() {
         val handle = __boltffi_handle.getAndSet(0L)
         if (handle != 0L) {
-            Native.boltffi_release_class_demo_gps_simulator(handle)
+            Native.boltffi_release_class_4demo12GPSSimulator(handle)
         }
     }
 
@@ -38,11 +38,11 @@ class GPSSimulator internal constructor(private val __boltffi_handle: java.util.
 
     companion object {
         private fun new(enabled: Boolean): GPSSimulator {
-            return GPSSimulator(java.util.concurrent.atomic.AtomicLong(Native.boltffi_init_class_demo_gps_simulator_new(enabled)))
+            return GPSSimulator(java.util.concurrent.atomic.AtomicLong(Native.boltffi_init_class_4demo12GPSSimulator3new(enabled)))
         }
     }
 
     fun enabled(): Boolean {
-        return Native.boltffi_method_class_demo_gps_simulator_enabled(this.boltffiHandle())
+        return Native.boltffi_method_class_4demo12GPSSimulator7enabled(this.boltffiHandle())
     }
 }

@@ -8,7 +8,7 @@ expression: "rendered_fixture(\"enums/transparent_c_style\")"
 package com.boltffi.demo
 @Suppress("FunctionName")
 private object Native {
-    @JvmStatic external fun boltffi_function_demo_echo_setting(setting: java.nio.ByteBuffer, __boltffi_setting_len: Int): ByteArray?
+    @JvmStatic external fun boltffi_function_4demo12echo_setting(setting: java.nio.ByteBuffer, __boltffi_setting_len: Int): ByteArray?
 }
 
 
@@ -201,7 +201,7 @@ fun echoSetting(setting: Setting): Setting {
     val __boltffi_setting_writer = __boltffi_setting_wire.writer
     Setting.writeTo(setting, __boltffi_setting_writer)
     try {
-        val __boltffi_result = Native.boltffi_function_demo_echo_setting(__boltffi_setting_wire.directBuffer(), __boltffi_setting_wire.size()) ?: throw IllegalStateException("null buffer returned")
+        val __boltffi_result = Native.boltffi_function_4demo12echo_setting(__boltffi_setting_wire.directBuffer(), __boltffi_setting_wire.size()) ?: throw IllegalStateException("null buffer returned")
         val __boltffi_reader = WireReader(__boltffi_result)
         return Setting.fromReader(__boltffi_reader)
     } finally {
