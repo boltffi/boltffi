@@ -1414,6 +1414,11 @@ impl<S: Surface> DataEnumDecl<S> {
         &self.variants
     }
 
+    /// Returns whether any variant renders as its payload type.
+    pub fn has_transparent_variants(&self) -> bool {
+        self.variants.iter().any(DataVariantDecl::transparent)
+    }
+
     /// Returns the initializers.
     pub fn initializers(&self) -> &[InitializerDecl<S>] {
         &self.initializers
@@ -1520,12 +1525,28 @@ impl VariantTag {
     }
 }
 
+/// The payload type a transparent data-enum variant renders as.
+///
+/// The payload type itself is the variant, so it takes the enum as a
+/// supertype: a record, or a C-style enum.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub enum TransparentPayload {
+    /// A record payload.
+    Record(RecordId),
+    /// A C-style enum payload.
+    Enum(EnumId),
+}
+
 /// One variant of a data enum.
 #[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
 pub struct DataVariantDecl {
     name: CanonicalName,
     tag: VariantTag,
     payload: DataVariantPayload,
+    /// Whether the variant renders as its payload type instead of a
+    /// wrapper class, where the backend supports that shape.
+    #[serde(default, skip_serializing_if = "core::ops::Not::not")]
+    transparent: bool,
     meta: ElementMeta,
 }
 
@@ -1534,12 +1555,14 @@ impl DataVariantDecl {
         name: CanonicalName,
         tag: VariantTag,
         payload: DataVariantPayload,
+        transparent: bool,
         meta: ElementMeta,
     ) -> Self {
         Self {
             name,
             tag,
             payload,
+            transparent,
             meta,
         }
     }
@@ -1557,6 +1580,30 @@ impl DataVariantDecl {
     /// Returns the payload shape.
     pub fn payload(&self) -> &DataVariantPayload {
         &self.payload
+    }
+
+    /// Returns whether the variant renders as its payload type.
+    pub const fn transparent(&self) -> bool {
+        self.transparent
+    }
+
+    /// Returns the payload type of a transparent variant.
+    ///
+    /// Lowering guarantees a transparent variant carries exactly one field
+    /// typed as a record or a C-style enum, so this is `Some` whenever
+    /// [`transparent`](Self::transparent) is true.
+    pub fn transparent_payload(&self) -> Option<TransparentPayload> {
+        if !self.transparent {
+            return None;
+        }
+        match self.payload.fields() {
+            [field] => match field.ty() {
+                TypeRef::Record(id) => Some(TransparentPayload::Record(*id)),
+                TypeRef::Enum(id) => Some(TransparentPayload::Enum(*id)),
+                _ => None,
+            },
+            _ => None,
+        }
     }
 
     /// Returns the element metadata.
