@@ -1,0 +1,5 @@
+error: BoltFFI: `function f` cannot declare an extern ABI
+ --> tests/diagnostics/functions/extern_function.rs:3:5
+  |
+3 | pub extern "C" fn f() {}
+  |     ^^^^^^^^^^

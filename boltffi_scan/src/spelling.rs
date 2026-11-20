@@ -22,14 +22,14 @@ pub(super) fn ty(ty: &syn::Type) -> String {
                 .collect::<Vec<_>>()
                 .join(" + ")
         ),
-        syn::Type::BareFn(bare_fn) => {
-            let inputs = bare_fn
+        syn::Type::FnPtr(fn_ptr) => {
+            let inputs = fn_ptr
                 .inputs
                 .iter()
                 .map(|input| self::ty(&input.ty))
                 .collect::<Vec<_>>()
                 .join(", ");
-            match &bare_fn.output {
+            match &fn_ptr.output {
                 syn::ReturnType::Default => format!("fn({inputs})"),
                 syn::ReturnType::Type(_, output) => {
                     format!("fn({inputs}) -> {}", self::ty(output))
@@ -41,6 +41,17 @@ pub(super) fn ty(ty: &syn::Type) -> String {
             None => format!("&{}", self::ty(&reference.elem)),
         },
         syn::Type::Slice(slice) => format!("[{}]", self::ty(&slice.elem)),
+        syn::Type::Array(array) => format!(
+            "[{}; {}]",
+            self::ty(&array.elem),
+            array.len.to_token_stream()
+        ),
+        syn::Type::Never(_) => "!".to_owned(),
+        syn::Type::Ptr(pointer) => format!(
+            "*{} {}",
+            pointer.mutability.to_token_stream(),
+            self::ty(&pointer.elem)
+        ),
         syn::Type::TraitObject(object) => format!(
             "dyn {}",
             object
@@ -92,7 +103,7 @@ fn segment(segment: &syn::PathSegment) -> String {
             let inputs = arguments
                 .inputs
                 .iter()
-                .map(self::ty)
+                .map(|input| self::ty(&input.ty))
                 .collect::<Vec<_>>()
                 .join(", ");
             match &arguments.output {
@@ -178,6 +189,8 @@ mod tests {
 
     #[test]
     fn renders_unrecognized_types_with_a_stable_label() {
-        assert_eq!(super::ty(&parse_type("[u8; 4]")), "unrecognized type");
+        assert_eq!(super::ty(&parse_type("[u8; 4]")), "[u8; 4]");
+        assert_eq!(super::ty(&parse_type("*const u8")), "*const u8");
+        assert_eq!(super::ty(&parse_type("_")), "unrecognized type");
     }
 }

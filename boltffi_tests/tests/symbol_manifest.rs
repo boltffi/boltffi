@@ -12,7 +12,7 @@ use boltffi_binding::{
     OutOfRust, ParamPlan, Receive, RecordDecl, ReturnPlan, TypeRef, lower,
 };
 #[cfg(not(miri))]
-use boltffi_scan::{ScanInput, scan_package};
+use boltffi_scan::{crate_scoped, scan_source};
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 struct PendingExpansion {
@@ -29,14 +29,12 @@ const PENDING_EXPANSIONS: &[PendingExpansion] = &[PendingExpansion {
 
 #[cfg(not(miri))]
 fn source_contract() -> boltffi_ast::SourceContract {
-    let manifest = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let source = manifest.join("src").join("lib.rs");
-    scan_package(
-        &ScanInput::new(source, PackageInfo::new("boltffi_tests", None))
-            .with_manifest_dir(manifest),
+    let source = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("src")
+        .join("lib.rs");
+    crate_scoped(
+        scan_source(source, PackageInfo::new("boltffi_tests", None)).expect("scan test package"),
     )
-    .expect("scan test package")
-    .root_with_support()
 }
 
 #[cfg(not(miri))]
@@ -91,7 +89,7 @@ fn signature_only_c_symbol(symbol: &str) -> bool {
     symbol.ends_with("_panic_message")
         || symbol.ends_with("_cancel")
         || symbol
-            == "boltffi_async_method_class_boltffi_tests_results_cancellable_task_long_running_task_complete"
+            == "boltffi_async_method_class_13boltffi_tests15CancellableTask17long_running_task_complete"
 }
 
 #[cfg(not(miri))]
@@ -166,10 +164,10 @@ fn c_harness_executes_every_runtime_contract_symbol() {
 fn c_harness_exercises_the_async_cancellation_path() {
     let c_symbols = c_harness_symbols();
     [
-        "boltffi_method_class_boltffi_tests_results_cancellable_task_long_running_task",
-        "boltffi_async_method_class_boltffi_tests_results_cancellable_task_long_running_task_poll",
-        "boltffi_async_method_class_boltffi_tests_results_cancellable_task_long_running_task_cancel",
-        "boltffi_async_method_class_boltffi_tests_results_cancellable_task_long_running_task_free",
+        "boltffi_method_class_13boltffi_tests15CancellableTask17long_running_task",
+        "boltffi_async_method_class_13boltffi_tests15CancellableTask17long_running_task_poll",
+        "boltffi_async_method_class_13boltffi_tests15CancellableTask17long_running_task_cancel",
+        "boltffi_async_method_class_13boltffi_tests15CancellableTask17long_running_task_free",
     ]
     .into_iter()
     .for_each(|symbol| assert!(c_symbols.contains(symbol), "C harness misses {symbol}"));
@@ -195,7 +193,7 @@ fn quarantined_rows_have_registered_failures() {
 
 #[test]
 fn generated_signature_assertions_cover_mutable_byte_fixture() {
-    assert!(asserted_symbols().contains("boltffi_function_boltffi_tests_bytes_fill_bytes"));
+    assert!(asserted_symbols().contains("boltffi_function_13boltffi_tests10fill_bytes"));
 }
 
 #[test]

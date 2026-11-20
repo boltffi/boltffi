@@ -11,8 +11,8 @@ typedef struct {
 typedef uint8_t ___Mode;
 #define MODE_FAST ((___Mode)1)
 #define MODE_SLOW ((___Mode)2)
-___Point boltffi_function_demo_echo_point(___Point point);
-___Mode boltffi_function_demo_echo_mode(___Mode mode);
+___Point boltffi_function_4demo10echo_point(___Point point);
+___Mode boltffi_function_4demo9echo_mode(___Mode mode);
 
 ===== jni/jni_glue.c =====
 <jni source includes>
@@ -44,7 +44,7 @@ static bool boltffi_jni_direct_buffer_address(JNIEnv *env, jobject buffer, jlong
     return true;
 }
 
-JNIEXPORT jbyteArray JNICALL Java_com_boltffi_demo_Native_boltffi_1function_1demo_1echo_1point(JNIEnv *env, jclass cls, jobject point) {
+JNIEXPORT jbyteArray JNICALL Java_com_boltffi_demo_Native_boltffi_1function_14demo10echo_1point(JNIEnv *env, jclass cls, jobject point) {
     (void)cls;
 
     void *__boltffi_point_ptr = NULL;
@@ -56,18 +56,18 @@ JNIEXPORT jbyteArray JNICALL Java_com_boltffi_demo_Native_boltffi_1function_1dem
     memcpy(&__boltffi_point_value, __boltffi_point_ptr, sizeof(___Point));
 
     (void)env;
-    ___Point __boltffi_result = boltffi_function_demo_echo_point(__boltffi_point_value);
+    ___Point __boltffi_result = boltffi_function_4demo10echo_point(__boltffi_point_value);
 
     return boltffi_jni_record_to_byte_array(env, &__boltffi_result, (uintptr_t)sizeof(__boltffi_result));
 __boltffi_error:
     return NULL;
 }
 
-JNIEXPORT jbyte JNICALL Java_com_boltffi_demo_Native_boltffi_1function_1demo_1echo_1mode(JNIEnv *env, jclass cls, jbyte mode) {
+JNIEXPORT jbyte JNICALL Java_com_boltffi_demo_Native_boltffi_1function_14demo9echo_1mode(JNIEnv *env, jclass cls, jbyte mode) {
     (void)cls;
 
     (void)env;
-    ___Mode __boltffi_result = boltffi_function_demo_echo_mode((___Mode)mode);
+    ___Mode __boltffi_result = boltffi_function_4demo9echo_mode((___Mode)mode);
 
     return (jbyte)__boltffi_result;
 }

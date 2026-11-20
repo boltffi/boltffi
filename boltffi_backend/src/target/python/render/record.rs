@@ -225,6 +225,7 @@ pub struct RecordField {
     pub name: Identifier,
     pub annotation: TypeAnnotation,
     pub default: Option<Expression>,
+    lazy_default: bool,
 }
 
 impl RecordField {
@@ -239,7 +240,22 @@ impl RecordField {
                 .map(|value| DefaultExpression::new(field.ty(), value, package))
                 .transpose()?
                 .map(DefaultExpression::into_expression),
+            lazy_default: matches!(
+                field.ty(),
+                boltffi_binding::TypeRef::Record(_) | boltffi_binding::TypeRef::Custom(_)
+            ),
         })
+    }
+
+    /// The right-hand side of the field's default, deferred when it constructs a
+    /// record so the class body does not depend on the order records are declared in.
+    pub fn default_assignment(&self) -> Option<String> {
+        self.default
+            .as_ref()
+            .map(|default| match self.lazy_default {
+                true => format!("_boltffi_field(default_factory=lambda: {default})"),
+                false => default.to_string(),
+            })
     }
 
     pub fn field_name(&self) -> (String, String) {
@@ -292,6 +308,7 @@ impl RecordField {
                 })
                 .transpose()?
                 .map(DefaultExpression::into_expression),
+            lazy_default: false,
         })
     }
 }

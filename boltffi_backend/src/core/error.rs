@@ -189,6 +189,20 @@ pub enum BackendError {
     #[allow(missing_docs)]
     #[error("invalid TypeScript identifier `{identifier}`")]
     InvalidTypeScriptIdentifier { identifier: String },
+    /// A generated Ruby method, member, or constant name was invalid.
+    #[error("invalid Ruby identifier `{identifier}`")]
+    InvalidRubyIdentifier {
+        /// Invalid identifier text.
+        identifier: String,
+    },
+    /// A Ruby gem name broke the RubyGems naming rules.
+    #[error(
+        "invalid Ruby gem name `{name}`: use ASCII letters, digits, `.`, `-`, or `_`, include a letter, and start with a letter or digit"
+    )]
+    InvalidRubyGemName {
+        /// Invalid gem name.
+        name: String,
+    },
     /// Two generated Python declarations require the same name in one scope.
     #[error("python name collision in {scope}: `{name}` is used by {existing} and {colliding}")]
     PythonNameCollision {

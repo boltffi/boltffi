@@ -8,7 +8,7 @@ expression: "rendered_fixture(\"associated/mutable_record_receiver\")"
 package com.boltffi.demo
 @Suppress("FunctionName")
 private object Native {
-    @JvmStatic external fun boltffi_method_record_demo_point_move_by(`receiver`: java.nio.ByteBuffer, dx: Double): Unit
+    @JvmStatic external fun boltffi_method_record_4demo5Point7move_by(`receiver`: java.nio.ByteBuffer, dx: Double): Unit
 }
 
 
@@ -58,7 +58,7 @@ data class Point(
 
     fun moveBy(dx: Double): Point {
         val __boltffi_receiver = this.toDirectBuffer()
-        Native.boltffi_method_record_demo_point_move_by(__boltffi_receiver, dx)
+        Native.boltffi_method_record_4demo5Point7move_by(__boltffi_receiver, dx)
         return Point.fromBuffer(__boltffi_receiver, 0)
     }
 }

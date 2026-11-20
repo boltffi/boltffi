@@ -21,13 +21,23 @@
 {%- if record.codec_payload() %}
 
     @inlinable static func decode(from reader: inout WireReader) -> {{ record.name() }} {
+{%- if record.padded() %}
+        {{ record.padded_decode_body() }}
+{%- else %}
         {{ record.name() }}({{ record.decode_arguments() }})
+{%- endif %}
     }
 
     @inlinable func encode(to writer: inout WireWriter) {
 {%- for field in record.fields() %}
+{%- if field.padding() > 0 %}
+        writer.pad({{ field.padding() }})
+{%- endif %}
         {{ field.write() }}
 {%- endfor %}
+{%- if record.trailing_padding() > 0 %}
+        writer.pad({{ record.trailing_padding() }})
+{%- endif %}
     }
 {%- endif %}
 {%- for constant in constants %}

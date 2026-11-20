@@ -17,18 +17,23 @@ pub struct StreamDef {
     /// Source stream name.
     pub name: SourceName,
     /// Class owner when the stream is attached to a class.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub owner: Option<ClassId>,
     /// Rust source item type yielded by the stream.
     pub item_type: TypeExpr,
     /// Source stream mode requested by the author.
     pub mode: StreamMode,
     /// User attributes preserved from the stream declaration.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub user_attrs: Vec<UserAttr>,
     /// Documentation attached to the stream.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub doc: Option<DocComment>,
     /// Deprecation metadata attached to the stream.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub deprecated: Option<DeprecationInfo>,
     /// Visibility and source location for diagnostics.
+    #[serde(default, skip_serializing_if = "Source::is_exported")]
     pub source: Source,
     /// Span available during macro expansion.
     #[serde(default, skip_serializing, skip_deserializing)]

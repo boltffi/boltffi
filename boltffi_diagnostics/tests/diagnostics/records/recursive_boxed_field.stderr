@@ -1,0 +1,5 @@
+error: BoltFFI: a record or enum can't contain itself through `Box` or `Arc`; hold the nested values in a `Vec` instead
+ --> tests/diagnostics/records/recursive_boxed_field.rs:4:16
+  |
+4 | pub struct T { pub c: Option<Box<T>> }
+  |                ^^^^^^^^^^^^^^^^^^^^^

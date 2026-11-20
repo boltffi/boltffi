@@ -125,7 +125,7 @@ impl ExportMarker {
         self.class_thread_safety.unwrap_or_default()
     }
 
-    pub fn requires_class_impl(self) -> bool {
+    pub fn declares_class_thread_safety(self) -> bool {
         self.class_thread_safety.is_some()
     }
 
@@ -154,10 +154,25 @@ fn parse_export_args(input: syn::parse::ParseStream<'_>) -> syn::Result<ExportMa
     }
 }
 
+pub(crate) fn export_marker_from_args(
+    tokens: proc_macro2::TokenStream,
+) -> Result<ExportMarker, ScanError> {
+    if tokens.is_empty() {
+        return Ok(ExportMarker::default());
+    }
+    syn::parse::Parser::parse2(parse_export_args, tokens.clone()).map_err(|_| {
+        ScanError::InvalidMarker {
+            attribute: format!("export({tokens})"),
+        }
+        .at(&tokens)
+    })
+}
+
 fn invalid(attr: &syn::Attribute) -> ScanError {
     ScanError::InvalidMarker {
         attribute: crate::spelling::attr(attr),
     }
+    .at(attr)
 }
 
 #[cfg(test)]
@@ -246,13 +261,15 @@ mod tests {
     #[test]
     fn rejects_unknown_marker_arguments() {
         assert_eq!(
-            Marker::detect(&struct_attrs("#[data(foo)] struct S { x: i32 }")),
+            crate::error::unlocated(Marker::detect(&struct_attrs(
+                "#[data(foo)] struct S { x: i32 }"
+            ))),
             Err(ScanError::InvalidMarker {
                 attribute: "data(foo)".to_owned()
             })
         );
         assert_eq!(
-            Marker::detect(&fn_attrs("#[export(foo)] fn f() {}")),
+            crate::error::unlocated(Marker::detect(&fn_attrs("#[export(foo)] fn f() {}"))),
             Err(ScanError::InvalidMarker {
                 attribute: "export(foo)".to_owned()
             })
@@ -328,9 +345,9 @@ mod tests {
             .into_iter()
             .for_each(|arguments| {
                 assert_eq!(
-                    Marker::detect(&struct_attrs(&format!(
+                    crate::error::unlocated(Marker::detect(&struct_attrs(&format!(
                         "#[boltffi::error({arguments})] struct ServiceError {{ message: String }}"
-                    ))),
+                    )))),
                     Err(ScanError::InvalidMarker {
                         attribute: format!("boltffi::error({arguments})"),
                     }),
@@ -378,7 +395,7 @@ mod tests {
             Ok(Some(Marker::Skip))
         );
         assert_eq!(
-            Marker::detect(&fn_attrs("#[skip(reason)] fn f() {}")),
+            crate::error::unlocated(Marker::detect(&fn_attrs("#[skip(reason)] fn f() {}"))),
             Err(ScanError::InvalidMarker {
                 attribute: "skip(reason)".to_owned()
             })

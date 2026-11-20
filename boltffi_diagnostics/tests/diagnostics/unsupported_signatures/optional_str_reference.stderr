@@ -1,0 +1,13 @@
+error: BoltFFI: `&str` cannot cross the boundary; use the owned type `String`
+ --> tests/diagnostics/unsupported_signatures/optional_str_reference.rs:3:20
+  |
+3 | pub fn f(a: Option<&str>) {}
+  |                    ^^^^
+
+warning: unused variable: `a`
+ --> tests/diagnostics/unsupported_signatures/optional_str_reference.rs:3:10
+  |
+3 | pub fn f(a: Option<&str>) {}
+  |          ^ help: if this is intentional, prefix it with an underscore: `_a`
+  |
+  = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default

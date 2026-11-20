@@ -14,10 +14,10 @@ typedef struct {
     uint64_t (*clone)(uint64_t);
     BoltFFICallbackHandle (*child)(uint64_t);
 } ___ListenerVTable;
-void boltffi_register_callback_demo_child(const ___ChildVTable *vtable);
-BoltFFICallbackHandle boltffi_create_callback_demo_child(uint64_t handle);
-void boltffi_register_callback_demo_listener(const ___ListenerVTable *vtable);
-BoltFFICallbackHandle boltffi_create_callback_demo_listener(uint64_t handle);
+void boltffi_register_callback_4demo5Child(const ___ChildVTable *vtable);
+BoltFFICallbackHandle boltffi_create_callback_4demo5Child(uint64_t handle);
+void boltffi_register_callback_4demo8Listener(const ___ListenerVTable *vtable);
+BoltFFICallbackHandle boltffi_create_callback_4demo8Listener(uint64_t handle);
 
 ===== jni/jni_glue.c =====
 <jni source includes>
@@ -181,7 +181,7 @@ static bool boltffi_jni_load____ChildVTable_callbacks(JNIEnv *env) {
     if (!boltffi_jni_lookup_static_method_with_diagnostic(env, g____ChildVTable_class, "com/boltffi/demo/ChildCallbacks", "on_value", "on_value", "(JI)I", "(JI)I", &g____ChildVTable_on_value_method)) {
         goto fail;
     }
-    boltffi_register_callback_demo_child(&g____ChildVTable_vtable);
+    boltffi_register_callback_4demo5Child(&g____ChildVTable_vtable);
     return true;
 fail:
     (*env)->DeleteGlobalRef(env, g____ChildVTable_class);
@@ -243,7 +243,7 @@ static BoltFFICallbackHandle ___ListenerVTable_child(uint64_t handle) {
         goto __boltffi_fail;
     }
 
-    BoltFFICallbackHandle result = boltffi_create_callback_demo_child((uint64_t)__boltffi_return_handle);
+    BoltFFICallbackHandle result = boltffi_create_callback_4demo5Child((uint64_t)__boltffi_return_handle);
 
     boltffi_jni_exit(env, attached);
     return result;
@@ -274,7 +274,7 @@ static bool boltffi_jni_load____ListenerVTable_callbacks(JNIEnv *env) {
     if (!boltffi_jni_lookup_static_method_with_diagnostic(env, g____ListenerVTable_class, "com/boltffi/demo/ListenerCallbacks", "child", "child", "(J)J", "(J)J", &g____ListenerVTable_child_method)) {
         goto fail;
     }
-    boltffi_register_callback_demo_listener(&g____ListenerVTable_vtable);
+    boltffi_register_callback_4demo8Listener(&g____ListenerVTable_vtable);
     return true;
 fail:
     (*env)->DeleteGlobalRef(env, g____ListenerVTable_class);

@@ -799,3 +799,32 @@ fn compile_csharp_with_dotnet_when_available(output: &GeneratedOutput, prefix: &
     );
     fs::remove_dir_all(&directory).expect("remove dotnet smoke directory");
 }
+
+const PADDED_DIRECT_RECORD: &str = include_str!("fixtures/source/records/padded_direct_record.rs");
+
+#[test]
+fn csharp_wire_codecs_step_over_direct_record_padding() {
+    let output = target(CSharpHost::new().native_library("demo_native"))
+        .render(&bindings(PADDED_DIRECT_RECORD))
+        .expect("padded direct record renders");
+    let source = output
+        .files()
+        .iter()
+        .map(|file| file.contents())
+        .collect::<String>();
+    for expected in [
+        "reader.ReadU16(),",
+        "reader.Skip(2).ReadI32(),",
+        "reader.ReadU8()",
+        "reader.Skip(3);",
+        "writer.Pad(2);",
+        "writer.Pad(3);",
+        "internal WireReader Skip(int count)",
+        "internal void Pad(int count)",
+    ] {
+        assert!(
+            source.contains(expected),
+            "missing `{expected}` in:\n{source}"
+        );
+    }
+}

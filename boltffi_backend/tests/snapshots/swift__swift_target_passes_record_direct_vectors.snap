@@ -43,6 +43,6 @@ public func count(values: [Point]) -> UInt32 {
         boltffiValuesStorage.append(item.cValue)
     }
     return boltffiValuesStorage.withUnsafeBytes { boltffiValuesBuffer in
-        return boltffi_function_demo_count(boltffiValuesBuffer.baseAddress?.assumingMemoryBound(to: UInt8.self), UInt(boltffiValuesBuffer.count))
+        return boltffi_function_4demo5count(boltffiValuesBuffer.baseAddress?.assumingMemoryBound(to: UInt8.self), UInt(boltffiValuesBuffer.count))
     }
 }

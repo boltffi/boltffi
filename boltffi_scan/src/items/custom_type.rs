@@ -40,6 +40,53 @@ pub fn scan(
     Ok(custom)
 }
 
+pub(crate) fn scan_macro_tokens(
+    tokens: proc_macro2::TokenStream,
+    scope: &ModuleScope,
+    declared_types: &DeclaredTypes,
+) -> Result<CustomTypeDef, ScanError> {
+    let spec = syn::parse2::<ParsedSpec>(tokens)
+        .map_err(invalid_custom_type)
+        .and_then(Spec::from_parsed)?;
+    build_from_spec(&spec, scope, declared_types)
+}
+
+pub(crate) fn scan_trait_impl_item(
+    item: &syn::ItemImpl,
+    scope: &ModuleScope,
+    declared_types: &DeclaredTypes,
+) -> Result<CustomTypeDef, ScanError> {
+    let spec = Spec::parse_trait_impl(item)?;
+    build_from_spec(&spec, scope, declared_types)
+}
+
+fn build_from_spec(
+    spec: &Spec,
+    scope: &ModuleScope,
+    declared_types: &DeclaredTypes,
+) -> Result<CustomTypeDef, ScanError> {
+    let custom_name = name::source(spec.name());
+    let custom_id = CustomTypeId::new(scope.path().qualified(&spec.name().to_string()));
+    let mut converters = spec.converters(scope.path());
+    mark_deferred_module(&mut converters.into_ffi);
+    mark_deferred_module(&mut converters.try_from_ffi);
+    let scanner = Scanner::new(declared_types, scope);
+    Ok(CustomTypeDef::new(
+        custom_id,
+        custom_name,
+        spec.remote_type().clone(),
+        scanner.scan(spec.repr())?,
+        spec.error().cloned(),
+        converters,
+    ))
+}
+
+fn mark_deferred_module(converter: &mut boltffi_ast::CustomTypeConverter) {
+    if let boltffi_ast::CustomTypeConverter::Path(path) = converter {
+        path.segments.insert(0, PathSegment::new("$self"));
+    }
+}
+
 pub struct Spec {
     visibility: Option<syn::Visibility>,
     name: syn::Ident,
@@ -69,7 +116,7 @@ impl Spec {
     }
 
     fn parse_trait_impl(item: &syn::ItemImpl) -> Result<Self, ScanError> {
-        let (_, trait_path, _) = item.trait_.as_ref().ok_or_else(|| {
+        let (trait_path, _) = item.trait_.as_ref().ok_or_else(|| {
             invalid_custom_type_message("custom_ffi marker requires a trait impl".to_owned())
         })?;
         if !is_custom_ffi_trait(trait_path) {
@@ -296,7 +343,10 @@ impl ParsedFields {
                 input.parse()?,
                 input,
             ),
-            other => Err(input.error(format!("unknown custom_type! key `{other}`"))),
+            other => Err(syn::Error::new(
+                key.span(),
+                format!("unknown custom_type! key `{other}`"),
+            )),
         }
     }
 
@@ -1074,7 +1124,7 @@ impl PathParts {
 }
 
 fn invalid_custom_type(error: syn::Error) -> ScanError {
-    invalid_custom_type_message(error.to_string())
+    invalid_custom_type_message(error.to_string()).at_span(error.span())
 }
 
 fn invalid_custom_type_message(message: impl Into<String>) -> ScanError {
@@ -1163,11 +1213,11 @@ mod tests {
     #[test]
     fn rejects_missing_required_fields() {
         assert!(matches!(
-            scan("custom_type!(UtcDateTime, repr = i64, into_ffi = to_millis, try_from_ffi = from_millis);"),
+            crate::error::unlocated(scan("custom_type!(UtcDateTime, repr = i64, into_ffi = to_millis, try_from_ffi = from_millis);")),
             Err(ScanError::InvalidCustomType { message }) if message.contains("missing `remote = ...`")
         ));
         assert!(matches!(
-            scan("custom_type!(UtcDateTime, remote = DateTime<Utc>, repr = i64, into_ffi = to_millis);"),
+            crate::error::unlocated(scan("custom_type!(UtcDateTime, remote = DateTime<Utc>, repr = i64, into_ffi = to_millis);")),
             Err(ScanError::InvalidCustomType { message }) if message.contains("missing `try_from_ffi = ...`")
         ));
     }
@@ -1175,11 +1225,11 @@ mod tests {
     #[test]
     fn rejects_unknown_and_duplicate_keys() {
         assert!(matches!(
-            scan("custom_type!(UtcDateTime, remote = DateTime<Utc>, repr = i64, into_ffi = to_millis, try_from_ffi = from_millis, typo = true);"),
+            crate::error::unlocated(scan("custom_type!(UtcDateTime, remote = DateTime<Utc>, repr = i64, into_ffi = to_millis, try_from_ffi = from_millis, typo = true);")),
             Err(ScanError::InvalidCustomType { message }) if message.contains("unknown custom_type! key `typo`")
         ));
         assert!(matches!(
-            scan("custom_type!(UtcDateTime, remote = DateTime<Utc>, remote = Timestamp, repr = i64, into_ffi = to_millis, try_from_ffi = from_millis);"),
+            crate::error::unlocated(scan("custom_type!(UtcDateTime, remote = DateTime<Utc>, remote = Timestamp, repr = i64, into_ffi = to_millis, try_from_ffi = from_millis);")),
             Err(ScanError::InvalidCustomType { message }) if message.contains("duplicate custom_type! key `remote`")
         ));
     }

@@ -1070,7 +1070,7 @@ fn render_async_proxy(
     let success = async_proxy_success(
         declaration.callable().returns().plan(),
         has_payload.then_some("_p$value2"),
-        has_payload.then_some(&completion_parameters[2]),
+        has_payload.then(|| &completion_parameters[2]),
         bridge,
         context,
     )?;

@@ -36,11 +36,11 @@ public final class Calculator {
 
     deinit {
         let handle = __boltffiTakeHandle()
-        if handle != 0 { boltffi_release_class_demo_calculator(handle) }
+        if handle != 0 { boltffi_release_class_4demo10Calculator(handle) }
     }
 
     public init() {
-        self.handle = boltffi_init_class_demo_calculator_new()
+        self.handle = boltffi_init_class_4demo10Calculator3new()
     }
 
     public func weightedSum(
@@ -49,7 +49,7 @@ public final class Calculator {
         third: Int32,
         fourth: Int32
     ) -> Int32 {
-        return boltffi_method_class_demo_calculator_weighted_sum(
+        return boltffi_method_class_4demo10Calculator12weighted_sum(
             self.handle,
             first,
             second,
@@ -65,7 +65,7 @@ public func widen(
     word: UInt32,
     wide: UInt64
 ) -> UInt32 {
-    return boltffi_function_demo_widen(
+    return boltffi_function_4demo5widen(
         byte,
         short,
         word,

@@ -87,7 +87,7 @@ private var boltffiProducerVtable: ___ProducerVTable = {
 
 private enum ProducerBridge {
     private static let register: Void = {
-        boltffi_register_callback_demo_producer(&boltffiProducerVtable)
+        boltffi_register_callback_4demo8Producer(&boltffiProducerVtable)
     }()
     static func release(_ handle: BoltFFICallbackHandle) {
         guard handle.handle != 0,
@@ -112,7 +112,7 @@ private enum ProducerBridge {
         }
         let wrapper = ProducerWrapper(impl)
         let handle = UInt64(UInt(bitPattern: Unmanaged.passRetained(wrapper).toOpaque()))
-        return boltffi_create_callback_demo_producer(handle)
+        return boltffi_create_callback_4demo8Producer(handle)
     }
     static func wrap(_ handle: BoltFFICallbackHandle) -> any Producer {
         _ = register
@@ -121,5 +121,5 @@ private enum ProducerBridge {
 }
 
 public func makeProducer() -> Producer {
-    return ProducerBridge.wrap(boltffi_function_demo_make_producer())
+    return ProducerBridge.wrap(boltffi_function_4demo13make_producer())
 }

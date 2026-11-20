@@ -35,7 +35,7 @@ impl<'context, 'bindings> Reader<'context, 'bindings> {
         Self {
             context,
             source: source.into(),
-            package: Name::new(context.bindings().package().name()).member(),
+            package: Name::package(context).member(),
             next_local: 0,
         }
     }

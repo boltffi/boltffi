@@ -21,6 +21,7 @@ impl Future for Yield {
     }
 }
 
+#[export]
 pub struct AsyncWorker {
     prefix: String,
 }

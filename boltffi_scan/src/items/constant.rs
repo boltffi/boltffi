@@ -26,6 +26,14 @@ pub fn scan(
     build_item(marked.item(), marked.scope(), declared_types)
 }
 
+pub(crate) fn scan_item(
+    item: &syn::ItemConst,
+    scope: &ModuleScope,
+    declared_types: &DeclaredTypes,
+) -> Result<ConstantDef, ScanError> {
+    build_item(item, scope, declared_types)
+}
+
 fn build_item(
     item: &syn::ItemConst,
     scope: &ModuleScope,
@@ -42,7 +50,7 @@ impl<'syntax> DeclarationSyntax<'syntax> {
         owner: Option<ConstantOwner>,
     ) -> Result<ConstantDef, ScanError> {
         if self.ident == "_" {
-            return Err(ScanError::AnonymousConstant);
+            return Err(ScanError::AnonymousConstant.at(self.ident));
         }
         let types = type_expr::Scanner::new(declared_types, scope);
         let type_expr = constant_type(&types, self.ty)?;
@@ -125,6 +133,23 @@ where
             constants.extend(associated);
             Ok(constants)
         })
+}
+
+pub(crate) fn scan_associated_in_impl(
+    item: &syn::ItemImpl,
+    owner: &ConstantOwner,
+    scope: &ModuleScope,
+    declared_types: &DeclaredTypes,
+) -> Result<Vec<ConstantDef>, ScanError> {
+    item.items
+        .iter()
+        .filter_map(|item| match item {
+            syn::ImplItem::Const(constant) => {
+                scan_associated_constant(constant, owner.clone(), scope, declared_types).transpose()
+            }
+            _ => None,
+        })
+        .collect()
 }
 
 fn scan_associated_constant(
@@ -360,7 +385,7 @@ mod tests {
         let error = scan("pub const ORIGIN: Point = Point::ORIGIN;").expect_err("type rejects");
 
         assert!(matches!(
-            error,
+            error.unlocated(),
             ScanError::UnsupportedType { spelling } if spelling == "Point"
         ));
     }
@@ -377,7 +402,7 @@ mod tests {
         .expect_err("borrowed record constant rejects");
 
         assert!(matches!(
-            error,
+            error.unlocated(),
             ScanError::UnsupportedType { spelling } if spelling == "&Point"
         ));
     }
@@ -387,8 +412,8 @@ mod tests {
         let error = scan("pub const NAME: &mut str = todo!();").expect_err("type rejects");
 
         assert!(matches!(
-            error,
-            ScanError::UnsupportedType { spelling } if spelling == "&mut str"
+            error.unlocated(),
+            ScanError::UnsupportedRustType { spelling, .. } if spelling == "&mut str"
         ));
     }
 
@@ -396,6 +421,6 @@ mod tests {
     fn rejects_anonymous_exported_constant_before_building_an_empty_name() {
         let error = scan("pub const _: u32 = 42;").expect_err("anonymous const rejects");
 
-        assert_eq!(error, ScanError::AnonymousConstant);
+        assert_eq!(error.unlocated().clone(), ScanError::AnonymousConstant);
     }
 }

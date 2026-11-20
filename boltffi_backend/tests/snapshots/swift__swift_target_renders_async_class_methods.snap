@@ -36,22 +36,22 @@ public final class Engine {
 
     deinit {
         let handle = __boltffiTakeHandle()
-        if handle != 0 { boltffi_release_class_demo_engine(handle) }
+        if handle != 0 { boltffi_release_class_4demo6Engine(handle) }
     }
 
     public init() {
-        self.handle = boltffi_init_class_demo_engine_new()
+        self.handle = boltffi_init_class_4demo6Engine3new()
     }
 
     public func compute(value: UInt32) async throws -> UInt32 {
-        let boltffiFuture = boltffi_method_class_demo_engine_compute(self.handle, value)
+        let boltffiFuture = boltffi_method_class_4demo6Engine7compute(self.handle, value)
         return try await boltffiAsyncCall(
             futureHandle: boltffiFuture,
-            poll: boltffi_async_method_class_demo_engine_compute_poll,
-            cancel: boltffi_async_method_class_demo_engine_compute_cancel,
-            free: boltffi_async_method_class_demo_engine_compute_free
+            poll: boltffi_async_method_class_4demo6Engine7compute_poll,
+            cancel: boltffi_async_method_class_4demo6Engine7compute_cancel,
+            free: boltffi_async_method_class_4demo6Engine7compute_free
         ) { boltffiFuture, boltffiStatus in
-            let boltffiResult = boltffi_async_method_class_demo_engine_compute_complete(boltffiFuture, boltffiStatus)
+            let boltffiResult = boltffi_async_method_class_4demo6Engine7compute_complete(boltffiFuture, boltffiStatus)
             let boltffiStatusCode = boltffiStatus!.pointee.code
             guard boltffiStatusCode == 0 else {
                 throw FfiError(message: "FFI failed in async completion with code \(boltffiStatusCode)")
