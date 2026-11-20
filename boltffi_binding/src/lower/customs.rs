@@ -37,7 +37,7 @@ pub fn lower(index: &Index, ids: &DeclarationIds) -> Result<Vec<CustomTypeDecl>,
     index
         .customs()
         .iter()
-        .map(|custom| lower_one(ids, custom))
+        .map(|custom| lower_one(ids, custom).map_err(|error| error.in_declaration(&custom.id)))
         .collect()
 }
 

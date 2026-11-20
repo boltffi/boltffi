@@ -140,7 +140,7 @@ impl CustomTypeExpansion {
 
             #alias
 
-            impl ::boltffi::__private::CustomType<crate::__BoltffiTag> for #remote {
+            impl ::boltffi::__private::CustomType<crate::BoltffiScaffolding> for #remote {
                 type Repr = #repr;
                 type Error = #error;
 

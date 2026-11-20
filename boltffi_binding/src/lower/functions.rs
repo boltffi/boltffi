@@ -26,7 +26,10 @@ pub fn lower<S: SurfaceLower>(
         .functions()
         .iter()
         .filter(|function| index.lowers(function.id.as_str()))
-        .map(|function| lower_one::<S>(index, ids, allocator, function))
+        .map(|function| {
+            lower_one::<S>(index, ids, allocator, function)
+                .map_err(|error| error.in_declaration(&function.id))
+        })
         .collect()
 }
 
@@ -599,6 +602,12 @@ mod tests {
             error.kind(),
             LowerErrorKind::UnsupportedType(UnsupportedType::SelfType)
         ));
+        assert_eq!(
+            error.location(),
+            &crate::SourceLocation::default()
+                .in_declaration("demo::weird")
+                .at(crate::SourcePosition::Parameter(0))
+        );
     }
 
     #[test]

@@ -7,4 +7,11 @@
 require "minitest/autorun"
 require "demo"
 
+class DemoGemTest < Minitest::Test
+  def test_the_extension_defines_the_demo_module
+    assert defined?(Demo), "case:ruby.module-defined"
+  end
+end
+
 Dir[File.join(__dir__, "tests", "**", "*_test.rb")].each { |test| require test }
+

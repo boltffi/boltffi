@@ -1,7 +1,5 @@
 error: BoltFFI: `trait T` cannot use supertraits
- --> tests/diagnostics/callback_traits/user_supertrait.rs:3:1
+ --> tests/diagnostics/callback_traits/user_supertrait.rs:4:14
   |
-3 | #[boltffi::export]
-  | ^^^^^^^^^^^^^^^^^^
-  |
-  = note: this error originates in the attribute macro `boltffi::export` (in Nightly builds, run with -Z macro-backtrace for more info)
+4 | pub trait T: B { fn f(&self); }
+  |              ^

@@ -1,7 +1,5 @@
 error: BoltFFI: `trait T::A` is not supported in exported traits
- --> tests/diagnostics/callback_traits/associated_type.rs:2:1
+ --> tests/diagnostics/callback_traits/associated_type.rs:3:15
   |
-2 | #[boltffi::export]
-  | ^^^^^^^^^^^^^^^^^^
-  |
-  = note: this error originates in the attribute macro `boltffi::export` (in Nightly builds, run with -Z macro-backtrace for more info)
+3 | pub trait T { type A; fn f(&self); }
+  |               ^^^^^^^

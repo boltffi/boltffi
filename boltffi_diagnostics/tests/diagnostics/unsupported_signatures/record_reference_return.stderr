@@ -1,7 +1,5 @@
-error: BoltFFI: unsupported source type `&Point`
- --> tests/diagnostics/unsupported_signatures/record_reference_return.rs:8:1
+error: BoltFFI: `&Point` cannot cross the boundary; only `&str` and `&[u8]` can be returned by reference, so return `Point`
+ --> tests/diagnostics/unsupported_signatures/record_reference_return.rs:9:15
   |
-8 | #[boltffi::export]
-  | ^^^^^^^^^^^^^^^^^^
-  |
-  = note: this error originates in the attribute macro `boltffi::export` (in Nightly builds, run with -Z macro-backtrace for more info)
+9 | pub fn f() -> &'static Point {
+  |               ^^^^^^^^^^^^^^

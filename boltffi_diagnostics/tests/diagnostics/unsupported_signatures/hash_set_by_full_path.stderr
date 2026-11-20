@@ -1,8 +1,8 @@
-error[E0433]: cannot find `HashSet` in `collections`
- --> tests/diagnostics/unsupported_signatures/hash_set_by_full_path.rs:3:31
+error: BoltFFI: `std::collections::HashSet<String>` cannot cross the boundary; use `Vec<T>`
+ --> tests/diagnostics/unsupported_signatures/hash_set_by_full_path.rs:3:13
   |
 3 | pub fn f(a: std::collections::HashSet<String>) {}
-  |                               ^^^^^^^ could not find `HashSet` in `collections`
+  |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 warning: unused variable: `a`
  --> tests/diagnostics/unsupported_signatures/hash_set_by_full_path.rs:3:10

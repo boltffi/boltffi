@@ -12,7 +12,7 @@ use boltffi_binding::{
     DirectVectorElementType, Direction, ErrorDecl, ExecutionDecl, ExportedCallable, HandlePresence,
     HandleTarget, ImportSymbol, ImportedCallable, ImportedMethodDecl, IntoRust, Native, OutOfRust,
     OutgoingParam, ParamDecl, ParamDirection, ParamPlan, Primitive, ReadPlan, Receive, ReturnPlan,
-    ReturnValueSlot, SurfaceLower, TypeRef, VTableSlot, Wasm32, native, wasm32,
+    ReturnValueSlot, SourcePosition, SurfaceLower, TypeRef, VTableSlot, Wasm32, native, wasm32,
 };
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote};
@@ -1183,6 +1183,11 @@ where
                     self.expansion,
                 )
                 .tokens()
+                .map_err(|error| {
+                    error
+                        .in_member(self.source.name.spelling())
+                        .at(SourcePosition::Parameter(index))
+                })
             })
             .collect::<Result<Vec<_>, _>>()
             .map(MethodParameters::from)
@@ -1762,8 +1767,9 @@ impl RustOwnedClosure {
             (rust_api::ClosureSourceForm::BoxedDyn, ClosureForm::FnOnce) => {
                 Ok(quote! { Some(#value) })
             }
-            _ => Err(Error::UnsupportedExpansion(
-                "outgoing closure parameter form",
+            _ => Err(Error::Unsupported(
+                "a callback trait method can't take an optional closure yet; take \
+                 `Box<dyn Fn(..)>` instead",
             )),
         }
     }

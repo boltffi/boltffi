@@ -1,5 +1,5 @@
-error[E0433]: cannot find `Result` in `io`
- --> tests/diagnostics/errors/io_result_return.rs:3:24
+error: BoltFFI: `std::io::Result<i32>` cannot cross the boundary; use `Result<T, E>` with `String` or a `#[error]` type as `E`
+ --> tests/diagnostics/errors/io_result_return.rs:3:15
   |
 3 | pub fn f() -> std::io::Result<i32> { Ok(1) }
-  |                        ^^^^^^ could not find `Result` in `io`
+  |               ^^^^^^^^^^^^^^^^^^^^

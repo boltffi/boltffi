@@ -1,7 +1,5 @@
-error: BoltFFI: unsupported expansion: outgoing closure parameter form
- --> tests/diagnostics/callback_traits/optional_closure_parameter.rs:2:1
+error: BoltFFI: a callback trait method can't take an optional closure yet; take `Box<dyn Fn(..)>` instead
+ --> tests/diagnostics/callback_traits/optional_closure_parameter.rs:3:27
   |
-2 | #[boltffi::export]
-  | ^^^^^^^^^^^^^^^^^^
-  |
-  = note: this error originates in the attribute macro `boltffi::export` (in Nightly builds, run with -Z macro-backtrace for more info)
+3 | pub trait T { fn f(&self, g: Option<Box<dyn Fn(i32)>>); }
+  |                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^

@@ -1,7 +1,5 @@
-error: BoltFFI: opaque Rust pointer container cannot be represented in binding IR yet
- --> tests/diagnostics/records/class_field.rs:4:1
+error: BoltFFI: `Box` and `Arc` cross only around a trait object, such as `Box<dyn Trait>`; in a parameter or return, pass the inner type itself, for example `Self` instead of `Arc<Self>`
+ --> tests/diagnostics/records/class_field.rs:6:16
   |
-4 | #[boltffi::data]
-  | ^^^^^^^^^^^^^^^^
-  |
-  = note: this error originates in the macro `::boltffi::__private::lane_resume` (in Nightly builds, run with -Z macro-backtrace for more info)
+6 | pub struct P { pub c: std::sync::Arc<Counter> }
+  |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

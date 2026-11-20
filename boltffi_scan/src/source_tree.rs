@@ -39,12 +39,6 @@ impl SourceTree {
         .map(|modules| Self { modules })
     }
 
-    pub fn combine(trees: impl IntoIterator<Item = Self>) -> Self {
-        Self {
-            modules: trees.into_iter().flat_map(|tree| tree.modules).collect(),
-        }
-    }
-
     #[cfg(test)]
     pub fn in_memory(crate_name: &str, items: Vec<syn::Item>) -> Result<Self, ScanError> {
         Self::in_memory_with_cfg(crate_name, items, &ActiveCfg::default())

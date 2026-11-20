@@ -18,7 +18,7 @@ use crate::{
 
 use super::{
     LowerError, callable,
-    error::UnsupportedType,
+    error::{SourcePosition, UnsupportedType},
     ids::DeclarationIds,
     index::Index,
     metadata,
@@ -233,7 +233,8 @@ fn lower_initializer<S: SurfaceLower>(
         owner,
         method,
         symbol.name().as_str(),
-    )?;
+    )
+    .map_err(|error| error.in_member(method.name.spelling()))?;
     Ok(InitializerDecl::new(
         id,
         CanonicalName::from(&method.name),
@@ -260,7 +261,8 @@ fn lower_method<S: SurfaceLower>(
         owner,
         method,
         symbol.name().as_str(),
-    )?;
+    )
+    .map_err(|error| error.in_member(method.name.spelling()))?;
     Ok(ExportedMethodDecl::new(
         id,
         CanonicalName::from(&method.name),
@@ -305,9 +307,10 @@ where
         .iter()
         .enumerate()
         .map(|(method_index, method)| {
-            require_callback_receiver(method.receiver)?;
+            let in_method = |error: LowerError| error.in_member(method.name.spelling());
+            require_callback_receiver(method.receiver).map_err(in_method)?;
             let slot = CallbackSlot::from_source_name(&method.name);
-            let surface = surface_for(allocator, method, &slot)?;
+            let surface = surface_for(allocator, method, &slot).map_err(in_method)?;
             allocator.enter_callable(&slot.imported_method_name(source_trait.id.as_str()));
             let callable_decl = callable::lower_imported_method::<S>(
                 index,
@@ -316,7 +319,8 @@ where
                 owner,
                 method,
                 surface.execution,
-            )?;
+            )
+            .map_err(in_method)?;
             Ok(ImportedMethodDecl::new(
                 MethodId::from_raw(method_index as u32),
                 CanonicalName::from(&method.name),
@@ -344,7 +348,8 @@ fn require_callback_receiver(receiver: Receiver) -> Result<(), LowerError> {
         Receiver::Shared => Ok(()),
         Receiver::None | Receiver::Owned | Receiver::Mutable => Err(LowerError::unsupported_type(
             UnsupportedType::InvalidCallbackReceiver,
-        )),
+        )
+        .at(SourcePosition::Receiver)),
     }
 }
 
@@ -385,9 +390,11 @@ fn reject_owned_class_receiver(method: &MethodDef) -> Result<(), LowerError> {
         // (handle poisoning, foreign-language move semantics, or an
         // explicit consumed flag on the method decl), this rejection
         // prevents the unsound case from reaching renderers.
-        Err(LowerError::unsupported_type(
-            UnsupportedType::OwnedClassReceiver,
-        ))
+        Err(
+            LowerError::unsupported_type(UnsupportedType::OwnedClassReceiver)
+                .in_member(method.name.spelling())
+                .at(SourcePosition::Receiver),
+        )
     } else {
         Ok(())
     }

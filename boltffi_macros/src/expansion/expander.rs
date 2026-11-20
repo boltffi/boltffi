@@ -332,17 +332,20 @@ impl<'expansion, 'lowered> SurfaceExpander<'expansion, 'lowered> {
             .traits
             .iter()
             .filter(|source| self.selected(source.id.as_str()))
-            .map(|source| match self.expansion {
-                ExpansionSurface::Native(expansion) => {
-                    wrapper::callback::Trait::new(expansion.callback_trait(source)?, expansion)
-                        .with_trait_object_impls(self.trait_object_impls(source))
-                        .render()
+            .map(|source| {
+                match self.expansion {
+                    ExpansionSurface::Native(expansion) => {
+                        wrapper::callback::Trait::new(expansion.callback_trait(source)?, expansion)
+                            .with_trait_object_impls(self.trait_object_impls(source))
+                            .render()
+                    }
+                    ExpansionSurface::Wasm32(expansion) => {
+                        wrapper::callback::Trait::new(expansion.callback_trait(source)?, expansion)
+                            .with_trait_object_impls(self.trait_object_impls(source))
+                            .render()
+                    }
                 }
-                ExpansionSurface::Wasm32(expansion) => {
-                    wrapper::callback::Trait::new(expansion.callback_trait(source)?, expansion)
-                        .with_trait_object_impls(self.trait_object_impls(source))
-                        .render()
-                }
+                .map_err(|error| error.in_declaration(&source.id))
             })
             .collect()
     }
@@ -400,17 +403,20 @@ impl<'expansion, 'lowered> SurfaceExpander<'expansion, 'lowered> {
             .classes
             .iter()
             .filter(|source| self.selected(source.id.as_str()))
-            .map(|source| match self.expansion {
-                ExpansionSurface::Native(expansion) => {
-                    wrapper::class::Class::new(expansion.class(source)?, expansion)
-                        .extending(self.extends_classes)
-                        .render()
+            .map(|source| {
+                match self.expansion {
+                    ExpansionSurface::Native(expansion) => {
+                        wrapper::class::Class::new(expansion.class(source)?, expansion)
+                            .extending(self.extends_classes)
+                            .render()
+                    }
+                    ExpansionSurface::Wasm32(expansion) => {
+                        wrapper::class::Class::new(expansion.class(source)?, expansion)
+                            .extending(self.extends_classes)
+                            .render()
+                    }
                 }
-                ExpansionSurface::Wasm32(expansion) => {
-                    wrapper::class::Class::new(expansion.class(source)?, expansion)
-                        .extending(self.extends_classes)
-                        .render()
-                }
+                .map_err(|error| error.in_declaration(&source.id))
             })
             .collect()
     }
@@ -495,15 +501,18 @@ impl<'expansion, 'lowered> SurfaceExpander<'expansion, 'lowered> {
             .functions
             .iter()
             .filter(|source| self.selected(source.id.as_str()))
-            .map(|source| match self.expansion {
-                ExpansionSurface::Native(expansion) => {
-                    wrapper::function::Function::new(expansion.function(source)?, expansion)
-                        .render()
+            .map(|source| {
+                match self.expansion {
+                    ExpansionSurface::Native(expansion) => {
+                        wrapper::function::Function::new(expansion.function(source)?, expansion)
+                            .render()
+                    }
+                    ExpansionSurface::Wasm32(expansion) => {
+                        wrapper::function::Function::new(expansion.function(source)?, expansion)
+                            .render()
+                    }
                 }
-                ExpansionSurface::Wasm32(expansion) => {
-                    wrapper::function::Function::new(expansion.function(source)?, expansion)
-                        .render()
-                }
+                .map_err(|error| error.in_declaration(&source.id))
             })
             .collect()
     }
@@ -602,9 +611,13 @@ mod tests {
         .for_each(|result| {
             assert!(matches!(
                 result,
-                Err(crate::expansion::error::Error::UnsupportedExpansion(
-                    "owned class parameters require a synchronous callback method"
-                ))
+                Err(crate::expansion::error::Error::Located(cause, location))
+                    if matches!(
+                        *cause,
+                        crate::expansion::error::Error::UnsupportedExpansion(
+                            "owned class parameters require a synchronous callback method"
+                        )
+                    ) && location.declaration() == Some("demo::Receiver")
             ));
         });
     }
