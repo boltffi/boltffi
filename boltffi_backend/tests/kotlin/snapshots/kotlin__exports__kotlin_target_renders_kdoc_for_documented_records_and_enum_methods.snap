@@ -8,10 +8,10 @@ expression: "rendered_fixture(\"associated/direct_record_and_enum_callables\")"
 package com.boltffi.demo
 @Suppress("FunctionName")
 private object Native {
-    @JvmStatic external fun boltffi_init_record_demo_point_origin(): ByteArray?
-    @JvmStatic external fun boltffi_method_record_demo_point_distance(`receiver`: java.nio.ByteBuffer, other: java.nio.ByteBuffer): Double
-    @JvmStatic external fun boltffi_init_enum_demo_mode_default(): Byte
-    @JvmStatic external fun boltffi_method_enum_demo_mode_code(`receiver`: Byte): Byte
+    @JvmStatic external fun boltffi_init_record_4demo5Point6origin(): ByteArray?
+    @JvmStatic external fun boltffi_method_record_4demo5Point8distance(`receiver`: java.nio.ByteBuffer, other: java.nio.ByteBuffer): Double
+    @JvmStatic external fun boltffi_init_enum_4demo4Mode7default(): Byte
+    @JvmStatic external fun boltffi_method_enum_4demo4Mode4code(`receiver`: Byte): Byte
 }
 
 
@@ -71,7 +71,7 @@ data class Point(
          * Returns the origin point.
          */
         fun origin(): Point {
-            val __boltffi_result = Native.boltffi_init_record_demo_point_origin() ?: throw IllegalStateException("null buffer returned")
+            val __boltffi_result = Native.boltffi_init_record_4demo5Point6origin() ?: throw IllegalStateException("null buffer returned")
             return Point.fromByteArray(__boltffi_result)
         }
     }
@@ -81,7 +81,7 @@ data class Point(
      */
     fun distance(other: Point): Double {
         val __boltffi_receiver = this.toDirectBuffer()
-        return Native.boltffi_method_record_demo_point_distance(__boltffi_receiver, other.toDirectBuffer())
+        return Native.boltffi_method_record_4demo5Point8distance(__boltffi_receiver, other.toDirectBuffer())
     }
 }
 
@@ -107,7 +107,7 @@ enum class Mode(val value: Byte) {
          * Returns the default mode.
          */
         fun default(): Mode {
-            return Mode.fromValue(Native.boltffi_init_enum_demo_mode_default())
+            return Mode.fromValue(Native.boltffi_init_enum_4demo4Mode7default())
         }
     }
 
@@ -115,6 +115,6 @@ enum class Mode(val value: Byte) {
      * Returns the wire code for this mode.
      */
     fun code(): UByte {
-        return Native.boltffi_method_enum_demo_mode_code(this.value.toByte()).toUByte()
+        return Native.boltffi_method_enum_4demo4Mode4code(this.value.toByte()).toUByte()
     }
 }

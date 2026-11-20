@@ -1,0 +1,19 @@
+error: BoltFFI: invalid custom type declaration: unknown custom_type! key `nope`
+ --> tests/diagnostics/custom_types/unknown_key.rs:3:59
+  |
+3 | boltffi::custom_type! { pub L, remote = R, repr = String, nope = 1, into_ffi = |s: &R| String::new(), try_from_ffi = |s: String| Ok(R...
+  |                                                           ^^^^
+
+warning: unused variable: `s`
+ --> tests/diagnostics/custom_types/unknown_key.rs:3:81
+  |
+3 | ...= String, nope = 1, into_ffi = |s: &R| String::new(), try_from_ffi = |s: String| Ok(R), }
+  |                                    ^ help: if this is intentional, prefix it with an underscore: `_s`
+  |
+  = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `s`
+ --> tests/diagnostics/custom_types/unknown_key.rs:3:119
+  |
+3 | ... String::new(), try_from_ffi = |s: String| Ok(R), }
+  |                                    ^ help: if this is intentional, prefix it with an underscore: `_s`

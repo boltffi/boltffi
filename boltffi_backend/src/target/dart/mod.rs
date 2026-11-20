@@ -1,13 +1,13 @@
 #![allow(missing_docs)]
 
 mod codec;
-mod default_value;
-mod name_style;
+pub(crate) mod default_value;
+pub(crate) mod name_style;
 mod native;
 mod render;
-mod syntax;
+pub(crate) mod syntax;
 mod type_name;
-mod value_semantics;
+pub(crate) mod value_semantics;
 
 use boltffi_binding::{
     Bindings, CallbackDecl, ClassDecl, ConstantDecl, CustomTypeDecl, EnumDecl, FunctionDecl,
@@ -31,6 +31,7 @@ use syntax::Syntax;
 pub struct DartHost {
     package: Option<String>,
     artifact: Option<String>,
+    standalone_pubspec: bool,
 }
 
 impl DartHost {
@@ -46,6 +47,17 @@ impl DartHost {
     pub fn native_artifact(mut self, artifact: impl Into<String>) -> Self {
         self.artifact = Some(artifact.into());
         self
+    }
+
+    /// Emits a pubspec without `resolution: workspace`, for packages consumed
+    /// through a bare path/git dependency outside any pub workspace.
+    pub fn standalone_pubspec(mut self) -> Self {
+        self.standalone_pubspec = true;
+        self
+    }
+
+    fn is_standalone_pubspec(&self) -> bool {
+        self.standalone_pubspec
     }
 
     pub fn into_target(self) -> Result<Target<Self, CBridge>> {
@@ -259,12 +271,78 @@ mod tests {
 
         let source = file(&output, "demo/lib/demo.dart");
         assert!(source.contains("int add(int left, int right)"));
-        assert!(source.contains("external int _f$boltffi_function_demo_api_add"));
+        assert!(source.contains("external int _f$boltffi_function_8demo_api3add"));
         assert!(source.contains("void notify(int value)"));
         assert!(source.contains("_$$BoltFFIStatus"));
         assert_eq!(source.matches("symbol: 'boltffi_free_buf'").count(), 1);
         assert!(file(&output, "demo/hook/build.dart").contains("demo_native"));
         assert!(output.diagnostics().is_empty());
+    }
+
+    #[test]
+    fn dart_target_passes_mutable_direct_records_by_pointer() {
+        let bindings = bindings(
+            r#"
+            #[data]
+            pub struct Point { pub x: f64, pub y: f64 }
+            #[export]
+            pub fn update(value: &mut Point) {}
+            #[export]
+            pub fn update_then_fail(value: &mut Point) -> Result<(), String> { Ok(()) }
+            "#,
+        );
+        let output = target(DartHost::new().package("demo"))
+            .render(&bindings)
+            .expect("mutable direct records should render");
+        let source = file(&output, "demo/lib/demo.dart");
+        assert!(source.contains("value._m$writeStruct(_l$valueStorage.ptr);"));
+        assert_eq!(
+            source
+                .matches("value._m$updateFromStruct(_l$valueStorage.ptr.ref);")
+                .count(),
+            2
+        );
+        let fallible = source
+            .split("void updateThenFail(Point value)")
+            .nth(1)
+            .unwrap();
+        assert!(fallible.contains("finally {\n    value._m$updateFromStruct"));
+    }
+
+    #[test]
+    fn dart_target_rejects_async_mutable_direct_record_parameters() {
+        let bindings = bindings(
+            r#"
+            #[data]
+            pub struct Point { pub x: f64, pub y: f64 }
+            #[export]
+            pub async fn update(value: &mut Point) {}
+            "#,
+        );
+        let result = target(DartHost::new().package("demo")).render(&bindings);
+        assert!(matches!(
+            result,
+            Err(crate::Error::UnsupportedTarget {
+                target: "dart",
+                shape: "asynchronous mutable direct record parameter",
+            })
+        ));
+    }
+
+    #[test]
+    fn dart_target_expands_shared_runtime_fragments() {
+        let bindings = bindings("");
+        let output = target(DartHost::new().package("demo"))
+            .render(&bindings)
+            .expect("runtime should render");
+        let source = file(&output, "demo/lib/demo.dart");
+
+        assert!(!source.contains("{%"));
+        assert!(source.contains("class $$BoltBoolList"));
+        assert!(source.contains("class $$BoltResult"));
+        assert!(source.contains("static bool listCompare<T>"));
+        assert!(source.contains("static int listHash<T>"));
+        assert!(source.contains("static bool nullableCompare<T>"));
     }
 
     #[test]
@@ -697,20 +775,53 @@ mod tests {
             source.contains("if (c > 127)"),
             "ASCII writeString fast path must stay in the prelude"
         );
-        assert!(source.contains("BoltFFIDartShim_demo_api_transformer_register"));
+        assert!(source.contains("BoltFFIDartShim_8demo_api11Transformer_register"));
         assert!(
             source.contains("_l$out.value = _m$transform("),
             "scalar listener write-back must use Pointer.value"
         );
         assert!(
-            source.contains("BoltFFIDartShim_demo_api_transformer_transform"),
+            source.contains("BoltFFIDartShim_8demo_api11Transformer_transform"),
             "sync methods stay on the dual-path shim"
         );
         assert!(
-            !source.contains("BoltFFIDartShim_demo_api_transformer_load"),
+            !source.contains("BoltFFIDartShim_8demo_api11Transformer_load"),
             "async methods must not be shimmed (wait-on-isolate deadlocks)"
         );
         assert!(output.diagnostics().is_empty());
+    }
+
+    #[test]
+    fn dart_fallible_async_void_callback_invokes_the_implementation() {
+        // G-01 regression: a `Future<Result<(), E>>` callback completes with
+        // an empty payload buffer, so the success arm used to emit only the
+        // buffer and silently discard the `await implementation.<m>(...)`.
+        let bindings = bindings(
+            r#"
+            #[error]
+            pub enum IoError {
+                Failed { reason: String },
+            }
+
+            #[export]
+            pub trait ByteSink {
+                async fn write_all(&self, data: Vec<u8>) -> Result<(), IoError>;
+            }
+
+            #[export]
+            pub fn flush(sink: impl ByteSink) {}
+            "#,
+        );
+        let output = target(DartHost::new().package("demo"))
+            .render(&bindings)
+            .expect("fallible async void callback should render");
+
+        let source = file(&output, "demo/lib/demo.dart");
+        assert!(
+            source.contains("await implementation.writeAll("),
+            "the implementation call must be emitted before the empty \
+             success payload — dropped calls silently complete without I/O"
+        );
     }
 
     #[test]
@@ -738,7 +849,7 @@ mod tests {
         );
         // Prefixed from `boltffi_register_callback_<path>`, not the trait leaf.
         assert!(
-            source.contains("BoltFFIDartShim_demo_api_http_client_register"),
+            source.contains("BoltFFIDartShim_8demo_api10HTTPClient_register"),
             "shim symbols must include the full callback identity"
         );
         assert!(!source.contains("BoltFFIDartShim_HTTPClient_register"));
@@ -930,6 +1041,30 @@ mod tests {
     }
 
     #[test]
+    fn dart_target_wire_codecs_step_over_direct_record_padding() {
+        let bindings = bindings(include_str!(
+            "../../../tests/fixtures/source/records/padded_direct_record.rs"
+        ));
+        let output = target(DartHost::new().package("demo"))
+            .render(&bindings)
+            .expect("padded direct record should render");
+        let source = file(&output, "demo/lib/demo.dart");
+        for expected in [
+            "tag: _p$reader.readU16(),",
+            "value: _p$reader.skip(2).readI32(),",
+            "flag: _p$reader.readU8(),",
+            "_p$reader.skip(3);",
+            "_p$writer.pad(2);",
+            "_p$writer.pad(3);",
+            "int _m$wireEncodedSize() => 2 + 2 + 4 + 1 + 3;",
+            "_$$BoltWireDecoder skip(int size)",
+            "void pad(int size)",
+        ] {
+            assert!(source.contains(expected), "missing `{expected}`");
+        }
+    }
+
+    #[test]
     fn dart_target_preserves_builtin_and_map_api_types() {
         let bindings = bindings(
             r#"
@@ -1040,8 +1175,8 @@ mod tests {
 
         let source = file(&output, "demo/lib/demo.dart");
         assert!(source.contains("Point $new(int x, int y)"));
-        assert!(source.contains("factory Message.ping() = Message$Ping;"));
-        assert!(source.contains("factory Message.values({"));
+        assert!(source.contains("const factory Message.ping() = Message$Ping;"));
+        assert!(source.contains("const factory Message.values({"));
         assert!(source.contains("void dispose$()"));
         assert!(source.contains("void dispose()"));
         assert!(source.contains("int $get()"));

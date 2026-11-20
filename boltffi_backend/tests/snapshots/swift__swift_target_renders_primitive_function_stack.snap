@@ -19,5 +19,5 @@ public struct FfiError: Error {
 }
 
 public func add(left: Int32, right: Int32) -> Int32 {
-    return boltffi_function_demo_add(left, right)
+    return boltffi_function_4demo3add(left, right)
 }

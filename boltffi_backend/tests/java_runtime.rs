@@ -152,7 +152,7 @@ FfiStatus boltffi_last_error_message(FfiString *output) {
 
 void boltffi_clear_last_error(void) {}
 
-___Point boltffi_function_demo_round_trip_point(___Point value) {
+___Point boltffi_function_4demo16round_trip_point(___Point value) {
     return value;
 }
 
@@ -195,11 +195,11 @@ static FfiBuf_u8 encoded_point(double x, double y, bool active) {
     return (FfiBuf_u8){bytes, 17, 17, 1};
 }
 
-FfiBuf_u8 boltffi_init_record_demo_encoded_point_new(double x, double y, bool active) {
+FfiBuf_u8 boltffi_init_record_4demo12EncodedPoint3new(double x, double y, bool active) {
     return encoded_point(x, y, active);
 }
 
-double boltffi_method_record_demo_encoded_point_sum(
+double boltffi_method_record_4demo12EncodedPoint3sum(
     const uint8_t *receiver_ptr,
     uintptr_t receiver_len
 ) {
@@ -207,7 +207,7 @@ double boltffi_method_record_demo_encoded_point_sum(
     return read_f64_le(receiver_ptr) + read_f64_le(receiver_ptr + 8);
 }
 
-FfiStatus boltffi_method_record_demo_encoded_point_scale(
+FfiStatus boltffi_method_record_4demo12EncodedPoint5scale(
     const uint8_t *receiver_ptr,
     uintptr_t receiver_len,
     FfiBuf_u8 *receiver_out,
@@ -222,30 +222,30 @@ FfiStatus boltffi_method_record_demo_encoded_point_scale(
     return FFI_STATUS_OK;
 }
 
-FfiBuf_u8 boltffi_function_demo_round_trip_encoded_point(
+FfiBuf_u8 boltffi_function_4demo24round_trip_encoded_point(
     const uint8_t *value_ptr,
     uintptr_t value_len
 ) {
     return boltffi_buf_from_bytes(value_ptr, value_len);
 }
 
-bool boltffi_function_demo_round_trip_bool(bool value) {
+bool boltffi_function_4demo15round_trip_bool(bool value) {
     return value;
 }
 
-int8_t boltffi_function_demo_round_trip_i8(int8_t value) {
+int8_t boltffi_function_4demo13round_trip_i8(int8_t value) {
     return value;
 }
 
-uint8_t boltffi_function_demo_round_trip_u8(uint8_t value) {
+uint8_t boltffi_function_4demo13round_trip_u8(uint8_t value) {
     return value;
 }
 
-int16_t boltffi_function_demo_round_trip_i16(int16_t value) {
+int16_t boltffi_function_4demo14round_trip_i16(int16_t value) {
     return value;
 }
 
-uint16_t boltffi_function_demo_round_trip_u16(uint16_t value) {
+uint16_t boltffi_function_4demo14round_trip_u16(uint16_t value) {
     return value;
 }
 
@@ -253,45 +253,45 @@ uint16_t boltffi_function_demo_round_trip_u16(uint16_t value) {
 #define BOLTFFI_RUNTIME_I32(value) (value)
 #endif
 
-int32_t boltffi_function_demo_round_trip_i32(int32_t value) {
+int32_t boltffi_function_4demo14round_trip_i32(int32_t value) {
     return BOLTFFI_RUNTIME_I32(value);
 }
 
-uint32_t boltffi_function_demo_round_trip_u32(uint32_t value) {
+uint32_t boltffi_function_4demo14round_trip_u32(uint32_t value) {
     return value;
 }
 
-int64_t boltffi_function_demo_round_trip_i64(int64_t value) {
+int64_t boltffi_function_4demo14round_trip_i64(int64_t value) {
     return value;
 }
 
-uint64_t boltffi_function_demo_round_trip_u64(uint64_t value) {
+uint64_t boltffi_function_4demo14round_trip_u64(uint64_t value) {
     return value;
 }
 
-intptr_t boltffi_function_demo_round_trip_isize(intptr_t value) {
+intptr_t boltffi_function_4demo16round_trip_isize(intptr_t value) {
     return value;
 }
 
-uintptr_t boltffi_function_demo_round_trip_usize(uintptr_t value) {
+uintptr_t boltffi_function_4demo16round_trip_usize(uintptr_t value) {
     return value;
 }
 
-float boltffi_function_demo_round_trip_f32(float value) {
+float boltffi_function_4demo14round_trip_f32(float value) {
     return value;
 }
 
-double boltffi_function_demo_round_trip_f64(double value) {
+double boltffi_function_4demo14round_trip_f64(double value) {
     return value;
 }
 
 static uint32_t observed_void_calls = 0;
 
-void boltffi_function_demo_observe_void(void) {
+void boltffi_function_4demo12observe_void(void) {
     observed_void_calls += 1;
 }
 
-uint32_t boltffi_function_demo_observed_void_calls(void) {
+uint32_t boltffi_function_4demo19observed_void_calls(void) {
     return observed_void_calls;
 }
 "#;
@@ -1339,6 +1339,7 @@ impl RuntimeFixture {
                 .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
     }
 
+    #[cfg(unix)]
     fn is_extraction_root_name(name: &str) -> bool {
         name.strip_prefix("boltffi-native-")
             .is_some_and(|suffix| !suffix.is_empty())

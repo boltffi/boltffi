@@ -64,13 +64,13 @@ private var boltffiMessageMapperVtable: ___MessageMapperVTable = {
 
 private enum MessageMapperBridge {
     private static let register: Void = {
-        boltffi_register_callback_demo_message_mapper(&boltffiMessageMapperVtable)
+        boltffi_register_callback_4demo13MessageMapper(&boltffiMessageMapperVtable)
     }()
 
     static func create(_ impl: MessageMapper) -> BoltFFICallbackHandle {
         _ = register
         let wrapper = MessageMapperWrapper(impl)
         let handle = UInt64(UInt(bitPattern: Unmanaged.passRetained(wrapper).toOpaque()))
-        return boltffi_create_callback_demo_message_mapper(handle)
+        return boltffi_create_callback_4demo13MessageMapper(handle)
     }
 }

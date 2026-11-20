@@ -688,6 +688,9 @@ pub(crate) fn build_jvm_native_library(
     binding_expansion: Option<&BindingExpansion>,
     step: &Step,
 ) -> Result<JvmBuildArtifacts> {
+    if let Some(binding_expansion) = binding_expansion {
+        binding_expansion.prepare_record_store()?;
+    }
     let cargo_context = &packaging_target.cargo_context;
     let link_metadata = Arc::new(Mutex::new(NativeLinkMetadataCollector::default()));
     let collected_link_metadata = Arc::clone(&link_metadata);
@@ -715,7 +718,7 @@ pub(crate) fn build_jvm_native_library(
     }
 
     let static_library_filename = if cargo_context.library.builds_staticlib() {
-        resolve_static_library_filename(cargo_context, binding_expansion)?
+        resolve_static_library_filename(cargo_context)?
     } else {
         None
     };
@@ -759,7 +762,7 @@ fn jvm_native_build_command(
         status: None,
     })?;
     let links_staticlib = cargo_context.library.builds_staticlib();
-    let passes_rustc_args = binding_expansion.is_some() || links_staticlib;
+    let uses_rustc = binding_expansion.is_some() || links_staticlib;
 
     let mut command = Command::new("cargo");
     command.current_dir(crate_directory);
@@ -769,7 +772,7 @@ fn jvm_native_build_command(
     }
 
     command
-        .arg(if passes_rustc_args { "rustc" } else { "build" })
+        .arg(if uses_rustc { "rustc" } else { "build" })
         .arg("--target")
         .arg(&cargo_context.rust_target_triple);
     apply_jvm_cargo_package_selection(&mut command, cargo_context);
@@ -779,21 +782,14 @@ fn jvm_native_build_command(
     }
 
     command.args(&cargo_context.cargo_command_args);
-    if passes_rustc_args {
+    if uses_rustc {
         command.arg("--lib");
     }
     if links_staticlib {
-        command.arg("--message-format=json-render-diagnostics");
-    }
-    match binding_expansion {
-        Some(expansion) => expansion.configure_rustc(&mut command)?,
-        None if links_staticlib => {
-            command.arg("--");
-        }
-        None => {}
-    }
-    if links_staticlib {
-        command.arg("--print=native-static-libs");
+        command
+            .arg("--message-format=json-render-diagnostics")
+            .arg("--")
+            .arg("--print=native-static-libs");
     }
 
     Ok(command)
@@ -1354,10 +1350,7 @@ pub(crate) fn target_specific_java_include_env_key(rust_target_triple: &str) -> 
     )
 }
 
-fn resolve_static_library_filename(
-    cargo_context: &JvmCargoContext,
-    binding_expansion: Option<&BindingExpansion>,
-) -> Result<Option<String>> {
+fn resolve_static_library_filename(cargo_context: &JvmCargoContext) -> Result<Option<String>> {
     let artifact_name = cargo_context.library.artifact_name();
 
     if cargo_context.host_target != JavaHostTarget::WindowsX86_64 {
@@ -1368,7 +1361,7 @@ fn resolve_static_library_filename(
         ));
     }
 
-    let filenames = query_library_filenames(cargo_context, binding_expansion)?;
+    let filenames = query_library_filenames(cargo_context)?;
     select_windows_static_library_filename(artifact_name, &filenames)
         .map(Some)
         .ok_or_else(|| CliError::CommandFailed {
@@ -1380,10 +1373,7 @@ fn resolve_static_library_filename(
         })
 }
 
-fn query_library_filenames(
-    cargo_context: &JvmCargoContext,
-    binding_expansion: Option<&BindingExpansion>,
-) -> Result<Vec<String>> {
+fn query_library_filenames(cargo_context: &JvmCargoContext) -> Result<Vec<String>> {
     let crate_directory = std::env::current_dir().map_err(|source| CliError::CommandFailed {
         command: format!("current_dir: {source}"),
         status: None,
@@ -1407,13 +1397,7 @@ fn query_library_filenames(
     }
 
     command.args(&cargo_context.cargo_command_args).arg("--lib");
-    match binding_expansion {
-        Some(expansion) => expansion.configure_rustc(&mut command)?,
-        None => {
-            command.arg("--");
-        }
-    }
-    command.arg("--print=file-names");
+    command.arg("--").arg("--print=file-names");
 
     let output = command.output().map_err(|source| CliError::CommandFailed {
         command: format!("cargo rustc --print=file-names: {source}"),
@@ -1459,6 +1443,8 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     #[cfg(unix)]
+    use super::resolve_linux_strip_program;
+    #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
 
     use super::{
@@ -1472,11 +1458,10 @@ mod tests {
         linux_strip_program_candidates, msvc_link_search_path_flags,
         msvc_native_static_library_flags, msvc_rustflag_linker_args, msvc_style_jni_linker_args,
         resolve_jni_include_directories_with_overrides, resolve_jvm_native_link_input,
-        resolve_linux_strip_program, select_windows_static_library_filename,
-        should_generate_apple_dsym_sidecars, target_prefixed_binutils_prefix,
-        target_prefixed_strip_tool_candidates, target_specific_java_home_env_key,
-        target_specific_java_include_env_key, validate_desktop_jni_symbol_stripping,
-        vendorless_linux_target_triple,
+        select_windows_static_library_filename, should_generate_apple_dsym_sidecars,
+        target_prefixed_binutils_prefix, target_prefixed_strip_tool_candidates,
+        target_specific_java_home_env_key, target_specific_java_include_env_key,
+        validate_desktop_jni_symbol_stripping, vendorless_linux_target_triple,
     };
     use boltffi_bindgen::cargo::LibraryCargoArgs;
 
@@ -1552,7 +1537,11 @@ mod tests {
             command.get_args().collect::<Vec<_>>(),
             vec![
                 "--manifest-path",
-                "/tmp/workspace/Cargo.toml",
+                cargo_context
+                    .library
+                    .cargo_manifest_path()
+                    .to_str()
+                    .unwrap(),
                 "-p",
                 cargo_context.library.package_id(),
             ]
@@ -1573,9 +1562,13 @@ mod tests {
                 "--target",
                 "x86_64-unknown-linux-gnu",
                 "--manifest-path",
-                "/tmp/workspace/Cargo.toml",
+                cargo_context
+                    .library
+                    .cargo_manifest_path()
+                    .to_str()
+                    .unwrap(),
                 "-p",
-                "path+file:///tmp/workspace/Cargo.toml#demo@0.1.0",
+                cargo_context.library.package_id(),
                 "--release",
                 "--lib",
                 "--message-format=json-render-diagnostics",
@@ -1602,9 +1595,13 @@ mod tests {
                 "--target",
                 "x86_64-unknown-linux-gnu",
                 "--manifest-path",
-                "/tmp/demo/Cargo.toml",
+                cargo_context
+                    .library
+                    .cargo_manifest_path()
+                    .to_str()
+                    .unwrap(),
                 "-p",
-                "path+file:///tmp/demo/Cargo.toml#demo@0.1.0",
+                cargo_context.library.package_id(),
             ]
         );
     }
@@ -2045,6 +2042,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn resolves_linux_strip_program_from_sibling_target_prefixed_tool() {
         let temp_root = temporary_directory("boltffi-linux-strip-test");
         let bin_dir = temp_root.join("bin");
@@ -2073,6 +2071,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn resolves_linux_strip_program_from_sibling_versioned_llvm_strip_tool() {
         let temp_root = temporary_directory("boltffi-linux-llvm-strip-test");
         let bin_dir = temp_root.join("bin");

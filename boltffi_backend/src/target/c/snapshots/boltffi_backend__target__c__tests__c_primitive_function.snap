@@ -134,7 +134,7 @@ FfiBuf_u8 boltffi_buf_with_len(uintptr_t len);
 FfiBuf_u8 boltffi_callback_error(const uint8_t *message, uintptr_t length);
 FfiStatus boltffi_last_error_message(FfiString *out);
 void boltffi_clear_last_error(void);
-int32_t boltffi_function_demo_add(int32_t left, int32_t right);
+int32_t boltffi_function_4demo3add(int32_t left, int32_t right);
 
 #ifdef __cplusplus
 }
@@ -324,7 +324,7 @@ static inline void demo_f64_sequence_free(DemoF64Sequence *v) { if (v == NULL) r
 extern "C" {
 #endif
 static inline int32_t demo_add(int32_t left, int32_t right) {
-    int32_t boltffi_result = boltffi_function_demo_add(left, right);
+    int32_t boltffi_result = boltffi_function_4demo3add(left, right);
     return boltffi_result;
 }
 

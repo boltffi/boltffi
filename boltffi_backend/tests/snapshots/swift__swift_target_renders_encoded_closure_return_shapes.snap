@@ -39,7 +39,7 @@ public func installVec(callback: @escaping () -> [UInt32]) {
         guard let context = context else { return }
         Unmanaged<BoltFFIClosureBox<() -> [UInt32]>>.fromOpaque(context).release()
     }
-    boltffi_function_demo_install_vec(boltffiCallbackCall, boltffiCallbackContext, boltffiCallbackRelease)
+    boltffi_function_4demo11install_vec(boltffiCallbackCall, boltffiCallbackContext, boltffiCallbackRelease)
 }
 
 public func installOption(callback: @escaping () -> Int32?) {
@@ -56,5 +56,5 @@ public func installOption(callback: @escaping () -> Int32?) {
         guard let context = context else { return }
         Unmanaged<BoltFFIClosureBox<() -> Int32?>>.fromOpaque(context).release()
     }
-    boltffi_function_demo_install_option(boltffiCallbackCall, boltffiCallbackContext, boltffiCallbackRelease)
+    boltffi_function_4demo14install_option(boltffiCallbackCall, boltffiCallbackContext, boltffiCallbackRelease)
 }

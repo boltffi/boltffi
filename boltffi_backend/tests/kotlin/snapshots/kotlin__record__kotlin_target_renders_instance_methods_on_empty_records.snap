@@ -8,9 +8,9 @@ expression: rendered
 package com.boltffi.demo
 @Suppress("FunctionName")
 private object Native {
-    @JvmStatic external fun boltffi_method_record_demo_marker_describe(`receiver`: java.nio.ByteBuffer, __boltffi_receiver_len: Int): ByteArray?
-    @JvmStatic external fun boltffi_method_record_demo_marker_into_code(`receiver`: java.nio.ByteBuffer, __boltffi_receiver_len: Int): Int
-    @JvmStatic external fun boltffi_method_record_demo_marker_touch(`receiver`: java.nio.ByteBuffer, __boltffi_receiver_len: Int): ByteArray?
+    @JvmStatic external fun boltffi_method_record_4demo6Marker8describe(`receiver`: java.nio.ByteBuffer, __boltffi_receiver_len: Int): ByteArray?
+    @JvmStatic external fun boltffi_method_record_4demo6Marker9into_code(`receiver`: java.nio.ByteBuffer, __boltffi_receiver_len: Int): Int
+    @JvmStatic external fun boltffi_method_record_4demo6Marker5touch(`receiver`: java.nio.ByteBuffer, __boltffi_receiver_len: Int): ByteArray?
 }
 
 
@@ -36,7 +36,7 @@ object Marker {
         val __boltffi_marker_writer = __boltffi_marker_wire.writer
         this.writeTo(__boltffi_marker_writer)
         try {
-            val __boltffi_result = Native.boltffi_method_record_demo_marker_describe(__boltffi_marker_wire.directBuffer(), __boltffi_marker_wire.size()) ?: throw IllegalStateException("null buffer returned")
+            val __boltffi_result = Native.boltffi_method_record_4demo6Marker8describe(__boltffi_marker_wire.directBuffer(), __boltffi_marker_wire.size()) ?: throw IllegalStateException("null buffer returned")
             val __boltffi_reader = WireReader(__boltffi_result)
             return __boltffi_reader.readString()
         } finally {
@@ -49,7 +49,7 @@ object Marker {
         val __boltffi_marker_writer = __boltffi_marker_wire.writer
         this.writeTo(__boltffi_marker_writer)
         try {
-            return Native.boltffi_method_record_demo_marker_into_code(__boltffi_marker_wire.directBuffer(), __boltffi_marker_wire.size()).toUInt()
+            return Native.boltffi_method_record_4demo6Marker9into_code(__boltffi_marker_wire.directBuffer(), __boltffi_marker_wire.size()).toUInt()
         } finally {
             __boltffi_marker_wire.close()
         }
@@ -60,7 +60,7 @@ object Marker {
         val __boltffi_marker_writer = __boltffi_marker_wire.writer
         this.writeTo(__boltffi_marker_writer)
         try {
-            val __boltffi_result = Native.boltffi_method_record_demo_marker_touch(__boltffi_marker_wire.directBuffer(), __boltffi_marker_wire.size()) ?: throw IllegalStateException("null buffer returned")
+            val __boltffi_result = Native.boltffi_method_record_4demo6Marker5touch(__boltffi_marker_wire.directBuffer(), __boltffi_marker_wire.size()) ?: throw IllegalStateException("null buffer returned")
             return Marker.fromByteArray(__boltffi_result)
         } finally {
             __boltffi_marker_wire.close()

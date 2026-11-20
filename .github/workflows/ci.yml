@@ -103,11 +103,11 @@ jobs:
           cache-on-failure: true
           cache-bin: false
           prefix-key: v1-rust-stable
-      # `rust-toolchain.toml` pins 1.95.0, and only the environment variable
-      # outranks it. The pin is what hides wasm link regressions: rustc stopped
-      # passing `--allow-undefined` on a wasm cdylib link between 1.95 and 1.97,
-      # so a host import left undeclared resolves there and fails for everyone
-      # building on current stable.
+      # `rust-toolchain.toml` pins a fixed release, and only the environment
+      # variable outranks it. Stable moves ahead of the pin, so this catches
+      # wasm link regressions before the pin does: rustc stopped passing
+      # `--allow-undefined` on a wasm cdylib link between 1.95 and 1.97, and a
+      # host import left undeclared failed on stable while the pin stayed green.
       - run: cargo test -p boltffi_cli --test wasm_wake_link
         env:
           RUSTUP_TOOLCHAIN: stable
@@ -267,6 +267,10 @@ jobs:
       - uses: dart-lang/setup-dart@v1
         with:
           sdk: 3.10.8
+      - if: runner.os != 'Windows'
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '4.0'
       - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '10.0.x'
@@ -284,7 +288,7 @@ jobs:
       fail-fast: false
       matrix:
         bindgen: ['0.2.122', '0.2.129']
-        rust: ['1.95.0', 'stable']
+        rust: ['1.97.0', 'stable']
         include:
           - bindgen: '0.2.122'
             futures: '0.4.72'
@@ -322,10 +326,12 @@ jobs:
         working-directory: examples/platforms/wasm
       - run: cargo test -p boltffi_cli --test wasm_pack -- --ignored
       - run: cargo test -p boltffi_cli --test wasm_bindgen_cli
-      - run: npx playwright install --with-deps chromium firefox webkit
+      - name: Run browser tests in the Playwright container
         working-directory: examples/platforms/wasm
-      - run: npm run test:browser
-        working-directory: examples/platforms/wasm
+        run: |
+          version="$(node -p 'require("./node_modules/@playwright/test/package.json").version')"
+          docker run --rm --init --ipc=host -v "$GITHUB_WORKSPACE:/w" -w /w/examples/platforms/wasm \
+            "mcr.microsoft.com/playwright:v$version-noble" npm run test:browser
 
   csharp-windows-arm64:
     name: C# Windows x64 + ARM64 package

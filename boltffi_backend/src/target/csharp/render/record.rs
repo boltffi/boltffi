@@ -39,6 +39,7 @@ pub(in crate::target::csharp) struct Record {
     codec_payload: bool,
     error_payload: bool,
     error_message_field: Option<Identifier>,
+    trailing_padding: u64,
     fields: Vec<Field>,
     default_constructors: Vec<Overload>,
     constants: AssociatedConstants,
@@ -93,11 +94,14 @@ impl Record {
                 invariant: "direct record field count does not match the C bridge",
             });
         }
+        let padding = crate::core::direct_padding::DirectPadding::of(declaration)?;
         let fields = declaration
             .fields()
             .iter()
             .zip(c_record.fields())
-            .map(|(field, c_field)| {
+            .enumerate()
+            .map(|(index, (field, c_field))| {
+                let pad = padding.before(index);
                 let primitive = field.ty().primitive();
                 if c_field.ty() != &CBridgeType::primitive(primitive)? {
                     return Err(Error::BrokenBridgeContract {
@@ -127,12 +131,19 @@ impl Record {
                             .map(DefaultExpression::into_expression)
                         })
                         .transpose()?,
-                    read: Expression::new(format!("reader.{}()", primitive_read_method(primitive))),
-                    write: vec![Statement::new(format!(
-                        "writer.{}(this.{});",
-                        primitive_write_method(primitive),
-                        field_name(field.key())?
-                    ))],
+                    read: Expression::new(match pad {
+                        0 => format!("reader.{}()", primitive_read_method(primitive)),
+                        _ => format!("reader.Skip({pad}).{}()", primitive_read_method(primitive)),
+                    }),
+                    write: (pad > 0)
+                        .then(|| Statement::new(format!("writer.Pad({pad});")))
+                        .into_iter()
+                        .chain([Statement::new(format!(
+                            "writer.{}(this.{});",
+                            primitive_write_method(primitive),
+                            field_name(field.key())?
+                        ))])
+                        .collect(),
                 })
             })
             .collect::<Result<Vec<_>>>()?;
@@ -187,6 +198,7 @@ impl Record {
             name,
             direct: true,
             codec_payload: true,
+            trailing_padding: padding.trailing(),
             error_payload: declaration.is_error_payload(),
             error_message_field: fields
                 .iter()
@@ -304,6 +316,7 @@ impl Record {
             namespace,
             name,
             direct: false,
+            trailing_padding: 0,
             codec_payload: true,
             error_payload: declaration.is_error_payload(),
             error_message_field: fields

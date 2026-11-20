@@ -74,7 +74,7 @@ public enum Role: UInt8, Hashable, Sendable, CaseIterable {
 public func echoUser(user: User) -> User {
     let boltffiUserBytes = boltffiEncode { boltffiUserWriter in user.encode(to: &boltffiUserWriter) }
     return boltffiUserBytes.withUnsafeBufferPointer { boltffiUserBuffer in
-        let boltffiResult = boltffi_function_demo_echo_user(boltffiUserBuffer.baseAddress!, UInt(boltffiUserBuffer.count))
+        let boltffiResult = boltffi_function_4demo9echo_user(boltffiUserBuffer.baseAddress!, UInt(boltffiUserBuffer.count))
         defer { boltffi_free_buf(boltffiResult) }
         return boltffiDecodeOwnedBuf(boltffiResult.ptr, Int(boltffiResult.len)) { boltffiReader in User.decode(from: &boltffiReader) }
     }

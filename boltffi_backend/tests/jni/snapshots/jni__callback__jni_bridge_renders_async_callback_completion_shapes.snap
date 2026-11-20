@@ -19,8 +19,8 @@ typedef struct {
     void (*try_load)(uint64_t, uint32_t, void (*)(void *, FfiStatus, FfiBuf_u8), void *);
     void (*check_enabled)(uint64_t, uint32_t, void (*)(void *, FfiStatus, FfiBuf_u8), void *);
 } ___ListenerVTable;
-void boltffi_register_callback_demo_listener(const ___ListenerVTable *vtable);
-BoltFFICallbackHandle boltffi_create_callback_demo_listener(uint64_t handle);
+void boltffi_register_callback_4demo8Listener(const ___ListenerVTable *vtable);
+BoltFFICallbackHandle boltffi_create_callback_4demo8Listener(uint64_t handle);
 
 ===== jni/jni_glue.c =====
 <jni source includes>
@@ -244,7 +244,7 @@ static bool boltffi_jni_load____ListenerVTable_callbacks(JNIEnv *env) {
     if (!boltffi_jni_lookup_static_method_with_diagnostic(env, g____ListenerVTable_class, "com/boltffi/demo/ListenerCallbacks", "check_enabled", "check_enabled", "(JIJJ)V", "(JIJJ)V", &g____ListenerVTable_check_enabled_method)) {
         goto fail;
     }
-    boltffi_register_callback_demo_listener(&g____ListenerVTable_vtable);
+    boltffi_register_callback_4demo8Listener(&g____ListenerVTable_vtable);
     return true;
 fail:
     (*env)->DeleteGlobalRef(env, g____ListenerVTable_class);

@@ -5,6 +5,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 
 use boltffi::export;
 
+#[export]
 #[derive(Default)]
 pub struct MessageDrops {
     lifetime: Arc<MessageLifetime>,
@@ -31,6 +32,7 @@ impl MessageDrops {
     }
 }
 
+#[export]
 pub struct OwnedMessage {
     text: String,
     lifetime: Arc<MessageLifetime>,
@@ -73,6 +75,7 @@ impl Drop for MessageBorrow<'_> {
     }
 }
 
+#[export]
 #[derive(Default)]
 pub struct MessageStore {
     count: AtomicU32,

@@ -1,5 +1,7 @@
 use boltffi::*;
 
+scaffolding!();
+
 #[data]
 #[derive(Clone, Copy)]
 struct Point {
@@ -15,6 +17,7 @@ fn add(a: Point, b: Point) -> Point {
     }
 }
 
+#[export]
 struct ConditionalClass;
 
 #[export]

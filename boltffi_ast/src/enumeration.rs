@@ -20,14 +20,19 @@ pub struct EnumDef {
     /// `repr` attributes written on the enum.
     pub repr: ReprAttr,
     /// User attributes preserved from the enum.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub user_attrs: Vec<UserAttr>,
     /// Documentation attached to the enum.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub doc: Option<DocComment>,
     /// Deprecation metadata attached to the enum.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub deprecated: Option<DeprecationInfo>,
     /// Methods attached to the enum.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub methods: Vec<crate::MethodDef>,
     /// Visibility and source location for diagnostics.
+    #[serde(default, skip_serializing_if = "Source::is_exported")]
     pub source: Source,
     /// Proc-macro span available while scanning the user crate.
     #[serde(default, skip_serializing, skip_deserializing)]
@@ -66,14 +71,18 @@ pub struct VariantDef {
     /// Source variant name.
     pub name: SourceName,
     /// Discriminant written in source, when one exists.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub discriminant: Option<i128>,
     /// Payload shape written by the variant.
     pub payload: VariantPayload,
     /// Documentation attached to the variant.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub doc: Option<DocComment>,
     /// User attributes preserved from the variant.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub user_attrs: Vec<UserAttr>,
     /// Visibility and source location for diagnostics.
+    #[serde(default, skip_serializing_if = "Source::is_exported")]
     pub source: Source,
     /// Proc-macro span available while scanning the user crate.
     #[serde(default, skip_serializing, skip_deserializing)]
