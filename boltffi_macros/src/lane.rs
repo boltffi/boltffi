@@ -117,11 +117,17 @@ impl Kind {
     pub(crate) fn capture(self, attribute: &TokenStream) -> Capture {
         match self {
             Self::Export => Capture::Class(attribute.clone()),
+            Self::Data if is_ord(attribute) => Capture::OrderedRecord,
             Self::DataImpl => Capture::Methods,
             Self::ExportMethods => Capture::ClassMethods,
             _ => Capture::Item,
         }
     }
+}
+
+/// Whether a `#[data(...)]` argument asks for the record's `Ord` as its ordering.
+pub(crate) fn is_ord(attribute: &TokenStream) -> bool {
+    attribute.to_string().trim() == "ord"
 }
 
 /// The fragments one invocation declares, whatever macro it came from.

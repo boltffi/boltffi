@@ -23,6 +23,34 @@ pub struct FixtureMarkerOptions {
     pub id: i32,
 }
 
+/// Ordered by `major`, then a release above its pre-releases, which its fields' order
+/// would not give.
+#[data(ord)]
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
+pub struct FixtureVersion {
+    pub major: u32,
+    pub pre: Option<String>,
+}
+
+impl Ord for FixtureVersion {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.major
+            .cmp(&other.major)
+            .then_with(|| match (&self.pre, &other.pre) {
+                (None, None) => std::cmp::Ordering::Equal,
+                (None, Some(_)) => std::cmp::Ordering::Greater,
+                (Some(_), None) => std::cmp::Ordering::Less,
+                (Some(left), Some(right)) => left.cmp(right),
+            })
+    }
+}
+
+impl PartialOrd for FixtureVersion {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
 #[export]
 pub fn describe_message(record: FixtureMessageRecord) -> String {
     format!(

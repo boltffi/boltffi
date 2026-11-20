@@ -226,6 +226,7 @@ const RECORD_DEFAULTS: &str = r#"
 "#;
 
 const CUSTOM_TYPE_DEFAULT: &str = include_str!("fixtures/source/records/custom_type_default.rs");
+const ORDERED_RECORDS: &str = include_str!("fixtures/source/records/ordered_records.rs");
 const PARAMETER_DEFAULTS: &str = include_str!("fixtures/source/exports/parameter_defaults.rs");
 
 const ENUM_RECORD_DEFAULTS: &str = r#"
@@ -2615,6 +2616,27 @@ fn java_target_renders_implicit_direct_record_calls_through_shared_jni_carriers(
     assert!(module.contains("public static Point echoPoint(Point point)"));
     assert!(module.contains("point.toDirectBuffer()"));
     assert!(module.contains("Point.fromByteArray"));
+}
+
+#[test]
+fn java_target_makes_ordered_records_comparable() {
+    let output = render(ORDERED_RECORDS, CoverageMode::Complete);
+    let rank = java_source(&output, "com.boltffi.demo", "Rank");
+    let version = java_source(&output, "com.boltffi.demo", "Version");
+
+    assert!(rank.contains(" implements Comparable<Rank> {"));
+    assert!(rank.contains("public int compareTo(Rank other)"));
+    assert!(version.contains(" implements Comparable<Version> {"));
+    assert!(version.contains("public int compareTo(Version other)"));
+
+    if let Some(compiler) = JavaCompiler::discover() {
+        let output = render_with_host(
+            ORDERED_RECORDS,
+            CoverageMode::Complete,
+            JavaHost::new("com.boltffi.demo", "Demo").expect("Java ordered records host"),
+        );
+        compile_generated_java(&compiler, &output, "boltffi-java-ordered-records");
+    }
 }
 
 #[test]

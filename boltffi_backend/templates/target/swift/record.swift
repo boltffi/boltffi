@@ -65,3 +65,11 @@
     }
 {%- endfor %}
 }
+{%- if let Some(comparison) = record.comparison_call() %}
+
+extension {{ record.name() }}: Comparable {
+    public static func < (lhs: {{ record.name() }}, rhs: {{ record.name() }}) -> Bool {
+        {{ comparison }} < 0
+    }
+}
+{%- endif %}

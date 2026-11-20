@@ -66,6 +66,7 @@ pub struct Record {
     wire_size: Expression,
     error_message: Option<Identifier>,
     doc: Option<Javadoc>,
+    comparable: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -93,7 +94,7 @@ impl Record {
         context: &RenderContext<Native>,
     ) -> Result<Self> {
         RecordShape::classify(declaration).require_supported()?;
-        match declaration {
+        let record = match declaration {
             RecordDecl::Direct(record) => {
                 Self::from_direct(record, bridge, native_owner, version, context)
             }
@@ -101,7 +102,11 @@ impl Record {
                 Self::from_encoded(record, bridge, native_owner, version, context)
             }
             _ => Err(JavaHost::unsupported("unknown record declaration")),
-        }
+        }?;
+        Ok(Self {
+            comparable: declaration.ordering().is_some(),
+            ..record
+        })
     }
 
     pub fn render(&self, package: &JavaPackage) -> Result<Emitted> {
@@ -271,6 +276,11 @@ impl Record {
         matches!(self.form, Form::Record)
     }
 
+    /// Whether the record implements `Comparable` through its `compareTo`.
+    pub fn comparable(&self) -> bool {
+        self.comparable
+    }
+
     pub fn error(&self) -> bool {
         self.error
     }
@@ -342,6 +352,7 @@ impl Record {
             static_methods,
             instance_methods,
             doc: record.meta().doc().map(Javadoc::new),
+            comparable: false,
         })
     }
 
@@ -396,6 +407,7 @@ impl Record {
             static_methods,
             instance_methods,
             doc: record.meta().doc().map(Javadoc::new),
+            comparable: false,
         })
     }
 

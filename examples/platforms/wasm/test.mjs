@@ -40,6 +40,7 @@ const suiteModules = [
   "./tests/records/default_values.test.mjs",
   "./tests/records/mixed.test.mjs",
   "./tests/records/nested.test.mjs",
+  "./tests/records/ordered.test.mjs",
   "./tests/records/with_collections.test.mjs",
   "./tests/records/with_enums.test.mjs",
   "./tests/records/with_options.test.mjs",

@@ -44,6 +44,9 @@ pub(in crate::target::csharp) struct Record {
     default_constructors: Vec<Overload>,
     constants: AssociatedConstants,
     methods: Vec<Function>,
+    /// `CompareTo`, the method a `#[data(ord)]` record implements `IComparable<T>` and
+    /// its comparison operators with.
+    comparison: Option<Identifier>,
     diagnostics: Vec<Diagnostic>,
 }
 
@@ -65,14 +68,19 @@ impl Record {
         bridge: &CBridgeContract,
         context: &RenderContext<Native>,
     ) -> Result<Self> {
-        match declaration {
+        let mut record = match declaration {
             RecordDecl::Direct(record) => Self::from_direct(record, namespace, bridge, context),
             RecordDecl::Encoded(record) => Self::from_encoded(record, namespace, bridge, context),
             _ => Err(Error::UnexpectedBindingShape {
                 layer: "csharp record",
                 shape: "unknown record declaration",
             }),
-        }
+        }?;
+        record.comparison = declaration
+            .ordering()
+            .map(|ordering| Name::new(ordering.name()).pascal())
+            .transpose()?;
+        Ok(record)
     }
 
     fn from_direct(
@@ -208,6 +216,7 @@ impl Record {
             default_constructors,
             constants,
             methods,
+            comparison: None,
             diagnostics,
         })
     }
@@ -327,6 +336,7 @@ impl Record {
             default_constructors,
             constants,
             methods,
+            comparison: None,
             diagnostics,
         })
     }

@@ -36,6 +36,7 @@ public static partial class DemoTest
             TestBuiltins();
             TestBlittableRecords();
             TestRecordsWithStrings();
+            TestOrderedRecords();
             TestRecordsWithDefaults();
             await TestDefaultArguments();
             TestNestedRecords();
@@ -525,6 +526,38 @@ public static partial class DemoTest
         );
 
         Console.WriteLine("  PASS\n");
+    }
+
+    /// <summary>
+    /// `#[data(ord)]` records implement IComparable and the comparison operators
+    /// through Rust's Ord, whether they cross blittable or wire-encoded.
+    /// </summary>
+    private static void TestOrderedRecords()
+    {
+        DemoCase("case:records.ordered.rank.should_compare_by_rust_ord");
+        var low = new Rank(1u, 9);
+        var high = new Rank(2u, 0);
+        Require(low.CompareTo(high) == -1, "Rank.CompareTo less");
+        Require(high.CompareTo(low) == 1, "Rank.CompareTo greater");
+        Require(low.CompareTo(new Rank(1u, 9)) == 0, "Rank.CompareTo equal");
+        Require(low < high && high >= new Rank(2u, 0), "Rank operators");
+        var ranks = new List<Rank> { high, new Rank(1u, 10), low };
+        ranks.Sort();
+        Require(ranks.SequenceEqual(new[] { low, new Rank(1u, 10), high }), "Rank sort");
+
+        DemoCase("case:records.ordered.semantic_version.should_compare_by_rust_ord");
+        var alpha = new SemanticVersion(1u, 2u, 3u, "alpha");
+        var beta = new SemanticVersion(1u, 2u, 3u, "beta");
+        var release = new SemanticVersion(1u, 2u, 3u, null);
+        var nextPatch = new SemanticVersion(1u, 2u, 4u, "alpha");
+        Require(alpha < beta, "SemanticVersion pre-releases sort by name");
+        Require(beta < release, "SemanticVersion release above its pre-releases");
+        Require(release < nextPatch, "SemanticVersion patch first");
+        Require(release.CompareTo(new SemanticVersion(1u, 2u, 3u, null)) == 0, "SemanticVersion equal");
+        var versions = new List<SemanticVersion> { nextPatch, release, beta, alpha };
+        versions.Sort();
+        Require(versions.SequenceEqual(new[] { alpha, beta, release, nextPatch }), "SemanticVersion sort");
+        Require(new[] { beta, release, alpha }.Max() == release, "SemanticVersion max");
     }
 
     /// <summary>

@@ -25,6 +25,7 @@ fn target(host: CSharpHost) -> Target<CSharpHost, CBridge> {
 
 const CUSTOM_TYPE_DEFAULT: &str = include_str!("fixtures/source/records/custom_type_default.rs");
 const PARAMETER_DEFAULTS: &str = include_str!("fixtures/source/exports/parameter_defaults.rs");
+const ORDERED_RECORDS: &str = include_str!("fixtures/source/records/ordered_records.rs");
 
 #[test]
 fn csharp_parameter_defaults_use_optional_arguments_and_runtime_overloads() {
@@ -54,6 +55,29 @@ fn csharp_parameter_defaults_use_optional_arguments_and_runtime_overloads() {
     .into_iter()
     .for_each(|signature| assert!(sources.contains(signature), "missing {signature}"));
     compile_csharp_with_dotnet_when_available(&output, "csharp-parameter-defaults");
+}
+
+#[test]
+fn csharp_ordered_records_are_comparable_with_operators() {
+    let output = target(CSharpHost::new().native_library("demo_native"))
+        .render(&bindings(ORDERED_RECORDS))
+        .expect("ordered records render");
+    let sources = output
+        .files()
+        .iter()
+        .map(|file| file.contents())
+        .collect::<String>();
+    [
+        ") : global::System.IComparable<Rank>",
+        ") : global::System.IComparable<Version>",
+        "public int CompareTo(global::Demo.Rank other)",
+        "public int CompareTo(global::Demo.Version other)",
+        "public static bool operator <(Rank left, Rank right) => left.CompareTo(right) < 0;",
+        "public static bool operator >=(Version left, Version right) => left.CompareTo(right) >= 0;",
+    ]
+    .into_iter()
+    .for_each(|expected| assert!(sources.contains(expected), "missing {expected}"));
+    compile_csharp_with_dotnet_when_available(&output, "csharp-ordered-records");
 }
 
 #[test]

@@ -1,0 +1,127 @@
+---
+source: boltffi_backend/tests/kotlin/record.rs
+expression: rendered
+---
+===== com/boltffi/demo/Demo.kt =====
+@file:OptIn(kotlin.ExperimentalUnsignedTypes::class)
+
+package com.boltffi.demo
+@Suppress("FunctionName")
+private object Native {
+    @JvmStatic external fun boltffi_method_record_4demo4Rank10compare_to(`receiver`: java.nio.ByteBuffer, other: java.nio.ByteBuffer): Int
+    @JvmStatic external fun boltffi_method_record_4demo7Version10compare_to(`receiver`: java.nio.ByteBuffer, __boltffi_receiver_len: Int, other: java.nio.ByteBuffer, __boltffi_other_len: Int): Int
+}
+
+
+data class Rank(
+    val tier: UInt,
+    val score: Int
+) : Comparable<Rank> {
+    internal fun toByteArray(): ByteArray {
+        val buffer = java.nio.ByteBuffer
+            .allocate(STRUCT_SIZE)
+            .order(java.nio.ByteOrder.nativeOrder())
+        writeTo(buffer, 0)
+        return buffer.array()
+    }
+
+    internal fun toDirectBuffer(): java.nio.ByteBuffer {
+        val buffer = java.nio.ByteBuffer
+            .allocateDirect(STRUCT_SIZE)
+            .order(java.nio.ByteOrder.nativeOrder())
+        writeTo(buffer, 0)
+        return buffer
+    }
+
+    internal fun writeTo(buffer: java.nio.ByteBuffer, offset: Int) {
+        buffer.putInt(offset, tier.toInt())
+        buffer.putInt(offset + 4, score)
+    }
+
+    companion object {
+        internal const val STRUCT_SIZE: Int = 8
+
+        internal fun fromByteArray(bytes: ByteArray): Rank {
+            require(bytes.size == STRUCT_SIZE)
+            val buffer = java.nio.ByteBuffer
+                .wrap(bytes)
+                .order(java.nio.ByteOrder.nativeOrder())
+            return fromBuffer(buffer, 0)
+        }
+
+        internal fun fromBuffer(buffer: java.nio.ByteBuffer, offset: Int): Rank {
+            return Rank(
+                buffer.getInt(offset).toUInt(),
+                buffer.getInt(offset + 4)
+            )
+        }
+    }
+
+    /**
+     * Compares with `other` by the Rust type's `Ord`: negative, zero or positive
+     * as this value sorts before, with or after `other`.
+     */
+    override fun compareTo(other: Rank): Int {
+        val __boltffi_receiver = this.toDirectBuffer()
+        return Native.boltffi_method_record_4demo4Rank10compare_to(__boltffi_receiver, other.toDirectBuffer())
+    }
+}
+
+
+data class Version(
+    val major: UInt,
+    val pre: String?
+) : Comparable<Version> {
+    internal fun wireSize(): Int {
+        return 4 + 1 + (this.pre?.let { __boltffi_value_0 -> 4 + Utf8Codec.maxBytes(__boltffi_value_0) } ?: 0)
+    }
+
+    internal fun writeTo(writer: WireWriter) {
+        writer.writeU32(this.major)
+        writer.writeOptionalValue(this.pre, { writer, __boltffi_value_0 -> writer.writeString(__boltffi_value_0) })
+    }
+
+    internal fun toByteArray(): ByteArray {
+        val buffer = WireWriterPool.acquire(wireSize())
+        val writer = buffer.writer
+        try {
+            writeTo(writer)
+            return buffer.bytes()
+        } finally {
+            buffer.close()
+        }
+    }
+
+    companion object {
+        internal fun fromReader(reader: WireReader): Version {
+            return Version(
+                reader.readU32(),
+                reader.readOptionalValue({ reader -> reader.readString() })
+            )
+        }
+
+        internal fun fromByteArray(bytes: ByteArray): Version {
+            val reader = WireReader(bytes)
+            return fromReader(reader)
+        }
+    }
+
+    /**
+     * Compares with `other` by the Rust type's `Ord`: negative, zero or positive
+     * as this value sorts before, with or after `other`.
+     */
+    override fun compareTo(other: Version): Int {
+        val __boltffi_version_wire = WireWriterPool.acquire(this.wireSize())
+        val __boltffi_version_writer = __boltffi_version_wire.writer
+        this.writeTo(__boltffi_version_writer)
+        val __boltffi_other_wire = WireWriterPool.acquire(other.wireSize())
+        val __boltffi_other_writer = __boltffi_other_wire.writer
+        other.writeTo(__boltffi_other_writer)
+        try {
+            return Native.boltffi_method_record_4demo7Version10compare_to(__boltffi_version_wire.directBuffer(), __boltffi_version_wire.size(), __boltffi_other_wire.directBuffer(), __boltffi_other_wire.size())
+        } finally {
+            __boltffi_other_wire.close()
+            __boltffi_version_wire.close()
+        }
+    }
+}

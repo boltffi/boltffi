@@ -54,6 +54,7 @@ pub struct Function {
 pub struct ExportedCall {
     name: Identifier,
     documentation: Documentation,
+    overrides: bool,
     parameters: Vec<ExportedParameter>,
     returns: Option<TypeName>,
     setup: Vec<Statement>,
@@ -250,6 +251,11 @@ impl Function {
         ))
     }
 
+    /// A free function implements no interface member.
+    pub fn overrides(&self) -> bool {
+        false
+    }
+
     pub fn name(&self) -> &Identifier {
         &self.name
     }
@@ -435,6 +441,7 @@ impl<'render> ExportedCallRenderer<'render> {
             ExecutionDecl::Synchronous(_) => Ok(ExportedCall {
                 name,
                 documentation: Documentation::default(),
+                overrides: false,
                 parameters,
                 returns,
                 setup,
@@ -455,6 +462,7 @@ impl<'render> ExportedCallRenderer<'render> {
             }) => Ok(ExportedCall {
                 name,
                 documentation: Documentation::default(),
+                overrides: false,
                 parameters,
                 returns,
                 setup: Vec::new(),
@@ -508,6 +516,16 @@ impl ExportedCall {
     pub fn documented(mut self, documentation: Option<&DocComment>) -> Self {
         self.documentation = Documentation::new(documentation);
         self
+    }
+
+    /// Declares the call `override`, as it implements an interface member.
+    pub fn overriding(mut self) -> Self {
+        self.overrides = true;
+        self
+    }
+
+    pub fn overrides(&self) -> bool {
+        self.overrides
     }
 
     pub(crate) fn requalify_types(mut self, requalify: &dyn Fn(TypeName) -> TypeName) -> Self {

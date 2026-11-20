@@ -82,7 +82,8 @@ pub fn interned_string_pool(item: TokenStream) -> TokenStream {
 
 /// Marks a struct or enum as a record, a value type copied across the boundary.
 ///
-/// `#[data(impl)]` on its `impl` block exports its methods.
+/// `#[data(impl)]` on its `impl` block exports its methods. `#[data(ord)]` on a struct
+/// orders it in the target languages by its `Ord`, through a `compare_to` method it adds.
 ///
 /// See [Records](https://boltffi.dev/docs/records) and [Types](https://boltffi.dev/docs/types).
 #[proc_macro_attribute]
@@ -90,13 +91,38 @@ pub fn data(attribute: TokenStream, item: TokenStream) -> TokenStream {
     if attribute.to_string().trim() == "impl" {
         return invocation(lane::Kind::DataImpl, attribute, item);
     }
-    syn::parse::<syn::Item>(item.clone())
-        .ok()
-        .and_then(|mut parsed| {
-            refuse_export_item(lane::Kind::Data, &parsed, &item)
-                .or_else(|| refuse_second_marker(lane::Kind::Data, &attribute, &mut parsed))
-        })
-        .unwrap_or_else(|| invocation(lane::Kind::Data, attribute, item))
+    let ordering = lane::is_ord(&attribute.clone().into()).then(|| compare_impl(&item));
+    let expanded = proc_macro2::TokenStream::from(
+        syn::parse::<syn::Item>(item.clone())
+            .ok()
+            .and_then(|mut parsed| {
+                refuse_export_item(lane::Kind::Data, &parsed, &item)
+                    .or_else(|| refuse_second_marker(lane::Kind::Data, &attribute, &mut parsed))
+            })
+            .unwrap_or_else(|| invocation(lane::Kind::Data, attribute, item)),
+    );
+    quote!(#expanded #ordering).into()
+}
+
+/// What `#[data(ord)]` adds to its struct: the `compare_to` method its bindings order by,
+/// exported through `#[data(impl)]`. An error on anything but a struct.
+fn compare_impl(item: &TokenStream) -> proc_macro2::TokenStream {
+    match syn::parse::<syn::Item>(item.clone()) {
+        Ok(syn::Item::Struct(item)) => {
+            let facade = capture::facade();
+            let block = boltffi_scan::ordering::compare_impl(&item);
+            quote! {
+                #[#facade::data(impl)]
+                #block
+            }
+        }
+        Ok(item) => syn::Error::new_spanned(
+            item,
+            "`#[data(ord)]` orders a struct by its `Ord`; it is not supported on this item",
+        )
+        .to_compile_error(),
+        Err(_) => proc_macro2::TokenStream::new(),
+    }
 }
 
 /// Refuses `#[data]` or `#[error]` on a function, trait or constant, which `#[export]` declares.

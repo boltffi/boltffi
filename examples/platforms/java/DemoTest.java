@@ -37,6 +37,7 @@ public final class DemoTest {
             testBuiltins();
             testPointRecords();
             testLineRecords();
+            testOrderedRecords();
             testAddressRecords();
             testPersonRecords();
             testUserProfileVecs();
@@ -643,6 +644,34 @@ public final class DemoTest {
         Point midpoint = MathUtils.midpoint(new Point(0.0, 0.0), new Point(2.0, 4.0));
         assert midpoint.x() == 1.0 : "MathUtils.midpoint.x";
         assert midpoint.y() == 2.0 : "MathUtils.midpoint.y";
+        System.out.println("  PASS\n");
+    }
+
+    private static void testOrderedRecords() {
+        System.out.println("Testing ordered records (Rank, SemanticVersion)...");
+        demoCase("case:records.ordered.rank.should_compare_by_rust_ord");
+        Rank low = new Rank(1, 9);
+        Rank high = new Rank(2, 0);
+        assert low.compareTo(high) == -1 : "Rank.compareTo less";
+        assert high.compareTo(low) == 1 : "Rank.compareTo greater";
+        assert low.compareTo(new Rank(1, 9)) == 0 : "Rank.compareTo equal";
+        List<Rank> ranks = new java.util.ArrayList<>(Arrays.asList(high, new Rank(1, 10), low));
+        Collections.sort(ranks);
+        assert ranks.equals(Arrays.asList(low, new Rank(1, 10), high)) : "Rank sort";
+
+        demoCase("case:records.ordered.semantic_version.should_compare_by_rust_ord");
+        SemanticVersion alpha = new SemanticVersion(1, 2, 3, Optional.of("alpha"));
+        SemanticVersion beta = new SemanticVersion(1, 2, 3, Optional.of("beta"));
+        SemanticVersion release = new SemanticVersion(1, 2, 3, Optional.empty());
+        SemanticVersion nextPatch = new SemanticVersion(1, 2, 4, Optional.of("alpha"));
+        assert alpha.compareTo(beta) < 0 : "SemanticVersion pre-releases sort by name";
+        assert beta.compareTo(release) < 0 : "SemanticVersion release above its pre-releases";
+        assert release.compareTo(nextPatch) < 0 : "SemanticVersion patch first";
+        assert release.compareTo(new SemanticVersion(1, 2, 3, Optional.empty())) == 0 : "SemanticVersion equal";
+        List<SemanticVersion> versions = new java.util.ArrayList<>(Arrays.asList(nextPatch, release, beta, alpha));
+        Collections.sort(versions);
+        assert versions.equals(Arrays.asList(alpha, beta, release, nextPatch)) : "SemanticVersion sort";
+        assert Collections.max(Arrays.asList(beta, release, alpha)).equals(release) : "SemanticVersion max";
         System.out.println("  PASS\n");
     }
 

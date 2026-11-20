@@ -34,3 +34,15 @@ fn kotlin_target_renders_async_instance_methods_on_records() {
 
     insta::assert_snapshot!(rendered);
 }
+
+#[test]
+fn kotlin_target_makes_ordered_records_comparable() {
+    let rendered = rendered_fixture("records/ordered_records");
+
+    assert!(rendered.contains(") : Comparable<Rank> {"));
+    assert!(rendered.contains(") : Comparable<Version> {"));
+    assert!(rendered.contains("    override fun compareTo(other: Rank): Int {"));
+    assert!(rendered.contains("    override fun compareTo(other: Version): Int {"));
+
+    insta::assert_snapshot!(rendered);
+}

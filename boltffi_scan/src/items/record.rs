@@ -14,6 +14,7 @@ pub fn scan(
 ) -> Result<RecordDef, ScanError> {
     let mut record = build(marked.item(), marked.scope(), declared_types)?;
     marked.marker().append_value_attrs(&mut record.user_attrs);
+    record.ordered = marked.marker() == crate::marker::Marker::DataOrd;
     Ok(record)
 }
 

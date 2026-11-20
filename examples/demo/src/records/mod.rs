@@ -4,6 +4,7 @@ pub mod mixed;
 #[cfg(feature = "c-demo")]
 pub mod mutable;
 pub mod nested;
+pub mod ordered;
 pub mod with_collections;
 pub mod with_enums;
 pub mod with_options;
@@ -15,6 +16,7 @@ pub use mixed::*;
 #[cfg(feature = "c-demo")]
 pub use mutable::*;
 pub use nested::*;
+pub use ordered::*;
 pub use with_collections::*;
 pub use with_enums::*;
 pub use with_options::*;

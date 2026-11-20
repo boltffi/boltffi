@@ -3,7 +3,7 @@
 int main(void) {
     bool (*const tests[])(void) = {
         test_scalars, test_results, test_class_handles, test_options,
-        test_strings, test_bytes, test_records, test_record_vectors,
+        test_strings, test_bytes, test_records, test_ordered_records, test_record_vectors,
         test_vectors, test_nested_vectors, test_nested_options,
         test_builtins, test_maps, test_custom_types, test_shapes,
         test_messages, test_animals, test_filters, test_owned_records,

@@ -1431,3 +1431,68 @@ e = Direction.from_degrees(90)`}
 DemoDirection south = demo_direction_opposite(&north);
 DemoDirection east = demo_direction_from_degrees(90.0);`}
 />
+
+## Ordering
+
+`#[data(ord)]` on a struct carries its `Ord` across the boundary. BoltFFI adds a `compare_to` method that returns a negative, zero or positive `i32` as `self` sorts before, with or after the argument, and each language builds its own comparison protocol on it. Values compare by calling into Rust, so a hand-written `Ord` holds in every language, not only one derived from the fields.
+
+The struct must implement `Ord`, and it cannot define a `compare_to` of its own. `#[data(ord)]` is not supported on enums yet.
+
+<CodeComparison
+  title=""
+  rust={`#[data(ord)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Rank {
+    pub tier: u32,
+    pub score: i32,
+}`}
+  swift={`public struct Rank: Hashable, Equatable, Sendable {
+    public func compareTo(other: Rank) -> Int32
+}
+
+extension Rank: Comparable {}
+
+let sorted = ranks.sorted()
+let better = high > low`}
+  kotlin={`data class Rank(...) : Comparable<Rank> {
+    override fun compareTo(other: Rank): Int
+}
+
+val sorted = ranks.sorted()
+val better = high > low`}
+  java={`public record Rank(...)
+        implements Comparable<Rank> {
+    public int compareTo(Rank other)
+}
+
+Collections.sort(ranks);`}
+  csharp={`public readonly record struct Rank(...)
+    : IComparable<Rank>
+{
+    public int CompareTo(Rank other);
+    // <, <=, > and >= as well
+}
+
+ranks.Sort();
+var better = high > low;`}
+  typescript={`const Rank = {
+    compareTo(self: Rank, other: Rank): number,
+}
+
+ranks.sort(Rank.compareTo)`}
+  python={`@dataclass
+class Rank:
+    tier: int
+    score: int
+
+    def compare_to(self, other: "Rank") -> int: ...
+    # __lt__, __le__, __gt__ and __ge__ as well
+
+ranked = sorted(ranks)
+better = high > low`}
+  c={`DemoRank low = {1, 9};
+DemoRank high = {2, 0};
+int32_t order = demo_rank_compare_to(&low, high);`}
+/>
+
+Dart records implement `Comparable` with `<`, `<=`, `>` and `>=` operators too. Ruby does not bind record methods yet, so it has no ordering either.

@@ -6,6 +6,8 @@ use crate::{ScanError, attributes};
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Marker {
     Data,
+    /// `#[data(ord)]`: a record whose `Ord` is its ordering in the bindings.
+    DataOrd,
     DataImpl,
     CustomFfi,
     Error,
@@ -51,6 +53,7 @@ impl Marker {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Data => "data",
+            Self::DataOrd => "data(ord)",
             Self::DataImpl => "data(impl)",
             Self::CustomFfi => "custom_ffi",
             Self::Error => "error",
@@ -100,9 +103,8 @@ impl Marker {
     fn from_data(attr: &syn::Attribute) -> Result<Self, ScanError> {
         match &attr.meta {
             syn::Meta::Path(_) => Ok(Self::Data),
-            syn::Meta::List(list) => parse_data_impl
+            syn::Meta::List(list) => parse_data_args
                 .parse2(list.tokens.clone())
-                .map(|_| Self::DataImpl)
                 .map_err(|_| invalid(attr)),
             _ => Err(invalid(attr)),
         }
@@ -136,9 +138,19 @@ impl ExportMarker {
     }
 }
 
-fn parse_data_impl(input: syn::parse::ParseStream<'_>) -> syn::Result<()> {
-    input.parse::<syn::Token![impl]>()?;
-    Ok(())
+fn parse_data_args(input: syn::parse::ParseStream<'_>) -> syn::Result<Marker> {
+    if input.parse::<Option<syn::Token![impl]>>()?.is_some() {
+        return Ok(Marker::DataImpl);
+    }
+    let argument = input.parse::<syn::Ident>()?;
+    if argument == "ord" {
+        Ok(Marker::DataOrd)
+    } else {
+        Err(syn::Error::new(
+            argument.span(),
+            "unsupported data marker argument",
+        ))
+    }
 }
 
 fn parse_export_args(input: syn::parse::ParseStream<'_>) -> syn::Result<ExportMarker> {
@@ -226,6 +238,14 @@ mod tests {
         assert_eq!(
             Marker::detect(&struct_attrs("#[derive(Clone)] struct S { x: i32 }")),
             Ok(None)
+        );
+        assert_eq!(
+            Marker::detect(&struct_attrs("#[data(ord)] struct S { x: i32 }")),
+            Ok(Some(Marker::DataOrd))
+        );
+        assert_eq!(
+            Marker::detect(&struct_attrs("#[boltffi::data(ord)] struct S { x: i32 }")),
+            Ok(Some(Marker::DataOrd))
         );
     }
 

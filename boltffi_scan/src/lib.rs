@@ -9,6 +9,7 @@ mod items;
 mod marked;
 mod marker;
 mod name;
+pub mod ordering;
 mod path;
 mod repr;
 mod scan;

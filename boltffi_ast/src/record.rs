@@ -34,6 +34,10 @@ pub struct RecordDef {
     /// Methods attached to the record.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub methods: Vec<crate::MethodDef>,
+    /// Whether `#[data(ord)]` exports the struct's `Ord` as its ordering, through the
+    /// [`COMPARE_METHOD`](Self::COMPARE_METHOD) it adds.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub ordered: bool,
     /// Visibility and source location for diagnostics.
     #[serde(default, skip_serializing_if = "Source::is_exported")]
     pub source: Source,
@@ -43,6 +47,10 @@ pub struct RecordDef {
 }
 
 impl RecordDef {
+    /// The method `#[data(ord)]` adds to an [`ordered`](Self::ordered) record:
+    /// `compare_to(&self, other: Self) -> i32`, negative, zero or positive by `Ord`.
+    pub const COMPARE_METHOD: &'static str = "compare_to";
+
     /// Builds an empty record definition.
     ///
     /// The `id` parameter is the stable record ID. The `name` parameter is the
@@ -59,6 +67,7 @@ impl RecordDef {
             doc: None,
             deprecated: None,
             methods: Vec::new(),
+            ordered: false,
             source: Source::exported(),
             source_span: None,
         }

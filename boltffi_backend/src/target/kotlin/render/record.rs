@@ -43,6 +43,7 @@ pub struct Record {
     initializers: Vec<ExportedCall>,
     static_methods: Vec<ExportedCall>,
     instance_methods: Vec<ExportedCall>,
+    comparable: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -88,6 +89,17 @@ impl Record {
             RecordDecl::Encoded(record) => Self::from_encoded(record, host, bridge, context),
             _ => Err(KotlinHost::unsupported("unknown record declaration")),
         }?;
+        if let Some(ordering) = declaration.ordering() {
+            let compare = Name::new(ordering.name()).function()?;
+            record.comparable = true;
+            record.instance_methods = std::mem::take(&mut record.instance_methods)
+                .into_iter()
+                .map(|call| match *call.name() == compare {
+                    true => call.overriding(),
+                    false => call,
+                })
+                .collect();
+        }
         if record.error {
             record.error_message = validate_exception_fields(
                 record.name(),
@@ -166,6 +178,11 @@ impl Record {
 
     pub fn error_message(&self) -> Option<&Identifier> {
         self.error_message.as_ref()
+    }
+
+    /// Whether the record implements `Comparable` through its `compareTo`.
+    pub fn comparable(&self) -> bool {
+        self.comparable
     }
 
     pub fn overrides_message(&self, name: &Identifier) -> bool {
@@ -303,6 +320,7 @@ impl Record {
                 bridge,
                 context,
             )?,
+            comparable: false,
         })
     }
 
@@ -356,6 +374,7 @@ impl Record {
                 bridge,
                 context,
             )?,
+            comparable: false,
         })
     }
 

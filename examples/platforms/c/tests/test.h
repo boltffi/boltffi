@@ -35,6 +35,7 @@ bool test_options(void);
 bool test_strings(void);
 bool test_bytes(void);
 bool test_records(void);
+bool test_ordered_records(void);
 bool test_record_vectors(void);
 
 bool test_vectors(void);

@@ -1,4 +1,4 @@
-{{ function.documentation() -}}
+{{ function.documentation() }}{{ function.annotation() -}}
 {%- if function.placement().factory() -%}
 factory {{ function.placement().owner() }}
 {%- match function.placement().constructor() -%}

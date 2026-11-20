@@ -100,6 +100,14 @@ impl DeclarationRole {
     }
 }
 
+fn ordering_method<S: Surface>(
+    methods: &[ExportedMethodDecl<S, NativeSymbol>],
+    ordering: Option<MethodId>,
+) -> Option<&ExportedMethodDecl<S, NativeSymbol>> {
+    let ordering = ordering?;
+    methods.iter().find(|method| method.id() == ordering)
+}
+
 fn is_false(value: &bool) -> bool {
     !*value
 }
@@ -575,6 +583,14 @@ impl<S: Surface> RecordDecl<S> {
         }
     }
 
+    /// Returns the method that orders the record, if `#[data(ord)]` declared one.
+    pub fn ordering(&self) -> Option<&ExportedMethodDecl<S, NativeSymbol>> {
+        match self {
+            Self::Direct(record) => record.ordering(),
+            Self::Encoded(record) => record.ordering(),
+        }
+    }
+
     /// Returns the declaration role.
     pub const fn role(&self) -> DeclarationRole {
         match self {
@@ -666,6 +682,8 @@ pub struct DirectRecordDecl<S: Surface> {
     fields: Vec<DirectFieldDecl>,
     initializers: Vec<InitializerDecl<S>>,
     methods: Vec<ExportedMethodDecl<S, NativeSymbol>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    ordering: Option<MethodId>,
     layout: RecordLayout,
 }
 
@@ -688,6 +706,7 @@ impl<S: Surface> DirectRecordDecl<S> {
             fields,
             initializers,
             methods,
+            ordering: None,
             layout,
         }
     }
@@ -735,6 +754,12 @@ impl<S: Surface> DirectRecordDecl<S> {
     /// Returns the methods.
     pub fn methods(&self) -> &[ExportedMethodDecl<S, NativeSymbol>] {
         &self.methods
+    }
+
+    /// Returns the method that orders this record, the `compare_to` that `#[data(ord)]`
+    /// adds: negative, zero or positive as `self` sorts before, with or after its argument.
+    pub fn ordering(&self) -> Option<&ExportedMethodDecl<S, NativeSymbol>> {
+        ordering_method(&self.methods, self.ordering)
     }
 
     /// Returns the byte-level layout.
@@ -793,6 +818,10 @@ impl<S: Surface> DirectRecordDecl<S> {
     fn set_codec_payload(&mut self, codec_payload: bool) {
         self.codec_payload = codec_payload;
     }
+
+    pub(crate) fn set_ordering(&mut self, method: MethodId) {
+        self.ordering = Some(method);
+    }
 }
 
 /// A record that crosses the boundary through encoded bytes.
@@ -814,6 +843,8 @@ pub struct EncodedRecordDecl<S: Surface> {
     fields: Vec<EncodedFieldDecl>,
     initializers: Vec<InitializerDecl<S>>,
     methods: Vec<ExportedMethodDecl<S, NativeSymbol>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    ordering: Option<MethodId>,
     codec: CodecPlan,
 }
 
@@ -835,6 +866,7 @@ impl<S: Surface> EncodedRecordDecl<S> {
             fields,
             initializers,
             methods,
+            ordering: None,
             codec,
         }
     }
@@ -877,6 +909,16 @@ impl<S: Surface> EncodedRecordDecl<S> {
     /// Returns the methods.
     pub fn methods(&self) -> &[ExportedMethodDecl<S, NativeSymbol>] {
         &self.methods
+    }
+
+    /// Returns the method that orders this record, the `compare_to` that `#[data(ord)]`
+    /// adds: negative, zero or positive as `self` sorts before, with or after its argument.
+    pub fn ordering(&self) -> Option<&ExportedMethodDecl<S, NativeSymbol>> {
+        ordering_method(&self.methods, self.ordering)
+    }
+
+    pub(crate) fn set_ordering(&mut self, method: MethodId) {
+        self.ordering = Some(method);
     }
 
     /// Returns the whole-record read plan.

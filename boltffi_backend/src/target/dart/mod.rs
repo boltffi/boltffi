@@ -280,6 +280,34 @@ mod tests {
     }
 
     #[test]
+    fn dart_target_makes_ordered_records_comparable() {
+        let bindings = bindings(include_str!(
+            "../../../tests/fixtures/source/records/ordered_records.rs"
+        ));
+        let output = target(
+            DartHost::new()
+                .package("demo")
+                .native_artifact("demo_native"),
+        )
+        .render(&bindings)
+        .expect("ordered records should render");
+
+        let source = file(&output, "demo/lib/demo.dart");
+        for expected in [
+            "final class Rank implements Comparable<Rank> {",
+            "final class Version implements Comparable<Version> {",
+            "  @override\n  int compareTo(Rank other)",
+            "  bool operator <(Rank other) => compareTo(other) < 0;",
+            "  bool operator >=(Version other) => compareTo(other) >= 0;",
+        ] {
+            assert!(
+                source.contains(expected),
+                "missing `{expected}` in:\n{source}"
+            );
+        }
+    }
+
+    #[test]
     fn dart_target_passes_mutable_direct_records_by_pointer() {
         let bindings = bindings(
             r#"

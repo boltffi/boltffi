@@ -1,0 +1,46 @@
+error[E0592]: duplicate definitions with name `compare_to`
+ --> tests/diagnostics/records/ord_with_own_compare_to.rs:2:1
+  |
+2 | #[boltffi::data(ord)]
+  | ^^^^^^^^^^^^^^^^^^^^^ duplicate definitions for `compare_to`
+...
+7 |     pub fn compare_to(&self, other: Rank) -> i32 { self.tier as i32 - other.tier as i32 }
+  |     -------------------------------------------- other definition for `compare_to`
+  |
+  = note: this error originates in the attribute macro `boltffi::data` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0034]: multiple applicable items in scope
+ --> tests/diagnostics/records/ord_with_own_compare_to.rs:2:1
+  |
+2 | #[boltffi::data(ord)]
+  | ^^^^^^^^^^^^^^^^^^^^^ multiple `compare_to` found
+  |
+note: candidate #1 is defined in an impl for the type `Rank`
+ --> tests/diagnostics/records/ord_with_own_compare_to.rs:2:1
+  |
+2 | #[boltffi::data(ord)]
+  | ^^^^^^^^^^^^^^^^^^^^^
+note: candidate #2 is defined in an impl for the type `Rank`
+ --> tests/diagnostics/records/ord_with_own_compare_to.rs:7:5
+  |
+7 |     pub fn compare_to(&self, other: Rank) -> i32 { self.tier as i32 - other.tier as i32 }
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  = note: this error originates in the macro `::boltffi::__private::lane_resume` which comes from the expansion of the attribute macro `boltffi::data` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0034]: multiple applicable items in scope
+ --> tests/diagnostics/records/ord_with_own_compare_to.rs:5:1
+  |
+5 | #[boltffi::data(impl)]
+  | ^^^^^^^^^^^^^^^^^^^^^^ multiple `compare_to` found
+  |
+note: candidate #1 is defined in an impl for the type `Rank`
+ --> tests/diagnostics/records/ord_with_own_compare_to.rs:2:1
+  |
+2 | #[boltffi::data(ord)]
+  | ^^^^^^^^^^^^^^^^^^^^^
+note: candidate #2 is defined in an impl for the type `Rank`
+ --> tests/diagnostics/records/ord_with_own_compare_to.rs:7:5
+  |
+7 |     pub fn compare_to(&self, other: Rank) -> i32 { self.tier as i32 - other.tier as i32 }
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  = note: this error originates in the macro `::boltffi::__private::lane_resume` which comes from the expansion of the attribute macro `boltffi::data` (in Nightly builds, run with -Z macro-backtrace for more info)

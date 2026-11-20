@@ -39,6 +39,9 @@ pub struct Record {
     initializers: Vec<Initializer>,
     static_methods: Vec<AssociatedFunction>,
     instance_methods: Vec<AssociatedFunction>,
+    /// `lhs.compareTo(other: rhs)`, the call `<` of a `#[data(ord)]` record's
+    /// `Comparable` conformance is built on.
+    comparison: Option<Expression>,
     diagnostics: Vec<Diagnostic>,
 }
 
@@ -81,11 +84,47 @@ impl Record {
         bridge: &CBridgeContract,
         context: &RenderContext<Native>,
     ) -> Result<Self> {
-        match declaration {
+        let mut record = match declaration {
             RecordDecl::Direct(record) => Self::from_direct(record, bridge, context),
             RecordDecl::Encoded(record) => Self::from_encoded(record, bridge, context),
             _ => Err(SwiftHost::unsupported("unknown record declaration")),
-        }
+        }?;
+        record.comparison = declaration
+            .ordering()
+            .map(|ordering| record.comparison(ordering))
+            .transpose()?;
+        Ok(record)
+    }
+
+    fn comparison(
+        &self,
+        ordering: &ExportedMethodDecl<Native, NativeSymbol>,
+    ) -> Result<Expression> {
+        let name = Name::new(ordering.name()).function()?;
+        let compare = self
+            .instance_methods
+            .iter()
+            .find(|method| *method.name() == name)
+            .ok_or(Error::BrokenBridgeContract {
+                bridge: SwiftHost::TARGET,
+                invariant: "ordered record without its rendered compare method",
+            })?;
+        let [label] = compare.argument_labels().collect::<Vec<_>>()[..] else {
+            return Err(Error::BrokenBridgeContract {
+                bridge: SwiftHost::TARGET,
+                invariant: "ordered record compare method takes one argument",
+            });
+        };
+        Ok(Expression::call(
+            Expression::member("lhs", &name),
+            [Expression::labeled(label.clone(), "rhs")]
+                .into_iter()
+                .collect::<ArgumentList>(),
+        ))
+    }
+
+    fn comparison_call(&self) -> Option<&Expression> {
+        self.comparison.as_ref()
     }
 
     pub fn render(&self) -> Result<Emitted> {
@@ -323,6 +362,7 @@ impl Record {
             initializers,
             static_methods,
             instance_methods,
+            comparison: None,
             diagnostics,
         })
     }
@@ -388,6 +428,7 @@ impl Record {
             initializers,
             static_methods,
             instance_methods,
+            comparison: None,
             diagnostics,
         })
     }
