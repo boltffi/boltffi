@@ -8,7 +8,7 @@ typedef struct {
     double x;
     double y;
 } ___Point;
-FfiStatus boltffi_method_record_demo_point_move_by(___Point receiver, ___Point *receiver_out, double dx);
+FfiStatus boltffi_method_record_4demo5Point7move_by(___Point receiver, ___Point *receiver_out, double dx);
 
 ===== jni/jni_glue.c =====
 <jni source includes>
@@ -40,7 +40,7 @@ static bool boltffi_jni_direct_buffer_address(JNIEnv *env, jobject buffer, jlong
     return true;
 }
 
-JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1method_1record_1demo_1point_1move_1by(JNIEnv *env, jclass cls, jobject receiver, jdouble dx) {
+JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1method_1record_14demo5Point7move_1by(JNIEnv *env, jclass cls, jobject receiver, jdouble dx) {
     (void)cls;
 
     void *__boltffi_receiver_ptr = NULL;
@@ -52,7 +52,7 @@ JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1method_1record_1dem
     }
     memcpy(&__boltffi_receiver_value, __boltffi_receiver_ptr, sizeof(___Point));
 
-    FfiStatus __boltffi_status = boltffi_method_record_demo_point_move_by(__boltffi_receiver_value, &__boltffi_receiver_out, dx);
+    FfiStatus __boltffi_status = boltffi_method_record_4demo5Point7move_by(__boltffi_receiver_value, &__boltffi_receiver_out, dx);
 
     if (__boltffi_status.code != 0) {
         boltffi_jni_throw_status(env, __boltffi_status);

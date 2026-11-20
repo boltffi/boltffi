@@ -128,6 +128,7 @@ mod tests {
             &config(false, false),
             PackPythonOptions {
                 execution: PackExecutionOptions {
+                    wasm_prepared: false,
                     release: false,
                     regenerate: false,
                     no_build: true,

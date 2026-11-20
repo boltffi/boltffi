@@ -12,6 +12,7 @@ pub mod coverage;
 /// Custom types mapping contracts.
 pub mod custom_types_mapping;
 pub(crate) mod default_value;
+pub(crate) mod direct_padding;
 /// Backend errors.
 pub mod error;
 /// Generated file containers.

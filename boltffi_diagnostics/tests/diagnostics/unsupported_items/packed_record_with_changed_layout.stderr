@@ -1,0 +1,5 @@
+error: #[data] supports repr(packed) only when packing leaves the repr(C) layout unchanged; remove the packed modifier
+ --> tests/diagnostics/unsupported_items/packed_record_with_changed_layout.rs:5:1
+  |
+5 | #[repr(C, packed)]
+  | ^^^^^^^^^^^^^^^^^^

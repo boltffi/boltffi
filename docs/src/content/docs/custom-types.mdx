@@ -5,7 +5,7 @@ description: "Use custom_type! to map external Rust crate types like uuid or url
 
 # Custom Types
 
-Sometimes you need to expose types from external crates that you don't own. You can't add `#[data]` to a type defined in another crate, but you can teach BoltFFI how to convert it to and from an FFI-compatible representation. This lets you use types from popular crates like `chrono`, `uuid`, or `url` directly in your exported API.
+Sometimes you need to expose types from external crates that you don't own. You can't add `#[data]` to a type defined in another crate, but you can teach BoltFFI how to convert it to and from an FFI-compatible representation. This lets you use types from crates like `chrono` or `rust_decimal` in your exported API, under a name you declare.
 
 The conversion happens automatically at the FFI boundary. Your Rust code uses the original type, consumers see either a primitive or a record, and BoltFFI handles the conversion in both directions.
 
@@ -15,43 +15,51 @@ The `custom_type!` macro defines a conversion between an external type and an FF
 
 ```rust
 use boltffi::custom_type;
+use chrono::{DateTime, Utc};
 
 custom_type! {
-    pub Uuid,
-    remote = uuid::Uuid,
-    repr = String,
-    into_ffi = |uuid| uuid.to_string(),
-    try_from_ffi = |s| uuid::Uuid::parse_str(&s).map_err(|_| boltffi::CustomTypeConversionError),
+    pub UtcDateTime,
+    remote = DateTime<Utc>,
+    repr = i64,
+    into_ffi = |value: &DateTime<Utc>| value.timestamp_millis(),
+    try_from_ffi = |millis: i64| {
+        DateTime::from_timestamp_millis(millis).ok_or(boltffi::CustomTypeConversionError)
+    },
 }
 ```
 
 The macro takes these parameters:
 
-- **name** - The identifier BoltFFI uses to track this mapping. Must be unique within your crate.
+- **name** - The name the generated bindings use for the type. The macro defines it as an alias of the remote type (`pub type UtcDateTime = DateTime<Utc>;`), so values are still the remote type. It must be unique within your crate and cannot be a builtin name such as `Duration`.
 - **remote** - The external type you're wrapping. This is what your Rust code uses.
 - **repr** - The FFI-compatible representation. Must be a type BoltFFI already knows how to transfer: primitives, `String`, `Vec<T>`, or types marked with `#[data]`.
 - **into_ffi** - A closure that converts from the remote type to the repr. Takes a reference to the remote type.
 - **try_from_ffi** - A closure that converts from the repr back to the remote type. Returns `Result<Remote, Error>`.
 - **error** - (optional) The error type returned by `try_from_ffi`. Defaults to `CustomTypeConversionError`.
 
-After defining this, you can use `uuid::Uuid` directly in your API:
+Signatures can name the type by its declared name or by the remote type:
 
 ```rust
 #[export]
-impl UserService {
-    pub fn get_user(&self, id: uuid::Uuid) -> Option<User> {
-        self.users.get(&id).cloned()
+pub struct EventLog {
+    events: Mutex<Vec<UtcDateTime>>,
+}
+
+#[export]
+impl EventLog {
+    pub fn last_seen(&self) -> Option<UtcDateTime> {
+        self.events.lock().unwrap().last().copied()
     }
-    
-    pub fn create_user(&self, name: String) -> uuid::Uuid {
-        let id = uuid::Uuid::new_v4();
-        self.users.insert(id, User { id, name });
-        id
+
+    pub fn record(&self, at: DateTime<Utc>) {
+        self.events.lock().unwrap().push(at);
     }
 }
 ```
 
-Consumers see `String` in the generated bindings. The conversion is transparent.
+Consumers see the representation (`i64` here) in the generated bindings. The conversion is transparent.
+
+The remote type, or a `type` alias of either name, works once `boltffi generate`, `boltffi build` or `boltffi pack` has run for the crate. Before that, a plain `cargo build` accepts only the declared name.
 
 ## The CustomFfiConvertible Trait
 
@@ -93,7 +101,7 @@ Note: Due to Rust's orphan rule, you cannot implement `CustomFfiConvertible` for
 ## Choosing an Approach
 
 Use `custom_type!` when:
-- The type is from an external crate (chrono, uuid, url, etc.)
+- The type is from an external crate (chrono, rust_decimal, geo, etc.)
 - The conversion is straightforward (parse/format, extract field)
 
 Use `#[custom_ffi]` when:
@@ -107,9 +115,8 @@ The representation type must be something BoltFFI can transfer across the FFI bo
 
 | Remote Type | Good Repr | Why |
 |------------|-----------|-----|
-| `uuid::Uuid` | `String` | Standard string format |
 | `chrono::DateTime<Utc>` | `i64` | Unix timestamp millis |
-| `url::Url` | `String` | URLs are strings |
+| `std::net::IpAddr` | `String` | Standard text form |
 | `rust_decimal::Decimal` | `String` | Avoid floating point |
 | `geo::Point` | `GeoPoint` (your `#[data]` type) | Structured data |
 
@@ -134,26 +141,35 @@ custom_type! {
 
 ## Containers
 
-Custom types work inside containers. If you define a conversion for `uuid::Uuid`, you can use `Vec<uuid::Uuid>`, `Option<uuid::Uuid>`, and `Result<uuid::Uuid, E>` in your API. BoltFFI applies the conversion to each element automatically.
+Custom types work inside containers. With `UtcDateTime` declared, you can use `Vec<UtcDateTime>`, `Option<UtcDateTime>`, and `Result<UtcDateTime, E>` in your API. BoltFFI applies the conversion to each element automatically.
 
 ```rust
 #[export]
-impl BatchService {
-    pub fn get_users(&self, ids: Vec<uuid::Uuid>) -> Vec<User> {
-        ids.iter()
-            .filter_map(|id| self.users.get(id).cloned())
+impl EventLog {
+    pub fn between(&self, from: UtcDateTime, to: UtcDateTime) -> Vec<UtcDateTime> {
+        self.events
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|at| (from..to).contains(at))
+            .copied()
             .collect()
     }
 }
 ```
 
-The generated bindings show `[String]` for the parameter. Each string is converted to a `Uuid` before your code runs.
+The generated bindings show a list of `i64` for the result. Each value is converted from a `DateTime<Utc>` after your code returns.
 
 ## Conversion Errors
 
 When `try_from_ffi` returns an error, BoltFFI panics with a message identifying the custom type. This is intentional: invalid data crossing the FFI boundary indicates a bug in the consumer's code. If you need to handle invalid input gracefully, validate at the API level:
 
 ```rust
+#[export]
+pub struct UserService {
+    users: HashMap<uuid::Uuid, User>,
+}
+
 #[export]
 impl UserService {
     pub fn get_user(&self, id: String) -> Result<Option<User>, ValidationError> {

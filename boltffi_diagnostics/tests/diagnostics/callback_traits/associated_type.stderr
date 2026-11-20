@@ -1,0 +1,5 @@
+error: BoltFFI: `trait T::A` is not supported in exported traits
+ --> tests/diagnostics/callback_traits/associated_type.rs:3:15
+  |
+3 | pub trait T { type A; fn f(&self); }
+  |               ^^^^^^^

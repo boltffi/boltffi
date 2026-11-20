@@ -30,7 +30,7 @@ impl<'context, 'bindings> Writer<'context, 'bindings> {
             destination: destination.into(),
             root: root.into(),
             usage,
-            package: Name::new(context.bindings().package().name()).member(),
+            package: Name::package(context).member(),
         }
     }
 

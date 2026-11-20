@@ -4,17 +4,17 @@ expression: "rendered_fixture(\"constant/accessor_constants\")"
 ---
 ===== jni/demo.h =====
 <c abi support declarations>
-FfiBuf_u8 boltffi_const_demo_magic(void);
+FfiBuf_u8 boltffi_const_4demo5MAGIC(void);
 
 ===== jni/jni_glue.c =====
 <jni source includes>
 <jni exception helpers>
 <jni byte-array helpers>
-JNIEXPORT jbyteArray JNICALL Java_com_boltffi_demo_Native_boltffi_1const_1demo_1magic(JNIEnv *env, jclass cls) {
+JNIEXPORT jbyteArray JNICALL Java_com_boltffi_demo_Native_boltffi_1const_14demo5MAGIC(JNIEnv *env, jclass cls) {
     (void)cls;
 
     (void)env;
-    FfiBuf_u8 __boltffi_result = boltffi_const_demo_magic();
+    FfiBuf_u8 __boltffi_result = boltffi_const_4demo5MAGIC();
 
     return boltffi_jni_buffer_to_byte_array(env, __boltffi_result);
 }

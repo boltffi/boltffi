@@ -1,0 +1,5 @@
+error: BoltFFI: a record needs braces, as in `pub struct Marker {}`; BoltFFI can't read a unit struct yet
+ --> tests/diagnostics/unsupported_items/unit_struct_record.rs:5:12
+  |
+5 | pub struct Marker;
+  |            ^^^^^^

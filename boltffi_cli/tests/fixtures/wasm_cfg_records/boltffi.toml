@@ -1,0 +1,5 @@
+[package]
+name = "wasm_cfg_records_fixture"
+
+[targets.wasm]
+enabled = true

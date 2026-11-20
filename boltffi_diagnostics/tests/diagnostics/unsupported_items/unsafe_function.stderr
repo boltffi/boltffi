@@ -1,0 +1,5 @@
+error: BoltFFI: `function read` cannot be unsafe
+ --> tests/diagnostics/unsupported_items/unsafe_function.rs:4:5
+  |
+4 | pub unsafe fn read(address: usize) -> u8 {
+  |     ^^^^^^

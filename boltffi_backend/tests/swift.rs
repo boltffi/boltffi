@@ -452,7 +452,7 @@ fn swift_target_passes_borrowed_direct_records_by_pointer() {
 
     assert!(rendered.contains("public func pointSum(point: Point) -> Double"));
     assert!(rendered.contains("var boltffiPointStorage = point.cValue"));
-    assert!(rendered.contains("boltffi_function_demo_point_sum(&boltffiPointStorage)"));
+    assert!(rendered.contains("boltffi_function_4demo9point_sum(&boltffiPointStorage)"));
 }
 
 #[test]
@@ -470,7 +470,7 @@ fn swift_target_writes_mutable_direct_record_receivers_back() {
     assert!(rendered.contains("var boltffiPointOut: ___Point = self.cValue"));
     assert!(
         rendered.contains(
-            "boltffi_method_record_demo_point_move_by(self.cValue, &boltffiPointOut, dx)"
+            "boltffi_method_record_4demo5Point7move_by(self.cValue, &boltffiPointOut, dx)"
         )
     );
     assert!(rendered.contains("self = Point(fromC: boltffiPointOut)"));
@@ -681,4 +681,32 @@ fn swift_target_renders_custom_type_mappings() {
         "exports/custom_string_type_functions",
         host
     ));
+}
+
+#[test]
+fn swift_wire_codecs_step_over_direct_record_padding() {
+    let rendered = rendered_fixture("records/padded_direct_record").replace("\r\n", "\n");
+    for expected in [
+        "let boltffiField0 = reader.readU16()\n        reader.skip(2)\n        let boltffiField1 = reader.readI32()",
+        "let boltffiField2 = reader.readU8()\n        reader.skip(3)\n        return Padded(tag: boltffiField0, value: boltffiField1, flag: boltffiField2)",
+        "writer.writeU16(self.tag)\n        writer.pad(2)\n        writer.writeI32(self.value)",
+        "writer.writeU8(self.flag)\n        writer.pad(3)",
+    ] {
+        assert!(
+            rendered.contains(expected),
+            "missing `{expected}` in:\n{rendered}"
+        );
+    }
+}
+
+#[test]
+fn swift_padded_decode_locals_do_not_shadow_the_reader() {
+    let rendered =
+        rendered_fixture("records/padded_direct_record_reader_field").replace("\r\n", "\n");
+    let expected = "let boltffiField0 = reader.readU8()\n        reader.skip(3)\n        let boltffiField1 = reader.readU32()\n        return Shadowing(reader: boltffiField0, value: boltffiField1)";
+    assert!(
+        rendered.contains(expected),
+        "missing `{expected}` in:\n{rendered}"
+    );
+    assert!(!rendered.contains("let reader ="));
 }

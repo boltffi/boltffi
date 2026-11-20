@@ -1,0 +1,13 @@
+error: BoltFFI: `method g` cannot be generic; export a separate non-generic item for each type you need
+ --> tests/diagnostics/classes/generic_method.rs:8:13
+  |
+8 |     pub fn g<T>(&self, t: T) {}
+  |             ^^^
+
+warning: unused variable: `t`
+ --> tests/diagnostics/classes/generic_method.rs:8:24
+  |
+8 |     pub fn g<T>(&self, t: T) {}
+  |                        ^ help: if this is intentional, prefix it with an underscore: `_t`
+  |
+  = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default

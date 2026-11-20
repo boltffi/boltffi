@@ -72,6 +72,8 @@ mod lower;
 pub use ir::*;
 pub use ir::{ErrorChannel, ErrorPlacement};
 pub use lower::{
-    DeclarationFamily, DeclarationMap, LowerError, LowerErrorKind, LoweredBindings, SurfaceLower,
-    UnsupportedType, direct_record_fields, lower, lower_with_declarations,
+    DeclarationFamily, DeclarationMap, LowerError, LowerErrorKind, LoweredBindings,
+    LoweredInvocation, SourceLocation, SourcePosition, SurfaceLower, UnsupportedType,
+    direct_record_fields, has_local_protocol, linkage_anchor, lower, lower_invocation,
+    lower_with_declarations,
 };

@@ -618,6 +618,7 @@ architectures = ["x86_64", "arm64"]
     fn pack_options(skip_desktop: bool, desktop_only: bool) -> PackAndroidOptions {
         PackAndroidOptions {
             execution: PackExecutionOptions {
+                wasm_prepared: false,
                 release: false,
                 regenerate: true,
                 no_build: false,

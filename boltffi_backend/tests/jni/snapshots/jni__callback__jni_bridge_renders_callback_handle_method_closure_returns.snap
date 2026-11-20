@@ -9,9 +9,9 @@ typedef struct {
     uint64_t (*clone)(uint64_t);
     FfiStatus (*make_handler)(uint64_t, void *);
 } ___ListenerVTable;
-void boltffi_register_callback_demo_listener(const ___ListenerVTable *vtable);
-BoltFFICallbackHandle boltffi_create_callback_demo_listener(uint64_t handle);
-BoltFFICallbackHandle boltffi_function_demo_make_listener(void);
+void boltffi_register_callback_4demo8Listener(const ___ListenerVTable *vtable);
+BoltFFICallbackHandle boltffi_create_callback_4demo8Listener(uint64_t handle);
+BoltFFICallbackHandle boltffi_function_4demo13make_listener(void);
 
 ===== jni/jni_glue.c =====
 <jni source includes>
@@ -294,7 +294,7 @@ __boltffi_fail:;
     return (FfiStatus){.code = 1};
 }
 
-JNIEXPORT jlong JNICALL Java_com_boltffi_demo_Native_boltffi_1callback_1handle_1demo_1listener_1make_1handler(JNIEnv *env, jclass cls, jlong __boltffi_callback) {
+JNIEXPORT jlong JNICALL Java_com_boltffi_demo_Native_boltffi_1callback_1handle_14demo8Listener_1make_1handler(JNIEnv *env, jclass cls, jlong __boltffi_callback) {
     (void)cls;
 
     BoltFFICallbackHandle *callback_handle = boltffi_jni_callback_handle_ref(__boltffi_callback);
@@ -341,7 +341,7 @@ static bool boltffi_jni_load____ListenerVTable_callbacks(JNIEnv *env) {
     if (!boltffi_jni_lookup_static_method_with_diagnostic(env, g____ListenerVTable_class, "com/boltffi/demo/ListenerCallbacks", "make_handler", "make_handler", "(J)J", "(J)J", &g____ListenerVTable_make_handler_method)) {
         goto fail;
     }
-    boltffi_register_callback_demo_listener(&g____ListenerVTable_vtable);
+    boltffi_register_callback_4demo8Listener(&g____ListenerVTable_vtable);
     return true;
 fail:
     (*env)->DeleteGlobalRef(env, g____ListenerVTable_class);
@@ -402,11 +402,11 @@ JNIEXPORT void JNICALL JNI_OnUnload(JavaVM *vm, void *reserved) {
     boltffi_jni_native_class = NULL;
 }
 
-JNIEXPORT jlong JNICALL Java_com_boltffi_demo_Native_boltffi_1function_1demo_1make_1listener(JNIEnv *env, jclass cls) {
+JNIEXPORT jlong JNICALL Java_com_boltffi_demo_Native_boltffi_1function_14demo13make_1listener(JNIEnv *env, jclass cls) {
     (void)cls;
 
     (void)env;
-    BoltFFICallbackHandle __boltffi_result = boltffi_function_demo_make_listener();
+    BoltFFICallbackHandle __boltffi_result = boltffi_function_4demo13make_listener();
 
     return boltffi_jni_callback_handle_new_owned(env, __boltffi_result);
 }

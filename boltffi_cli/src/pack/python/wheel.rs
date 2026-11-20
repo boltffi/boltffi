@@ -410,16 +410,22 @@ fn verify_wheel_contents(
             })
         })?;
 
+    let file_names = archive
+        .file_names()
+        .collect::<zip::result::ZipResult<Vec<_>>>()
+        .map_err(|source| CliError::CommandFailed {
+            command: format!("failed to read wheel '{}': {source}", wheel_path.display()),
+            status: None,
+        })?;
+
     let extension_prefix = format!("{package}/{extension_module}.");
     let debug_extension_prefix = format!("{package}/{extension_module}_d.");
-    let has_extension = archive.file_names().any(|name| {
+    let has_extension = file_names.iter().any(|name| {
         (name.starts_with(&extension_prefix) && (name.ends_with(".so") || name.ends_with(".pyd")))
             || (name.starts_with(&debug_extension_prefix) && name.ends_with(".pyd"))
     });
     let shared_library_entry = format!("{package}/{shared_library}");
-    let has_shared_library = archive
-        .file_names()
-        .any(|name| name == shared_library_entry);
+    let has_shared_library = file_names.iter().any(|name| *name == shared_library_entry);
 
     let missing = [
         (!has_extension).then(|| format!("the compiled {package}.{extension_module} extension")),

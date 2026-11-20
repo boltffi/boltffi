@@ -66,6 +66,7 @@ public final class DemoTest {
             testSingleThreadedStateHolder();
             testResultFunctions();
             testBorrowedClassRef();
+            testEnumBackedClass();
             testResultClassMethods();
             testResultEnumErrors();
             testStreams();
@@ -2890,8 +2891,26 @@ public final class DemoTest {
         System.out.println("  PASS\n");
     }
 
+    private static void testEnumBackedClass() {
+        System.out.println("Testing enum-backed class...");
+
+        demoCase("case:classes.enum_backed.traffic_light.seconds_left.should_match_on_the_variant_behind_the_handle");
+        try (TrafficLight red = new TrafficLight(); TrafficLight green = red.turnGreen(30)) {
+            assert red.secondsLeft() == 0 : "TrafficLight.secondsLeft on the red variant";
+            assert green.secondsLeft() == 30 : "TrafficLight.secondsLeft on the green variant";
+        }
+
+        System.out.println("  PASS\n");
+    }
+
     private static void testResultClassMethods() {
         System.out.println("Testing result class methods...");
+
+        demoCase("case:classes.methods.counter.decrement.should_call_a_method_declared_in_a_methods_block");
+        try (Counter counter = new Counter(5)) {
+            counter.decrement();
+            assert counter.get() == 4 : "Counter.decrement from a methods block";
+        }
 
         try (Counter counter = new Counter(0)) {
             counter.increment();

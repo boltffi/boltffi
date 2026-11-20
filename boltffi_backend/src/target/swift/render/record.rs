@@ -48,6 +48,7 @@ struct Field {
     name: Identifier,
     ty: TypeName,
     default: Option<Expression>,
+    padding: u64,
     body: FieldBody,
 }
 
@@ -56,6 +57,7 @@ enum RecordBody {
     Direct {
         c_type: TypeName,
         codec_payload: bool,
+        trailing_padding: u64,
     },
     Encoded,
 }
@@ -159,6 +161,41 @@ impl Record {
             .render("            ", "        ")
     }
 
+    fn trailing_padding(&self) -> u64 {
+        match &self.body {
+            RecordBody::Direct {
+                trailing_padding, ..
+            } => *trailing_padding,
+            RecordBody::Encoded => 0,
+        }
+    }
+
+    fn padded(&self) -> bool {
+        self.trailing_padding() > 0 || self.fields.iter().any(|field| field.padding > 0)
+    }
+
+    fn padded_decode_body(&self) -> String {
+        let mut lines = Vec::new();
+        for (index, field) in self.fields.iter().enumerate() {
+            if field.padding > 0 {
+                lines.push(format!("reader.skip({})", field.padding));
+            }
+            lines.push(format!("let boltffiField{index} = {}", field.read()));
+        }
+        if self.trailing_padding() > 0 {
+            lines.push(format!("reader.skip({})", self.trailing_padding()));
+        }
+        let arguments = self
+            .fields
+            .iter()
+            .enumerate()
+            .map(|(index, field)| format!("{}: boltffiField{index}", field.name))
+            .collect::<Vec<_>>()
+            .join(", ");
+        lines.push(format!("return {}({arguments})", self.name));
+        lines.join("\n        ")
+    }
+
     fn decode_arguments(&self) -> String {
         self.fields
             .iter()
@@ -257,6 +294,7 @@ impl Record {
         initializers.extend(value_initializers);
         diagnostics.extend(static_diagnostics);
         diagnostics.extend(instance_diagnostics);
+        let padding = crate::core::direct_padding::DirectPadding::of(record)?;
         Ok(Self {
             documentation: Documentation::new(record.meta().doc(), ""),
             name: Name::new(record.name()).type_name(),
@@ -264,12 +302,18 @@ impl Record {
             body: RecordBody::Direct {
                 c_type: TypeName::new(c_record.name()),
                 codec_payload: record.is_codec_payload(),
+                trailing_padding: padding.trailing(),
             },
             fields: record
                 .fields()
                 .iter()
                 .zip(c_record.fields())
-                .map(|(field, c_field)| Field::from_direct(field, c_field.name(), context))
+                .enumerate()
+                .map(|(index, (field, c_field))| {
+                    let mut field = Field::from_direct(field, c_field.name(), context)?;
+                    field.padding = padding.before(index);
+                    Ok(field)
+                })
                 .collect::<Result<Vec<_>>>()?,
             constants: AssociatedConstants::from_owner(
                 ConstantOwner::Record(record.id()),
@@ -394,6 +438,7 @@ impl Field {
                     )
                 })
                 .transpose()?,
+            padding: 0,
             body: FieldBody::Direct {
                 c_name: Identifier::parse(c_name)?,
                 read: primitive.read_expression(Identifier::parse("reader")?)?,
@@ -438,6 +483,7 @@ impl Field {
                     .default()
                     .map(|default| DefaultExpression::render(field.ty(), default, context))
                     .transpose()?,
+                padding: 0,
                 body: FieldBody::Encoded {
                     read,
                     write: write.clone(),
@@ -498,6 +544,10 @@ impl Field {
             FieldBody::Direct { c_name, .. } => Expression::labeled(c_name, &self.name),
             FieldBody::Encoded { .. } => unreachable!(),
         }
+    }
+
+    fn padding(&self) -> u64 {
+        self.padding
     }
 
     fn decode_argument(&self) -> Expression {
