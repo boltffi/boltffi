@@ -39,19 +39,44 @@ export class StreamPollManager {
     }
 }
 export class StreamSession {
-    constructor(handle, batch, pollHandle, polls, unsubscribeHandle, freeHandle) {
+    constructor(handle, batch, pollHandle, polls, unsubscribeHandle, freeHandle, takeFailure) {
         this.handle = handle;
         this.batch = batch;
         this.pollHandle = pollHandle;
         this.polls = polls;
         this.unsubscribeHandle = unsubscribeHandle;
         this.freeHandle = freeHandle;
+        this.takeFailure = takeFailure;
         this.unsubscribed = false;
         this.closed = handle === 0;
     }
     get isClosed() { return this.closed; }
+    /**
+     * Buffered items, at most `maxCount`. A stream that has failed throws its
+     * error once nothing is left to pop.
+     */
     popBatch(maxCount = 16) {
-        return this.closed || this.handle === 0 ? [] : this.batch(this.handle, maxCount);
+        if (this.closed || this.handle === 0) {
+            return [];
+        }
+        const items = this.batch(this.handle, maxCount);
+        if (items.length === 0) {
+            this.throwFailure();
+        }
+        return items;
+    }
+    // wasm runs single-threaded, so nothing can be pushed between an empty pop
+    // and this: an error reported now really follows every item
+    throwFailure() {
+        if (this.takeFailure === undefined) {
+            return;
+        }
+        if (this.failure === undefined) {
+            this.failure = this.takeFailure(this.handle);
+        }
+        if (this.failure !== undefined) {
+            throw this.failure;
+        }
     }
     unsubscribe() {
         if (!this.unsubscribed && this.handle !== 0) {

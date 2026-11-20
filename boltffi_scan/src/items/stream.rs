@@ -23,7 +23,14 @@ pub fn scan(
 
 pub(super) struct Attribute {
     item: syn::Type,
+    error: Option<syn::Type>,
     mode: StreamMode,
+}
+
+/// The type arguments of a returned `Arc<EventSubscription<T, E>>`.
+struct Subscription<'source> {
+    item: &'source syn::Type,
+    error: Option<&'source syn::Type>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -62,6 +69,7 @@ impl Attribute {
 
     fn parse(attr: &syn::Attribute) -> Result<Self, ScanError> {
         let mut item = None;
+        let mut error = None;
         let mut mode = None;
         attr.parse_nested_meta(|meta| {
             if meta.path.is_ident("item") {
@@ -69,6 +77,13 @@ impl Attribute {
                     return Err(meta.error("duplicate stream item"));
                 }
                 item = Some(meta.value()?.parse()?);
+                return Ok(());
+            }
+            if meta.path.is_ident("error") {
+                if error.is_some() {
+                    return Err(meta.error("duplicate stream error"));
+                }
+                error = Some(meta.value()?.parse()?);
                 return Ok(());
             }
             if meta.path.is_ident("mode") {
@@ -91,6 +106,7 @@ impl Attribute {
         Ok(Self {
             item: item
                 .ok_or_else(|| Self::invalid("ffi_stream requires item = <type>").at(attr))?,
+            error,
             mode: mode.unwrap_or(StreamMode::Async),
         })
     }
@@ -167,7 +183,7 @@ fn method_stream(
     if !impl_methods::exported_method(&method.attrs, &method.vis, "stream method")? {
         return Err(Attribute::invalid_placement("stream method"));
     }
-    let item_type = validate(method, scope, scanner, &attribute)?;
+    let (item_type, error_type) = validate(method, scope, scanner, &attribute)?;
     let stream_name = method.sig.ident.to_string();
     let mut stream = StreamDef::new(
         StreamId::new(format!("{}::{stream_name}", owner.as_str())),
@@ -176,6 +192,7 @@ fn method_stream(
     );
     let attrs = Attributes::new(&method.attrs, scanner);
     stream.owner = Some(owner.clone());
+    stream.error_type = error_type;
     stream.mode = attribute.mode();
     stream.source = attributes::source(&method.vis, scope, method.span());
     stream.source_span = stream.source.span.clone();
@@ -190,7 +207,7 @@ fn validate(
     scope: &ModuleScope,
     scanner: &Scanner<'_>,
     attribute: &Attribute,
-) -> Result<StreamItem, ScanError> {
+) -> Result<(StreamItem, Option<TypeExpr>), ScanError> {
     let item = format!("stream {}", method.sig.ident);
     unsupported::generics(&method.sig.generics, &item)?;
     unsupported::safety(&method.sig.safety, &item)?;
@@ -208,16 +225,45 @@ fn validate(
     let returned = subscription_item(&method.sig.output, scope, &item, scanner.is_deferred())
         .map_err(|error| error.at(&method.sig.output).at(&method.sig.ident))?;
     let declared_item = StreamItem::from_boundary(scanner.scan(attribute.item())?);
-    let returned_item = scanner.scan(returned)?;
+    let returned_item = scanner.scan(returned.item)?;
     if declared_item.storage() != &returned_item {
         return Err(Attribute::invalid(format!(
             "`{item}` declares item `{}` but returns `{}`",
             spelling::ty(attribute.item()),
-            spelling::ty(returned)
+            spelling::ty(returned.item)
         ))
-        .at(returned));
+        .at(returned.item));
     }
-    Ok(declared_item)
+    let error = match (attribute.error.as_ref(), returned.error) {
+        (None, None) => None,
+        (Some(declared), Some(returned)) => {
+            let declared_error = scanner.scan(declared)?;
+            if declared_error != scanner.scan(returned)? {
+                return Err(Attribute::invalid(format!(
+                    "`{item}` declares error `{}` but returns `{}`",
+                    spelling::ty(declared),
+                    spelling::ty(returned)
+                ))
+                .at(returned));
+            }
+            Some(declared_error)
+        }
+        (Some(declared), None) => {
+            return Err(Attribute::invalid(format!(
+                "`{item}` declares error `{}` but returns an infallible EventSubscription<T>",
+                spelling::ty(declared)
+            ))
+            .at(declared));
+        }
+        (None, Some(returned)) => {
+            return Err(Attribute::invalid(format!(
+                "`{item}` returns EventSubscription<T, {}> but declares no error = <type>",
+                spelling::ty(returned)
+            ))
+            .at(returned));
+        }
+    };
+    Ok((declared_item, error))
 }
 
 impl StreamItem {
@@ -269,7 +315,7 @@ fn subscription_item<'source>(
     scope: &ModuleScope,
     item: &str,
     deferred: bool,
-) -> Result<&'source syn::Type, ScanError> {
+) -> Result<Subscription<'source>, ScanError> {
     let syn::ReturnType::Type(_, ty) = output else {
         return Err(Attribute::invalid(format!(
             "`{item}` must return Arc<EventSubscription<T>>"
@@ -288,7 +334,7 @@ fn subscription_item<'source>(
             "`{item}` must return Arc<EventSubscription<T>>"
         )));
     }
-    let subscription = generic_type_argument(outer)
+    let subscription = single_type_argument(outer)
         .and_then(path_type)
         .ok_or_else(|| {
             Attribute::invalid(format!("`{item}` must return Arc<EventSubscription<T>>"))
@@ -306,9 +352,16 @@ fn subscription_item<'source>(
             "`{item}` must return Arc<EventSubscription<T>>"
         )));
     }
-    generic_type_argument(subscription).ok_or_else(|| {
-        Attribute::invalid(format!("`{item}` must return Arc<EventSubscription<T>>"))
-    })
+    match type_arguments(subscription).as_slice() {
+        [item] => Ok(Subscription { item, error: None }),
+        [item, error] => Ok(Subscription {
+            item,
+            error: Some(error),
+        }),
+        _ => Err(Attribute::invalid(format!(
+            "`{item}` must return Arc<EventSubscription<T>>"
+        ))),
+    }
 }
 
 fn path_type(ty: &syn::Type) -> Option<&syn::TypePath> {
@@ -320,15 +373,30 @@ fn path_type(ty: &syn::Type) -> Option<&syn::TypePath> {
     }
 }
 
-fn generic_type_argument(path: &syn::TypePath) -> Option<&syn::Type> {
-    let segment = path.path.segments.last()?;
-    let syn::PathArguments::AngleBracketed(arguments) = &segment.arguments else {
-        return None;
-    };
-    match arguments.args.iter().collect::<Vec<_>>().as_slice() {
-        [syn::GenericArgument::Type(ty)] => Some(ty),
+fn single_type_argument(path: &syn::TypePath) -> Option<&syn::Type> {
+    match type_arguments(path).as_slice() {
+        [ty] => Some(ty),
         _ => None,
     }
+}
+
+/// The type arguments of `path`'s last segment; empty if any argument is not a
+/// type.
+fn type_arguments(path: &syn::TypePath) -> Vec<&syn::Type> {
+    let Some(syn::PathArguments::AngleBracketed(arguments)) =
+        path.path.segments.last().map(|segment| &segment.arguments)
+    else {
+        return Vec::new();
+    };
+    arguments
+        .args
+        .iter()
+        .map(|argument| match argument {
+            syn::GenericArgument::Type(ty) => Some(ty),
+            _ => None,
+        })
+        .collect::<Option<Vec<_>>>()
+        .unwrap_or_default()
 }
 
 fn matches_path(scope: &ModuleScope, path: &syn::Path, qualified: &[&str], deferred: bool) -> bool {
@@ -461,6 +529,41 @@ mod tests {
         };
 
         assert!(matches!(error.unlocated(), ScanError::InvalidStream { .. }));
+    }
+
+    #[test]
+    fn scans_a_fallible_stream_error_type() {
+        let method = method(
+            "#[ffi_stream(item = i32, error = String)] pub fn events(&self) -> std::sync::Arc<boltffi::EventSubscription<i32, String>> { todo!() }",
+        );
+        let declared_types = DeclaredTypes::new();
+        let scope = ModuleScope::root("demo");
+        let scanner = Scanner::new(&declared_types, &scope);
+        let attribute = Attribute::scan(&method.attrs)
+            .expect("attribute scans")
+            .expect("stream attribute");
+
+        let (_, error) = validate(&method, &scope, &scanner, &attribute).expect("valid");
+
+        assert_eq!(error, Some(TypeExpr::String));
+    }
+
+    #[test]
+    fn rejects_a_stream_error_the_subscription_does_not_carry() {
+        let declared_only = method(
+            "#[ffi_stream(item = i32, error = String)] pub fn events(&self) -> std::sync::Arc<boltffi::EventSubscription<i32>> { todo!() }",
+        );
+        let returned_only = method(
+            "#[ffi_stream(item = i32)] pub fn events(&self) -> std::sync::Arc<boltffi::EventSubscription<i32, String>> { todo!() }",
+        );
+        let mismatched = method(
+            "#[ffi_stream(item = i32, error = String)] pub fn events(&self) -> std::sync::Arc<boltffi::EventSubscription<i32, u32>> { todo!() }",
+        );
+
+        for method in [declared_only, returned_only, mismatched] {
+            let error = validate_method(&method).expect_err("error types differ");
+            assert!(matches!(error.unlocated(), ScanError::InvalidStream { .. }));
+        }
     }
 
     #[test]

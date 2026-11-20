@@ -9,10 +9,12 @@ internal class BoltFfiStreamContext(
     private val unsubscribe: (Long) -> Unit,
     private val free: (Long) -> Unit,
     private val processItems: suspend (ByteArray) -> Unit,
-    private val finish: () -> Unit
+    private val finish: (Throwable?) -> Unit,
+    private val takeFailure: (Long) -> Throwable? = { null }
 ) {
     private val lifecycle = java.util.concurrent.atomic.AtomicInteger(0)
     private val processing = java.util.concurrent.atomic.AtomicInteger(0)
+    @Volatile private var failure: Throwable? = null
 
     fun start() {
         registerPoll()
@@ -48,6 +50,8 @@ internal class BoltFfiStreamContext(
         try {
             if (lifecycle.compareAndSet(0, 0)) {
                 drain()
+                // still `processing`, so the handle cannot be freed under us
+                if (closed) failure = takeFailure(subscription)
             }
         } finally {
             processing.compareAndSet(1, 0)
@@ -75,6 +79,6 @@ internal class BoltFfiStreamContext(
         if (!processing.compareAndSet(0, 0)) return
         if (!lifecycle.compareAndSet(2, 3)) return
         free(subscription)
-        finish()
+        finish(failure)
     }
 }

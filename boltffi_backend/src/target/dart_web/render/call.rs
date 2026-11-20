@@ -237,15 +237,8 @@ impl CallSignature {
         }
         let decoder = match &self.error_ty {
             None => "null".to_owned(),
-            Some(ty) => {
-                let exception = error_exception_type(ty, context)?;
-                let name = if matches!(ty, TypeRef::String) { "Error".to_owned() } else { format!("{exception}Exception") };
-                let property = if matches!(ty, TypeRef::String) { "message" } else { "value" };
-                let value = interop::from_js(&format!("error.getProperty('{property}'.toJS)"), ty, context)?;
-                let value = if matches!(ty, TypeRef::String) { format!("$$BoltException({value})") } else { value };
-                format!("(error) => (error.getProperty('name'.toJS) as JSString?).toDart == '{name}' ? {value} : error")
-            }
-        }.replace("as JSString?).toDart", "as JSString?)?.toDart");
+            Some(ty) => error_decoder(ty, context)?,
+        };
         let result = if self.asynchronous {
             format!("await _boltffiCaptureAsync({direct} as JSPromise<JSAny?>).toDart")
         } else {
@@ -585,6 +578,35 @@ pub(super) fn callback_method_signature(
         error_ty,
         asynchronous,
     })
+}
+
+/// The `declaredError` closure `_boltffiUnwrap` takes for an error of type
+/// `ty`: it turns the JavaScript exception thrown for `ty` into its Dart
+/// exception and passes any other error through.
+pub(super) fn error_decoder(ty: &TypeRef, context: &RenderContext<Wasm32>) -> Result<String> {
+    let exception = error_exception_type(ty, context)?;
+    let name = if matches!(ty, TypeRef::String) {
+        "Error".to_owned()
+    } else {
+        format!("{exception}Exception")
+    };
+    let property = if matches!(ty, TypeRef::String) {
+        "message"
+    } else {
+        "value"
+    };
+    let value = interop::from_js(
+        &format!("error.getProperty('{property}'.toJS)"),
+        ty,
+        context,
+    )?;
+    let value = if matches!(ty, TypeRef::String) {
+        format!("$$BoltException({value})")
+    } else {
+        value
+    };
+    Ok(format!("(error) => (error.getProperty('name'.toJS) as JSString?).toDart == '{name}' ? {value} : error")
+        .replace("as JSString?).toDart", "as JSString?)?.toDart"))
 }
 
 pub(super) fn error_exception_type(

@@ -153,3 +153,22 @@ static PyObject *{{ free.wrapper }}(PyObject *self, PyObject *const *args, Py_ss
     {{ free.storage }}(subscription);
     Py_RETURN_NONE;
 }
+{% if let Some(take_error) = take_error %}
+
+static PyObject *{{ take_error.wrapper }}(PyObject *self, PyObject *const *args, Py_ssize_t nargs) {
+    {{ stream_handle_type }} subscription = 0;
+    (void)self;
+    if (nargs != 1) {
+        PyErr_Format(PyExc_TypeError, "{{ take_error.python_name }}() takes 1 positional argument but %zd were given", nargs);
+        return NULL;
+    }
+    if ({{ take_error.storage }} == NULL) {
+        PyErr_SetString(PyExc_ImportError, "native library is not initialized");
+        return NULL;
+    }
+    if (!{{ stream_handle_parser }}(args[0], &subscription)) {
+        return NULL;
+    }
+    return boltffi_python_decode_owned_raw_wire({{ take_error.storage }}(subscription));
+}
+{% endif %}

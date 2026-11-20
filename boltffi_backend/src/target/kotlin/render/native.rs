@@ -102,6 +102,7 @@ impl<'bridge> NativeMethods<'bridge> {
             protocol.free(),
         ]
         .into_iter()
+        .chain(protocol.take_error())
         .map(|symbol| self.stream_symbol(symbol))
         .collect()
     }

@@ -20,6 +20,12 @@ impl Stream {
         let method_name = Name::new(decl.name()).dart_identifier();
         let js_name = Name::new(decl.name()).js_member_name();
         let callback_mode = matches!(decl.mode(), boltffi_binding::StreamMode::Callback);
+        // A fallible stream's TypeScript session throws its error once drained;
+        // this turns that exception into the Dart exception for the error type.
+        let declared_error = decl
+            .error()
+            .map(|error| error_decoder(error.ty(), context))
+            .transpose()?;
 
         let js_item_callback =
             format!("((JSAny? __boltffiItem) {{ __boltffiController.add({decode_item}); }}).toJS");
@@ -57,16 +63,32 @@ impl Stream {
         let body = match decl.mode() {
             boltffi_binding::StreamMode::Batch => {
                 let decoded = interop::from_js("item", &item_ty, context)?;
+                let pop = match &declared_error {
+                    None => {
+                        "session.callMethodVarArgs('popBatch'.toJS, [maxCount.toJS])".to_owned()
+                    }
+                    Some(decoder) => format!(
+                        "_boltffiUnwrap(_boltffiCapture(session.getProperty('popBatch'.toJS) as JSFunction, session, <JSAny?>[maxCount.toJS].toJS), {decoder})"
+                    ),
+                };
                 format!(
-                    "$$BoltStreamPopBatchHandle<{dart_item_type}> {method_name}() {{\n  final session = {session_or_cancellable_expr};\n  return $$BoltStreamPopBatchHandle(\n    popBatch: (maxCount) => (session.callMethodVarArgs('popBatch'.toJS, [maxCount.toJS]) as JSArray<JSAny?>).toDart.map((item) => {decoded}).toList(),\n    cancel: () => session.callMethodVarArgs('dispose'.toJS, []),\n  );\n}}\n"
+                    "$$BoltStreamPopBatchHandle<{dart_item_type}> {method_name}() {{\n  final session = {session_or_cancellable_expr};\n  return $$BoltStreamPopBatchHandle(\n    popBatch: (maxCount) => ({pop} as JSArray<JSAny?>).toDart.map((item) => {decoded}).toList(),\n    cancel: () => session.callMethodVarArgs('dispose'.toJS, []),\n  );\n}}\n"
                 )
             }
             _ => {
+                let declared_error_argument = declared_error
+                    .as_ref()
+                    .map(|decoder| format!(", {decoder}"))
+                    .unwrap_or_default();
                 let body = format!(
-                    "_boltffiStream<{dart_item_type}>((callback) => {cancellable_expr}, (__boltffiItem) => {decode_item})"
+                    "_boltffiStream<{dart_item_type}>((callback) => {cancellable_expr}, (__boltffiItem) => {decode_item}{declared_error_argument})"
                 );
                 let body = body.replace(&js_item_callback, "callback");
-                if callback_mode {
+                if callback_mode && declared_error.is_some() {
+                    format!(
+                        "StreamSubscription<{dart_item_type}> {method_name}(void Function({dart_item_type}) callback, {{required void Function(Object error) onError}}) => {body}.listen(callback, onError: onError);\n"
+                    )
+                } else if callback_mode {
                     format!(
                         "StreamSubscription<{dart_item_type}> {method_name}(void Function({dart_item_type}) callback) => {body}.listen(callback);\n"
                     )

@@ -32,7 +32,7 @@ mod stream;
 
 use call::{
     CallSignature, call_signature, callback_method_signature, direct_primitive, error_caught_value,
-    error_exception_type, error_throw_expression, web_default,
+    error_decoder, error_exception_type, error_throw_expression, web_default,
 };
 use model::field_dart_name;
 
