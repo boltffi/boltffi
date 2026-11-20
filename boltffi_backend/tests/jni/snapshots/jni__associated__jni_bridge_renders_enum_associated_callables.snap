@@ -7,25 +7,25 @@ expression: "rendered_fixture(\"associated/enum_callables\")"
 typedef uint8_t ___Mode;
 #define MODE_FAST ((___Mode)1)
 #define MODE_SLOW ((___Mode)2)
-___Mode boltffi_init_enum_demo_mode_default(void);
-uint8_t boltffi_method_enum_demo_mode_code(___Mode receiver);
+___Mode boltffi_init_enum_4demo4Mode7default(void);
+uint8_t boltffi_method_enum_4demo4Mode4code(___Mode receiver);
 
 ===== jni/jni_glue.c =====
 <jni source includes>
-JNIEXPORT jbyte JNICALL Java_com_boltffi_demo_Native_boltffi_1init_1enum_1demo_1mode_1default(JNIEnv *env, jclass cls) {
+JNIEXPORT jbyte JNICALL Java_com_boltffi_demo_Native_boltffi_1init_1enum_14demo4Mode7default(JNIEnv *env, jclass cls) {
     (void)cls;
 
     (void)env;
-    ___Mode __boltffi_result = boltffi_init_enum_demo_mode_default();
+    ___Mode __boltffi_result = boltffi_init_enum_4demo4Mode7default();
 
     return (jbyte)__boltffi_result;
 }
 
-JNIEXPORT jbyte JNICALL Java_com_boltffi_demo_Native_boltffi_1method_1enum_1demo_1mode_1code(JNIEnv *env, jclass cls, jbyte receiver) {
+JNIEXPORT jbyte JNICALL Java_com_boltffi_demo_Native_boltffi_1method_1enum_14demo4Mode4code(JNIEnv *env, jclass cls, jbyte receiver) {
     (void)cls;
 
     (void)env;
-    uint8_t __boltffi_result = boltffi_method_enum_demo_mode_code((___Mode)receiver);
+    uint8_t __boltffi_result = boltffi_method_enum_4demo4Mode4code((___Mode)receiver);
 
     return (jbyte)__boltffi_result;
 }

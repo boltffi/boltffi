@@ -1,0 +1,7 @@
+error: cannot find macro `Meters` in this scope
+ --> tests/diagnostics/undeclared_types/type_alias_in_signature.rs:6:23
+  |
+6 | pub fn double(length: Meters) -> Meters {
+  |                       ^^^^^^
+  |
+  = note: `Meters` is in scope, but it is a type alias, not a macro

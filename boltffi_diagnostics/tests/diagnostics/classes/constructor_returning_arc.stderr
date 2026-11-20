@@ -1,0 +1,5 @@
+error: BoltFFI: `Box` and `Arc` cross only around a trait object, such as `Box<dyn Trait>`; in a parameter or return, pass the inner type itself, for example `Self` instead of `Arc<Self>`
+ --> tests/diagnostics/classes/constructor_returning_arc.rs:8:18
+  |
+8 |     pub fn new() -> std::sync::Arc<Self> {
+  |                  ^^^^^^^^^^^^^^^^^^^^^^^

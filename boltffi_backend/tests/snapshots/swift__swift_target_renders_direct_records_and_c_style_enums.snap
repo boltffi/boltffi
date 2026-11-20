@@ -57,10 +57,10 @@ public enum Mode: UInt8, Hashable, Sendable, CaseIterable {
 
 /// Returns the point unchanged.
 public func echoPoint(point: Point) -> Point {
-    return Point(fromC: boltffi_function_demo_echo_point(point.cValue))
+    return Point(fromC: boltffi_function_4demo10echo_point(point.cValue))
 }
 
 /// Returns the mode unchanged.
 public func echoMode(mode: Mode) -> Mode {
-    return Mode(fromC: boltffi_function_demo_echo_mode(mode.cValue))
+    return Mode(fromC: boltffi_function_4demo9echo_mode(mode.cValue))
 }

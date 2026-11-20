@@ -20,12 +20,12 @@ typedef struct {
     void (*child)(uint64_t, void (*)(void *, FfiStatus, BoltFFICallbackHandle), void *);
     void (*sibling)(uint64_t, void (*)(void *, FfiStatus, BoltFFICallbackHandle), void *);
 } ___ListenerVTable;
-void boltffi_register_callback_demo_child(const ___ChildVTable *vtable);
-BoltFFICallbackHandle boltffi_create_callback_demo_child(uint64_t handle);
-void boltffi_register_callback_demo_sibling(const ___SiblingVTable *vtable);
-BoltFFICallbackHandle boltffi_create_callback_demo_sibling(uint64_t handle);
-void boltffi_register_callback_demo_listener(const ___ListenerVTable *vtable);
-BoltFFICallbackHandle boltffi_create_callback_demo_listener(uint64_t handle);
+void boltffi_register_callback_4demo5Child(const ___ChildVTable *vtable);
+BoltFFICallbackHandle boltffi_create_callback_4demo5Child(uint64_t handle);
+void boltffi_register_callback_4demo7Sibling(const ___SiblingVTable *vtable);
+BoltFFICallbackHandle boltffi_create_callback_4demo7Sibling(uint64_t handle);
+void boltffi_register_callback_4demo8Listener(const ___ListenerVTable *vtable);
+BoltFFICallbackHandle boltffi_create_callback_4demo8Listener(uint64_t handle);
 
 ===== jni/jni_glue.c =====
 <jni source includes>
@@ -105,7 +105,7 @@ static bool boltffi_jni_load____ChildVTable_callbacks(JNIEnv *env) {
     if (!boltffi_jni_lookup_static_method_with_diagnostic(env, g____ChildVTable_class, "com/boltffi/demo/ChildCallbacks", "on_value", "on_value", "(JI)I", "(JI)I", &g____ChildVTable_on_value_method)) {
         goto fail;
     }
-    boltffi_register_callback_demo_child(&g____ChildVTable_vtable);
+    boltffi_register_callback_4demo5Child(&g____ChildVTable_vtable);
     return true;
 fail:
     (*env)->DeleteGlobalRef(env, g____ChildVTable_class);
@@ -212,7 +212,7 @@ static bool boltffi_jni_load____SiblingVTable_callbacks(JNIEnv *env) {
     if (!boltffi_jni_lookup_static_method_with_diagnostic(env, g____SiblingVTable_class, "com/boltffi/demo/SiblingCallbacks", "on_name", "on_name", "(J[B)V", "(J[B)V", &g____SiblingVTable_on_name_method)) {
         goto fail;
     }
-    boltffi_register_callback_demo_sibling(&g____SiblingVTable_vtable);
+    boltffi_register_callback_4demo7Sibling(&g____SiblingVTable_vtable);
     return true;
 fail:
     (*env)->DeleteGlobalRef(env, g____SiblingVTable_class);
@@ -337,7 +337,7 @@ static bool boltffi_jni_load____ListenerVTable_callbacks(JNIEnv *env) {
     if (!boltffi_jni_lookup_static_method_with_diagnostic(env, g____ListenerVTable_class, "com/boltffi/demo/ListenerCallbacks", "sibling", "sibling", "(JJJ)V", "(JJJ)V", &g____ListenerVTable_sibling_method)) {
         goto fail;
     }
-    boltffi_register_callback_demo_listener(&g____ListenerVTable_vtable);
+    boltffi_register_callback_4demo8Listener(&g____ListenerVTable_vtable);
     return true;
 fail:
     (*env)->DeleteGlobalRef(env, g____ListenerVTable_class);
@@ -356,14 +356,14 @@ static void boltffi_jni_unload____ListenerVTable_callbacks(JNIEnv *env) {
     g____ListenerVTable_sibling_method = NULL;
 }
 
-JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1async_1callback_1complete_1Callback_1demo_1child(JNIEnv *env, jclass cls, jlong callback, jlong context, jlong result) {
+JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1async_1callback_1complete_1Callback_14demo5Child(JNIEnv *env, jclass cls, jlong callback, jlong context, jlong result) {
     (void)cls;
     void (*complete)(void *, FfiStatus, BoltFFICallbackHandle) = (void (*)(void *, FfiStatus, BoltFFICallbackHandle))callback;
-    BoltFFICallbackHandle payload = boltffi_create_callback_demo_child((uint64_t)result);
+    BoltFFICallbackHandle payload = boltffi_create_callback_4demo5Child((uint64_t)result);
     complete((void *)context, (FfiStatus){.code = 0}, payload);
 }
 
-JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1async_1callback_1complete_1Callback_1demo_1child_1failure(JNIEnv *env, jclass cls, jlong callback, jlong context, jthrowable exception) {
+JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1async_1callback_1complete_1Callback_14demo5Child_1failure(JNIEnv *env, jclass cls, jlong callback, jlong context, jthrowable exception) {
     (void)cls;
     void (*complete)(void *, FfiStatus, BoltFFICallbackHandle) = (void (*)(void *, FfiStatus, BoltFFICallbackHandle))callback;
     (void)env;
@@ -371,21 +371,21 @@ JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1async_1callback_1co
     complete((void *)context, (FfiStatus){.code = 1}, (BoltFFICallbackHandle){0});
 }
 
-JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1async_1callback_1complete_1Callback_1demo_1child_1error(JNIEnv *env, jclass cls, jlong callback, jlong context, jlong result) {
+JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1async_1callback_1complete_1Callback_14demo5Child_1error(JNIEnv *env, jclass cls, jlong callback, jlong context, jlong result) {
     (void)cls;
     void (*complete)(void *, FfiStatus, BoltFFICallbackHandle) = (void (*)(void *, FfiStatus, BoltFFICallbackHandle))callback;
-    BoltFFICallbackHandle payload = boltffi_create_callback_demo_child((uint64_t)result);
+    BoltFFICallbackHandle payload = boltffi_create_callback_4demo5Child((uint64_t)result);
     complete((void *)context, (FfiStatus){.code = 1}, payload);
 }
 
-JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1async_1callback_1complete_1Callback_1demo_1sibling(JNIEnv *env, jclass cls, jlong callback, jlong context, jlong result) {
+JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1async_1callback_1complete_1Callback_14demo7Sibling(JNIEnv *env, jclass cls, jlong callback, jlong context, jlong result) {
     (void)cls;
     void (*complete)(void *, FfiStatus, BoltFFICallbackHandle) = (void (*)(void *, FfiStatus, BoltFFICallbackHandle))callback;
-    BoltFFICallbackHandle payload = boltffi_create_callback_demo_sibling((uint64_t)result);
+    BoltFFICallbackHandle payload = boltffi_create_callback_4demo7Sibling((uint64_t)result);
     complete((void *)context, (FfiStatus){.code = 0}, payload);
 }
 
-JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1async_1callback_1complete_1Callback_1demo_1sibling_1failure(JNIEnv *env, jclass cls, jlong callback, jlong context, jthrowable exception) {
+JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1async_1callback_1complete_1Callback_14demo7Sibling_1failure(JNIEnv *env, jclass cls, jlong callback, jlong context, jthrowable exception) {
     (void)cls;
     void (*complete)(void *, FfiStatus, BoltFFICallbackHandle) = (void (*)(void *, FfiStatus, BoltFFICallbackHandle))callback;
     (void)env;
@@ -393,10 +393,10 @@ JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1async_1callback_1co
     complete((void *)context, (FfiStatus){.code = 1}, (BoltFFICallbackHandle){0});
 }
 
-JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1async_1callback_1complete_1Callback_1demo_1sibling_1error(JNIEnv *env, jclass cls, jlong callback, jlong context, jlong result) {
+JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1async_1callback_1complete_1Callback_14demo7Sibling_1error(JNIEnv *env, jclass cls, jlong callback, jlong context, jlong result) {
     (void)cls;
     void (*complete)(void *, FfiStatus, BoltFFICallbackHandle) = (void (*)(void *, FfiStatus, BoltFFICallbackHandle))callback;
-    BoltFFICallbackHandle payload = boltffi_create_callback_demo_sibling((uint64_t)result);
+    BoltFFICallbackHandle payload = boltffi_create_callback_4demo7Sibling((uint64_t)result);
     complete((void *)context, (FfiStatus){.code = 1}, payload);
 }
 

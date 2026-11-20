@@ -10,10 +10,10 @@ typedef struct {
 } ___Point;
 typedef int32_t ___MathError;
 #define MATH_ERROR_INVALID_INPUT ((___MathError)0)
-FfiBuf_u8 boltffi_function_demo_checked_add(int32_t left, int32_t right, int32_t *return_out);
-FfiBuf_u8 boltffi_function_demo_parse_point(const uint8_t *text_ptr, uintptr_t text_len, ___Point *return_out);
-FfiBuf_u8 boltffi_function_demo_validate_name(const uint8_t *name_ptr, uintptr_t name_len, FfiBuf_u8 *return_out);
-FfiBuf_u8 boltffi_function_demo_store_name(const uint8_t *name_ptr, uintptr_t name_len);
+FfiBuf_u8 boltffi_function_4demo11checked_add(int32_t left, int32_t right, int32_t *return_out);
+FfiBuf_u8 boltffi_function_4demo11parse_point(const uint8_t *text_ptr, uintptr_t text_len, ___Point *return_out);
+FfiBuf_u8 boltffi_function_4demo13validate_name(const uint8_t *name_ptr, uintptr_t name_len, FfiBuf_u8 *return_out);
+FfiBuf_u8 boltffi_function_4demo10store_name(const uint8_t *name_ptr, uintptr_t name_len);
 
 ===== jni/jni_glue.c =====
 <jni source includes>
@@ -47,12 +47,12 @@ static bool boltffi_jni_direct_buffer_address(JNIEnv *env, jobject buffer, jlong
     return true;
 }
 
-JNIEXPORT jint JNICALL Java_com_boltffi_demo_Native_boltffi_1function_1demo_1checked_1add(JNIEnv *env, jclass cls, jint left, jint right) {
+JNIEXPORT jint JNICALL Java_com_boltffi_demo_Native_boltffi_1function_14demo11checked_1add(JNIEnv *env, jclass cls, jint left, jint right) {
     (void)cls;
 
     int32_t __boltffi_return = (int32_t){0};
 
-    FfiBuf_u8 error = boltffi_function_demo_checked_add(left, right, &__boltffi_return);
+    FfiBuf_u8 error = boltffi_function_4demo11checked_add(left, right, &__boltffi_return);
 
     if (error.ptr != NULL || error.len != 0) {
         boltffi_jni_throw_error_buffer(env, error);
@@ -62,7 +62,7 @@ JNIEXPORT jint JNICALL Java_com_boltffi_demo_Native_boltffi_1function_1demo_1che
     return (jint)__boltffi_return;
 }
 
-JNIEXPORT jbyteArray JNICALL Java_com_boltffi_demo_Native_boltffi_1function_1demo_1parse_1point(JNIEnv *env, jclass cls, jobject text, jint __boltffi_text_len) {
+JNIEXPORT jbyteArray JNICALL Java_com_boltffi_demo_Native_boltffi_1function_14demo11parse_1point(JNIEnv *env, jclass cls, jobject text, jint __boltffi_text_len) {
     (void)cls;
 
     void *__boltffi_text_ptr = NULL;
@@ -72,7 +72,7 @@ JNIEXPORT jbyteArray JNICALL Java_com_boltffi_demo_Native_boltffi_1function_1dem
         goto __boltffi_error;
     }
 
-    FfiBuf_u8 error = boltffi_function_demo_parse_point((const uint8_t *)__boltffi_text_ptr, (uintptr_t)__boltffi_text_len, &__boltffi_return);
+    FfiBuf_u8 error = boltffi_function_4demo11parse_point((const uint8_t *)__boltffi_text_ptr, (uintptr_t)__boltffi_text_len, &__boltffi_return);
 
     if (error.ptr != NULL || error.len != 0) {
         boltffi_jni_throw_error_buffer(env, error);
@@ -84,7 +84,7 @@ __boltffi_error:
     return NULL;
 }
 
-JNIEXPORT jbyteArray JNICALL Java_com_boltffi_demo_Native_boltffi_1function_1demo_1validate_1name(JNIEnv *env, jclass cls, jobject name, jint __boltffi_name_len) {
+JNIEXPORT jbyteArray JNICALL Java_com_boltffi_demo_Native_boltffi_1function_14demo13validate_1name(JNIEnv *env, jclass cls, jobject name, jint __boltffi_name_len) {
     (void)cls;
 
     void *__boltffi_name_ptr = NULL;
@@ -94,7 +94,7 @@ JNIEXPORT jbyteArray JNICALL Java_com_boltffi_demo_Native_boltffi_1function_1dem
         goto __boltffi_error;
     }
 
-    FfiBuf_u8 error = boltffi_function_demo_validate_name((const uint8_t *)__boltffi_name_ptr, (uintptr_t)__boltffi_name_len, &__boltffi_return);
+    FfiBuf_u8 error = boltffi_function_4demo13validate_name((const uint8_t *)__boltffi_name_ptr, (uintptr_t)__boltffi_name_len, &__boltffi_return);
 
     if (error.ptr != NULL || error.len != 0) {
         boltffi_jni_throw_error_buffer(env, error);
@@ -106,7 +106,7 @@ __boltffi_error:
     return NULL;
 }
 
-JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1function_1demo_1store_1name(JNIEnv *env, jclass cls, jobject name, jint __boltffi_name_len) {
+JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1function_14demo10store_1name(JNIEnv *env, jclass cls, jobject name, jint __boltffi_name_len) {
     (void)cls;
 
     void *__boltffi_name_ptr = NULL;
@@ -115,7 +115,7 @@ JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1function_1demo_1sto
         goto __boltffi_error;
     }
 
-    FfiBuf_u8 error = boltffi_function_demo_store_name((const uint8_t *)__boltffi_name_ptr, (uintptr_t)__boltffi_name_len);
+    FfiBuf_u8 error = boltffi_function_4demo10store_name((const uint8_t *)__boltffi_name_ptr, (uintptr_t)__boltffi_name_len);
 
     if (error.ptr != NULL || error.len != 0) {
         boltffi_jni_throw_error_buffer(env, error);

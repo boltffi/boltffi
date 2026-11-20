@@ -255,7 +255,7 @@ impl TypeName {
     }
 
     pub fn map(key: Self, value: Self) -> Self {
-        Self::new(format!("Map<{key}, {value}>"))
+        Self::new(format!("kotlin.collections.Map<{key}, {value}>"))
     }
 
     pub fn result(ok: Self, err: Self) -> Self {

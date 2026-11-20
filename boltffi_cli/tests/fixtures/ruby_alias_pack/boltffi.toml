@@ -1,0 +1,5 @@
+[package]
+name = "ruby_alias_pack_fixture"
+
+[targets.ruby]
+enabled = true

@@ -3,7 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use oxc_allocator::Allocator;
-use oxc_ast::ast::Expression;
+use oxc_ast::ast::{Expression, Statement};
 use oxc_parser::Parser;
 use oxc_span::SourceType;
 
@@ -40,11 +40,11 @@ impl JavaScriptModules {
             })?;
             let allocator = Allocator::default();
             let parsed = Parser::new(&allocator, &source, SourceType::mjs()).parse();
-            if !parsed.errors.is_empty() {
+            if !parsed.diagnostics.is_empty() {
                 return Err(Error::Unsupported(format!(
                     "invalid JavaScript module {}: {:?}",
                     path.display(),
-                    parsed.errors
+                    parsed.diagnostics
                 ))
                 .into());
             }
@@ -52,22 +52,38 @@ impl JavaScriptModules {
                 .parent()
                 .expect("a packaged JavaScript module has a parent");
             parsed
-                .module_record
-                .requested_modules
-                .keys()
-                .try_for_each(|specifier| {
-                    pending.push(self.resolve(directory, specifier.as_str())?);
+                .program
+                .body
+                .iter()
+                .filter_map(|statement| match statement {
+                    Statement::ImportDeclaration(declaration) => Some(&declaration.source),
+                    Statement::ExportAllDeclaration(declaration) => Some(&declaration.source),
+                    Statement::ExportFromDeclaration(declaration) => Some(&declaration.source),
+                    _ => None,
+                })
+                .try_for_each(|source| {
+                    let specifier = source.value.as_str().ok_or_else(|| {
+                        Error::Unsupported(format!(
+                            "import in {} must use a local module path so it can be packaged",
+                            path.display()
+                        ))
+                    })?;
+                    pending.push(self.resolve(directory, specifier)?);
                     Ok::<_, CliError>(())
                 })?;
             parsed.module_record.dynamic_imports.iter().try_for_each(|import| {
                 let expression = Parser::new(&allocator, import.module_request.source_text(&source), SourceType::mjs())
                     .parse_expression().map_err(|error| Error::Unsupported(format!("invalid dynamic import in {}: {error:?}", path.display())))?;
-                let Expression::StringLiteral(literal) = expression else {
+                let specifier = match &expression {
+                    Expression::StringLiteral(literal) => literal.value.as_str(),
+                    _ => None,
+                };
+                let Some(specifier) = specifier else {
                     return Err(Error::Unsupported(format!(
                         "dynamic import in {} must use a literal local module path so it can be packaged", path.display()
                     )).into());
                 };
-                pending.push(self.resolve(directory, literal.value.as_str())?);
+                pending.push(self.resolve(directory, specifier)?);
                 Ok::<_, CliError>(())
             })?;
         }
@@ -126,6 +142,10 @@ mod tests {
             "export * from 'external-package';",
             "export const load = () => import('external-package');",
             "export const load = (name) => import(name);",
+            r"import './\uD800.js';",
+            r"export * from './\uD800.js';",
+            r"export { value } from './\uD800.js';",
+            r"export const load = () => import('./\uD800.js');",
         ]
         .into_iter()
         .for_each(|source| {

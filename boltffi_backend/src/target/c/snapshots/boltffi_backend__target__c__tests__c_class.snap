@@ -138,9 +138,9 @@ typedef struct {
     double x;
     double y;
 } ___Point;
-void boltffi_release_class_demo_engine(uint64_t handle);
-uint64_t boltffi_init_class_demo_engine_new(uint64_t seed);
-uint32_t boltffi_method_class_demo_engine_score(uint64_t receiver, ___Point point);
+void boltffi_release_class_4demo6Engine(uint64_t handle);
+uint64_t boltffi_init_class_4demo6Engine3new(uint64_t seed);
+uint32_t boltffi_method_class_4demo6Engine5score(uint64_t receiver, ___Point point);
 
 #ifdef __cplusplus
 }
@@ -337,14 +337,14 @@ static inline void demo_point_sequence_free(DemoPointSequence *v) { if (v == NUL
 extern "C" {
 #endif
 static inline DemoEngine demo_engine_new(uint64_t seed) {
-    DemoEngine boltffi_result; boltffi_result._boltffi_handle = boltffi_init_class_demo_engine_new(seed);
+    DemoEngine boltffi_result; boltffi_result._boltffi_handle = boltffi_init_class_4demo6Engine3new(seed);
     return boltffi_result;
 }
 static inline uint32_t demo_engine_score(const DemoEngine *receiver, DemoPoint point) {
-    uint32_t boltffi_result = boltffi_method_class_demo_engine_score(receiver->_boltffi_handle, point);
+    uint32_t boltffi_result = boltffi_method_class_4demo6Engine5score(receiver->_boltffi_handle, point);
     return boltffi_result;
 }
-static inline void demo_engine_free(DemoEngine *value) { if (value == NULL || value->_boltffi_handle == 0) return; boltffi_release_class_demo_engine(value->_boltffi_handle); value->_boltffi_handle=0; }
+static inline void demo_engine_free(DemoEngine *value) { if (value == NULL || value->_boltffi_handle == 0) return; boltffi_release_class_4demo6Engine(value->_boltffi_handle); value->_boltffi_handle=0; }
 
 #ifdef __cplusplus
 }

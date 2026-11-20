@@ -4,10 +4,10 @@ expression: "rendered_fixture(\"exports/primitive_functions\")"
 ---
 ===== jni/demo.h =====
 <c abi support declarations>
-int32_t boltffi_function_demo_add(int32_t left, int32_t right);
-bool boltffi_function_demo_enabled(bool flag);
-void boltffi_function_demo_refresh(void);
-FfiBuf_u8 boltffi_function_demo_echo_bytes(const uint8_t *bytes_ptr, uintptr_t bytes_len);
+int32_t boltffi_function_4demo3add(int32_t left, int32_t right);
+bool boltffi_function_4demo7enabled(bool flag);
+void boltffi_function_4demo7refresh(void);
+FfiBuf_u8 boltffi_function_4demo10echo_bytes(const uint8_t *bytes_ptr, uintptr_t bytes_len);
 
 ===== jni/jni_glue.c =====
 <jni source includes>
@@ -39,34 +39,34 @@ static bool boltffi_jni_direct_buffer_address(JNIEnv *env, jobject buffer, jlong
     return true;
 }
 
-JNIEXPORT jint JNICALL Java_com_boltffi_demo_Native_boltffi_1function_1demo_1add(JNIEnv *env, jclass cls, jint left, jint right) {
+JNIEXPORT jint JNICALL Java_com_boltffi_demo_Native_boltffi_1function_14demo3add(JNIEnv *env, jclass cls, jint left, jint right) {
     (void)cls;
 
     (void)env;
-    int32_t __boltffi_result = boltffi_function_demo_add(left, right);
+    int32_t __boltffi_result = boltffi_function_4demo3add(left, right);
 
     return (jint)__boltffi_result;
 }
 
-JNIEXPORT jboolean JNICALL Java_com_boltffi_demo_Native_boltffi_1function_1demo_1enabled(JNIEnv *env, jclass cls, jboolean flag) {
+JNIEXPORT jboolean JNICALL Java_com_boltffi_demo_Native_boltffi_1function_14demo7enabled(JNIEnv *env, jclass cls, jboolean flag) {
     (void)cls;
 
     (void)env;
-    bool __boltffi_result = boltffi_function_demo_enabled(flag);
+    bool __boltffi_result = boltffi_function_4demo7enabled(flag);
 
     return (jboolean)__boltffi_result;
 }
 
-JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1function_1demo_1refresh(JNIEnv *env, jclass cls) {
+JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1function_14demo7refresh(JNIEnv *env, jclass cls) {
     (void)cls;
 
     (void)env;
-    boltffi_function_demo_refresh();
+    boltffi_function_4demo7refresh();
 
     return;
 }
 
-JNIEXPORT jbyteArray JNICALL Java_com_boltffi_demo_Native_boltffi_1function_1demo_1echo_1bytes(JNIEnv *env, jclass cls, jobject bytes, jint __boltffi_bytes_len) {
+JNIEXPORT jbyteArray JNICALL Java_com_boltffi_demo_Native_boltffi_1function_14demo10echo_1bytes(JNIEnv *env, jclass cls, jobject bytes, jint __boltffi_bytes_len) {
     (void)cls;
 
     void *__boltffi_bytes_ptr = NULL;
@@ -76,7 +76,7 @@ JNIEXPORT jbyteArray JNICALL Java_com_boltffi_demo_Native_boltffi_1function_1dem
     }
 
     (void)env;
-    FfiBuf_u8 __boltffi_result = boltffi_function_demo_echo_bytes((const uint8_t *)__boltffi_bytes_ptr, (uintptr_t)__boltffi_bytes_len);
+    FfiBuf_u8 __boltffi_result = boltffi_function_4demo10echo_bytes((const uint8_t *)__boltffi_bytes_ptr, (uintptr_t)__boltffi_bytes_len);
 
     return boltffi_jni_buffer_to_byte_array(env, __boltffi_result);
 __boltffi_error:

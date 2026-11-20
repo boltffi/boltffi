@@ -42,5 +42,5 @@ fn kotlin_target_hands_a_fallible_callback_stream_error_to_on_error() {
         "fun Jobs.ticks(onError: (Throwable) -> Unit, callback: (Int) -> Unit): TicksCancellable"
     ));
     assert!(source.contains("finish = { failure -> failure?.let(onError) },"));
-    assert!(source.contains("Native.boltffi_stream_demo_jobs_ticks_take_error(handle)"));
+    assert!(source.contains("Native.boltffi_stream_4demo4Jobs5ticks_take_error(handle)"));
 }

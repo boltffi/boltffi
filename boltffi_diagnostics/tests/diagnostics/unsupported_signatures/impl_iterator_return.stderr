@@ -1,0 +1,5 @@
+error: BoltFFI: unsupported source type `impl Iterator<Item = i32>`
+ --> tests/diagnostics/unsupported_signatures/impl_iterator_return.rs:3:15
+  |
+3 | pub fn f() -> impl Iterator<Item = i32> {
+  |               ^^^^^^^^^^^^^^^^^^^^^^^^^

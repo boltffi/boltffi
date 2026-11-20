@@ -11,28 +11,28 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.channels.awaitClose
 @Suppress("FunctionName")
 private object Native {
-    @JvmStatic external fun boltffi_release_class_demo_jobs(handle: Long): Unit
-    @JvmStatic external fun boltffi_stream_demo_jobs_lines_subscribe(`receiver`: Long): Long
-    @JvmStatic external fun boltffi_stream_demo_jobs_lines_pop_batch(subscription: Long, max_count: Long): ByteArray?
-    @JvmStatic external fun boltffi_stream_demo_jobs_lines_wait(subscription: Long, timeout_milliseconds: Int): Int
-    @JvmStatic external fun boltffi_stream_demo_jobs_lines_poll(subscription: Long, callback_data: Long): Unit
-    @JvmStatic external fun boltffi_stream_demo_jobs_lines_unsubscribe(subscription: Long): Unit
-    @JvmStatic external fun boltffi_stream_demo_jobs_lines_free(subscription: Long): Unit
-    @JvmStatic external fun boltffi_stream_demo_jobs_lines_take_error(subscription: Long): ByteArray?
-    @JvmStatic external fun boltffi_stream_demo_jobs_progress_subscribe(`receiver`: Long): Long
-    @JvmStatic external fun boltffi_stream_demo_jobs_progress_pop_batch(subscription: Long, maxCount: Long): ByteArray?
-    @JvmStatic external fun boltffi_stream_demo_jobs_progress_wait(subscription: Long, timeout_milliseconds: Int): Int
-    @JvmStatic external fun boltffi_stream_demo_jobs_progress_poll(subscription: Long, callback_data: Long): Unit
-    @JvmStatic external fun boltffi_stream_demo_jobs_progress_unsubscribe(subscription: Long): Unit
-    @JvmStatic external fun boltffi_stream_demo_jobs_progress_free(subscription: Long): Unit
-    @JvmStatic external fun boltffi_stream_demo_jobs_progress_take_error(subscription: Long): ByteArray?
-    @JvmStatic external fun boltffi_stream_demo_jobs_ticks_subscribe(`receiver`: Long): Long
-    @JvmStatic external fun boltffi_stream_demo_jobs_ticks_pop_batch(subscription: Long, maxCount: Long): ByteArray?
-    @JvmStatic external fun boltffi_stream_demo_jobs_ticks_wait(subscription: Long, timeout_milliseconds: Int): Int
-    @JvmStatic external fun boltffi_stream_demo_jobs_ticks_poll(subscription: Long, callback_data: Long): Unit
-    @JvmStatic external fun boltffi_stream_demo_jobs_ticks_unsubscribe(subscription: Long): Unit
-    @JvmStatic external fun boltffi_stream_demo_jobs_ticks_free(subscription: Long): Unit
-    @JvmStatic external fun boltffi_stream_demo_jobs_ticks_take_error(subscription: Long): ByteArray?
+    @JvmStatic external fun boltffi_release_class_4demo4Jobs(handle: Long): Unit
+    @JvmStatic external fun boltffi_stream_4demo4Jobs5lines_subscribe(`receiver`: Long): Long
+    @JvmStatic external fun boltffi_stream_4demo4Jobs5lines_pop_batch(subscription: Long, max_count: Long): ByteArray?
+    @JvmStatic external fun boltffi_stream_4demo4Jobs5lines_wait(subscription: Long, timeout_milliseconds: Int): Int
+    @JvmStatic external fun boltffi_stream_4demo4Jobs5lines_poll(subscription: Long, callback_data: Long): Unit
+    @JvmStatic external fun boltffi_stream_4demo4Jobs5lines_unsubscribe(subscription: Long): Unit
+    @JvmStatic external fun boltffi_stream_4demo4Jobs5lines_free(subscription: Long): Unit
+    @JvmStatic external fun boltffi_stream_4demo4Jobs5lines_take_error(subscription: Long): ByteArray?
+    @JvmStatic external fun boltffi_stream_4demo4Jobs8progress_subscribe(`receiver`: Long): Long
+    @JvmStatic external fun boltffi_stream_4demo4Jobs8progress_pop_batch(subscription: Long, maxCount: Long): ByteArray?
+    @JvmStatic external fun boltffi_stream_4demo4Jobs8progress_wait(subscription: Long, timeout_milliseconds: Int): Int
+    @JvmStatic external fun boltffi_stream_4demo4Jobs8progress_poll(subscription: Long, callback_data: Long): Unit
+    @JvmStatic external fun boltffi_stream_4demo4Jobs8progress_unsubscribe(subscription: Long): Unit
+    @JvmStatic external fun boltffi_stream_4demo4Jobs8progress_free(subscription: Long): Unit
+    @JvmStatic external fun boltffi_stream_4demo4Jobs8progress_take_error(subscription: Long): ByteArray?
+    @JvmStatic external fun boltffi_stream_4demo4Jobs5ticks_subscribe(`receiver`: Long): Long
+    @JvmStatic external fun boltffi_stream_4demo4Jobs5ticks_pop_batch(subscription: Long, maxCount: Long): ByteArray?
+    @JvmStatic external fun boltffi_stream_4demo4Jobs5ticks_wait(subscription: Long, timeout_milliseconds: Int): Int
+    @JvmStatic external fun boltffi_stream_4demo4Jobs5ticks_poll(subscription: Long, callback_data: Long): Unit
+    @JvmStatic external fun boltffi_stream_4demo4Jobs5ticks_unsubscribe(subscription: Long): Unit
+    @JvmStatic external fun boltffi_stream_4demo4Jobs5ticks_free(subscription: Long): Unit
+    @JvmStatic external fun boltffi_stream_4demo4Jobs5ticks_take_error(subscription: Long): ByteArray?
 
     @JvmStatic fun boltffiFutureContinuationCallback(handle: Long, pollResult: Byte) {
         BoltFfiAsync.resume(handle, pollResult)
@@ -101,7 +101,7 @@ class Jobs internal constructor(private val __boltffi_handle: java.util.concurre
     override fun close() {
         val handle = __boltffi_handle.getAndSet(0L)
         if (handle != 0L) {
-            Native.boltffi_release_class_demo_jobs(handle)
+            Native.boltffi_release_class_4demo4Jobs(handle)
         }
     }
 
@@ -119,7 +119,7 @@ class Jobs internal constructor(private val __boltffi_handle: java.util.concurre
 }
 
 fun Jobs.lines(): kotlinx.coroutines.flow.Flow<String> = kotlinx.coroutines.flow.callbackFlow {
-    val subscription = Native.boltffi_stream_demo_jobs_lines_subscribe(boltffiHandle())
+    val subscription = Native.boltffi_stream_4demo4Jobs5lines_subscribe(boltffiHandle())
     if (subscription == 0L) {
         close()
         return@callbackFlow
@@ -128,10 +128,10 @@ fun Jobs.lines(): kotlinx.coroutines.flow.Flow<String> = kotlinx.coroutines.flow
         scope = this,
         subscription = subscription,
         batchSize = 16L,
-        popBatch = Native::boltffi_stream_demo_jobs_lines_pop_batch,
-        poll = Native::boltffi_stream_demo_jobs_lines_poll,
-        unsubscribe = Native::boltffi_stream_demo_jobs_lines_unsubscribe,
-        free = Native::boltffi_stream_demo_jobs_lines_free,
+        popBatch = Native::boltffi_stream_4demo4Jobs5lines_pop_batch,
+        poll = Native::boltffi_stream_4demo4Jobs5lines_poll,
+        unsubscribe = Native::boltffi_stream_4demo4Jobs5lines_unsubscribe,
+        free = Native::boltffi_stream_4demo4Jobs5lines_free,
         processItems = { bytes ->
             val reader = WireReader(bytes)
             val count = reader.readU32().toInt()
@@ -142,7 +142,7 @@ fun Jobs.lines(): kotlinx.coroutines.flow.Flow<String> = kotlinx.coroutines.flow
         },
         finish = { close(it) },
         takeFailure = { handle ->
-            val bytes = Native.boltffi_stream_demo_jobs_lines_take_error(handle)
+            val bytes = Native.boltffi_stream_4demo4Jobs5lines_take_error(handle)
             if (bytes == null || bytes.isEmpty()) null else {
                 val __boltffi_error_reader = WireReader(bytes)
                 FfiException(__boltffi_error_reader.readString())
@@ -155,13 +155,13 @@ fun Jobs.lines(): kotlinx.coroutines.flow.Flow<String> = kotlinx.coroutines.flow
 
 fun Jobs.progress(): ProgressSubscription =
     ProgressSubscription(
-        handle = Native.boltffi_stream_demo_jobs_progress_subscribe(boltffiHandle()),
-        popBatch = Native::boltffi_stream_demo_jobs_progress_pop_batch,
-        wait = Native::boltffi_stream_demo_jobs_progress_wait,
-        unsubscribe = Native::boltffi_stream_demo_jobs_progress_unsubscribe,
-        free = Native::boltffi_stream_demo_jobs_progress_free,
+        handle = Native.boltffi_stream_4demo4Jobs8progress_subscribe(boltffiHandle()),
+        popBatch = Native::boltffi_stream_4demo4Jobs8progress_pop_batch,
+        wait = Native::boltffi_stream_4demo4Jobs8progress_wait,
+        unsubscribe = Native::boltffi_stream_4demo4Jobs8progress_unsubscribe,
+        free = Native::boltffi_stream_4demo4Jobs8progress_free,
         takeFailure = { handle ->
-            val bytes = Native.boltffi_stream_demo_jobs_progress_take_error(handle)
+            val bytes = Native.boltffi_stream_4demo4Jobs8progress_take_error(handle)
             if (bytes == null || bytes.isEmpty()) null else {
                 val __boltffi_error_reader = WireReader(bytes)
                 JobError.fromReader(__boltffi_error_reader)
@@ -213,16 +213,16 @@ class ProgressSubscription(
 }
 
 fun Jobs.ticks(onError: (Throwable) -> Unit, callback: (Int) -> Unit): TicksCancellable {
-    val subscription = Native.boltffi_stream_demo_jobs_ticks_subscribe(boltffiHandle())
+    val subscription = Native.boltffi_stream_4demo4Jobs5ticks_subscribe(boltffiHandle())
     if (subscription == 0L) return TicksCancellable {}
     val context = BoltFfiStreamContext(
         scope = boltffiCallbackScope,
         subscription = subscription,
         batchSize = 16L,
-        popBatch = Native::boltffi_stream_demo_jobs_ticks_pop_batch,
-        poll = Native::boltffi_stream_demo_jobs_ticks_poll,
-        unsubscribe = Native::boltffi_stream_demo_jobs_ticks_unsubscribe,
-        free = Native::boltffi_stream_demo_jobs_ticks_free,
+        popBatch = Native::boltffi_stream_4demo4Jobs5ticks_pop_batch,
+        poll = Native::boltffi_stream_4demo4Jobs5ticks_poll,
+        unsubscribe = Native::boltffi_stream_4demo4Jobs5ticks_unsubscribe,
+        free = Native::boltffi_stream_4demo4Jobs5ticks_free,
         processItems = { bytes ->
             val items = DirectVectorCodec.readIntArray(bytes).toList()
             items.forEach { item ->
@@ -231,7 +231,7 @@ fun Jobs.ticks(onError: (Throwable) -> Unit, callback: (Int) -> Unit): TicksCanc
         },
         finish = { failure -> failure?.let(onError) },
         takeFailure = { handle ->
-            val bytes = Native.boltffi_stream_demo_jobs_ticks_take_error(handle)
+            val bytes = Native.boltffi_stream_4demo4Jobs5ticks_take_error(handle)
             if (bytes == null || bytes.isEmpty()) null else {
                 val __boltffi_error_reader = WireReader(bytes)
                 FfiException(__boltffi_error_reader.readString())

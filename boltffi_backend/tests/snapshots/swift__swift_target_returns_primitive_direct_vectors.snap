@@ -20,7 +20,7 @@ public struct FfiError: Error {
 
 public func echoValues(values: [Int32]) -> [Int32] {
     return values.withUnsafeBufferPointer { boltffiValuesBuffer in
-        let boltffiResult = boltffi_function_demo_echo_values(boltffiValuesBuffer.baseAddress, UInt(boltffiValuesBuffer.count))
+        let boltffiResult = boltffi_function_4demo11echo_values(boltffiValuesBuffer.baseAddress, UInt(boltffiValuesBuffer.count))
         defer { boltffi_free_buf(boltffiResult) }
         guard boltffiResult.len > 0, let boltffiResultPtr = boltffiResult.ptr else { return [] }
         let boltffiResultCount = Int(boltffiResult.len) / MemoryLayout<Int32>.stride
@@ -31,7 +31,7 @@ public func echoValues(values: [Int32]) -> [Int32] {
 
 public func echoWords(values: [UInt32]) -> [UInt32] {
     return values.withUnsafeBufferPointer { boltffiValuesBuffer in
-        let boltffiResult = boltffi_function_demo_echo_words(boltffiValuesBuffer.baseAddress, UInt(boltffiValuesBuffer.count))
+        let boltffiResult = boltffi_function_4demo10echo_words(boltffiValuesBuffer.baseAddress, UInt(boltffiValuesBuffer.count))
         defer { boltffi_free_buf(boltffiResult) }
         guard boltffiResult.len > 0, let boltffiResultPtr = boltffiResult.ptr else { return [] }
         let boltffiResultCount = Int(boltffiResult.len) / MemoryLayout<UInt32>.stride
@@ -41,7 +41,7 @@ public func echoWords(values: [UInt32]) -> [UInt32] {
 }
 
 public func makeRatios() -> [Double] {
-    let boltffiResult = boltffi_function_demo_make_ratios()
+    let boltffiResult = boltffi_function_4demo11make_ratios()
     defer { boltffi_free_buf(boltffiResult) }
     guard boltffiResult.len > 0, let boltffiResultPtr = boltffiResult.ptr else { return [] }
     let boltffiResultCount = Int(boltffiResult.len) / MemoryLayout<Double>.stride

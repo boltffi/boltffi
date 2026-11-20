@@ -16,41 +16,19 @@ pub struct ActiveCfg {
 }
 
 impl ActiveCfg {
-    pub fn from_cargo_env() -> Self {
-        std::env::vars().fold(Self::default(), |mut active, (name, value)| {
-            active.observe_cargo_env(&name, &value);
-            active
-        })
-    }
-
+    #[cfg(test)]
     pub fn with_feature(mut self, feature: impl AsRef<str>) -> Self {
         self.features.insert(Self::feature_name(feature.as_ref()));
         self
     }
 
-    pub fn with_features(mut self, features: impl IntoIterator<Item = impl AsRef<str>>) -> Self {
-        self.features.extend(
-            features
-                .into_iter()
-                .map(|feature| Self::feature_name(feature.as_ref())),
-        );
-        self
-    }
-
-    pub(crate) fn for_package(&self, features: impl IntoIterator<Item = impl AsRef<str>>) -> Self {
-        let mut package_cfg = self.clone();
-        package_cfg.features = features
-            .into_iter()
-            .map(|feature| Self::feature_name(feature.as_ref()))
-            .collect();
-        package_cfg
-    }
-
+    #[cfg(test)]
     pub fn with_name(mut self, name: impl AsRef<str>) -> Self {
         self.names.insert(Self::cfg_name(name.as_ref()));
         self
     }
 
+    #[cfg(test)]
     pub fn with_value(mut self, name: impl AsRef<str>, value: impl Into<String>) -> Self {
         self.values
             .entry(Self::cfg_name(name.as_ref()))
@@ -134,34 +112,6 @@ impl ActiveCfg {
             .filter_map(|(active, field)| active.then_some(field))
             .collect();
         Ok(())
-    }
-
-    fn observe_cargo_env(&mut self, name: &str, value: &str) {
-        if let Some(feature) = name.strip_prefix("CARGO_FEATURE_") {
-            self.features.insert(Self::feature_name(feature));
-            return;
-        }
-
-        if let Some(name) = name.strip_prefix("CARGO_CFG_") {
-            let name = Self::cfg_name(name);
-            if value.is_empty() {
-                self.names.insert(name);
-                return;
-            }
-
-            value
-                .split(',')
-                .filter(|value| !value.is_empty())
-                .for_each(|value| {
-                    if name == "feature" {
-                        self.features.insert(Self::feature_name(value));
-                    }
-                    self.values
-                        .entry(name.clone())
-                        .or_default()
-                        .insert(value.to_owned());
-                });
-        }
     }
 
     fn matches_attr(&self, attr: &Attribute) -> Result<bool, ScanError> {
@@ -350,22 +300,6 @@ mod tests {
         let active = ActiveCfg::default().with_feature("native_ffi");
 
         assert!(matches(&active, "#[cfg(feature = \"native-ffi\")]"));
-    }
-
-    #[test]
-    fn package_features_replace_root_features_without_losing_target_cfg() {
-        let root = ActiveCfg::default()
-            .with_feature("root-only")
-            .with_name("unix");
-        let dependency = root.for_package(["dependency-only"]);
-
-        assert!(matches(&root, "#[cfg(feature = \"root-only\")]"));
-        assert!(!matches(&dependency, "#[cfg(feature = \"root-only\")]"));
-        assert!(matches(
-            &dependency,
-            "#[cfg(feature = \"dependency-only\")]"
-        ));
-        assert!(matches(&dependency, "#[cfg(unix)]"));
     }
 
     #[test]

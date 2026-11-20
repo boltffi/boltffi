@@ -1,0 +1,5 @@
+error: BoltFFI: a class or callback trait object crosses only on its own, not in a field or inside a `Vec`, tuple, or map
+ --> tests/diagnostics/records/class_by_value_field.rs:5:16
+  |
+5 | pub struct P { pub c: Counter }
+  |                ^^^^^^^^^^^^^^

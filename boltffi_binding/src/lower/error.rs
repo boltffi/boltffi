@@ -11,11 +11,30 @@ use crate::BindingError;
 #[derive(Debug)]
 pub struct LowerError {
     kind: LowerErrorKind,
+    location: Box<SourceLocation>,
 }
 
 impl LowerError {
     pub(crate) fn new(kind: LowerErrorKind) -> Self {
-        Self { kind }
+        Self {
+            kind,
+            location: Box::default(),
+        }
+    }
+
+    pub(crate) fn in_declaration(mut self, id: impl fmt::Display) -> Self {
+        self.location.declaration = Some(id.to_string());
+        self
+    }
+
+    pub(crate) fn in_member(mut self, name: impl fmt::Display) -> Self {
+        self.location.member = Some(name.to_string());
+        self
+    }
+
+    pub(crate) fn at(mut self, position: SourcePosition) -> Self {
+        self.location.position = Some(position);
+        self
     }
 
     pub(crate) fn unsupported_declaration(family: DeclarationFamily) -> Self {
@@ -30,6 +49,18 @@ impl LowerError {
         Self::new(LowerErrorKind::DuplicateSourceId {
             family,
             id: id.to_string(),
+        })
+    }
+
+    pub(crate) fn foreign_name_collision(
+        name: impl fmt::Display,
+        first: impl fmt::Display,
+        second: impl fmt::Display,
+    ) -> Self {
+        Self::new(LowerErrorKind::ForeignNameCollision {
+            name: name.to_string(),
+            first: first.to_string(),
+            second: second.to_string(),
         })
     }
 
@@ -89,6 +120,69 @@ impl LowerError {
     pub fn kind(&self) -> &LowerErrorKind {
         &self.kind
     }
+
+    /// Returns where in the source lowering failed.
+    pub fn location(&self) -> &SourceLocation {
+        &self.location
+    }
+}
+
+/// Where in the source a declaration failed to lower, as far as the pass knew it.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[non_exhaustive]
+pub struct SourceLocation {
+    declaration: Option<String>,
+    member: Option<String>,
+    position: Option<SourcePosition>,
+}
+
+impl SourceLocation {
+    /// Names the declaration by its source id, replacing any earlier one.
+    pub fn in_declaration(mut self, id: impl fmt::Display) -> Self {
+        self.declaration = Some(id.to_string());
+        self
+    }
+
+    /// Names the method or variant by its source spelling, replacing any earlier one.
+    pub fn in_member(mut self, name: impl fmt::Display) -> Self {
+        self.member = Some(name.to_string());
+        self
+    }
+
+    /// Records the position inside the member or declaration, replacing any earlier one.
+    pub fn at(mut self, position: SourcePosition) -> Self {
+        self.position = Some(position);
+        self
+    }
+
+    /// Returns the source id of the declaration that failed.
+    pub fn declaration(&self) -> Option<&str> {
+        self.declaration.as_deref()
+    }
+
+    /// Returns the method or variant that failed.
+    pub fn member(&self) -> Option<&str> {
+        self.member.as_deref()
+    }
+
+    /// Returns the position that failed.
+    pub fn position(&self) -> Option<SourcePosition> {
+        self.position
+    }
+}
+
+/// A position inside a declaration or member.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[non_exhaustive]
+pub enum SourcePosition {
+    /// The method's receiver.
+    Receiver,
+    /// A parameter, counted after the receiver.
+    Parameter(usize),
+    /// The return type.
+    Return,
+    /// A record or variant field, counted in source order.
+    Field(usize),
 }
 
 impl fmt::Display for LowerError {
@@ -97,6 +191,53 @@ impl fmt::Display for LowerError {
             LowerErrorKind::UnsupportedDeclaration(family) => {
                 write!(formatter, "{} lowering is not implemented", family)
             }
+            LowerErrorKind::UnsupportedType(
+                UnsupportedType::MutableClassReceiverRequiresUnsafeSingleThreaded,
+            ) => formatter.write_str(
+                "a `&mut self` method needs `#[export(single_threaded)]` on its class's struct or \
+                 enum, since a thread-safe class can be borrowed from many threads at once",
+            ),
+            LowerErrorKind::UnsupportedType(UnsupportedType::InvalidCallbackReceiver) => formatter
+                .write_str(
+                    "a callback trait method must take `&self`, the only receiver a foreign \
+                     implementation can be called through",
+                ),
+            LowerErrorKind::UnsupportedType(UnsupportedType::BorrowedCallbackParameter) => {
+                formatter.write_str(
+                    "a callback parameter must be passed by value: take `impl Trait`, `Box<dyn \
+                     Trait>`, or `Arc<dyn Trait>` instead of a reference",
+                )
+            }
+            LowerErrorKind::UnsupportedType(UnsupportedType::SelfInCallbackTrait) => formatter
+                .write_str(
+                    "`Self` can't appear in a callback trait method, since a foreign \
+                     implementation has no Rust type to stand in for it; use a concrete type",
+                ),
+            LowerErrorKind::UnsupportedType(UnsupportedType::OwnedClassReceiver) => formatter
+                .write_str(
+                    "a class method must take `&self`, `&mut self`, or no receiver; taking `self` \
+                     would consume a handle the foreign side still holds",
+                ),
+            LowerErrorKind::UnsupportedType(UnsupportedType::OpaqueRustContainer) => formatter
+                .write_str(
+                    "`Box` and `Arc` cross only around a trait object, such as `Box<dyn Trait>`; \
+                     in a parameter or return, pass the inner type itself, for example `Self` \
+                     instead of `Arc<Self>`",
+                ),
+            LowerErrorKind::UnsupportedType(UnsupportedType::RecursiveBox) => formatter.write_str(
+                "a record or enum can't contain itself through `Box` or `Arc`; hold the \
+                 nested values in a `Vec` instead",
+            ),
+            LowerErrorKind::UnsupportedType(UnsupportedType::ClosureInValuePosition) => formatter
+                .write_str(
+                    "a closure crosses only on its own, as an `impl Fn` or `Box<dyn Fn>` \
+                     parameter or return value, not behind a reference or `Arc`, in a field, or \
+                     inside a `Vec`, tuple, or map",
+                ),
+            LowerErrorKind::UnsupportedType(UnsupportedType::DefaultValue) => formatter.write_str(
+                "a default must be a `true` or `false`, number, or string literal, `None` for \
+                 an `Option`, or a variant of its enum type",
+            ),
             LowerErrorKind::UnsupportedType(unsupported) => {
                 write!(
                     formatter,
@@ -110,6 +251,14 @@ impl fmt::Display for LowerError {
             LowerErrorKind::DuplicateSourceId { family, id } => {
                 write!(formatter, "duplicate {} source id `{id}`", family)
             }
+            LowerErrorKind::ForeignNameCollision {
+                name,
+                first,
+                second,
+            } => write!(
+                formatter,
+                "`{first}` and `{second}` both bind as `{name}`; rename one of them"
+            ),
             LowerErrorKind::UnknownRecord(record) => {
                 write!(formatter, "unknown record id `{record}`")
             }
@@ -182,6 +331,15 @@ pub enum LowerErrorKind {
         family: DeclarationFamily,
         /// Duplicated source id.
         id: String,
+    },
+    /// Declarations from two crates would get one foreign name.
+    ForeignNameCollision {
+        /// The shared name.
+        name: String,
+        /// Source id of the first declaration.
+        first: String,
+        /// Source id of the second declaration.
+        second: String,
     },
     /// A record reference could not be resolved inside the source contract.
     UnknownRecord(String),
@@ -305,6 +463,8 @@ pub enum UnsupportedType {
     /// A Rust-owned pointer container appeared where only callback-handle
     /// carrier spellings are supported.
     OpaqueRustContainer,
+    /// A record or enum field holds its own declaration through `Box` or `Arc`.
+    RecursiveBox,
     /// A stream item type was not wire-encodable.
     StreamItem,
     /// A custom type converter cannot be represented as a binding converter.
@@ -333,6 +493,7 @@ impl fmt::Display for UnsupportedType {
             }
             Self::ClosureInValuePosition => "closure in a value-shaped position",
             Self::OpaqueRustContainer => "opaque Rust pointer container",
+            Self::RecursiveBox => "recursive `Box` field",
             Self::StreamItem => "stream item type",
             Self::CustomConverter => "custom type converter",
             Self::InternedStringCustomRepresentation => "InternedString custom type representation",

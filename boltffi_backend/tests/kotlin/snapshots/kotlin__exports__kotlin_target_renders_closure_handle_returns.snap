@@ -8,7 +8,7 @@ expression: "rendered_fixture(\"exports/closure_callback_handle_return\")"
 package com.boltffi.demo
 @Suppress("FunctionName")
 private object Native {
-    @JvmStatic external fun boltffi_function_demo_install(callback: Long): Unit
+    @JvmStatic external fun boltffi_function_4demo7install(callback: Long): Unit
 }
 
 fun interface ClosureToListener {
@@ -86,5 +86,5 @@ object ListenerBridge {
 }
 
 fun install(callback: ClosureToListener) {
-    Native.boltffi_function_demo_install(ClosureToBoxDemoListenerCallbacks.insert(callback))
+    Native.boltffi_function_4demo7install(ClosureToBoxDemoListenerCallbacks.insert(callback))
 }

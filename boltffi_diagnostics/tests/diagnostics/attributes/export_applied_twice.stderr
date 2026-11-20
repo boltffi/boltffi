@@ -1,0 +1,10 @@
+error[E0428]: the name `__boltffi_fn_f` is defined multiple times
+ --> tests/diagnostics/attributes/export_applied_twice.rs:3:1
+  |
+2 | #[boltffi::export]
+  | ------------------ previous definition of the module `__boltffi_fn_f` here
+3 | #[boltffi::export]
+  | ^^^^^^^^^^^^^^^^^^ `__boltffi_fn_f` redefined here
+  |
+  = note: `__boltffi_fn_f` must be defined only once in the type namespace of this module
+  = note: this error originates in the attribute macro `boltffi::export` (in Nightly builds, run with -Z macro-backtrace for more info)

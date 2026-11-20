@@ -63,7 +63,7 @@ public final class Jobs {
 
     deinit {
         let handle = __boltffiTakeHandle()
-        if handle != 0 { boltffi_release_class_demo_jobs(handle) }
+        if handle != 0 { boltffi_release_class_4demo4Jobs(handle) }
     }
 }
 
@@ -71,7 +71,7 @@ public final class Jobs {
 extension Jobs {
     public func lines() -> _Concurrency.AsyncThrowingStream<String, Swift.Error> {
         _Concurrency.AsyncThrowingStream<String, Swift.Error>(bufferingPolicy: .unbounded) { continuation in
-            let boltffiSubscription = boltffi_stream_demo_jobs_lines_subscribe(self.handle)
+            let boltffiSubscription = boltffi_stream_4demo4Jobs5lines_subscribe(self.handle)
             guard boltffiSubscription != 0 else {
                 continuation.finish()
                 return
@@ -83,7 +83,7 @@ extension Jobs {
                     return boltffiReadWireStreamBatch(
                         subscription: subscription,
                         batchSize: batchSize,
-                        popBatch: boltffi_stream_demo_jobs_lines_pop_batch,
+                        popBatch: boltffi_stream_4demo4Jobs5lines_pop_batch,
                         freeBuf: boltffi_free_buf
                     ) { reader in
                         let boltffiStreamCount = Int(reader.readU32())
@@ -95,15 +95,15 @@ extension Jobs {
                         return boltffiStreamBatch
                     }
                 },
-                poll: boltffi_stream_demo_jobs_lines_poll,
-                unsubscribe: boltffi_stream_demo_jobs_lines_unsubscribe,
-                free: boltffi_stream_demo_jobs_lines_free,
+                poll: boltffi_stream_4demo4Jobs5lines_poll,
+                unsubscribe: boltffi_stream_4demo4Jobs5lines_unsubscribe,
+                free: boltffi_stream_4demo4Jobs5lines_free,
                 atomicCompareExchange: boltffi_atomic_u8_cas,
                 yieldItem: { item in _ = continuation.yield(item) },
                 finish: { continuation.finish() },
                 fail: { failure in continuation.finish(throwing: failure) },
                 takeFailure: { subscription in
-                    let buffer = boltffi_stream_demo_jobs_lines_take_error(subscription)
+                    let buffer = boltffi_stream_4demo4Jobs5lines_take_error(subscription)
                     defer { boltffi_free_buf(buffer) }
                     guard buffer.len > 0, let pointer = buffer.ptr else {
                         return nil
@@ -121,14 +121,14 @@ extension Jobs {
 
 extension Jobs {
     public func progress() -> ProgressSubscription {
-        let boltffiSubscription = boltffi_stream_demo_jobs_progress_subscribe(self.handle)
+        let boltffiSubscription = boltffi_stream_4demo4Jobs8progress_subscribe(self.handle)
         return ProgressSubscription(
             handle: boltffiSubscription,
             readBatch: { subscription, batchSize in
                 return boltffiReadDirectStreamBatch(
                     subscription: subscription,
                     batchSize: batchSize,
-                    popBatch: boltffi_stream_demo_jobs_progress_pop_batch
+                    popBatch: boltffi_stream_4demo4Jobs8progress_pop_batch
                 ) { (rawItems: UnsafeBufferPointer<Int32>) in
                     var boltffiStreamBatch = [Int32]()
                     boltffiStreamBatch.reserveCapacity(rawItems.count)
@@ -138,11 +138,11 @@ extension Jobs {
                     return boltffiStreamBatch
                 }
             },
-            wait: boltffi_stream_demo_jobs_progress_wait,
-            unsubscribe: boltffi_stream_demo_jobs_progress_unsubscribe,
-            free: boltffi_stream_demo_jobs_progress_free,
+            wait: boltffi_stream_4demo4Jobs8progress_wait,
+            unsubscribe: boltffi_stream_4demo4Jobs8progress_unsubscribe,
+            free: boltffi_stream_4demo4Jobs8progress_free,
             takeFailure: { subscription in
-                let buffer = boltffi_stream_demo_jobs_progress_take_error(subscription)
+                let buffer = boltffi_stream_4demo4Jobs8progress_take_error(subscription)
                 defer { boltffi_free_buf(buffer) }
                 guard buffer.len > 0, let pointer = buffer.ptr else {
                     return nil
@@ -223,7 +223,7 @@ public final class ProgressSubscription {
 
 extension Jobs {
     public func ticks(onError: @escaping (Swift.Error) -> Void, callback: @escaping (Int32) -> Void) -> TicksCancellable {
-        let boltffiSubscription = boltffi_stream_demo_jobs_ticks_subscribe(self.handle)
+        let boltffiSubscription = boltffi_stream_4demo4Jobs5ticks_subscribe(self.handle)
         if boltffiSubscription == 0 {
             return TicksCancellable {}
         }
@@ -234,7 +234,7 @@ extension Jobs {
                 return boltffiReadDirectStreamBatch(
                     subscription: subscription,
                     batchSize: batchSize,
-                    popBatch: boltffi_stream_demo_jobs_ticks_pop_batch
+                    popBatch: boltffi_stream_4demo4Jobs5ticks_pop_batch
                 ) { (rawItems: UnsafeBufferPointer<Int32>) in
                     var boltffiStreamBatch = [Int32]()
                     boltffiStreamBatch.reserveCapacity(rawItems.count)
@@ -244,15 +244,15 @@ extension Jobs {
                     return boltffiStreamBatch
                 }
             },
-            poll: boltffi_stream_demo_jobs_ticks_poll,
-            unsubscribe: boltffi_stream_demo_jobs_ticks_unsubscribe,
-            free: boltffi_stream_demo_jobs_ticks_free,
+            poll: boltffi_stream_4demo4Jobs5ticks_poll,
+            unsubscribe: boltffi_stream_4demo4Jobs5ticks_unsubscribe,
+            free: boltffi_stream_4demo4Jobs5ticks_free,
             atomicCompareExchange: boltffi_atomic_u8_cas,
             yieldItem: callback,
             finish: {},
             fail: onError,
             takeFailure: { subscription in
-                let buffer = boltffi_stream_demo_jobs_ticks_take_error(subscription)
+                let buffer = boltffi_stream_4demo4Jobs5ticks_take_error(subscription)
                 defer { boltffi_free_buf(buffer) }
                 guard buffer.len > 0, let pointer = buffer.ptr else {
                     return nil

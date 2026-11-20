@@ -101,9 +101,11 @@ impl Attribute {
                 "`{}` is not a valid stream attribute: {error}",
                 spelling::attr(attr)
             ))
+            .at_span(error.span())
         })?;
         Ok(Self {
-            item: item.ok_or_else(|| Self::invalid("ffi_stream requires item = <type>"))?,
+            item: item
+                .ok_or_else(|| Self::invalid("ffi_stream requires item = <type>").at(attr))?,
             error,
             mode: mode.unwrap_or(StreamMode::Async),
         })
@@ -141,16 +143,29 @@ fn block_streams(
     marked: &Marked<'_, syn::ItemImpl>,
     declared_types: &DeclaredTypes,
 ) -> Result<Vec<StreamDef>, ScanError> {
-    let owner = class::resolve_id(marked.item(), marked.scope(), declared_types)?;
-    let scanner = Scanner::new(declared_types, marked.scope());
-    marked
-        .item()
-        .items
+    scan_item(marked.item(), marked.scope(), declared_types)
+}
+
+pub(crate) fn scan_item(
+    item: &syn::ItemImpl,
+    scope: &ModuleScope,
+    declared_types: &DeclaredTypes,
+) -> Result<Vec<StreamDef>, ScanError> {
+    let owner = class::resolve_id(item, scope, declared_types)?;
+    scan_owned(item, &owner, scope, declared_types)
+}
+
+pub(crate) fn scan_owned(
+    item: &syn::ItemImpl,
+    owner: &ClassId,
+    scope: &ModuleScope,
+    declared_types: &DeclaredTypes,
+) -> Result<Vec<StreamDef>, ScanError> {
+    let scanner = Scanner::new(declared_types, scope);
+    item.items
         .iter()
         .filter_map(|item| match item {
-            syn::ImplItem::Fn(method) => {
-                method_stream(method, &owner, marked.scope(), &scanner).transpose()
-            }
+            syn::ImplItem::Fn(method) => method_stream(method, owner, scope, &scanner).transpose(),
             _ => None,
         })
         .collect()
@@ -168,7 +183,7 @@ fn method_stream(
     if !impl_methods::exported_method(&method.attrs, &method.vis, "stream method")? {
         return Err(Attribute::invalid_placement("stream method"));
     }
-    let (item_type, error_type) = validate(method, owner.as_str(), scope, scanner, &attribute)?;
+    let (item_type, error_type) = validate(method, scope, scanner, &attribute)?;
     let stream_name = method.sig.ident.to_string();
     let mut stream = StreamDef::new(
         StreamId::new(format!("{}::{stream_name}", owner.as_str())),
@@ -189,24 +204,26 @@ fn method_stream(
 
 fn validate(
     method: &syn::ImplItemFn,
-    owner: &str,
     scope: &ModuleScope,
     scanner: &Scanner<'_>,
     attribute: &Attribute,
 ) -> Result<(StreamItem, Option<TypeExpr>), ScanError> {
-    let item = format!("stream {owner}::{}", method.sig.ident);
+    let item = format!("stream {}", method.sig.ident);
     unsupported::generics(&method.sig.generics, &item)?;
-    unsupported::unsafety(method.sig.unsafety.as_ref(), &item)?;
+    unsupported::safety(&method.sig.safety, &item)?;
     unsupported::extern_abi(method.sig.abi.as_ref(), &item)?;
-    if method.sig.asyncness.is_some() {
-        return Err(Attribute::invalid(format!("`{item}` cannot be async")));
+    if let Some(asyncness) = method.sig.asyncness {
+        return Err(Attribute::invalid(format!("`{item}` cannot be async")).at(asyncness));
     }
     if !has_shared_receiver_only(method) {
         return Err(Attribute::invalid(format!(
             "`{item}` must be a public `&self` method with no parameters"
-        )));
+        ))
+        .at(&method.sig.inputs)
+        .at(&method.sig.ident));
     }
-    let returned = subscription_item(&method.sig.output, scope, &item)?;
+    let returned = subscription_item(&method.sig.output, scope, &item, scanner.is_deferred())
+        .map_err(|error| error.at(&method.sig.output).at(&method.sig.ident))?;
     let declared_item = StreamItem::from_boundary(scanner.scan(attribute.item())?);
     let returned_item = scanner.scan(returned.item)?;
     if declared_item.storage() != &returned_item {
@@ -214,7 +231,8 @@ fn validate(
             "`{item}` declares item `{}` but returns `{}`",
             spelling::ty(attribute.item()),
             spelling::ty(returned.item)
-        )));
+        ))
+        .at(returned.item));
     }
     let error = match (attribute.error.as_ref(), returned.error) {
         (None, None) => None,
@@ -225,7 +243,8 @@ fn validate(
                     "`{item}` declares error `{}` but returns `{}`",
                     spelling::ty(declared),
                     spelling::ty(returned)
-                )));
+                ))
+                .at(returned));
             }
             Some(declared_error)
         }
@@ -233,13 +252,15 @@ fn validate(
             return Err(Attribute::invalid(format!(
                 "`{item}` declares error `{}` but returns an infallible EventSubscription<T>",
                 spelling::ty(declared)
-            )));
+            ))
+            .at(declared));
         }
         (None, Some(returned)) => {
             return Err(Attribute::invalid(format!(
                 "`{item}` returns EventSubscription<T, {}> but declares no error = <type>",
                 spelling::ty(returned)
-            )));
+            ))
+            .at(returned));
         }
     };
     Ok((declared_item, error))
@@ -285,7 +306,7 @@ fn has_shared_receiver_only(method: &syn::ImplItemFn) -> bool {
         && matches!(
             method.sig.inputs.first(),
             Some(syn::FnArg::Receiver(receiver))
-                if receiver.reference.is_some() && receiver.mutability.is_none()
+                if matches!(receiver.kind, syn::ReceiverKind::Reference(_, _, None))
         )
 }
 
@@ -293,6 +314,7 @@ fn subscription_item<'source>(
     output: &'source syn::ReturnType,
     scope: &ModuleScope,
     item: &str,
+    deferred: bool,
 ) -> Result<Subscription<'source>, ScanError> {
     let syn::ReturnType::Type(_, ty) = output else {
         return Err(Attribute::invalid(format!(
@@ -302,7 +324,12 @@ fn subscription_item<'source>(
     let outer = path_type(ty).ok_or_else(|| {
         Attribute::invalid(format!("`{item}` must return Arc<EventSubscription<T>>"))
     })?;
-    if !matches_path(scope, &outer.path, &["std::sync::Arc", "alloc::sync::Arc"]) {
+    if !matches_path(
+        scope,
+        &outer.path,
+        &["std::sync::Arc", "alloc::sync::Arc"],
+        deferred,
+    ) {
         return Err(Attribute::invalid(format!(
             "`{item}` must return Arc<EventSubscription<T>>"
         )));
@@ -319,6 +346,7 @@ fn subscription_item<'source>(
             "boltffi::EventSubscription",
             "boltffi_core::EventSubscription",
         ],
+        deferred,
     ) {
         return Err(Attribute::invalid(format!(
             "`{item}` must return Arc<EventSubscription<T>>"
@@ -371,7 +399,10 @@ fn type_arguments(path: &syn::TypePath) -> Vec<&syn::Type> {
         .unwrap_or_default()
 }
 
-fn matches_path(scope: &ModuleScope, path: &syn::Path, qualified: &[&str]) -> bool {
+fn matches_path(scope: &ModuleScope, path: &syn::Path, qualified: &[&str], deferred: bool) -> bool {
+    if deferred {
+        return suffix_matches(path, qualified);
+    }
     match scope.expand(path) {
         PathExpansion::Imported { path, .. } | PathExpansion::Qualified(path) => {
             qualified.iter().any(|candidate| path == *candidate)
@@ -385,6 +416,23 @@ fn matches_path(scope: &ModuleScope, path: &syn::Path, qualified: &[&str]) -> bo
         }),
         PathExpansion::Ambiguous | PathExpansion::Unsupported => false,
     }
+}
+
+fn suffix_matches(path: &syn::Path, qualified: &[&str]) -> bool {
+    let written = path
+        .segments
+        .iter()
+        .map(|segment| segment.ident.to_string())
+        .collect::<Vec<_>>();
+    qualified.iter().any(|candidate| {
+        let segments = candidate.split("::").collect::<Vec<_>>();
+        written.len() <= segments.len()
+            && written
+                .iter()
+                .rev()
+                .zip(segments.iter().rev())
+                .all(|(written, segment)| written == segment)
+    })
 }
 
 fn raw_path(path: &syn::Path) -> Option<String> {
@@ -416,12 +464,12 @@ mod tests {
         syn::parse_str(source).expect("valid method")
     }
 
-    fn validate_method(method: &syn::ImplItemFn, owner: &str) -> Result<(), ScanError> {
+    fn validate_method(method: &syn::ImplItemFn) -> Result<(), ScanError> {
         let declared_types = DeclaredTypes::new();
         let scope = ModuleScope::root("demo");
         let scanner = Scanner::new(&declared_types, &scope);
         let attribute = Attribute::scan(&method.attrs)?.expect("stream attribute");
-        validate(method, owner, &scope, &scanner, &attribute).map(|_| ())
+        validate(method, &scope, &scanner, &attribute).map(|_| ())
     }
 
     #[test]
@@ -464,7 +512,7 @@ mod tests {
         };
 
         assert_eq!(
-            error,
+            error.unlocated().clone(),
             ScanError::InvalidStream {
                 message: "ffi_stream requires item = <type>".to_owned()
             }
@@ -480,7 +528,7 @@ mod tests {
             Err(error) => error,
         };
 
-        assert!(matches!(error, ScanError::InvalidStream { .. }));
+        assert!(matches!(error.unlocated(), ScanError::InvalidStream { .. }));
     }
 
     #[test]
@@ -495,8 +543,7 @@ mod tests {
             .expect("attribute scans")
             .expect("stream attribute");
 
-        let (_, error) =
-            validate(&method, "demo::Engine", &scope, &scanner, &attribute).expect("valid");
+        let (_, error) = validate(&method, &scope, &scanner, &attribute).expect("valid");
 
         assert_eq!(error, Some(TypeExpr::String));
     }
@@ -514,8 +561,8 @@ mod tests {
         );
 
         for method in [declared_only, returned_only, mismatched] {
-            let error = validate_method(&method, "demo::Engine").expect_err("error types differ");
-            assert!(matches!(error, ScanError::InvalidStream { .. }));
+            let error = validate_method(&method).expect_err("error types differ");
+            assert!(matches!(error.unlocated(), ScanError::InvalidStream { .. }));
         }
     }
 
@@ -525,14 +572,13 @@ mod tests {
             "#[ffi_stream(item = i32)] pub fn events() -> std::sync::Arc<boltffi::EventSubscription<i32>> { todo!() }",
         );
 
-        let error = validate_method(&method, "demo::Engine").expect_err("receiver is required");
+        let error = validate_method(&method).expect_err("receiver is required");
 
         assert_eq!(
-            error,
+            error.unlocated().clone(),
             ScanError::InvalidStream {
-                message:
-                    "`stream demo::Engine::events` must be a public `&self` method with no parameters"
-                        .to_owned()
+                message: "`stream events` must be a public `&self` method with no parameters"
+                    .to_owned()
             }
         );
     }
@@ -543,14 +589,13 @@ mod tests {
             "#[ffi_stream(item = i32)] pub fn events(&self, limit: u32) -> std::sync::Arc<boltffi::EventSubscription<i32>> { todo!() }",
         );
 
-        let error = validate_method(&method, "demo::Engine").expect_err("parameters are rejected");
+        let error = validate_method(&method).expect_err("parameters are rejected");
 
         assert_eq!(
-            error,
+            error.unlocated().clone(),
             ScanError::InvalidStream {
-                message:
-                    "`stream demo::Engine::events` must be a public `&self` method with no parameters"
-                        .to_owned()
+                message: "`stream events` must be a public `&self` method with no parameters"
+                    .to_owned()
             }
         );
     }
@@ -559,13 +604,12 @@ mod tests {
     fn rejects_stream_methods_without_subscription_return() {
         let method = method("#[ffi_stream(item = i32)] pub fn events(&self) -> i32 { todo!() }");
 
-        let error = validate_method(&method, "demo::Engine").expect_err("return shape rejected");
+        let error = validate_method(&method).expect_err("return shape rejected");
 
         assert_eq!(
-            error,
+            error.unlocated().clone(),
             ScanError::InvalidStream {
-                message: "`stream demo::Engine::events` must return Arc<EventSubscription<T>>"
-                    .to_owned()
+                message: "`stream events` must return Arc<EventSubscription<T>>".to_owned()
             }
         );
     }
@@ -576,13 +620,12 @@ mod tests {
             "#[ffi_stream(item = i32)] pub fn events(&self) -> std::sync::Arc<boltffi::EventSubscription<u32>> { todo!() }",
         );
 
-        let error = validate_method(&method, "demo::Engine").expect_err("item mismatch rejected");
+        let error = validate_method(&method).expect_err("item mismatch rejected");
 
         assert_eq!(
-            error,
+            error.unlocated().clone(),
             ScanError::InvalidStream {
-                message: "`stream demo::Engine::events` declares item `i32` but returns `u32`"
-                    .to_owned()
+                message: "`stream events` declares item `i32` but returns `u32`".to_owned()
             }
         );
     }
@@ -717,10 +760,9 @@ mod tests {
         let error = scan(marked.classes(), &declared_types).expect_err("local Arc rejected");
 
         assert_eq!(
-            error,
+            error.unlocated().clone(),
             ScanError::InvalidStream {
-                message: "`stream demo::Engine::values` must return Arc<EventSubscription<T>>"
-                    .to_owned()
+                message: "`stream values` must return Arc<EventSubscription<T>>".to_owned()
             }
         );
     }
@@ -749,10 +791,9 @@ mod tests {
             scan(marked.classes(), &declared_types).expect_err("other subscription rejected");
 
         assert_eq!(
-            error,
+            error.unlocated().clone(),
             ScanError::InvalidStream {
-                message: "`stream demo::Engine::values` must return Arc<EventSubscription<T>>"
-                    .to_owned()
+                message: "`stream values` must return Arc<EventSubscription<T>>".to_owned()
             }
         );
     }

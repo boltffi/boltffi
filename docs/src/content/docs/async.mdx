@@ -118,11 +118,12 @@ config = await load_config("settings.json")`}
 
 ## Methods
 
-Methods on classes can be async. The object reference is captured along with any parameters when the method is called. Both `&self` and `&mut self` methods can be async, but the same thread safety rules apply: `&mut self` requires `#[export(single_threaded)]` since the target language can call from any thread. See [Classes - &self vs &mut self](/docs/classes#self-vs-mut-self) for details.
+Methods on classes can be async. The object reference is captured along with any parameters when the method is called. Both `&self` and `&mut self` methods can be async, but the same thread safety rules apply: `&mut self` requires `#[export(single_threaded)]` on the class's struct since the target language can call from any thread. See [Classes - &self vs &mut self](/docs/classes#self-vs-mut-self) for details.
 
 <CodeComparison
   title=""
-  rust={`pub struct Database {
+  rust={`#[export]
+pub struct Database {
     connection: Connection,
 }
 
