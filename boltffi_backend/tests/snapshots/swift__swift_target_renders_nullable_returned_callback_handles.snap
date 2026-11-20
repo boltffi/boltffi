@@ -79,7 +79,7 @@ private var boltffiListenerVtable: ___ListenerVTable = {
 
 private enum ListenerBridge {
     private static let register: Void = {
-        boltffi_register_callback_demo_listener(&boltffiListenerVtable)
+        boltffi_register_callback_4demo8Listener(&boltffiListenerVtable)
     }()
     static func release(_ handle: BoltFFICallbackHandle) {
         guard handle.handle != 0,
@@ -104,7 +104,7 @@ private enum ListenerBridge {
         }
         let wrapper = ListenerWrapper(impl)
         let handle = UInt64(UInt(bitPattern: Unmanaged.passRetained(wrapper).toOpaque()))
-        return boltffi_create_callback_demo_listener(handle)
+        return boltffi_create_callback_4demo8Listener(handle)
     }
     static func wrap(_ handle: BoltFFICallbackHandle) -> any Listener {
         _ = register
@@ -113,11 +113,11 @@ private enum ListenerBridge {
 }
 
 public func optionalBoxedListener() -> Listener? {
-    let boltffiHandle = boltffi_function_demo_optional_boxed_listener()
+    let boltffiHandle = boltffi_function_4demo23optional_boxed_listener()
     return boltffiHandle.handle == 0 ? nil : ListenerBridge.wrap(boltffiHandle)
 }
 
 public func optionalSharedListener() -> Listener? {
-    let boltffiHandle = boltffi_function_demo_optional_shared_listener()
+    let boltffiHandle = boltffi_function_4demo24optional_shared_listener()
     return boltffiHandle.handle == 0 ? nil : ListenerBridge.wrap(boltffiHandle)
 }

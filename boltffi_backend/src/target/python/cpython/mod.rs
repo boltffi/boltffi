@@ -399,7 +399,7 @@ mod tests {
 
         assert!(init.contains("def ping() -> int:"));
         assert!(stub.contains("def ping() -> int: ..."));
-        assert!(extension.contains("boltffi_function_demo_ping"));
+        assert!(extension.contains("boltffi_function_4demo4ping"));
         assert!(file(&output, "setup.py").contains("packages=[\"demo\"]"));
         assert!(file(&output, "pyproject.toml").contains("setuptools>=68"));
 
@@ -473,7 +473,7 @@ mod tests {
         // omitted declarations. Python API and CPython target wrappers above must
         // still prune them.
         assert!(
-            c_abi.contains("boltffi_function_demo_record_parameter"),
+            c_abi.contains("boltffi_function_4demo16record_parameter"),
             "C ABI should retain declarations generated before target filtering"
         );
         assert_eq!(output.coverage().unsupported().len(), 8);
@@ -510,17 +510,17 @@ mod tests {
         assert!(extension.contains("static int boltffi_python_parse_i32"));
         assert!(extension.contains("static PyObject *boltffi_python_box_i32"));
         assert!(extension.contains(
-            "static PyObject *boltffi_python_callable_wrapper_boltffi_function_demo_add"
+            "static PyObject *boltffi_python_callable_wrapper_boltffi_function_4demo3add"
         ));
         assert!(extension.contains("if (nargs != 2)"));
         assert!(extension.contains("boltffi_python_parse_i32(args[0], &left)"));
         assert!(extension.contains("boltffi_python_parse_i32(args[1], &right)"));
         assert!(extension.contains(
-            "result = boltffi_python_box_i32(boltffi_python_boltffi_function_demo_add(left, right));"
+            "result = boltffi_python_box_i32(boltffi_python_boltffi_function_4demo3add(left, right));"
         ));
         assert!(extension.contains("return result;"));
         assert!(extension.contains(
-            "{\"add\", (PyCFunction)boltffi_python_callable_wrapper_boltffi_function_demo_add, METH_FASTCALL, NULL}"
+            "{\"add\", (PyCFunction)boltffi_python_callable_wrapper_boltffi_function_4demo3add, METH_FASTCALL, NULL}"
         ));
     }
 
@@ -663,7 +663,7 @@ mod tests {
         assert!(extension.contains("___Point value;"));
         assert!(extension.contains("boltffi_python_parse_point(args[0], &value)"));
         assert!(extension.contains(
-            "result = boltffi_python_box_point(boltffi_python_boltffi_function_demo_echo_point(value));"
+            "result = boltffi_python_box_point(boltffi_python_boltffi_function_4demo10echo_point(value));"
         ));
         assert!(!extension.contains("_register_point"));
         assert!(extension.contains("Py_CLEAR(boltffi_python_point_type);"));
@@ -701,11 +701,11 @@ mod tests {
         assert!(extension.contains("___Point point;"));
         assert!(extension.contains("boltffi_python_parse_point(args[0], &point)"));
         assert!(
-            extension.contains("boltffi_python_boltffi_function_demo_distance(&point)"),
+            extension.contains("boltffi_python_boltffi_function_4demo8distance(&point)"),
             "borrowed direct records should stay Python record-shaped and pass an addressed local to the pointer-shaped C ABI\n{extension}"
         );
         assert!(
-            !extension.contains("boltffi_python_boltffi_function_demo_distance(point)"),
+            !extension.contains("boltffi_python_boltffi_function_4demo8distance(point)"),
             "borrowed direct records must not keep passing the local by value after the C ABI becomes pointer-shaped\n{extension}"
         );
         assert!(stub.contains("def distance(point: Point) -> float: ..."));
@@ -752,13 +752,13 @@ mod tests {
         ));
         assert!(extension.contains("item = boltffi_python_box_point(values[index]);"));
         assert!(extension.contains(
-            "typedef FfiBuf_u8 (*boltffi_python_boltffi_function_demo_echo_points_fn)(const uint8_t *, uintptr_t);"
+            "typedef FfiBuf_u8 (*boltffi_python_boltffi_function_4demo11echo_points_fn)(const uint8_t *, uintptr_t);"
         ));
         assert!(extension.contains(
             "boltffi_python_wire_vec_point(args[0], &values_wire, &values_ptr, &values_len)"
         ));
         assert!(extension.contains(
-            "result = boltffi_python_decode_owned_vec_point(boltffi_python_boltffi_function_demo_echo_points(values_ptr, values_len));"
+            "result = boltffi_python_decode_owned_vec_point(boltffi_python_boltffi_function_4demo11echo_points(values_ptr, values_len));"
         ));
         assert!(stub.contains("from collections.abc import Sequence"));
         assert!(stub.contains("def echo_points(values: Sequence[Point]) -> list[Point]: ..."));
@@ -786,7 +786,7 @@ mod tests {
             "boltffi_python_parse_vec_i32(args[0], &values_wire, &values_ptr, &values_len)"
         ));
         assert!(extension.contains(
-            "result = boltffi_python_decode_owned_vec_i32(boltffi_python_boltffi_function_demo_echo_numbers((const int32_t *)values_ptr, values_len));"
+            "result = boltffi_python_decode_owned_vec_i32(boltffi_python_boltffi_function_4demo12echo_numbers((const int32_t *)values_ptr, values_len));"
         ));
         assert!(stub.contains("from collections.abc import Sequence"));
         assert!(stub.contains("def echo_numbers(values: Sequence[int]) -> list[int]: ..."));
@@ -808,7 +808,7 @@ mod tests {
         let stub = file(&output, "demo/__init__.pyi");
 
         assert!(extension.contains(
-            "FfiStatus status = boltffi_python_boltffi_function_demo_increment((uint64_t *)values_ptr, values_len);"
+            "FfiStatus status = boltffi_python_boltffi_function_4demo9increment((uint64_t *)values_ptr, values_len);"
         ));
         assert!(extension.contains(
             "result = boltffi_python_box_vec_u64((const uint64_t *)values_ptr, values_len);"
@@ -906,26 +906,26 @@ mod tests {
         let stub = file(&output, "demo/__init__.pyi");
 
         assert!(extension.contains(
-            "static PyObject *boltffi_python_callable_wrapper_boltffi_init_record_demo_point_origin"
+            "static PyObject *boltffi_python_callable_wrapper_boltffi_init_record_4demo5Point6origin"
         ));
         assert!(extension.contains(
-            "static PyObject *boltffi_python_callable_wrapper_boltffi_method_record_demo_point_distance_to_origin"
+            "static PyObject *boltffi_python_callable_wrapper_boltffi_method_record_4demo5Point18distance_to_origin"
         ));
         assert!(extension.contains(
-            "static PyObject *boltffi_python_callable_wrapper_boltffi_init_record_demo_point_midpoint_to"
+            "static PyObject *boltffi_python_callable_wrapper_boltffi_init_record_4demo5Point11midpoint_to"
         ));
         assert!(extension.contains(
-            "static PyObject *boltffi_python_callable_wrapper_boltffi_method_record_demo_point_sum_x"
+            "static PyObject *boltffi_python_callable_wrapper_boltffi_method_record_4demo5Point5sum_x"
         ));
         assert!(extension.contains("boltffi_python_parse_point(args[0], &receiver)"));
         assert!(extension.contains(
-            "boltffi_python_boltffi_method_record_demo_point_distance_to_origin(receiver)"
+            "boltffi_python_boltffi_method_record_4demo5Point18distance_to_origin(receiver)"
         ));
         assert!(extension.contains(
-            "{\"_boltffi_point_origin\", (PyCFunction)boltffi_python_callable_wrapper_boltffi_init_record_demo_point_origin, METH_FASTCALL, NULL}"
+            "{\"_boltffi_point_origin\", (PyCFunction)boltffi_python_callable_wrapper_boltffi_init_record_4demo5Point6origin, METH_FASTCALL, NULL}"
         ));
         assert!(extension.contains(
-            "{\"_boltffi_point_distance_to_origin\", (PyCFunction)boltffi_python_callable_wrapper_boltffi_method_record_demo_point_distance_to_origin, METH_FASTCALL, NULL}"
+            "{\"_boltffi_point_distance_to_origin\", (PyCFunction)boltffi_python_callable_wrapper_boltffi_method_record_4demo5Point18distance_to_origin, METH_FASTCALL, NULL}"
         ));
         assert!(init.contains("def _boltffi_attach_Point_origin(cls) -> \"Point\":"));
         assert!(init.contains("return _native._boltffi_point_origin()"));
@@ -975,11 +975,11 @@ mod tests {
         let init = file(&output, "demo/__init__.py");
 
         assert!(extension.contains(
-            "typedef FfiStatus (*boltffi_python_boltffi_method_record_demo_point_scale_fn)(___Point, ___Point *, double);"
+            "typedef FfiStatus (*boltffi_python_boltffi_method_record_4demo5Point5scale_fn)(___Point, ___Point *, double);"
         ));
         assert!(extension.contains("___Point receiver_out = {0};"));
         assert!(extension.contains(
-            "FfiStatus status = boltffi_python_boltffi_method_record_demo_point_scale(receiver, &receiver_out, factor);"
+            "FfiStatus status = boltffi_python_boltffi_method_record_4demo5Point5scale(receiver, &receiver_out, factor);"
         ));
         assert!(extension.contains("result = boltffi_python_box_point(receiver_out);"));
         assert!(init.contains("def _boltffi_attach_Point_scale(self, factor: float) -> Point:"));
@@ -1026,7 +1026,7 @@ mod tests {
         assert!(extension.contains("___Status value;"));
         assert!(extension.contains("boltffi_python_parse_status(args[0], &value)"));
         assert!(extension.contains(
-            "result = boltffi_python_box_status(boltffi_python_boltffi_function_demo_echo_status(value));"
+            "result = boltffi_python_box_status(boltffi_python_boltffi_function_4demo11echo_status(value));"
         ));
         assert!(extension.contains(
             "{\"_register_status\", (PyCFunction)boltffi_python_wrapper_register_status, METH_FASTCALL, NULL}"
@@ -1079,7 +1079,7 @@ mod tests {
             )
         );
         assert!(extension.contains(
-            "result = boltffi_python_decode_owned_raw_wire(boltffi_python_boltffi_function_demo_echo_statuses(values_ptr, values_len));"
+            "result = boltffi_python_decode_owned_raw_wire(boltffi_python_boltffi_function_4demo13echo_statuses(values_ptr, values_len));"
         ));
         assert!(init.contains(
             "_boltffi_wire_sequence(values, len(values), lambda __boltffi_value_0: _boltffi_wire_i32(_boltffi_enum_value(__boltffi_value_0, Status, \"Status\")))"
@@ -1129,27 +1129,27 @@ mod tests {
         let stub = file(&output, "demo/__init__.pyi");
 
         assert!(extension.contains(
-            "static PyObject *boltffi_python_callable_wrapper_boltffi_init_enum_demo_direction_north"
+            "static PyObject *boltffi_python_callable_wrapper_boltffi_init_enum_4demo9Direction5north"
         ));
         assert!(extension.contains(
-            "static PyObject *boltffi_python_callable_wrapper_boltffi_method_enum_demo_direction_opposite"
+            "static PyObject *boltffi_python_callable_wrapper_boltffi_method_enum_4demo9Direction8opposite"
         ));
         assert!(extension.contains(
-            "static PyObject *boltffi_python_callable_wrapper_boltffi_init_enum_demo_direction_choose"
+            "static PyObject *boltffi_python_callable_wrapper_boltffi_init_enum_4demo9Direction6choose"
         ));
         assert!(extension.contains(
-            "static PyObject *boltffi_python_callable_wrapper_boltffi_method_enum_demo_direction_is_north"
+            "static PyObject *boltffi_python_callable_wrapper_boltffi_method_enum_4demo9Direction8is_north"
         ));
         assert!(extension.contains("boltffi_python_parse_direction(args[0], &receiver)"));
         assert!(
             extension
-                .contains("boltffi_python_boltffi_method_enum_demo_direction_opposite(receiver)")
+                .contains("boltffi_python_boltffi_method_enum_4demo9Direction8opposite(receiver)")
         );
         assert!(extension.contains(
-            "{\"_boltffi_direction_north\", (PyCFunction)boltffi_python_callable_wrapper_boltffi_init_enum_demo_direction_north, METH_FASTCALL, NULL}"
+            "{\"_boltffi_direction_north\", (PyCFunction)boltffi_python_callable_wrapper_boltffi_init_enum_4demo9Direction5north, METH_FASTCALL, NULL}"
         ));
         assert!(extension.contains(
-            "{\"_boltffi_direction_opposite\", (PyCFunction)boltffi_python_callable_wrapper_boltffi_method_enum_demo_direction_opposite, METH_FASTCALL, NULL}"
+            "{\"_boltffi_direction_opposite\", (PyCFunction)boltffi_python_callable_wrapper_boltffi_method_enum_4demo9Direction8opposite, METH_FASTCALL, NULL}"
         ));
         assert!(init.contains("class Direction(IntEnum):"));
         assert!(init.contains("def north(cls) -> \"Direction\":"));
@@ -1255,28 +1255,28 @@ mod tests {
         let stub = file(&output, "demo/__init__.pyi");
 
         assert!(extension.contains(
-            "static PyObject *boltffi_python_callable_wrapper_boltffi_release_class_demo_engine"
+            "static PyObject *boltffi_python_callable_wrapper_boltffi_release_class_4demo6Engine"
         ));
         assert!(extension.contains(
-            "static PyObject *boltffi_python_callable_wrapper_boltffi_init_class_demo_engine_new"
+            "static PyObject *boltffi_python_callable_wrapper_boltffi_init_class_4demo6Engine3new"
         ));
-        assert!(extension.contains("static PyObject *boltffi_python_callable_wrapper_boltffi_method_class_demo_engine_value"));
-        assert!(extension.contains("static PyObject *boltffi_python_callable_wrapper_boltffi_method_class_demo_engine_reset"));
-        assert!(extension.contains("static PyObject *boltffi_python_callable_wrapper_boltffi_method_class_demo_engine_marker"));
-        assert!(extension.contains("static PyObject *boltffi_python_callable_wrapper_boltffi_method_class_demo_engine_make_marker"));
+        assert!(extension.contains("static PyObject *boltffi_python_callable_wrapper_boltffi_method_class_4demo6Engine5value"));
+        assert!(extension.contains("static PyObject *boltffi_python_callable_wrapper_boltffi_method_class_4demo6Engine5reset"));
+        assert!(extension.contains("static PyObject *boltffi_python_callable_wrapper_boltffi_method_class_4demo6Engine6marker"));
+        assert!(extension.contains("static PyObject *boltffi_python_callable_wrapper_boltffi_method_class_4demo6Engine11make_marker"));
         assert!(extension.contains("PyObject_GetAttrString(__boltffi_class_owner, \"_handle\")"));
         assert!(extension.contains("boltffi_python_parse_u64(__boltffi_class_handle, &receiver)"));
         assert!(
-            extension.contains("boltffi_python_boltffi_method_class_demo_engine_value(receiver)")
+            extension.contains("boltffi_python_boltffi_method_class_4demo6Engine5value(receiver)")
         );
         assert!(
-            extension.contains("boltffi_python_boltffi_method_class_demo_engine_reset(receiver)")
+            extension.contains("boltffi_python_boltffi_method_class_4demo6Engine5reset(receiver)")
         );
         assert!(extension.contains(
-            "{\"_boltffi_engine_release\", (PyCFunction)boltffi_python_callable_wrapper_boltffi_release_class_demo_engine, METH_FASTCALL, NULL}"
+            "{\"_boltffi_engine_release\", (PyCFunction)boltffi_python_callable_wrapper_boltffi_release_class_4demo6Engine, METH_FASTCALL, NULL}"
         ));
         assert!(extension.contains(
-            "{\"_boltffi_engine_new\", (PyCFunction)boltffi_python_callable_wrapper_boltffi_init_class_demo_engine_new, METH_FASTCALL, NULL}"
+            "{\"_boltffi_engine_new\", (PyCFunction)boltffi_python_callable_wrapper_boltffi_init_class_4demo6Engine3new, METH_FASTCALL, NULL}"
         ));
         assert!(init.contains("class Engine:"));
         assert!(init.contains("__slots__ = (\"_handle\",)"));
@@ -1365,22 +1365,22 @@ mod tests {
             "on_value() returned an awaitable, Python callback methods must return the value directly"
         ));
         assert!(extension.contains("static int boltffi_python_bind_callback_value_callback"));
-        assert!(extension.contains("boltffi_python_boltffi_register_callback_demo_value_callback(&boltffi_python_callback_value_callback_vtable)"));
+        assert!(extension.contains("boltffi_python_boltffi_register_callback_4demo13ValueCallback(&boltffi_python_callback_value_callback_vtable)"));
         assert!(extension.contains("static int boltffi_python_parse_callback_value_callback"));
         assert!(extension.contains(
-            "boltffi_python_boltffi_create_callback_demo_value_callback((uint64_t)(uintptr_t)value)"
+            "boltffi_python_boltffi_create_callback_4demo13ValueCallback((uint64_t)(uintptr_t)value)"
         ));
         assert!(extension.contains(
-            "static PyObject *boltffi_python_callable_wrapper_boltffi_function_demo_invoke_value_callback"
+            "static PyObject *boltffi_python_callable_wrapper_boltffi_function_4demo21invoke_value_callback"
         ));
         assert!(
             extension.contains("boltffi_python_parse_callback_value_callback(args[0], &callback)")
         );
         assert!(extension.contains(
-            "result = boltffi_python_box_i32(boltffi_python_boltffi_function_demo_invoke_value_callback(callback, input));"
+            "result = boltffi_python_box_i32(boltffi_python_boltffi_function_4demo21invoke_value_callback(callback, input));"
         ));
         assert!(extension.contains(
-            "{\"invoke_value_callback\", (PyCFunction)boltffi_python_callable_wrapper_boltffi_function_demo_invoke_value_callback"
+            "{\"invoke_value_callback\", (PyCFunction)boltffi_python_callable_wrapper_boltffi_function_4demo21invoke_value_callback"
         ));
         assert!(
             stub.contains("def invoke_value_callback(callback: object, input: int) -> int: ...")
@@ -1516,16 +1516,16 @@ mod tests {
         let stub = file(&output, "demo/__init__.pyi");
 
         assert!(extension.contains(
-            "static PyObject *boltffi_python_stream_wrapper_boltffi_stream_demo_event_bus_subscribe_values_subscribe"
+            "static PyObject *boltffi_python_stream_wrapper_boltffi_stream_4demo8EventBus16subscribe_values_subscribe"
         ));
         assert!(extension.contains(
-            "static PyObject *boltffi_python_stream_wrapper_boltffi_stream_demo_event_bus_subscribe_values_pop_batch"
+            "static PyObject *boltffi_python_stream_wrapper_boltffi_stream_4demo8EventBus16subscribe_values_pop_batch"
         ));
         assert!(extension.contains("boltffi_python_parse_usize(args[1], &output_capacity)"));
         assert!(extension.contains("int32_t *items = NULL;"));
         assert!(extension.contains("boltffi_python_box_i32(items[item_index])"));
         assert!(extension.contains(
-            "{\"event_bus_subscribe_values\", (PyCFunction)boltffi_python_stream_wrapper_boltffi_stream_demo_event_bus_subscribe_values_subscribe, METH_FASTCALL, NULL}"
+            "{\"event_bus_subscribe_values\", (PyCFunction)boltffi_python_stream_wrapper_boltffi_stream_4demo8EventBus16subscribe_values_subscribe, METH_FASTCALL, NULL}"
         ));
         assert!(
             init.contains("def subscribe_values(self) -> \"EventBusSubscribeValuesSubscription\":")
@@ -1621,7 +1621,7 @@ mod tests {
 
         assert!(extension.contains("int32_t int_;"));
         assert!(extension.contains("boltffi_python_parse_i32(args[0], &int_)"));
-        assert!(extension.contains("boltffi_python_boltffi_function_demo_echo(int_)"));
+        assert!(extension.contains("boltffi_python_boltffi_function_4demo4echo(int_)"));
     }
 
     #[test]
@@ -1639,7 +1639,7 @@ mod tests {
         let extension = extension(&output);
 
         assert!(extension.contains(
-            "{\"lambda_\", (PyCFunction)boltffi_python_callable_wrapper_boltffi_function_demo_lambda, METH_FASTCALL, NULL}"
+            "{\"lambda_\", (PyCFunction)boltffi_python_callable_wrapper_boltffi_function_4demo6lambda, METH_FASTCALL, NULL}"
         ));
     }
 
@@ -1670,7 +1670,7 @@ mod tests {
         let init = file(&output, "demo/__init__.py");
         let stub = file(&output, "demo/__init__.pyi");
 
-        assert!(!extension.contains("boltffi_python_callable_wrapper_boltffi_const_demo_answer"));
+        assert!(!extension.contains("boltffi_python_callable_wrapper_boltffi_const_4demo6ANSWER"));
         assert!(init.contains("answer: int = 42"));
         assert!(init.contains("name: str = \"bolt\""));
         assert!(init.contains("default_mode: Mode = Mode.FAST"));
@@ -2009,7 +2009,9 @@ Coordinates are plain `f64`.
         let stub = file(&output, "demo/__init__.pyi");
 
         assert!(
-            init.contains("max_rejoin_distance: LengthFFI = LengthFFI(meters=1500)"),
+            init.contains(
+                "max_rejoin_distance: LengthFFI = _boltffi_field(default_factory=lambda: LengthFFI(meters=1500))"
+            ),
             "{init}"
         );
         assert!(stub.contains("max_rejoin_distance: LengthFFI = LengthFFI(meters=1500)"));
@@ -2169,16 +2171,14 @@ Coordinates are plain `f64`.
         let stub = file(&output, "demo/__init__.pyi");
 
         assert!(extension.contains("static PyObject *boltffi_python_decode_owned_bytes"));
-        assert!(
-            extension.contains(
-                "static PyObject *boltffi_python_callable_wrapper_boltffi_const_demo_magic"
-            )
-        );
         assert!(extension.contains(
-            "result = boltffi_python_decode_owned_bytes(boltffi_python_boltffi_const_demo_magic());"
+            "static PyObject *boltffi_python_callable_wrapper_boltffi_const_4demo5MAGIC"
         ));
         assert!(extension.contains(
-            "{\"magic\", (PyCFunction)boltffi_python_callable_wrapper_boltffi_const_demo_magic, METH_FASTCALL, NULL}"
+            "result = boltffi_python_decode_owned_bytes(boltffi_python_boltffi_const_4demo5MAGIC());"
+        ));
+        assert!(extension.contains(
+            "{\"magic\", (PyCFunction)boltffi_python_callable_wrapper_boltffi_const_4demo5MAGIC, METH_FASTCALL, NULL}"
         ));
         assert!(init.contains("magic: bytes = _native.magic()"));
         assert!(init.contains("\"magic\","));
@@ -2245,7 +2245,7 @@ Coordinates are plain `f64`.
         let stub = file(&output, "demo/__init__.pyi");
 
         assert!(extension.contains(
-            "{\"color_black\", (PyCFunction)boltffi_python_callable_wrapper_boltffi_const_demo_color_black"
+            "{\"color_black\", (PyCFunction)boltffi_python_callable_wrapper_boltffi_const_4demo5Color5BLACK"
         ));
         assert!(init.contains("Color.BLACK = _native.color_black()"));
         assert!(init.contains("Color.CHANNEL_COUNT = 4"));
@@ -2305,13 +2305,13 @@ Coordinates are plain `f64`.
         let init = file(&output, "demo/__init__.py");
         let stub = file(&output, "demo/__init__.pyi");
 
-        assert!(header.contains("RustFutureHandle boltffi_function_demo_fetch(void);"));
-        assert!(header.contains("int8_t boltffi_async_function_demo_fetch_poll("));
-        assert!(header.contains("int32_t boltffi_async_function_demo_fetch_complete("));
+        assert!(header.contains("RustFutureHandle boltffi_function_4demo5fetch(void);"));
+        assert!(header.contains("int8_t boltffi_async_function_4demo5fetch_poll("));
+        assert!(header.contains("int32_t boltffi_async_function_4demo5fetch_complete("));
         assert!(extension.contains("static PyObject *boltffi_python_box_future_handle"));
         assert!(extension.contains("static void boltffi_python_future_wake"));
         assert!(extension.contains(
-            "{\"fetch__complete\", (PyCFunction)boltffi_python_callable_wrapper_boltffi_async_function_demo_fetch_complete, METH_O, NULL}"
+            "{\"fetch__complete\", (PyCFunction)boltffi_python_callable_wrapper_boltffi_async_function_4demo5fetch_complete, METH_O, NULL}"
         ));
         assert!(init.contains("import asyncio"));
         assert!(init.contains("class _BoltFfiNativeFuture:"));
@@ -2552,7 +2552,7 @@ Coordinates are plain `f64`.
                 .contains("boltffi_python_wire_string(args[0], &name_wire, &name_ptr, &name_len)")
         );
         assert!(extension.contains(
-            "result = boltffi_python_decode_owned_utf8(boltffi_python_boltffi_function_demo_greet(name_ptr, name_len));"
+            "result = boltffi_python_decode_owned_utf8(boltffi_python_boltffi_function_4demo5greet(name_ptr, name_len));"
         ));
         assert!(extension.contains("Py_XDECREF(name_wire);"));
         assert!(extension.contains("boltffi_python_boltffi_free_buf(buffer);"));
@@ -2588,7 +2588,7 @@ Coordinates are plain `f64`.
             )
         );
         assert!(extension.contains(
-            "result = boltffi_python_decode_owned_bytes(boltffi_python_boltffi_function_demo_echo(bytes_ptr, bytes_len));"
+            "result = boltffi_python_decode_owned_bytes(boltffi_python_boltffi_function_4demo4echo(bytes_ptr, bytes_len));"
         ));
         assert!(extension.contains("Py_XDECREF(bytes_wire);"));
         assert!(init.contains("return _native.echo(bytes)"));
@@ -2624,13 +2624,13 @@ Coordinates are plain `f64`.
             "boltffi_python_list_wire_str(args[0], &names_wire, &names_ptr, &names_len)"
         ));
         assert!(extension.contains(
-            "result = boltffi_python_list_decode_str(boltffi_python_boltffi_function_demo_names(names_ptr, names_len));"
+            "result = boltffi_python_list_decode_str(boltffi_python_boltffi_function_4demo5names(names_ptr, names_len));"
         ));
         assert!(extension.contains(
             "boltffi_python_list_wire_bytes(args[0], &chunks_wire, &chunks_ptr, &chunks_len)"
         ));
         assert!(extension.contains(
-            "result = boltffi_python_list_decode_bytes(boltffi_python_boltffi_function_demo_chunks(chunks_ptr, chunks_len));"
+            "result = boltffi_python_list_decode_bytes(boltffi_python_boltffi_function_4demo6chunks(chunks_ptr, chunks_len));"
         ));
         assert!(init.contains("return _native.names(names)"));
         assert!(init.contains("return _native.chunks(chunks)"));

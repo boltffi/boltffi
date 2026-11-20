@@ -1,0 +1,5 @@
+error: BoltFFI: enum discriminants must be integer literals
+ --> tests/diagnostics/enums/non_literal_discriminant.rs:5:18
+  |
+5 | pub enum E { A = B + 1 }
+  |                  ^^^^^

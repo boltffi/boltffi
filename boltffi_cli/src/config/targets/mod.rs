@@ -3,10 +3,12 @@ pub mod c;
 pub mod c_header;
 pub mod csharp;
 pub mod dart;
+pub mod dart_web;
 pub mod java;
 pub mod kmp;
 pub mod kotlin;
 pub mod python;
+pub mod ruby;
 pub mod wasm;
 
 pub use apple::{
@@ -18,6 +20,7 @@ pub use csharp::CSharpConfig;
 #[cfg(test)]
 pub use csharp::CSharpNugetConfig;
 pub use dart::DartConfig;
+pub use dart_web::DartWebConfig;
 pub use java::JavaConfig;
 #[cfg(test)]
 pub use java::JavaJvmConfig;
@@ -29,6 +32,7 @@ pub use kotlin::{
 pub use python::PythonConfig;
 #[cfg(test)]
 pub use python::PythonWheelConfig;
+pub use ruby::RubyConfig;
 pub use wasm::{WasmConfig, WasmNpmTarget, WasmOptimizeLevel, WasmOptimizeOnMissing, WasmProfile};
 
 use serde::{Deserialize, Serialize};
@@ -45,6 +49,7 @@ pub enum TargetSection {
     Python,
     CSharp,
     C,
+    Ruby,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
@@ -62,11 +67,15 @@ pub struct TargetsConfig {
     #[serde(default)]
     pub dart: DartConfig,
     #[serde(default)]
+    pub dart_web: DartWebConfig,
+    #[serde(default)]
     pub python: PythonConfig,
     #[serde(default)]
     pub csharp: CSharpConfig,
     #[serde(default)]
     pub c: CConfig,
+    #[serde(default)]
+    pub ruby: RubyConfig,
 }
 
 impl TargetsConfig {
@@ -81,6 +90,7 @@ impl TargetsConfig {
             TargetSection::Python => &self.python.cargo_args,
             TargetSection::CSharp => &self.csharp.cargo_args,
             TargetSection::C => &self.c.cargo_args,
+            TargetSection::Ruby => &self.ruby.cargo_args,
         }
     }
 }

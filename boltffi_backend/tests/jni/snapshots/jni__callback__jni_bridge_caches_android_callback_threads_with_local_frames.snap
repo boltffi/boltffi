@@ -9,9 +9,9 @@ typedef struct {
     uint64_t (*clone)(uint64_t);
     uint32_t (*on_value)(uint64_t, uint32_t);
 } ___ListenerVTable;
-void boltffi_register_callback_demo_listener(const ___ListenerVTable *vtable);
-BoltFFICallbackHandle boltffi_create_callback_demo_listener(uint64_t handle);
-FfiStatus boltffi_function_demo_install(BoltFFICallbackHandle listener);
+void boltffi_register_callback_4demo8Listener(const ___ListenerVTable *vtable);
+BoltFFICallbackHandle boltffi_create_callback_4demo8Listener(uint64_t handle);
+FfiStatus boltffi_function_4demo7install(BoltFFICallbackHandle listener);
 
 ===== jni/jni_glue.c =====
 <jni source includes>
@@ -176,7 +176,7 @@ static bool boltffi_jni_load____ListenerVTable_callbacks(JNIEnv *env) {
     if (!boltffi_jni_lookup_static_method_with_diagnostic(env, g____ListenerVTable_class, "com/boltffi/demo/ListenerCallbacks", "on_value", "on_value", "(JI)I", "(JI)I", &g____ListenerVTable_on_value_method)) {
         goto fail;
     }
-    boltffi_register_callback_demo_listener(&g____ListenerVTable_vtable);
+    boltffi_register_callback_4demo8Listener(&g____ListenerVTable_vtable);
     return true;
 fail:
     (*env)->DeleteGlobalRef(env, g____ListenerVTable_class);
@@ -228,10 +228,10 @@ JNIEXPORT void JNICALL JNI_OnUnload(JavaVM *vm, void *reserved) {
     boltffi_jni_native_class = NULL;
 }
 
-JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1function_1demo_1install(JNIEnv *env, jclass cls, jlong listener) {
+JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1function_14demo7install(JNIEnv *env, jclass cls, jlong listener) {
     (void)cls;
 
-    FfiStatus __boltffi_status = boltffi_function_demo_install(boltffi_jni_callback_parameter((uint64_t)listener, boltffi_create_callback_demo_listener));
+    FfiStatus __boltffi_status = boltffi_function_4demo7install(boltffi_jni_callback_parameter((uint64_t)listener, boltffi_create_callback_4demo8Listener));
 
     if (__boltffi_status.code != 0) {
         boltffi_jni_throw_status(env, __boltffi_status);

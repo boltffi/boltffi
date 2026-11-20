@@ -598,7 +598,7 @@ debug = "line-directives-only"
         .expect("write explicit configuration");
 
         let candidates = cargo_config_file_candidates_with_inputs(
-            vec![workspace.clone()],
+            Vec::new(),
             Some(workspace),
             Some(cargo_home.clone()),
             Some(home_directory),

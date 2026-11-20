@@ -1,0 +1,5 @@
+error: BoltFFI: exported constant cannot be anonymous
+ --> tests/diagnostics/constants/anonymous_constant.rs:3:7
+  |
+3 | const _: u32 = 1;
+  |       ^

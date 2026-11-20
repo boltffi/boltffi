@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use boltffi_ast::{
     ClassDef as SourceClass, ClassId as SourceClassId, CustomTypeDef as SourceCustom,
@@ -23,6 +23,8 @@ pub struct Index<'src> {
     classes: HashMap<&'src str, &'src SourceClass>,
     traits: HashMap<&'src str, &'src SourceTrait>,
     customs: HashMap<&'src str, &'src SourceCustom>,
+    lowered: Option<&'src HashSet<String>>,
+    shallow: Option<&'src HashSet<String>>,
 }
 
 impl<'src> Index<'src> {
@@ -54,7 +56,29 @@ impl<'src> Index<'src> {
                 .iter()
                 .map(|custom| (custom.id.as_str(), custom))
                 .collect(),
+            lowered: None,
+            shallow: None,
         }
+    }
+
+    /// Restricts lowering to `lowered`; every other declaration stays lookup-only. The
+    /// `shallow` ones lower without fields or variants, since only their methods render.
+    pub fn lowering(
+        mut self,
+        lowered: &'src HashSet<String>,
+        shallow: &'src HashSet<String>,
+    ) -> Self {
+        self.lowered = Some(lowered);
+        self.shallow = Some(shallow);
+        self
+    }
+
+    pub fn lowers(&self, id: &str) -> bool {
+        self.lowered.is_none_or(|lowered| lowered.contains(id))
+    }
+
+    pub fn is_shallow(&self, id: &str) -> bool {
+        self.shallow.is_some_and(|shallow| shallow.contains(id))
     }
 
     pub fn source(&self) -> &'src SourceContract {

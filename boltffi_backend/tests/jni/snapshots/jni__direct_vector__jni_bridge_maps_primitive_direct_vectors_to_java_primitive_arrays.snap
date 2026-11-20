@@ -4,12 +4,12 @@ expression: "rendered_fixture(\"direct_vector/primitive_vector_parameter\")"
 ---
 ===== jni/demo.h =====
 <c abi support declarations>
-int32_t boltffi_function_demo_sum(const int32_t *values_ptr, uintptr_t values_len);
+int32_t boltffi_function_4demo3sum(const int32_t *values_ptr, uintptr_t values_len);
 
 ===== jni/jni_glue.c =====
 <jni source includes>
 <jni exception helpers>
-JNIEXPORT jint JNICALL Java_com_boltffi_demo_Native_boltffi_1function_1demo_1sum(JNIEnv *env, jclass cls, jintArray values) {
+JNIEXPORT jint JNICALL Java_com_boltffi_demo_Native_boltffi_1function_14demo3sum(JNIEnv *env, jclass cls, jintArray values) {
     (void)cls;
 
     jint *__boltffi_values_ptr = NULL;
@@ -37,7 +37,7 @@ JNIEXPORT jint JNICALL Java_com_boltffi_demo_Native_boltffi_1function_1demo_1sum
     }
 
     (void)env;
-    int32_t __boltffi_result = boltffi_function_demo_sum((const int32_t *)__boltffi_values_ptr, (uintptr_t)__boltffi_values_len);
+    int32_t __boltffi_result = boltffi_function_4demo3sum((const int32_t *)__boltffi_values_ptr, (uintptr_t)__boltffi_values_len);
 
     if (__boltffi_values_ptr != NULL) {
         if (__boltffi_values_needs_release) {

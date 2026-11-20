@@ -389,14 +389,14 @@ mod tests {
             {
                 internal const string LibName = "demo_native";
 
-                [DllImport(LibName, EntryPoint = "boltffi_function_demo_add")]
+                [DllImport(LibName, EntryPoint = "boltffi_function_4demo3add")]
                 internal static extern int NativeAdd(int left, int right);
 
-                [DllImport(LibName, EntryPoint = "boltffi_function_demo_negate")]
+                [DllImport(LibName, EntryPoint = "boltffi_function_4demo6negate")]
                 [return: MarshalAs(UnmanagedType.I1)]
                 internal static extern bool NativeNegate([MarshalAs(UnmanagedType.I1)] bool enabled);
 
-                [DllImport(LibName, EntryPoint = "boltffi_function_demo_notify")]
+                [DllImport(LibName, EntryPoint = "boltffi_function_4demo6notify")]
                 internal static extern FfiStatus NativeNotify(ulong value);
 
             }
@@ -971,8 +971,8 @@ mod tests {
             .expect("streams should render");
 
         let source = file(&output, "Demo.cs");
-        assert!(source.contains("EntryPoint = \"boltffi_stream_demo_store_snapshots_subscribe\""));
-        assert!(source.contains("EntryPoint = \"boltffi_stream_demo_draft_snapshots_subscribe\""));
+        assert!(source.contains("EntryPoint = \"boltffi_stream_4demo5Store9snapshots_subscribe\""));
+        assert!(source.contains("EntryPoint = \"boltffi_stream_4demo5Draft9snapshots_subscribe\""));
         assert!(source.contains("IAsyncEnumerable<int> Snapshots(this Store self"));
         assert!(source.contains("IAsyncEnumerable<string> Snapshots(this Draft self"));
         assert!(

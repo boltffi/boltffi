@@ -8,9 +8,9 @@ expression: "rendered_fixture(\"exports/unsigned_functions\")"
 package com.boltffi.demo
 @Suppress("FunctionName")
 private object Native {
-    @JvmStatic external fun boltffi_function_demo_widen(byte: Byte, short_: Short, word: Int, wide: Long): Int
+    @JvmStatic external fun boltffi_function_4demo5widen(byte: Byte, short_: Short, word: Int, wide: Long): Int
 }
 
 fun widen(byte: UByte, short: UShort, word: UInt, wide: ULong): UInt {
-    return Native.boltffi_function_demo_widen(byte.toByte(), short.toShort(), word.toInt(), wide.toLong()).toUInt()
+    return Native.boltffi_function_4demo5widen(byte.toByte(), short.toShort(), word.toInt(), wide.toLong()).toUInt()
 }

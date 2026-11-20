@@ -26,7 +26,7 @@ fn kotlin_target_renders_associated_constants_in_the_companion_object() {
     assert!(source.contains("val MAX_COLORS: UByte\n"));
     assert!(source.contains("get() = 16u"));
     assert!(source.contains("external fun boltffi_const_"));
-    assert!(source.contains("color_black"));
+    assert!(source.contains("5Color5BLACK"));
     assert!(!source.contains("\nval BLACK: Color"));
     assert!(!source.contains("UNEXPORTED_ASSOCIATED"));
 }

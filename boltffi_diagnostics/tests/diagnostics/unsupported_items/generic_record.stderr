@@ -1,0 +1,21 @@
+error: BoltFFI: `record Pair` cannot be generic; export a separate non-generic item for each type you need
+ --> tests/diagnostics/unsupported_items/generic_record.rs:5:16
+  |
+5 | pub struct Pair<T> {
+  |                ^^^
+
+error[E0107]: missing generics for struct `Pair`
+ --> tests/diagnostics/unsupported_items/generic_record.rs:5:12
+  |
+5 | pub struct Pair<T> {
+  |            ^^^^ expected 1 generic argument
+  |
+note: struct defined here, with 1 generic parameter: `T`
+ --> tests/diagnostics/unsupported_items/generic_record.rs:5:12
+  |
+5 | pub struct Pair<T> {
+  |            ^^^^ -
+help: add missing generic argument
+  |
+5 | pub struct Pair<T><T> {
+  |                +++

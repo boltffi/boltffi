@@ -61,13 +61,13 @@ private var boltffiStatusMapperVtable: ___StatusMapperVTable = {
 
 private enum StatusMapperBridge {
     private static let register: Void = {
-        boltffi_register_callback_demo_status_mapper(&boltffiStatusMapperVtable)
+        boltffi_register_callback_4demo12StatusMapper(&boltffiStatusMapperVtable)
     }()
 
     static func create(_ impl: StatusMapper) -> BoltFFICallbackHandle {
         _ = register
         let wrapper = StatusMapperWrapper(impl)
         let handle = UInt64(UInt(bitPattern: Unmanaged.passRetained(wrapper).toOpaque()))
-        return boltffi_create_callback_demo_status_mapper(handle)
+        return boltffi_create_callback_4demo12StatusMapper(handle)
     }
 }

@@ -294,6 +294,7 @@ pub(crate) fn build_android_targets(
 /// so that their builds can run at the same time; see
 /// [`Builder::build_targets_concurrently`]. Cargo arguments that already choose
 /// a target directory keep it, and the targets then build one after another.
+/// Below the crate's, each build's macros still find the crate's record store.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct AndroidBuildDirectories {
     target_directory: PathBuf,

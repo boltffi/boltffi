@@ -32,4 +32,19 @@ export async function run() {
   assert.equal(mapView.markerCount(), 1);
   marker.dispose();
   mapView.dispose();
+
+  const counter = demo.CounterSingleThreaded.new();
+  assert.equal(counter.get(), 0);
+  counter.set(4);
+  counter.increment();
+  assert.equal(counter.get(), 5);
+  counter.dispose();
+
+  const accumulator = demo.AccumulatorSingleThreaded.new();
+  accumulator.add(7n);
+  accumulator.add(5n);
+  assert.equal(accumulator.get(), 12n);
+  accumulator.reset();
+  assert.equal(accumulator.get(), 0n);
+  accumulator.dispose();
 }

@@ -9,8 +9,13 @@ use crate::{
 };
 
 use super::{
-    LowerError, codecs, error::UnsupportedType, ids::DeclarationIds, index::Index, metadata,
-    methods, primitive, surface::SurfaceLower, symbol::SymbolAllocator,
+    LowerError, codecs,
+    error::{SourcePosition, UnsupportedType},
+    ids::DeclarationIds,
+    index::Index,
+    metadata, methods, primitive, records,
+    surface::SurfaceLower,
+    symbol::SymbolAllocator,
 };
 
 /// Lowers every enum in the source contract.
@@ -30,7 +35,11 @@ pub fn lower<S: SurfaceLower>(
     index
         .enums()
         .iter()
-        .map(|enumeration| lower_one(index, ids, allocator, enumeration))
+        .filter(|enumeration| index.lowers(enumeration.id.as_str()))
+        .map(|enumeration| {
+            lower_one(index, ids, allocator, enumeration)
+                .map_err(|error| error.in_declaration(&enumeration.id))
+        })
         .collect()
 }
 
@@ -102,16 +111,24 @@ fn lower_data<S: SurfaceLower>(
     initializers: Vec<InitializerDecl<S>>,
     enum_methods: Vec<ExportedMethodDecl<S, NativeSymbol>>,
 ) -> Result<DataEnumDecl<S>, LowerError> {
-    Ok(DataEnumDecl::new(
-        ids.enumeration(&enumeration.id)?,
-        CanonicalName::from(&enumeration.name),
-        metadata::decl_meta(enumeration.doc.as_ref(), enumeration.deprecated.as_ref()),
+    let variants = if index.is_shallow(enumeration.id.as_str()) {
+        Vec::new()
+    } else {
         enumeration
             .variants
             .iter()
             .enumerate()
-            .map(|(variant_index, variant)| lower_variant(index, ids, variant_index, variant))
-            .collect::<Result<Vec<_>, LowerError>>()?,
+            .map(|(variant_index, variant)| {
+                lower_variant(index, ids, enumeration.id.as_str(), variant_index, variant)
+                    .map_err(|error| error.in_member(variant.name.spelling()))
+            })
+            .collect::<Result<Vec<_>, LowerError>>()?
+    };
+    Ok(DataEnumDecl::new(
+        ids.enumeration(&enumeration.id)?,
+        CanonicalName::from(&enumeration.name),
+        metadata::decl_meta(enumeration.doc.as_ref(), enumeration.deprecated.as_ref()),
+        variants,
         initializers,
         enum_methods,
         codecs::plan(
@@ -129,13 +146,14 @@ fn lower_data<S: SurfaceLower>(
 fn lower_variant(
     index: &Index,
     ids: &DeclarationIds,
+    owner: &str,
     variant_index: usize,
     variant: &SourceVariant,
 ) -> Result<DataVariantDecl, LowerError> {
     Ok(DataVariantDecl::new(
         CanonicalName::from(&variant.name),
         VariantTag::from_index(variant_index).ok_or_else(LowerError::variant_tag_overflow)?,
-        lower_payload(index, ids, &variant.payload)?,
+        lower_payload(index, ids, owner, &variant.payload)?,
         metadata::element_meta(variant.doc.as_ref(), None),
     ))
 }
@@ -143,6 +161,7 @@ fn lower_variant(
 fn lower_payload(
     index: &Index,
     ids: &DeclarationIds,
+    owner: &str,
     payload: &SourcePayload,
 ) -> Result<DataVariantPayload, LowerError> {
     match payload {
@@ -151,38 +170,36 @@ fn lower_payload(
             .iter()
             .enumerate()
             .map(|(field_index, type_expr)| {
-                let key = FieldKey::position(field_index)
-                    .ok_or_else(LowerError::field_position_overflow)?;
-                let value = ValueRef::self_value().field(key.clone());
-                let ty = super::types::lower(ids, type_expr)?;
-                let codec = codecs::plan(index, ids, type_expr, value)?;
-                Ok(EncodedFieldDecl::new(key, ty, codec, Default::default()))
+                records::reject_boxed_self(type_expr, owner)
+                    .and_then(|()| lower_tuple_field(index, ids, field_index, type_expr))
+                    .map_err(|error| error.at(SourcePosition::Field(field_index)))
             })
             .collect::<Result<Vec<_>, LowerError>>()
             .map(DataVariantPayload::Tuple),
         SourcePayload::Struct(fields) => fields
             .iter()
-            .map(|field| {
-                let key = FieldKey::from(field);
-                let value = ValueRef::self_value().field(key.clone());
-                let ty = super::types::lower(ids, &field.type_expr)?;
-                let codec = codecs::plan(index, ids, &field.type_expr, value)?;
-                Ok(EncodedFieldDecl::new(
-                    key,
-                    ty,
-                    codec,
-                    metadata::value_meta(
-                        index,
-                        &field.type_expr,
-                        field.doc.as_ref(),
-                        None,
-                        field.default.as_ref(),
-                    )?,
-                ))
+            .enumerate()
+            .map(|(field_index, field)| {
+                records::reject_boxed_self(&field.type_expr, owner)
+                    .and_then(|()| records::lower_encoded_field(index, ids, field))
+                    .map_err(|error| error.at(SourcePosition::Field(field_index)))
             })
             .collect::<Result<Vec<_>, LowerError>>()
             .map(DataVariantPayload::Struct),
     }
+}
+
+fn lower_tuple_field(
+    index: &Index,
+    ids: &DeclarationIds,
+    field_index: usize,
+    type_expr: &TypeExpr,
+) -> Result<EncodedFieldDecl, LowerError> {
+    let key = FieldKey::position(field_index).ok_or_else(LowerError::field_position_overflow)?;
+    let value = ValueRef::self_value().field(key.clone());
+    let ty = super::types::lower(ids, type_expr)?;
+    let codec = codecs::plan(index, ids, type_expr, value)?;
+    Ok(EncodedFieldDecl::new(key, ty, codec, Default::default()))
 }
 
 fn effective_integer_repr(enumeration: &SourceEnum) -> Option<IntegerRepr> {
@@ -681,7 +698,7 @@ mod tests {
 
         assert_eq!(
             method.target().name().as_str(),
-            "boltffi_method_enum_demo_direction_rotate"
+            "boltffi_method_enum_4demo9Direction6rotate"
         );
         assert_eq!(method.callable().receiver(), Some(Receive::ByMutRef));
         assert!(matches!(enum_decl_at(&bindings, 0), EnumDecl::CStyle(_)));
@@ -697,7 +714,7 @@ mod tests {
 
         assert_eq!(
             method.target().name().as_str(),
-            "boltffi_method_enum_demo_event_describe"
+            "boltffi_method_enum_4demo5Event8describe"
         );
         assert_eq!(method.callable().receiver(), Some(Receive::ByRef));
         assert!(matches!(enum_decl_at(&bindings, 0), EnumDecl::Data(_)));
@@ -764,7 +781,7 @@ mod tests {
         assert_eq!(initializer.callable().receiver(), None);
         assert_eq!(
             initializer.symbol().name().as_str(),
-            "boltffi_init_enum_demo_direction_default_direction"
+            "boltffi_init_enum_4demo9Direction17default_direction"
         );
         assert_eq!(
             initializer.callable().returns().plan(),
@@ -897,7 +914,7 @@ mod tests {
 
         assert_eq!(
             method.target().name().as_str(),
-            "boltffi_method_enum_demo_direction_compute"
+            "boltffi_method_enum_4demo9Direction7compute"
         );
         match method.callable().execution() {
             ExecutionDecl::Asynchronous(native::AsyncProtocol::PollHandle {
@@ -911,23 +928,23 @@ mod tests {
                 assert_eq!(handle, &native::HandleCarrier::U64);
                 assert_eq!(
                     poll.name().as_str(),
-                    "boltffi_async_method_enum_demo_direction_compute_poll"
+                    "boltffi_async_method_enum_4demo9Direction7compute_poll"
                 );
                 assert_eq!(
                     complete.name().as_str(),
-                    "boltffi_async_method_enum_demo_direction_compute_complete"
+                    "boltffi_async_method_enum_4demo9Direction7compute_complete"
                 );
                 assert_eq!(
                     cancel.name().as_str(),
-                    "boltffi_async_method_enum_demo_direction_compute_cancel"
+                    "boltffi_async_method_enum_4demo9Direction7compute_cancel"
                 );
                 assert_eq!(
                     free.name().as_str(),
-                    "boltffi_async_method_enum_demo_direction_compute_free"
+                    "boltffi_async_method_enum_4demo9Direction7compute_free"
                 );
                 assert_eq!(
                     panic_message.name().as_str(),
-                    "boltffi_async_method_enum_demo_direction_compute_panic_message"
+                    "boltffi_async_method_enum_4demo9Direction7compute_panic_message"
                 );
             }
             other => panic!("expected native PollHandle protocol, got {other:?}"),
@@ -954,23 +971,23 @@ mod tests {
                 assert_eq!(handle, &wasm32::HandleCarrier::U32);
                 assert_eq!(
                     poll_sync.name().as_str(),
-                    "boltffi_async_method_enum_demo_direction_compute_poll_sync"
+                    "boltffi_async_method_enum_4demo9Direction7compute_poll_sync"
                 );
                 assert_eq!(
                     complete.name().as_str(),
-                    "boltffi_async_method_enum_demo_direction_compute_complete"
+                    "boltffi_async_method_enum_4demo9Direction7compute_complete"
                 );
                 assert_eq!(
                     cancel.name().as_str(),
-                    "boltffi_async_method_enum_demo_direction_compute_cancel"
+                    "boltffi_async_method_enum_4demo9Direction7compute_cancel"
                 );
                 assert_eq!(
                     free.name().as_str(),
-                    "boltffi_async_method_enum_demo_direction_compute_free"
+                    "boltffi_async_method_enum_4demo9Direction7compute_free"
                 );
                 assert_eq!(
                     panic_message.name().as_str(),
-                    "boltffi_async_method_enum_demo_direction_compute_panic_message"
+                    "boltffi_async_method_enum_4demo9Direction7compute_panic_message"
                 );
             }
             other => panic!("expected wasm32 PollHandle protocol, got {other:?}"),
@@ -987,7 +1004,7 @@ mod tests {
 
         assert_eq!(
             initializer.symbol().name().as_str(),
-            "boltffi_init_enum_demo_direction_parse"
+            "boltffi_init_enum_4demo9Direction5parse"
         );
         match initializer.callable().execution() {
             ExecutionDecl::Asynchronous(native::AsyncProtocol::PollHandle {
@@ -1000,23 +1017,23 @@ mod tests {
             }) => {
                 assert_eq!(
                     poll.name().as_str(),
-                    "boltffi_async_init_enum_demo_direction_parse_poll"
+                    "boltffi_async_init_enum_4demo9Direction5parse_poll"
                 );
                 assert_eq!(
                     complete.name().as_str(),
-                    "boltffi_async_init_enum_demo_direction_parse_complete"
+                    "boltffi_async_init_enum_4demo9Direction5parse_complete"
                 );
                 assert_eq!(
                     cancel.name().as_str(),
-                    "boltffi_async_init_enum_demo_direction_parse_cancel"
+                    "boltffi_async_init_enum_4demo9Direction5parse_cancel"
                 );
                 assert_eq!(
                     free.name().as_str(),
-                    "boltffi_async_init_enum_demo_direction_parse_free"
+                    "boltffi_async_init_enum_4demo9Direction5parse_free"
                 );
                 assert_eq!(
                     panic_message.name().as_str(),
-                    "boltffi_async_init_enum_demo_direction_parse_panic_message"
+                    "boltffi_async_init_enum_4demo9Direction5parse_panic_message"
                 );
             }
             other => panic!("expected native PollHandle protocol, got {other:?}"),
@@ -1331,14 +1348,14 @@ mod tests {
         assert_eq!(
             names,
             vec![
-                "boltffi_method_enum_demo_direction_rotate",
-                "boltffi_method_enum_demo_direction_opposite"
+                "boltffi_method_enum_4demo9Direction6rotate",
+                "boltffi_method_enum_4demo9Direction8opposite"
             ]
         );
     }
 
     #[test]
-    fn acronym_enum_name_lowers_to_snake_cased_symbol() {
+    fn acronym_enum_name_keeps_its_spelling_in_symbol() {
         let bindings = lower_enum::<Native>(enum_with_methods(
             enumeration(
                 "demo::HTTPStatus",
@@ -1351,7 +1368,7 @@ mod tests {
 
         assert_eq!(
             method.target().name().as_str(),
-            "boltffi_method_enum_demo_http_status_describe"
+            "boltffi_method_enum_4demo10HTTPStatus8describe"
         );
     }
 
@@ -1369,7 +1386,7 @@ mod tests {
         match error.kind() {
             LowerErrorKind::InvalidBindings(error) => match error.kind() {
                 BindingErrorKind::DuplicateSymbolName(name) => {
-                    assert_eq!(name, "boltffi_method_enum_demo_direction_rotate");
+                    assert_eq!(name, "boltffi_method_enum_4demo9Direction6rotate");
                 }
                 other => panic!("expected DuplicateSymbolName, got {other:?}"),
             },

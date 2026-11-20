@@ -23,12 +23,12 @@ pub struct PackagePrefix {
 impl PackagePrefix {
     /// Builds the prefix from the render context's binding package name.
     pub fn from_context(context: &RenderContext<Native>) -> Self {
-        let name = context.bindings().package().name();
+        let name = Name::package(context);
         Self {
-            name: name.clone(),
-            member: Name::new(name).member(),
-            constant: Name::new(name).constant(),
-            pascal: Name::new(name).r#type(),
+            member: name.member(),
+            constant: name.constant(),
+            pascal: name.r#type(),
+            name: name.source,
         }
     }
 

@@ -1,0 +1,5 @@
+error: BoltFFI: a declared type named `Duration` shadows the builtin `Duration`, which every signature spelling `Duration` crosses as; rename the type
+ --> tests/diagnostics/builtin_names/record_named_duration.rs:5:12
+  |
+5 | pub struct Duration {
+  |            ^^^^^^^^

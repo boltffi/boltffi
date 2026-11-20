@@ -20,6 +20,6 @@ public struct FfiError: Error {
 
 public func sum(values: [Int32]) -> Int32 {
     return values.withUnsafeBufferPointer { boltffiValuesBuffer in
-        return boltffi_function_demo_sum(boltffiValuesBuffer.baseAddress, UInt(boltffiValuesBuffer.count))
+        return boltffi_function_4demo3sum(boltffiValuesBuffer.baseAddress, UInt(boltffiValuesBuffer.count))
     }
 }

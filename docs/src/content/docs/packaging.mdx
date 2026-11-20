@@ -334,6 +334,13 @@ If you enable `[targets.android.debug_symbols]`, BoltFFI also writes `{crate_art
 
 For release-style packaging, BoltFFI rejects this option unless the selected Cargo profile has debuginfo enabled.
 
+Each JNI library also exports its `boltffi_*` C symbols, for native code that calls the library directly. When only the Kotlin bindings call it, turn that off and the linker drops the code no JNI entry point reaches:
+
+```toml
+[targets.android.link]
+export_c_symbols = false
+```
+
 ### Output Structure
 
 ```
