@@ -542,6 +542,11 @@ impl AssociatedFunction {
             .render("        ", "    ")
     }
 
+    /// The argument labels a call spells, in parameter order.
+    pub fn argument_labels(&self) -> impl Iterator<Item = &Identifier> {
+        self.parameters.iter().map(|parameter| &parameter.name)
+    }
+
     pub fn body(&self) -> &str {
         &self.body
     }

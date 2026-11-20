@@ -4,8 +4,8 @@ use boltffi_ast::{
 
 use crate::{
     CanonicalName, DirectFieldDecl, DirectFieldType, DirectRecordDecl, EncodedFieldDecl,
-    EncodedRecordDecl, ExportedMethodDecl, FieldKey, InitializerDecl, NativeSymbol, RecordDecl,
-    ValueRef,
+    EncodedRecordDecl, ExportedMethodDecl, FieldKey, InitializerDecl, MethodId, NativeSymbol,
+    RecordDecl, ValueRef,
 };
 
 use super::{
@@ -120,11 +120,40 @@ fn lower_one<S: SurfaceLower>(
 ) -> Result<RecordDecl<S>, LowerError> {
     let initializers = methods::lower_record_initializers::<S>(index, ids, allocator, record)?;
     let record_methods = methods::lower_record_methods::<S>(index, ids, allocator, record)?;
+    let ordering = ordering(record, &record_methods);
     if is_direct(record) {
-        lower_direct(index, ids, record, initializers, record_methods).map(RecordDecl::direct)
+        let mut decl = lower_direct(index, ids, record, initializers, record_methods)?;
+        if let Some(method) = ordering {
+            decl.set_ordering(method);
+        }
+        Ok(RecordDecl::direct(decl))
     } else {
-        lower_encoded(index, ids, record, initializers, record_methods).map(RecordDecl::encoded)
+        let mut decl = lower_encoded(index, ids, record, initializers, record_methods)?;
+        if let Some(method) = ordering {
+            decl.set_ordering(method);
+        }
+        Ok(RecordDecl::encoded(decl))
     }
+}
+
+/// The lowered `compare_to` an ordered record orders by. A record lowered without its
+/// methods, as one invocation's expansion sees it, has none yet.
+fn ordering<S: SurfaceLower>(
+    record: &SourceRecord,
+    record_methods: &[ExportedMethodDecl<S, NativeSymbol>],
+) -> Option<MethodId> {
+    if !record.ordered {
+        return None;
+    }
+    let compare = record
+        .methods
+        .iter()
+        .find(|method| method.name.spelling() == SourceRecord::COMPARE_METHOD)?;
+    let name = CanonicalName::from(&compare.name);
+    record_methods
+        .iter()
+        .find(|method| *method.name() == name)
+        .map(ExportedMethodDecl::id)
 }
 
 fn lower_direct<S: SurfaceLower>(
@@ -710,6 +739,52 @@ mod tests {
         method.parameters = parameters;
         method.returns = returns;
         method
+    }
+
+    fn compare_to() -> MethodDef {
+        method_with(
+            RecordDef::COMPARE_METHOD,
+            Receiver::Shared,
+            vec![value_param(
+                "other",
+                TypeExpr::record("demo::Point".into(), SourcePath::single("Point")),
+            )],
+            ReturnDef::Value(TypeExpr::Primitive(Primitive::I32)),
+        )
+    }
+
+    #[test]
+    fn an_ordered_record_orders_by_its_compare_to() {
+        let mut record = point_record_with_methods(vec![
+            method_with("norm", Receiver::Shared, Vec::new(), ReturnDef::Void),
+            compare_to(),
+        ]);
+        record.ordered = true;
+        let bindings = lower_record::<Native>(record);
+        let ordering = direct_record(&bindings)
+            .ordering()
+            .expect("an ordered record has an ordering");
+
+        assert_eq!(ordering.id(), record_decl_methods(&bindings)[1].id());
+    }
+
+    #[test]
+    fn a_record_without_ord_has_no_ordering_even_with_a_compare_to() {
+        let bindings = lower_point_method::<Native>(compare_to());
+
+        assert!(direct_record(&bindings).ordering().is_none());
+    }
+
+    #[test]
+    fn an_ordered_record_lowered_without_its_methods_has_no_ordering_yet() {
+        let mut record = point_record();
+        record.ordered = true;
+
+        assert!(
+            direct_record(&lower_record::<Native>(record))
+                .ordering()
+                .is_none()
+        );
     }
 
     #[test]

@@ -63,6 +63,11 @@ class {{ record.class_name }}:
     {% if method.asynchronous %}async {% endif %}def {{ method.python_name }}(self{% if !method.parameters.is_empty() %}, {{ signature }}{% endif %}) -> {{ method.return_annotation }}:{% if method.documentation.is_empty() %} ...{% else %}{{ method.documentation.docstring("        ") }}{% endif %}
 {%- endfor %}
 {%- endfor %}
+{%- if record.ordering.is_some() %}
+{%- for operator in ["lt", "le", "gt", "ge"] %}
+    def __{{ operator }}__(self, other: {{ record.class_name }}) -> bool: ...
+{%- endfor %}
+{%- endif %}
 
 {% if let Some(exception_name) = record.exception_name %}
 class {{ exception_name }}(RuntimeError):

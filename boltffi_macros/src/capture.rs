@@ -30,6 +30,8 @@ pub(crate) fn facade_name() -> String {
 pub(crate) enum Capture {
     /// The item declares what its syntax says: a record, enum, function, trait or constant.
     Item,
+    /// `#[data(ord)]` on a struct declares a record whose `Ord` is its ordering.
+    OrderedRecord,
     /// `#[export]` on a struct or enum declares a class. Carries the export marker's
     /// argument tokens for the thread-safety choice.
     Class(TokenStream),
@@ -146,8 +148,10 @@ pub(crate) fn fragments(
             .map(|captured| vec![(SourceFragment::Record(captured.def), captured.slots)]),
         syn::Item::Enum(item) if error => capture_error_enum(item)
             .map(|captured| vec![(SourceFragment::Enum(captured.def), captured.slots)]),
-        syn::Item::Struct(item) => capture_struct(item)
-            .map(|captured| vec![(SourceFragment::Record(captured.def), captured.slots)]),
+        syn::Item::Struct(item) => capture_struct(item).map(|mut captured| {
+            captured.def.ordered = matches!(capture, Capture::OrderedRecord);
+            vec![(SourceFragment::Record(captured.def), captured.slots)]
+        }),
         syn::Item::Enum(item) => capture_enum(item)
             .map(|captured| vec![(SourceFragment::Enum(captured.def), captured.slots)]),
         syn::Item::Fn(item) => capture_function(item)

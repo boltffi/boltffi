@@ -37,7 +37,7 @@ extension on {{ record.name() }} {
 
 {%- when None %}
 {%- endmatch %}
-{{ record.documentation() }}final class {{ record.name() }}{{ record.exception_clause() }} {
+{{ record.documentation() }}final class {{ record.name() }}{{ record.implements_clause() }} {
 {%- for field in record.fields() %}
 {{ field.documentation() }}  {{ field.ty() }} {{ field.name() }};
 {%- if !loop.last %}

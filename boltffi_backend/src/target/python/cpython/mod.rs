@@ -950,6 +950,43 @@ mod tests {
     }
 
     #[test]
+    fn python_target_orders_ordered_records_by_compare_to() {
+        let output = target()
+            .render(&bindings(
+                r#"
+                #[data(ord)]
+                pub struct Rank {
+                    pub tier: u8,
+                    pub score: i32,
+                }
+
+                #[data(ord)]
+                pub struct Version {
+                    pub major: u32,
+                    pub pre: Option<String>,
+                }
+                "#,
+            ))
+            .expect("Python target should render ordered records");
+        let init = file(&output, "demo/__init__.py");
+        let stub = file(&output, "demo/__init__.pyi");
+
+        assert!(init.contains(
+            "def _boltffi_attach_Rank___lt__(self, other: object) -> bool:\n    \
+             if not isinstance(other, Rank):\n        return NotImplemented\n    \
+             return self.compare_to(other) < 0"
+        ));
+        assert!(init.contains("Rank.__ge__ = _boltffi_attach_Rank___ge__"));
+        assert!(init.contains(
+            "    def __le__(self, other: object) -> bool:\n        \
+             if not isinstance(other, Version):\n            return NotImplemented\n        \
+             return self.compare_to(other) <= 0"
+        ));
+        assert!(stub.contains("    def compare_to(self, other: Rank) -> int:"));
+        assert!(stub.contains("    def __gt__(self, other: Version) -> bool: ..."));
+    }
+
+    #[test]
     fn python_target_renders_direct_record_mut_receiver_writeback() {
         let output = target()
             .render(&bindings(

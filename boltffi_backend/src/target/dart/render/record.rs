@@ -1,6 +1,7 @@
 use askama::Template;
 use boltffi_binding::{
-    ConstantOwner, DirectRecordDecl, DirectValueType, EncodedRecordDecl, Native, RecordDecl,
+    ConstantOwner, DirectRecordDecl, DirectValueType, EncodedRecordDecl, ExportedMethodDecl,
+    Native, NativeSymbol, RecordDecl,
 };
 
 use crate::{
@@ -12,6 +13,7 @@ use crate::{
 use super::super::{
     codec::{Reader, Sizer, ValueScope, Writer, primitive_read_method, primitive_write_method},
     default_value::DefaultExpression,
+    name_style::Name,
     native::NativeType,
     type_name,
     value_semantics::ValueSemantics,
@@ -36,6 +38,7 @@ pub struct Record {
     members: Vec<String>,
     native: Option<NativeRecord>,
     trailing_padding: u64,
+    comparable: bool,
 }
 
 struct Field {
@@ -74,7 +77,8 @@ impl Record {
                 layer: "dart record",
                 shape: "unknown record declaration",
             }),
-        }
+        }?
+        .ordered(declaration.ordering())
     }
 
     fn from_direct(
@@ -153,13 +157,16 @@ impl Record {
                     })
                 })
                 .collect::<Result<Vec<_>>>()?,
-            associated_functions(
-                declaration.initializers(),
-                declaration.methods(),
-                Placement::Static,
-                Receiver::DirectValue(DirectValueType::Record(declaration.id())),
-                bridge,
-                context,
+            overriding_compare(
+                associated_functions(
+                    declaration.initializers(),
+                    declaration.methods(),
+                    Placement::Static,
+                    Receiver::DirectValue(DirectValueType::Record(declaration.id())),
+                    bridge,
+                    context,
+                )?,
+                declaration.ordering(),
             )?,
             AssociatedConstants::from_owner(
                 ConstantOwner::Record(declaration.id()),
@@ -238,13 +245,16 @@ impl Record {
                     })
                 })
                 .collect::<Result<Vec<_>>>()?,
-            associated_functions(
-                declaration.initializers(),
-                declaration.methods(),
-                Placement::Static,
-                Receiver::EncodedRecord(declaration.id()),
-                bridge,
-                context,
+            overriding_compare(
+                associated_functions(
+                    declaration.initializers(),
+                    declaration.methods(),
+                    Placement::Static,
+                    Receiver::EncodedRecord(declaration.id()),
+                    bridge,
+                    context,
+                )?,
+                declaration.ordering(),
             )?,
             AssociatedConstants::from_owner(
                 ConstantOwner::Record(declaration.id()),
@@ -278,6 +288,7 @@ impl Record {
             members,
             native,
             trailing_padding: 0,
+            comparable: false,
         })
     }
 
@@ -301,12 +312,44 @@ impl Record {
         &self.name
     }
 
-    fn exception_clause(&self) -> &'static str {
-        if self.implements_exception {
-            " implements Exception"
-        } else {
-            ""
+    fn implements_clause(&self) -> String {
+        let comparable = format!("Comparable<{}>", self.name);
+        let interfaces = [
+            self.implements_exception.then_some("Exception"),
+            self.comparable.then_some(comparable.as_str()),
+        ]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
+        match interfaces.is_empty() {
+            true => String::new(),
+            false => format!(" implements {}", interfaces.join(", ")),
         }
+    }
+
+    /// Makes the record `Comparable` through the `compareTo` an ordered record's ordering
+    /// renders as, with `<`, `<=`, `>` and `>=` on top.
+    fn ordered(
+        mut self,
+        ordering: Option<&ExportedMethodDecl<Native, NativeSymbol>>,
+    ) -> Result<Self> {
+        let Some(ordering) = ordering else {
+            return Ok(self);
+        };
+        let compare = Name::new(ordering.name()).lower_camel()?;
+        let operators = ["<", "<=", ">", ">="]
+            .into_iter()
+            .map(|operator| {
+                format!(
+                    "  bool operator {operator}({name} other) => {compare}(other) {operator} 0;",
+                    name = self.name
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        self.members.push(operators);
+        self.comparable = true;
+        Ok(self)
     }
 
     fn fields(&self) -> &[Field] {
@@ -428,4 +471,22 @@ impl NativeField {
     fn name(&self) -> &Identifier {
         &self.name
     }
+}
+
+/// Annotates an ordered record's `compareTo` `@override`, as it implements `Comparable`.
+fn overriding_compare(
+    methods: Vec<Function>,
+    ordering: Option<&ExportedMethodDecl<Native, NativeSymbol>>,
+) -> Result<Vec<Function>> {
+    let Some(ordering) = ordering else {
+        return Ok(methods);
+    };
+    let compare = Name::new(ordering.name()).lower_camel()?;
+    Ok(methods
+        .into_iter()
+        .map(|method| match method.is_named(&compare) {
+            true => method.overriding(),
+            false => method,
+        })
+        .collect())
 }

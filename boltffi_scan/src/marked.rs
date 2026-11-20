@@ -122,7 +122,7 @@ impl<'source> MarkedItems<'source> {
             return Ok(());
         };
         match (marker, item) {
-            (Marker::Data | Marker::Error, syn::Item::Struct(item)) => {
+            (Marker::Data | Marker::DataOrd | Marker::Error, syn::Item::Struct(item)) => {
                 self.records.push(Marked::new(scope, marker, item));
                 Ok(())
             }
@@ -295,7 +295,7 @@ pub(super) struct Marked<'source, T> {
 }
 
 impl<'source, T> Marked<'source, T> {
-    fn new(scope: &'source ModuleScope, marker: Marker, item: &'source T) -> Self {
+    pub(super) fn new(scope: &'source ModuleScope, marker: Marker, item: &'source T) -> Self {
         Self {
             scope,
             marker,

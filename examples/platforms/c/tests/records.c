@@ -121,3 +121,22 @@ bool test_optional_record_vectors(void) {
     demo_option_of_location_sequence_free(&locations);
     return true;
 }
+
+bool test_ordered_records(void) {
+    const DemoRank low = {1, 9};
+    const DemoRank high = {2, 0};
+    CHECK(demo_rank_compare_to(&low, high) == -1 && demo_rank_compare_to(&high, low) == 1 &&
+              demo_rank_compare_to(&low, (DemoRank){1, 9}) == 0,
+          "case:records.ordered.rank.should_compare_by_rust_ord");
+
+    const DemoSemanticVersionView alpha = {1, 2, 3, {true, {"alpha", 5}}};
+    const DemoSemanticVersionView beta = {1, 2, 3, {true, {"beta", 4}}};
+    const DemoSemanticVersionView release = {1, 2, 3, {false, {0}}};
+    const DemoSemanticVersionView next_patch = {1, 2, 4, {true, {"alpha", 5}}};
+    CHECK(demo_semantic_version_compare_to(&alpha, beta) < 0 &&
+              demo_semantic_version_compare_to(&beta, release) < 0 &&
+              demo_semantic_version_compare_to(&release, next_patch) < 0 &&
+              demo_semantic_version_compare_to(&release, release) == 0,
+          "case:records.ordered.semantic_version.should_compare_by_rust_ord");
+    return true;
+}

@@ -1,13 +1,13 @@
 package {{ package }};
 
 {% if let Some(doc) = record.doc() %}{{ doc }}
-{% endif %}{% if record.native_record() %}public record {{ record.name() }}({% for field in record.fields() %}{{ field.ty() }} {{ field.name() }}{% if !loop.last %}, {% endif %}{% endfor %}) {
+{% endif %}{% if record.native_record() %}public record {{ record.name() }}({% for field in record.fields() %}{{ field.ty() }} {{ field.name() }}{% if !loop.last %}, {% endif %}{% endfor %}){% if record.comparable() %} implements Comparable<{{ record.name() }}>{% endif %} {
 {% for constructor in record.default_constructors() %}
     public {{ record.name() }}({% for parameter in constructor.parameters() %}{{ parameter.ty() }} {{ parameter.name() }}{% if !loop.last %}, {% endif %}{% endfor %}) {
         this({{ constructor.arguments() }});
     }
 {% endfor %}
-{% else %}public final class {{ record.name() }}{% if record.error() %} extends RuntimeException{% endif %} {
+{% else %}public final class {{ record.name() }}{% if record.error() %} extends RuntimeException{% endif %}{% if record.comparable() %} implements Comparable<{{ record.name() }}>{% endif %} {
 {% for field in record.fields() %}    public final {{ field.ty() }} {{ field.name() }};
 {% endfor %}
     public {{ record.name() }}({% for field in record.fields() %}{{ field.ty() }} {{ field.name() }}{% if !loop.last %}, {% endif %}{% endfor %}) {

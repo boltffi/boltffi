@@ -1138,6 +1138,40 @@ mod tests {
     }
 
     #[test]
+    fn ordered_records_expose_a_compare_to_for_array_sort() {
+        let source = boltffi_scan::scan_file(
+            syn::parse_str(include_str!(
+                "../../../tests/fixtures/source/records/ordered_records.rs"
+            ))
+            .expect("valid source"),
+            PackageInfo::new("demo", None),
+        )
+        .expect("source scans");
+        let output = TypeScriptHost::new("demo")
+            .expect("host constructs")
+            .into_target()
+            .render(&lower::<Wasm32>(&source).expect("source lowers"))
+            .expect("target renders");
+        let browser = output
+            .files()
+            .iter()
+            .find(|file| file.path().as_path().ends_with("demo.ts"))
+            .expect("browser module");
+
+        assert!(browser.contents().contains("export const Rank = {"));
+        assert!(
+            browser
+                .contents()
+                .contains("compareTo(self: Rank, other: Rank): number")
+        );
+        assert!(
+            browser
+                .contents()
+                .contains("compareTo(self: Version, other: Version): number")
+        );
+    }
+
+    #[test]
     fn renders_record_codecs_from_shared_field_plans() {
         let output = TypeScriptHost::new("demo")
             .expect("host constructs")

@@ -23,6 +23,14 @@ impl FixtureRect {
     }
 }
 
+/// Ordered by its derived `Ord`: tier, then score.
+#[data(ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
+pub struct FixtureRank {
+    pub tier: u8,
+    pub score: i32,
+}
+
 #[export]
 pub fn rect_area(rect: FixtureRect) -> f64 {
     rect.width * rect.height

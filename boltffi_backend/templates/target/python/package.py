@@ -692,6 +692,19 @@ def _boltffi_attach_{{ record.class_name }}_from_reader(cls, reader: "_BoltFfiWi
 
 {{ record.class_name }}.{{ method.python_name }} = _boltffi_attach_{{ record.class_name }}_{{ method.python_name }}
 {%- endfor %}
+{%- if let Some(compare) = record.ordering %}
+{%- for (operator, comparison) in [("lt", "<"), ("le", "<="), ("gt", ">"), ("ge", ">=")] %}
+
+
+def _boltffi_attach_{{ record.class_name }}___{{ operator }}__(self, other: object) -> bool:
+    if not isinstance(other, {{ record.class_name }}):
+        return NotImplemented
+    return self.{{ compare }}(other) {{ comparison }} 0
+
+
+{{ record.class_name }}.__{{ operator }}__ = _boltffi_attach_{{ record.class_name }}___{{ operator }}__
+{%- endfor %}
+{%- endif %}
 {%- when RecordWire::Fields(wire_fields) %}
 @dataclass(frozen=True, slots=True)
 class {{ record.class_name }}:
@@ -751,6 +764,15 @@ class {{ record.class_name }}:
         {{ line }}
 {%- endfor %}
 {%- endfor %}
+{%- if let Some(compare) = record.ordering %}
+{%- for (operator, comparison) in [("lt", "<"), ("le", "<="), ("gt", ">"), ("ge", ">=")] %}
+
+    def __{{ operator }}__(self, other: object) -> bool:
+        if not isinstance(other, {{ record.class_name }}):
+            return NotImplemented
+        return self.{{ compare }}(other) {{ comparison }} 0
+{%- endfor %}
+{%- endif %}
 
 
 _native.{{ record.register_method }}({{ record.class_name }})

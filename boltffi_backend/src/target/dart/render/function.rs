@@ -67,6 +67,7 @@ pub struct Function {
     body: String,
     helpers: Vec<(HelperId, String)>,
     cancellation_token: Option<Identifier>,
+    overrides: bool,
 }
 
 enum FunctionPlacement {
@@ -453,7 +454,25 @@ impl Function {
             body: indent(&body, 2),
             helpers,
             cancellation_token,
+            overrides: false,
         })
+    }
+
+    /// Annotates the function `@override`, as it implements an interface member.
+    pub fn overriding(mut self) -> Self {
+        self.overrides = true;
+        self
+    }
+
+    pub fn is_named(&self, name: &Identifier) -> bool {
+        self.name == *name
+    }
+
+    fn annotation(&self) -> &'static str {
+        match self.overrides {
+            true => "@override\n",
+            false => "",
+        }
     }
 
     pub fn source(&self) -> String {

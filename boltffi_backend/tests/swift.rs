@@ -710,3 +710,20 @@ fn swift_padded_decode_locals_do_not_shadow_the_reader() {
     );
     assert!(!rendered.contains("let reader ="));
 }
+
+#[test]
+fn swift_target_makes_ordered_records_comparable() {
+    let rendered = rendered_fixture("records/ordered_records").replace("\r\n", "\n");
+
+    for expected in [
+        "extension Rank: Comparable {\n    public static func < (lhs: Rank, rhs: Rank) -> Bool {\n        lhs.compareTo(other: rhs) < 0\n    }\n}",
+        "extension Version: Comparable {\n    public static func < (lhs: Version, rhs: Version) -> Bool {\n        lhs.compareTo(other: rhs) < 0\n    }\n}",
+    ] {
+        assert!(
+            rendered.contains(expected),
+            "missing `{expected}` in:\n{rendered}"
+        );
+    }
+
+    insta::assert_snapshot!(rendered);
+}

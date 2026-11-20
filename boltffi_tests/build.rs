@@ -688,6 +688,18 @@ static int boltffi_tests_check_direct_records(void) {
         return 190;
     }
     boltffi_free_buf(string_ref_config);
+    ___FixtureRank low = { 1, 9 };
+    ___FixtureRank high = { 2, 0 };
+    if (boltffi_method_record_13boltffi_tests11FixtureRank10compare_to(low, high) != -1
+        || boltffi_method_record_13boltffi_tests11FixtureRank10compare_to(high, low) != 1) {
+        return 191;
+    }
+    const uint8_t release[] = { 1, 0, 0, 0, 0 };
+    const uint8_t next_major[] = { 2, 0, 0, 0, 0 };
+    if (boltffi_method_record_13boltffi_tests14FixtureVersion10compare_to(release, sizeof release, next_major, sizeof next_major) != -1
+        || boltffi_method_record_13boltffi_tests14FixtureVersion10compare_to(release, sizeof release, release, sizeof release) != 0) {
+        return 192;
+    }
     return 0;
 }
 "#

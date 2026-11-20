@@ -31,6 +31,8 @@ pub struct RecordClass {
     pub constructors: Vec<AssociatedCallable>,
     pub static_methods: Vec<AssociatedCallable>,
     pub instance_methods: Vec<AssociatedCallable>,
+    /// The instance method `<`, `<=`, `>` and `>=` compare by, for a `#[data(ord)]` record.
+    pub ordering: Option<Identifier>,
 }
 
 impl RecordClass {
@@ -66,6 +68,7 @@ impl RecordClass {
             constructors: Self::constructors(record.initializers(), &symbols, package)?,
             static_methods: Self::static_methods(record.methods(), &symbols, package)?,
             instance_methods: Self::instance_methods(record.methods(), &symbols, package)?,
+            ordering: Self::ordering(record.ordering())?,
         })
     }
 
@@ -95,6 +98,7 @@ impl RecordClass {
             constructors: Self::constructors(record.initializers(), &symbols, package)?,
             static_methods: Self::static_methods(record.methods(), &symbols, package)?,
             instance_methods: Self::instance_methods(record.methods(), &symbols, package)?,
+            ordering: Self::ordering(record.ordering())?,
         })
     }
 
@@ -189,6 +193,14 @@ impl RecordClass {
                 )
             })
             .collect()
+    }
+
+    fn ordering(
+        method: Option<&ExportedMethodDecl<Native, NativeSymbol>>,
+    ) -> Result<Option<Identifier>> {
+        method
+            .map(|method| Name::new(method.name()).function())
+            .transpose()
     }
 
     fn instance_methods(

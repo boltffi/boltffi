@@ -3,7 +3,9 @@ use std::path::Path as FsPath;
 use boltffi_ast::{PackageInfo, SourceContract};
 
 use crate::declared_types::DeclaredTypes;
-use crate::marked::MarkedItems;
+use crate::marked::{Marked, MarkedItems};
+use crate::marker::Marker;
+use crate::ordering;
 use crate::source_tree::SourceTree;
 use crate::{ScanError, items};
 
@@ -34,6 +36,17 @@ fn scan_tree(source_tree: SourceTree, package: PackageInfo) -> Result<SourceCont
     let customs = scan_each(marked.customs(), declared_types, items::custom_type::scan)?;
     let streams = items::stream::scan(marked.classes(), declared_types)?;
     items::impl_block::attach_methods(marked.impls(), declared_types, &mut records, &mut enums)?;
+    let compare_impls = marked
+        .records()
+        .iter()
+        .filter(|record| record.marker() == Marker::DataOrd)
+        .map(|record| (record.scope(), ordering::compare_impl(record.item())))
+        .collect::<Vec<_>>();
+    let compare_impls = compare_impls
+        .iter()
+        .map(|(scope, item)| Marked::new(scope, Marker::DataImpl, item))
+        .collect::<Vec<_>>();
+    items::impl_block::attach_methods(&compare_impls, declared_types, &mut records, &mut enums)?;
     let functions = scan_each(marked.functions(), declared_types, items::function::scan)?;
     let constants = scan_each(marked.constants(), declared_types, items::constant::scan)?
         .into_iter()
@@ -1496,6 +1509,41 @@ mod tests {
         assert_eq!(contract.records.len(), 1);
         assert_eq!(contract.functions.len(), 1);
         assert_eq!(contract.constants.len(), 1);
+    }
+
+    #[test]
+    fn data_ord_marks_the_record_ordered_and_adds_compare_to() {
+        let contract = scan(
+            "#[data(ord)] #[derive(PartialEq, Eq, PartialOrd, Ord)] \
+             pub struct Point { pub x: i32 }",
+        );
+        let point = point(&contract);
+
+        assert!(point.ordered);
+        let [compare] = point.methods.as_slice() else {
+            panic!("one method expected, got {:?}", point.methods);
+        };
+        assert_eq!(compare.name.spelling(), "compare_to");
+        assert_eq!(compare.receiver, Receiver::Shared);
+        assert_eq!(compare.parameters.len(), 1);
+        assert_eq!(
+            compare.returns,
+            ReturnDef::Value(TypeExpr::Primitive(Primitive::I32))
+        );
+    }
+
+    #[test]
+    fn data_ord_is_rejected_on_enums() {
+        let error = try_scan("#[data(ord)] pub enum Mode { A, B }")
+            .expect_err("ord on an enum must reject");
+
+        assert_eq!(
+            error.unlocated().clone(),
+            ScanError::InvalidMarkerPlacement {
+                marker: "data(ord)".to_owned(),
+                item: "enum".to_owned()
+            }
+        );
     }
 
     #[test]

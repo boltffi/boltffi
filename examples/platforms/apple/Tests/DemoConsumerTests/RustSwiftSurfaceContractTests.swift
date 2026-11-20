@@ -604,6 +604,7 @@ private let rustToSwiftCoverageFile: [String: String] = [
     "records/default_values.rs": "records/DefaultValuesRecordsTests.swift",
     "records/mixed.rs": "records/MixedRecordsTests.swift",
     "records/nested.rs": "records/NestedRecordsTests.swift",
+    "records/ordered.rs": "records/OrderedRecordsTests.swift",
     "records/with_collections.rs": "records/WithCollectionsRecordsTests.swift",
     "records/with_enums.rs": "records/WithEnumsRecordsTests.swift",
     "records/with_options.rs": "records/WithOptionsRecordsTests.swift",

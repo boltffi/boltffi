@@ -12,10 +12,10 @@ namespace {{ record.namespace }}
 {% else %}    public readonly record struct {{ record.name }}(
 {% for field in record.fields %}        {% if field.marshal_i1 %}[field: MarshalAs(UnmanagedType.I1)] {% endif %}{{ field.ty }} {{ field.name }}{% if !loop.last %},{% endif %}
 {% endfor %}    );
-{% endif %}{% else %}{% if record.fields.is_empty() %}    public readonly record struct {{ record.name }}
+{% endif %}{% else %}{% if record.fields.is_empty() %}    public readonly record struct {{ record.name }}{% if record.comparison.is_some() %} : global::System.IComparable<{{ record.name }}>{% endif %}
 {% else %}    public readonly record struct {{ record.name }}(
 {% for field in record.fields %}        {% if field.marshal_i1 %}[field: MarshalAs(UnmanagedType.I1)] {% endif %}{{ field.ty }} {{ field.name }}{% if !loop.last %},{% endif %}
-{% endfor %}    )
+{% endfor %}    ){% if record.comparison.is_some() %} : global::System.IComparable<{{ record.name }}>{% endif %}
 {% endif %}    {
 {% for constructor in record.default_constructors %}        public {{ record.name }}({% for parameter in constructor.parameters %}{{ parameter.ty }} {{ parameter.name }}{% if !loop.last %}, {% endif %}{% endfor %})
             : this({% for argument in constructor.arguments %}{{ argument }}{% if !loop.last %}, {% endif %}{% endfor %})
@@ -47,7 +47,8 @@ namespace {{ record.namespace }}
 {% endfor %}
 {% for function in record.methods %}
 {% include "target/csharp/function.cs" %}
-{% endfor %}    }
+{% endfor %}{% if let Some(compare) = record.comparison %}{% for operator in ["<", "<=", ">", ">="] %}        public static bool operator {{ operator }}({{ record.name }} left, {{ record.name }} right) => left.{{ compare }}(right) {{ operator }} 0;
+{% endfor %}{% endif %}    }
 {% endif %}{% if record.error_payload %}
 
     public sealed class {{ record.name }}Exception : global::System.Exception

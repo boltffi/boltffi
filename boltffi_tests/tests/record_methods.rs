@@ -194,3 +194,56 @@ mod roundtrip {
         assert!((distance - expected).abs() < 1e-10);
     }
 }
+
+mod ordering {
+    use boltffi_tests::{
+        FixtureRank, FixtureVersion,
+        boltffi_method_record_13boltffi_tests11FixtureRank10compare_to,
+        boltffi_method_record_13boltffi_tests14FixtureVersion10compare_to,
+    };
+
+    use super::encode_buf;
+
+    fn compare_ranks(left: FixtureRank, right: FixtureRank) -> i32 {
+        unsafe { boltffi_method_record_13boltffi_tests11FixtureRank10compare_to(left, right) }
+    }
+
+    fn compare_versions(left: &FixtureVersion, right: &FixtureVersion) -> i32 {
+        let left = encode_buf(left);
+        let right = encode_buf(right);
+        unsafe {
+            boltffi_method_record_13boltffi_tests14FixtureVersion10compare_to(
+                left.as_ptr(),
+                left.len(),
+                right.as_ptr(),
+                right.len(),
+            )
+        }
+    }
+
+    #[test]
+    fn a_direct_record_compares_by_its_derived_ord() {
+        let low = FixtureRank { tier: 1, score: 9 };
+        let high = FixtureRank { tier: 2, score: 0 };
+
+        assert_eq!(compare_ranks(low, high), -1);
+        assert_eq!(compare_ranks(high, low), 1);
+        assert_eq!(compare_ranks(low, low), 0);
+    }
+
+    #[test]
+    fn an_encoded_record_compares_by_its_own_ord() {
+        let pre = FixtureVersion {
+            major: 1,
+            pre: Some("beta".to_owned()),
+        };
+        let release = FixtureVersion {
+            major: 1,
+            pre: None,
+        };
+
+        assert_eq!(compare_versions(&pre, &release), -1);
+        assert_eq!(compare_versions(&release, &pre), 1);
+        assert_eq!(compare_versions(&release, &release.clone()), 0);
+    }
+}
