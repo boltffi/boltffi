@@ -8,6 +8,7 @@ use crate::{
     target::kotlin::{
         KotlinHost,
         codec::{size::Sizer, value::ValueExpression},
+        name_style::KotlinPackage,
         name_style::Name,
         primitive::KotlinPrimitive,
         render::Enumeration,
@@ -28,6 +29,7 @@ pub struct EncodedWrite {
 pub struct WireBuffer {
     buffer: Identifier,
     writer: Identifier,
+    package: Option<KotlinPackage>,
 }
 
 pub struct Writer<'context> {
@@ -35,6 +37,7 @@ pub struct Writer<'context> {
     current: Expression,
     host: &'context KotlinHost,
     context: &'context RenderContext<'context, Native>,
+    package: Option<KotlinPackage>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -72,7 +75,13 @@ impl WireBuffer {
         Ok(Self {
             buffer: name.generated("wire")?,
             writer: name.generated("writer")?,
+            package: None,
         })
+    }
+
+    pub fn package(mut self, package: Option<&KotlinPackage>) -> Self {
+        self.package = package.cloned();
+        self
     }
 
     pub fn writer(&self) -> &Identifier {
@@ -100,10 +109,13 @@ impl WireBuffer {
         host: &KotlinHost,
         context: &RenderContext<Native>,
     ) -> Result<EncodedWrite> {
-        let size = plan
-            .size_with(&mut Sizer::new(host, context)?.current(value.clone()))?
-            .into_expression();
+        let mut sizer = Sizer::new(host, context)?.current(value.clone());
         let mut writer = Writer::new(self.writer.clone(), host, context)?.current(value);
+        if let Some(package) = &self.package {
+            sizer = sizer.package(package);
+            writer = writer.package(package);
+        }
+        let size = plan.size_with(&mut sizer)?.into_expression();
         let writes = plan
             .render_with(&mut writer)
             .into_iter()
@@ -172,11 +184,17 @@ impl<'context> Writer<'context> {
             current: Expression::identifier(Identifier::parse("value")?),
             host,
             context,
+            package: None,
         })
     }
 
     pub fn current(mut self, current: Expression) -> Self {
         self.current = current;
+        self
+    }
+
+    pub fn package(mut self, package: &KotlinPackage) -> Self {
+        self.package = Some(package.clone());
         self
     }
 
@@ -329,8 +347,14 @@ impl CodecWrite for Writer<'_> {
 
     fn data_enum(&mut self, id: EnumId, value: &ValueRef) -> Vec<Self::Stmt> {
         vec![self.value(value).and_then(|value| {
-            Enumeration::write_statement(id, value, self.writer.clone(), self.context)
-                .map(WriteStatement::new)
+            Enumeration::write_statement(
+                id,
+                value,
+                self.writer.clone(),
+                self.context,
+                self.package.as_ref(),
+            )
+            .map(WriteStatement::new)
         })]
     }
 

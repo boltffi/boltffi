@@ -1,6 +1,6 @@
 use boltffi_binding::{
     CStyleEnumDecl, CanonicalName, ConstantOwner, DataEnumDecl, DataVariantDecl,
-    DataVariantPayload, EncodedFieldDecl, ExportedMethodDecl, InitializerDecl, Native,
+    DataVariantPayload, EncodedFieldDecl, EnumId, ExportedMethodDecl, InitializerDecl, Native,
     NativeSymbol, Receive,
 };
 
@@ -93,6 +93,7 @@ impl EnumClass {
     pub fn from_data(enumeration: &DataEnumDecl<Native>, package: &Package) -> Result<Self> {
         let symbols = enumeration_render::Symbols::from_data(enumeration)?;
         let class_name = symbols.class_name().clone();
+        let transparent = package.context.enum_is_transparent(enumeration.id());
         Ok(Self {
             documentation: Documentation::new(enumeration.meta().doc()),
             class_name: class_name.clone(),
@@ -104,10 +105,18 @@ impl EnumClass {
             variants: Vec::new(),
             constants: package.constants_for_owner(ConstantOwner::Enum(enumeration.id()))?,
             wire: Some(DataEnumWire {
+                transparent,
                 variants: enumeration
                     .variants()
                     .iter()
-                    .map(|variant| DataEnumVariant::from_variant(variant, &class_name, package))
+                    .map(|variant| {
+                        DataEnumVariant::from_variant(
+                            variant,
+                            enumeration.id(),
+                            &class_name,
+                            package,
+                        )
+                    })
                     .collect::<Result<Vec<_>>>()?,
             }),
             constructors: Self::constructors(enumeration.initializers(), &symbols, package)?,
@@ -161,6 +170,7 @@ impl EnumClass {
         self.wire
             .iter()
             .flat_map(|wire| wire.variants.iter())
+            .filter(|variant| !variant.transparent())
             .try_for_each(DataEnumVariant::validate_names)
     }
 
@@ -184,6 +194,7 @@ impl EnumClass {
         self.wire
             .iter()
             .flat_map(|wire| wire.variants.iter())
+            .filter(|variant| !variant.transparent())
             .map(DataEnumVariant::top_level_name)
     }
 
@@ -291,6 +302,11 @@ impl EnumVariant {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DataEnumWire {
+    /// Whether any variant renders as its payload record. A transparent
+    /// enum's write dispatch lives on the enum class (`_boltffi_wire_value`)
+    /// because the tag a shared payload record must write depends on which
+    /// enum it is written through.
+    pub transparent: bool,
     pub variants: Vec<DataEnumVariant>,
 }
 
@@ -301,6 +317,9 @@ pub struct DataEnumVariant {
     pub tag: u32,
     pub fields: Vec<RecordField>,
     pub wire_fields: Vec<EncodedRecordField>,
+    /// The payload record class of a transparent variant; no wrapper class
+    /// is emitted for it.
+    pub transparent_payload: Option<Identifier>,
 }
 
 impl DataEnumVariant {
@@ -308,12 +327,24 @@ impl DataEnumVariant {
         !self.fields.is_empty()
     }
 
+    pub fn transparent(&self) -> bool {
+        self.transparent_payload.is_some()
+    }
+
     fn from_variant(
         variant: &DataVariantDecl,
+        enumeration: EnumId,
         enum_class_name: &Identifier,
         package: &Package,
     ) -> Result<Self> {
         let fields = Self::payload_fields(variant.payload())?;
+        let transparent_payload = package
+            .context
+            .enum_is_transparent(enumeration)
+            .then(|| variant.transparent_payload())
+            .flatten()
+            .map(|record| package.record_name(record))
+            .transpose()?;
         Ok(Self {
             documentation: Documentation::new(variant.meta().doc()),
             class_name: Identifier::parse(format!(
@@ -322,6 +353,7 @@ impl DataEnumVariant {
                 Name::new(variant.name()).class()
             ))?,
             tag: variant.tag().get(),
+            transparent_payload,
             fields: fields
                 .iter()
                 .map(|field| RecordField::from_encoded(field, package))

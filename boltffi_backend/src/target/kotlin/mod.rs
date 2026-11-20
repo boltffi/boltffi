@@ -7,11 +7,11 @@ pub(crate) mod render;
 mod syntax;
 mod tuple;
 
-use std::path::PathBuf;
+use std::{collections::BTreeSet, path::PathBuf};
 
 use boltffi_binding::{
-    Bindings, CallbackDecl, ClassDecl, ConstantDecl, CustomTypeDecl, EnumDecl, FunctionDecl,
-    Native, RecordDecl, StreamDecl,
+    Bindings, CallbackDecl, ClassDecl, ConstantDecl, CustomTypeDecl, DeclarationRef, EnumDecl,
+    EnumId, FunctionDecl, Native, RecordDecl, StreamDecl,
 };
 
 use crate::{
@@ -248,6 +248,36 @@ impl host::HostBackend for KotlinHost {
 
     fn name(&self) -> &'static str {
         Self::TARGET
+    }
+
+    fn wrapped_transparent_enums(
+        &self,
+        bridge: &Self::Bridge,
+        context: &RenderContext<Native>,
+    ) -> Result<BTreeSet<EnumId>> {
+        context
+            .bindings()
+            .decls()
+            .iter()
+            .filter_map(|declaration| DeclarationRef::from(declaration).record())
+            .filter(|record| {
+                context.transparent_enums(record.id()).any(|enumeration| {
+                    enumeration
+                        .methods()
+                        .iter()
+                        .any(|method| method.callable().receiver().is_some())
+                })
+            })
+            .try_fold(BTreeSet::new(), |mut wrapped, declaration| {
+                let bases = render::Record::from_declaration(declaration, self, bridge, context)
+                    .and_then(|record| record.wrapped_enum_bases(declaration.id(), self, context));
+                match bases {
+                    Ok(bases) => wrapped.extend(bases),
+                    Err(Error::UnsupportedTarget { .. }) => {}
+                    Err(error) => return Err(error),
+                }
+                Ok(wrapped)
+            })
     }
 
     fn binding_capabilities(&self) -> HostCapabilities {

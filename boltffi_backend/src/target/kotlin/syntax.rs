@@ -149,6 +149,27 @@ impl Identifier {
         }
     }
 
+    pub fn jvm_getter(&self) -> Self {
+        let name = self.0.trim_matches('`');
+        if name.strip_prefix("is").is_some_and(|suffix| {
+            suffix.starts_with(|character: char| !character.is_ascii_lowercase())
+        }) {
+            return Self(name.to_owned());
+        }
+        let mut characters = name.chars();
+        Self(
+            "get"
+                .chars()
+                .chain(
+                    characters
+                        .next()
+                        .map(|character| character.to_ascii_uppercase()),
+                )
+                .chain(characters)
+                .collect(),
+        )
+    }
+
     fn valid(identifier: &str) -> bool {
         let mut characters = identifier.chars();
         characters
@@ -294,6 +315,13 @@ impl TypeName {
         }
         let raw = name.split_once('<').map_or(name, |(raw, _)| raw);
         Self::new(Self::unsigned_carrier(raw).unwrap_or(raw))
+    }
+
+    pub fn jvm_method_erasure(&self) -> Self {
+        match Self::unsigned_carrier(self.0.as_str()) {
+            Some(_) => self.clone(),
+            None => self.jvm_erasure(),
+        }
     }
 
     fn is_primitive(name: &str) -> bool {
