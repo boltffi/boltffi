@@ -52,6 +52,8 @@ Mark your Rust types with `#[data]` and functions with `#[export]`:
 ```rust
 use boltffi::*;
 
+boltffi::scaffolding!();
+
 #[data]
 #[derive(Clone, Copy)]
 pub struct Point {
@@ -182,6 +184,12 @@ Configure the crate type in `Cargo.toml`:
 ```toml
 [lib]
 crate-type = ["cdylib", "staticlib"]
+```
+
+Call `boltffi::scaffolding!()` once at the root of `src/lib.rs`:
+
+```rust
+boltffi::scaffolding!();
 ```
 
 ## Documentation

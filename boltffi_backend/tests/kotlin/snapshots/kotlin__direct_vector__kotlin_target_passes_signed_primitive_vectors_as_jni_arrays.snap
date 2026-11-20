@@ -8,9 +8,9 @@ expression: "rendered_fixture(\"direct_vector/primitive_vector_parameter\")"
 package com.boltffi.demo
 @Suppress("FunctionName")
 private object Native {
-    @JvmStatic external fun boltffi_function_demo_sum(values: IntArray): Int
+    @JvmStatic external fun boltffi_function_4demo3sum(values: IntArray): Int
 }
 
 fun sum(values: IntArray): Int {
-    return Native.boltffi_function_demo_sum(values)
+    return Native.boltffi_function_4demo3sum(values)
 }

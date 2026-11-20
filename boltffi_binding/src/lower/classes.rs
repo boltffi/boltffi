@@ -1,10 +1,17 @@
-use boltffi_ast::{ClassDef as SourceClass, ClassThreadSafety as SourceClassThreadSafety};
+use boltffi_ast::{
+    ClassDef as SourceClass, ClassThreadSafety as SourceClassThreadSafety, Receiver,
+};
 
 use crate::{CanonicalName, ClassDecl, ClassDeclParts, ClassThreadSafety, InvalidClassDecl};
 
 use super::{
-    LowerError, error::UnsupportedType, ids::DeclarationIds, index::Index, metadata, methods,
-    surface::SurfaceLower, symbol::SymbolAllocator,
+    LowerError,
+    error::{SourcePosition, UnsupportedType},
+    ids::DeclarationIds,
+    index::Index,
+    metadata, methods,
+    surface::SurfaceLower,
+    symbol::SymbolAllocator,
 };
 
 /// Lowers every class in the source contract.
@@ -23,7 +30,10 @@ pub fn lower<S: SurfaceLower>(
     index
         .classes()
         .iter()
-        .map(|class| lower_one(index, ids, allocator, class))
+        .filter(|class| index.lowers(class.id.as_str()))
+        .map(|class| {
+            lower_one(index, ids, allocator, class).map_err(|error| error.in_declaration(&class.id))
+        })
         .collect()
 }
 
@@ -49,7 +59,7 @@ fn lower_one<S: SurfaceLower>(
         initializers,
         methods: class_methods,
     })
-    .map_err(lower_invalid_class)
+    .map_err(|error| lower_invalid_class(class, error))
 }
 
 impl From<SourceClassThreadSafety> for ClassThreadSafety {
@@ -61,12 +71,22 @@ impl From<SourceClassThreadSafety> for ClassThreadSafety {
     }
 }
 
-fn lower_invalid_class(error: InvalidClassDecl) -> LowerError {
+fn lower_invalid_class(class: &SourceClass, error: InvalidClassDecl) -> LowerError {
     match error {
         InvalidClassDecl::MutableReceiverRequiresUnsafeSingleThreaded => {
-            LowerError::unsupported_type(
+            let error = LowerError::unsupported_type(
                 UnsupportedType::MutableClassReceiverRequiresUnsafeSingleThreaded,
-            )
+            );
+            match class
+                .methods
+                .iter()
+                .find(|method| method.receiver == Receiver::Mutable)
+            {
+                Some(method) => error
+                    .in_member(method.name.spelling())
+                    .at(SourcePosition::Receiver),
+                None => error,
+            }
         }
     }
 }
@@ -220,7 +240,7 @@ mod tests {
         assert_eq!(class.handle(), native::HandleCarrier::U64);
         assert_eq!(
             symbol_name(class.release()),
-            "boltffi_release_class_demo_engine"
+            "boltffi_release_class_4demo6Engine"
         );
 
         let initializer = class.initializers().first().expect("expected initializer");
@@ -229,7 +249,7 @@ mod tests {
         assert_eq!(initializer.name(), &CanonicalName::single("new"));
         assert_eq!(
             symbol_name(initializer.symbol()),
-            "boltffi_init_class_demo_engine_new"
+            "boltffi_init_class_4demo6Engine3new"
         );
         assert_eq!(
             initializer.returns(),
@@ -267,7 +287,7 @@ mod tests {
         assert_eq!(class_method.name(), &CanonicalName::single("start"));
         assert_eq!(
             symbol_name(class_method.target()),
-            "boltffi_method_class_demo_engine_start"
+            "boltffi_method_class_4demo6Engine5start"
         );
         assert_eq!(class_method.callable().receiver(), Some(Receive::ByMutRef));
         assert_eq!(class_method.callable().returns().plan(), &ReturnPlan::Void);
@@ -309,7 +329,7 @@ mod tests {
         assert!(class.methods().is_empty());
         assert_eq!(
             symbol_name(initializer.symbol()),
-            "boltffi_init_class_demo_engine_try_new"
+            "boltffi_init_class_4demo6Engine7try_new"
         );
         assert_eq!(
             initializer.callable().returns().plan(),
@@ -348,7 +368,7 @@ mod tests {
         assert_eq!(class_method.callable().receiver(), None);
         assert_eq!(
             symbol_name(class_method.target()),
-            "boltffi_method_class_demo_engine_version"
+            "boltffi_method_class_4demo6Engine7version"
         );
         assert_eq!(
             class_method.callable().returns().plan(),
@@ -459,9 +479,9 @@ mod tests {
         assert_eq!(
             symbol_names(&bindings),
             vec![
-                "boltffi_release_class_demo_engine",
-                "boltffi_init_class_demo_engine_new",
-                "boltffi_method_class_demo_engine_start",
+                "boltffi_release_class_4demo6Engine",
+                "boltffi_init_class_4demo6Engine3new",
+                "boltffi_method_class_4demo6Engine5start",
             ]
         );
     }
@@ -475,11 +495,11 @@ mod tests {
 
         assert_eq!(
             symbol_name(class.release()),
-            "boltffi_release_class_demo_engine"
+            "boltffi_release_class_4demo6Engine"
         );
         assert_eq!(
             symbol_name(method.target()),
-            "boltffi_method_class_demo_engine_free"
+            "boltffi_method_class_4demo6Engine4free"
         );
     }
 
@@ -500,8 +520,8 @@ mod tests {
         assert_eq!(
             symbol_names(&bindings),
             vec![
-                "boltffi_release_class_demo_audio_engine",
-                "boltffi_release_class_demo_video_engine",
+                "boltffi_release_class_4demo5audio6Engine",
+                "boltffi_release_class_4demo5video6Engine",
             ]
         );
     }
@@ -529,7 +549,7 @@ mod tests {
                 assert!(matches!(
                     binding_error.kind(),
                     BindingErrorKind::DuplicateSymbolName(name)
-                        if name == "boltffi_method_class_demo_engine_start"
+                        if name == "boltffi_method_class_4demo6Engine5start"
                 ));
             }
             other => panic!("expected invalid bindings, got {other:?}"),
@@ -913,7 +933,7 @@ mod tests {
 
         assert_eq!(
             methods[0].target().name().as_str(),
-            "boltffi_method_class_demo_engine_compute"
+            "boltffi_method_class_4demo6Engine7compute"
         );
         match methods[0].callable().execution() {
             ExecutionDecl::Asynchronous(native::AsyncProtocol::PollHandle {
@@ -927,23 +947,23 @@ mod tests {
                 assert_eq!(handle, &native::HandleCarrier::U64);
                 assert_eq!(
                     poll.name().as_str(),
-                    "boltffi_async_method_class_demo_engine_compute_poll"
+                    "boltffi_async_method_class_4demo6Engine7compute_poll"
                 );
                 assert_eq!(
                     complete.name().as_str(),
-                    "boltffi_async_method_class_demo_engine_compute_complete"
+                    "boltffi_async_method_class_4demo6Engine7compute_complete"
                 );
                 assert_eq!(
                     cancel.name().as_str(),
-                    "boltffi_async_method_class_demo_engine_compute_cancel"
+                    "boltffi_async_method_class_4demo6Engine7compute_cancel"
                 );
                 assert_eq!(
                     free.name().as_str(),
-                    "boltffi_async_method_class_demo_engine_compute_free"
+                    "boltffi_async_method_class_4demo6Engine7compute_free"
                 );
                 assert_eq!(
                     panic_message.name().as_str(),
-                    "boltffi_async_method_class_demo_engine_compute_panic_message"
+                    "boltffi_async_method_class_4demo6Engine7compute_panic_message"
                 );
             }
             other => panic!("expected native PollHandle protocol, got {other:?}"),
@@ -963,7 +983,7 @@ mod tests {
 
         assert_eq!(
             initializers[0].symbol().name().as_str(),
-            "boltffi_init_class_demo_engine_new"
+            "boltffi_init_class_4demo6Engine3new"
         );
         match initializers[0].callable().execution() {
             ExecutionDecl::Asynchronous(wasm32::AsyncProtocol::PollHandle {
@@ -977,23 +997,23 @@ mod tests {
                 assert_eq!(handle, &wasm32::HandleCarrier::U32);
                 assert_eq!(
                     poll_sync.name().as_str(),
-                    "boltffi_async_init_class_demo_engine_new_poll_sync"
+                    "boltffi_async_init_class_4demo6Engine3new_poll_sync"
                 );
                 assert_eq!(
                     complete.name().as_str(),
-                    "boltffi_async_init_class_demo_engine_new_complete"
+                    "boltffi_async_init_class_4demo6Engine3new_complete"
                 );
                 assert_eq!(
                     cancel.name().as_str(),
-                    "boltffi_async_init_class_demo_engine_new_cancel"
+                    "boltffi_async_init_class_4demo6Engine3new_cancel"
                 );
                 assert_eq!(
                     free.name().as_str(),
-                    "boltffi_async_init_class_demo_engine_new_free"
+                    "boltffi_async_init_class_4demo6Engine3new_free"
                 );
                 assert_eq!(
                     panic_message.name().as_str(),
-                    "boltffi_async_init_class_demo_engine_new_panic_message"
+                    "boltffi_async_init_class_4demo6Engine3new_panic_message"
                 );
             }
             other => panic!("expected wasm32 PollHandle protocol, got {other:?}"),

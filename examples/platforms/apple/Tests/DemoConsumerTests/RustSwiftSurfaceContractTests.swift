@@ -579,6 +579,7 @@ private let rustToSwiftCoverageFile: [String: String] = [
     "classes/borrowed.rs": "classes/BorrowedTests.swift",
     "classes/constructor_matrix.rs": "classes/ConstructorCoverageMatrixTests.swift",
     "classes/constructors.rs": "classes/ConstructorsTests.swift",
+    "classes/enum_backed.rs": "classes/EnumBackedTests.swift",
     "classes/methods.rs": "classes/MethodsTests.swift",
     "classes/ownership.rs": "classes/OwnershipTests.swift",
     "classes/static_methods.rs": "classes/StaticMethodsTests.swift",

@@ -19,14 +19,14 @@ final class Native {
 
     private Native() {}
 
-    static native byte[] boltffi_function_demo_echo_point(java.nio.ByteBuffer point);
+    static native byte[] boltffi_function_4demo10echo_point(java.nio.ByteBuffer point);
 }
 
 public final class Demo {
     private Demo() {}
 
     public static Point echoPoint(Point point) {
-        return Point.fromByteArray(Native.boltffi_function_demo_echo_point(point.toDirectBuffer()));
+        return Point.fromByteArray(Native.boltffi_function_4demo10echo_point(point.toDirectBuffer()));
     }
 }
 ===== Point.java =====

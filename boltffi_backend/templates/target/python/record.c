@@ -198,13 +198,15 @@ static PyType_Spec {{ prefix }}_type_spec = {
 {%- match factory %}
 {%- when Some(factory) %}
 static PyObject *{{ factory }}(PyObject *module, PyObject *bases) {
-    if ({{ type_object }} != NULL) {
-        PyErr_SetString(PyExc_RuntimeError, "{{ class_name }} is already created");
-        return NULL;
-    }
     if (!PyTuple_Check(bases)) {
         PyErr_SetString(PyExc_TypeError, "{{ class_name }} bases must be a tuple");
         return NULL;
+    }
+    if ({{ type_object }} != NULL) {
+        if (PyObject_SetAttrString({{ type_object }}, "__bases__", bases) < 0) {
+            return NULL;
+        }
+        return Py_NewRef({{ type_object }});
     }
     {{ type_object }} = PyType_FromSpecWithBases(&{{ prefix }}_type_spec, bases);
     if ({{ type_object }} == NULL) {

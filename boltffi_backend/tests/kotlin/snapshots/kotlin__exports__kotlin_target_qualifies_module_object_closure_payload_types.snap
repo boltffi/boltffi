@@ -8,7 +8,7 @@ expression: rendered
 package com.boltffi.demo
 @Suppress("FunctionName")
 private object Native {
-    @JvmStatic external fun boltffi_function_demo_install(callback: Long): Unit
+    @JvmStatic external fun boltffi_function_4demo7install(callback: Long): Unit
 }
 
 fun interface ClosureToDemoPoint {
@@ -85,6 +85,6 @@ object Demo {
     }
 
     fun install(callback: ClosureToDemoPoint) {
-        Native.boltffi_function_demo_install(ClosureToDemoPointCallbacks.insert(callback))
+        Native.boltffi_function_4demo7install(ClosureToDemoPointCallbacks.insert(callback))
     }
 }

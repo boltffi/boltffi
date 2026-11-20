@@ -1,7 +1,7 @@
 use boltffi_ast::{FieldDef, MethodDef, Path as SourcePath, RecordDef, TypeExpr};
 use boltffi_binding::{
     CanonicalName, CodecNode, DirectRecordDecl, EncodedFieldDecl, EncodedRecordDecl, ExecutionDecl,
-    FieldKey, Native, Receive, RecordDecl, Wasm32, WritePlan,
+    FieldKey, Native, Receive, RecordDecl, SourcePosition, Wasm32, WritePlan,
 };
 use proc_macro2::TokenStream;
 use quote::quote;
@@ -203,10 +203,12 @@ impl<'expansion, 'lowered, S: boltffi_binding::SurfaceLower> Direct<'expansion, 
             }
 
             impl ::boltffi::__private::VecTransport for #record {
+                #[inline]
                 fn pack_vec(values: Vec<#record>) -> ::boltffi::__private::FfiBuf {
                     ::boltffi::__private::FfiBuf::from_vec(values)
                 }
 
+                #[inline]
                 unsafe fn unpack_vec(pointer: *const u8, byte_len: usize) -> Vec<#record> {
                     if byte_len == 0 {
                         return Vec::new();
@@ -319,10 +321,12 @@ impl<'expansion, 'lowered, S: boltffi_binding::SurfaceLower> Encoded<'expansion,
             }
 
             impl ::boltffi::__private::VecTransport for #record {
+                #[inline]
                 fn pack_vec(values: Vec<#record>) -> ::boltffi::__private::FfiBuf {
                     ::boltffi::__private::FfiBuf::wire_encode(&values)
                 }
 
+                #[inline]
                 unsafe fn unpack_vec(pointer: *const u8, byte_len: usize) -> Vec<#record> {
                     let bytes = if byte_len == 0 {
                         &[]
@@ -346,13 +350,15 @@ impl<'expansion, 'lowered, S: boltffi_binding::SurfaceLower> Encoded<'expansion,
             .fields
             .iter()
             .zip(self.binding.fields())
-            .map(|(source, binding)| {
+            .enumerate()
+            .map(|(position, (source, binding))| {
                 EncodedField {
                     source,
                     binding,
                     expansion: self.expansion,
                 }
                 .tokens()
+                .map_err(|error| error.at(SourcePosition::Field(position)))
             })
             .collect()
     }

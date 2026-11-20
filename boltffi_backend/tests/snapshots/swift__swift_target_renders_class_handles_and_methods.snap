@@ -36,26 +36,26 @@ public final class Engine {
 
     deinit {
         let handle = __boltffiTakeHandle()
-        if handle != 0 { boltffi_release_class_demo_engine(handle) }
+        if handle != 0 { boltffi_release_class_4demo6Engine(handle) }
     }
 
     public init(value: Int32) {
-        self.handle = boltffi_init_class_demo_engine_new(value)
+        self.handle = boltffi_init_class_4demo6Engine3new(value)
     }
 
     public static func version() -> UInt32 {
-        return boltffi_method_class_demo_engine_version()
+        return boltffi_method_class_4demo6Engine7version()
     }
 
     public func value() -> Int32 {
-        return boltffi_method_class_demo_engine_value(self.handle)
+        return boltffi_method_class_4demo6Engine5value(self.handle)
     }
 
     public func swap(other: Engine) -> Engine {
         return Engine(handle: ({
             var __boltffiOwnedHandleother = other.__boltffiTakeHandle()
-            defer { if __boltffiOwnedHandleother != 0 { boltffi_release_class_demo_engine(__boltffiOwnedHandleother) } }
-            let __boltffiCallResult = boltffi_method_class_demo_engine_swap(self.handle, __boltffiOwnedHandleother)
+            defer { if __boltffiOwnedHandleother != 0 { boltffi_release_class_4demo6Engine(__boltffiOwnedHandleother) } }
+            let __boltffiCallResult = boltffi_method_class_4demo6Engine4swap(self.handle, __boltffiOwnedHandleother)
             __boltffiOwnedHandleother = 0
             return __boltffiCallResult
         })())
@@ -64,8 +64,8 @@ public final class Engine {
     public func maybeSwap(other: Engine?) -> Engine? {
         let boltffiHandle = ({
             var __boltffiOwnedHandleother = other?.__boltffiTakeHandle() ?? 0
-            defer { if __boltffiOwnedHandleother != 0 { boltffi_release_class_demo_engine(__boltffiOwnedHandleother) } }
-            let __boltffiCallResult = boltffi_method_class_demo_engine_maybe_swap(self.handle, __boltffiOwnedHandleother)
+            defer { if __boltffiOwnedHandleother != 0 { boltffi_release_class_4demo6Engine(__boltffiOwnedHandleother) } }
+            let __boltffiCallResult = boltffi_method_class_4demo6Engine10maybe_swap(self.handle, __boltffiOwnedHandleother)
             __boltffiOwnedHandleother = 0
             return __boltffiCallResult
         })()

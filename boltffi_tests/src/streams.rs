@@ -4,6 +4,7 @@ use boltffi::*;
 
 use crate::FixturePoint;
 
+#[export]
 pub struct CounterStream {
     producer: StreamProducer<i32>,
 }
@@ -41,6 +42,7 @@ impl CounterStream {
     }
 }
 
+#[export]
 pub struct PointStream {
     producer: StreamProducer<FixturePoint>,
 }
@@ -69,6 +71,7 @@ impl PointStream {
     }
 }
 
+#[export]
 pub struct LabelStream {
     producer: StreamProducer<String>,
 }

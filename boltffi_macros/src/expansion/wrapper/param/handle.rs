@@ -107,7 +107,8 @@ impl<'lowered, C> Input<'lowered, C> {
                 .class_handle(&self.plan.target, self.plan.presence, self.plan.receive)?;
         let conversion = self.conversion(&class, carrier.zero())?;
         let owned_values = if self.plan.receive == Receive::ByValue {
-            let handle_type = names::Class::from_type_path(class.ty())?.handle();
+            let class_type = class.ty();
+            let handle_type = quote! { <#class_type as ::boltffi::__private::ClassHandle>::Handle };
             let storage = names::Parameter::new(ident).storage();
             vec![quote! {
                 let #storage = unsafe {
@@ -173,7 +174,7 @@ impl<'lowered, C> Input<'lowered, C> {
     ) -> Result<TokenStream, Error> {
         let ident = &self.ident;
         let ty = class.ty();
-        let handle_type = names::Class::from_type_path(ty)?.handle();
+        let handle_type = names::Class::handle_of(ty);
         let handle_pointer = quote! { #ident as usize as *mut #handle_type };
         let storage = names::Parameter::new(ident).storage();
         let failure = &self.failure;
@@ -288,17 +289,17 @@ impl rust_api::CallbackObject {
         Ok(match self.form() {
             rust_api::CallbackCarrier::BoxedDyn => {
                 quote! {
-                    <#proxy as ::boltffi::__private::BoxFromCallbackHandle>::box_from_callback_handle(#handle)
+                    ::boltffi::__private::callback_box(#proxy, #handle) as _
                 }
             }
             rust_api::CallbackCarrier::ArcDyn => {
                 quote! {
-                    <#proxy as ::boltffi::__private::ArcFromCallbackHandle>::arc_from_callback_handle(#handle)
+                    ::boltffi::__private::callback_arc(#proxy, #handle) as _
                 }
             }
             rust_api::CallbackCarrier::ImplTrait => {
                 quote! {
-                    *<#proxy as ::boltffi::__private::BoxFromCallbackHandle>::box_from_callback_handle(#handle)
+                    *::boltffi::__private::callback_box(#proxy, #handle)
                 }
             }
         })

@@ -40,12 +40,12 @@ public struct Point: Hashable, Equatable, Sendable {
 
     /// Returns the origin point.
     public static func origin() -> Point {
-        return Point(fromC: boltffi_init_record_demo_point_origin())
+        return Point(fromC: boltffi_init_record_4demo5Point6origin())
     }
 
     /// Returns the horizontal distance from another point.
     public func distance(other: Point) -> Double {
-        return boltffi_method_record_demo_point_distance(self.cValue, other.cValue)
+        return boltffi_method_record_4demo5Point8distance(self.cValue, other.cValue)
     }
 }
 
@@ -66,11 +66,11 @@ public enum Mode: UInt8, Hashable, Sendable, CaseIterable {
 
     /// Returns the default mode.
     public static func `default`() -> Mode {
-        return Mode(fromC: boltffi_init_enum_demo_mode_default())
+        return Mode(fromC: boltffi_init_enum_4demo4Mode7default())
     }
 
     /// Returns the wire code for this mode.
     public func code() -> UInt8 {
-        return boltffi_method_enum_demo_mode_code(self.cValue)
+        return boltffi_method_enum_4demo4Mode4code(self.cValue)
     }
 }

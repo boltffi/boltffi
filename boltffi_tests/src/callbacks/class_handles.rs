@@ -3,6 +3,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use boltffi::export;
 
+#[export]
 pub struct CallbackOnlyHandle {
     drops: Arc<AtomicUsize>,
 }

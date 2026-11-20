@@ -1,0 +1,5 @@
+error: BoltFFI: a map key can't be `f32` or `f64`, since floats are not `Eq` or `Hash`; use an integer or `String` key
+ --> tests/diagnostics/unsupported_signatures/float_map_key.rs:6:37
+  |
+6 | pub fn histogram(samples: Vec<f64>) -> HashMap<f64, u32> {
+  |                                     ^^^^^^^^^^^^^^^^^^^^

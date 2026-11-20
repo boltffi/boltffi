@@ -362,7 +362,7 @@ mod tests {
                 KmpCapabilitySet::from_iter([KmpCapability::SyncCallables]),
                 KmpFunctionPlan::new(
                     "roundTrip",
-                    "boltffi_function_demo_round_trip",
+                    "boltffi_function_4demo10round_trip",
                     vec![KmpParamPlan::new(
                         "`value`",
                         KmpTypePlan::Primitive(boltffi_binding::Primitive::U32),
@@ -390,7 +390,7 @@ mod tests {
                 KmpCapabilitySet::from_iter([KmpCapability::SyncCallables]),
                 KmpFunctionPlan::new(
                     "add",
-                    "boltffi_function_demo_add",
+                    "boltffi_function_4demo3add",
                     vec![
                         KmpParamPlan::new(
                             "left",
@@ -559,7 +559,7 @@ mod tests {
                 KmpCapabilitySet::from_iter([KmpCapability::SyncCallables]),
                 KmpFunctionPlan::new(
                     "2d",
-                    "boltffi_function_demo__2d",
+                    "boltffi_function_4demo3_2d",
                     vec![KmpParamPlan::new(
                         "ok",
                         KmpTypePlan::Primitive(boltffi_binding::Primitive::I32),
@@ -594,7 +594,7 @@ mod tests {
                 KmpCapabilitySet::from_iter([KmpCapability::SyncCallables]),
                 KmpFunctionPlan::new(
                     "add",
-                    "boltffi_function_demo_add",
+                    "boltffi_function_4demo3add",
                     vec![KmpParamPlan::new(
                         "bad-name",
                         KmpTypePlan::Primitive(boltffi_binding::Primitive::I32),
@@ -644,7 +644,7 @@ mod tests {
     fn emitter_rejects_duplicate_parameter_names_in_manual_function_plans() {
         let module = function_module(vec![KmpFunctionPlan::new(
             "add",
-            "boltffi_function_demo_add",
+            "boltffi_function_4demo3add",
             vec![
                 KmpParamPlan::new(
                     "left",
@@ -670,7 +670,7 @@ mod tests {
         let module = function_module(vec![
             KmpFunctionPlan::new(
                 "add",
-                "boltffi_function_demo_add",
+                "boltffi_function_4demo3add",
                 vec![KmpParamPlan::new(
                     "left",
                     KmpTypePlan::Primitive(boltffi_binding::Primitive::I32),
@@ -679,7 +679,7 @@ mod tests {
             ),
             KmpFunctionPlan::new(
                 "add",
-                "boltffi_function_demo_add_again",
+                "boltffi_function_4demo9add_again",
                 vec![KmpParamPlan::new(
                     "right",
                     KmpTypePlan::Primitive(boltffi_binding::Primitive::I32),
@@ -700,7 +700,7 @@ mod tests {
         let module = function_module(vec![
             KmpFunctionPlan::new(
                 "add",
-                "boltffi_function_demo_add",
+                "boltffi_function_4demo3add",
                 vec![KmpParamPlan::new(
                     "left",
                     KmpTypePlan::Primitive(boltffi_binding::Primitive::I32),
@@ -709,7 +709,7 @@ mod tests {
             ),
             KmpFunctionPlan::new(
                 "sum",
-                "boltffi_function_demo_add",
+                "boltffi_function_4demo3add",
                 vec![KmpParamPlan::new(
                     "right",
                     KmpTypePlan::Primitive(boltffi_binding::Primitive::I32),
@@ -730,7 +730,7 @@ mod tests {
         for function in [
             KmpFunctionPlan::new(
                 "_",
-                "boltffi_function_demo_add",
+                "boltffi_function_4demo3add",
                 vec![KmpParamPlan::new(
                     "left",
                     KmpTypePlan::Primitive(boltffi_binding::Primitive::I32),
@@ -739,7 +739,7 @@ mod tests {
             ),
             KmpFunctionPlan::new(
                 "add",
-                "boltffi_function_demo_add",
+                "boltffi_function_4demo3add",
                 vec![KmpParamPlan::new(
                     "__",
                     KmpTypePlan::Primitive(boltffi_binding::Primitive::I32),
@@ -805,7 +805,7 @@ mod tests {
         let internal = file(&output, "src/jvmMain/kotlin/com/example/demo/jvm/Demo.kt");
         assert!(internal.contains("val androidLibrary = \"boltffi\""));
         assert!(internal.contains("fun add(left: Int, right: Int): Int"));
-        assert!(internal.contains("@JvmStatic external fun boltffi_function_demo_add"));
+        assert!(internal.contains("@JvmStatic external fun boltffi_function_4demo3add"));
         assert!(
             file(
                 &output,
@@ -819,7 +819,7 @@ mod tests {
     fn emitter_keeps_parameter_defaults_in_common_declarations() {
         let module = function_module(vec![KmpFunctionPlan::new(
             "add",
-            "boltffi_function_demo_add",
+            "boltffi_function_4demo3add",
             vec![
                 KmpParamPlan::new("left", KmpTypePlan::Primitive(Primitive::I32))
                     .with_default(DefaultValue::Integer(IntegerValue::new(5))),
@@ -851,7 +851,7 @@ mod tests {
                     format!("src/{source_set}/kotlin/com/example/demo/jvm/Demo.kt");
                 let internal = file(&output, &internal_path);
                 let native_signature =
-                    "external fun boltffi_function_demo_add(left: Int, right: Int, negate: Boolean): Int";
+                    "external fun boltffi_function_4demo3add(left: Int, right: Int, negate: Boolean): Int";
                 assert!(internal.contains(native_signature));
             });
     }
@@ -919,7 +919,7 @@ mod tests {
     fn emitter_rejects_a_default_that_does_not_match_its_primitive_type() {
         let module = function_module(vec![KmpFunctionPlan::new(
             "add",
-            "boltffi_function_demo_add",
+            "boltffi_function_4demo3add",
             vec![
                 KmpParamPlan::new("count", KmpTypePlan::Primitive(Primitive::I32))
                     .with_default(DefaultValue::Bool(false)),
@@ -959,7 +959,13 @@ mod tests {
         let paths = output
             .files()
             .iter()
-            .map(|file| file.path().as_path().display().to_string())
+            .map(|file| {
+                file.path()
+                    .as_path()
+                    .display()
+                    .to_string()
+                    .replace('\\', "/")
+            })
             .collect::<Vec<_>>();
 
         assert_eq!(

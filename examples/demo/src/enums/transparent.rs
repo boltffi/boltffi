@@ -5,10 +5,6 @@
 //! that forces the tag onto the base rather than the payload. `Heading` is a
 //! C-style enum payload, which takes the enum as a supertype the same way.
 //!
-//! Behind the `transparent-demo` feature: only the Kotlin and Python backends
-//! render transparent variants, and the others reject them at generate time,
-//! so an ungated module here would break `pack` for the rest of the demo.
-
 use boltffi::*;
 
 use crate::records::blittable::Point;
@@ -47,27 +43,32 @@ pub enum Anchor {
     exclude(
         swift,
         reason = ExclusionReason::ImplementationGap,
-        details = "The Swift backend renders a data enum as a Swift enum, whose cases a payload struct cannot be, so it rejects transparent variants at generate time."
+        details = "Swift keeps its native enum cases around payload records."
     ),
     exclude(
         java,
         reason = ExclusionReason::ImplementationGap,
-        details = "The Java backend rejects transparent variants at generate time."
+        details = "Java keeps its ordinary variant classes around payload records."
     ),
     exclude(
         csharp,
         reason = ExclusionReason::ImplementationGap,
-        details = "A C# payload is a readonly record struct, which cannot inherit the abstract record a data enum renders as, so the backend rejects transparent variants at generate time."
+        details = "C# keeps its ordinary variant records around payload records."
     ),
     exclude(
         typescript,
         reason = ExclusionReason::ImplementationGap,
-        details = "The TypeScript backend discriminates its union on a tag field, which a transparent payload does not carry, so it rejects transparent variants at generate time."
+        details = "TypeScript keeps its tagged union variants around payload records."
     ),
     exclude(
         dart,
         reason = ExclusionReason::ImplementationGap,
-        details = "The Dart backend rejects transparent variants at generate time."
+        details = "Dart keeps its ordinary variant classes around payload records."
+    ),
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "The Ruby backend does not support transparent enum variants."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -77,27 +78,32 @@ pub enum Anchor {
     exclude(
         swift,
         reason = ExclusionReason::ImplementationGap,
-        details = "The Swift backend renders a data enum as a Swift enum, whose cases a payload struct cannot be, so it rejects transparent variants at generate time."
+        details = "Swift keeps its native enum cases around payload records."
     ),
     exclude(
         java,
         reason = ExclusionReason::ImplementationGap,
-        details = "The Java backend rejects transparent variants at generate time."
+        details = "Java keeps its ordinary variant classes around payload records."
     ),
     exclude(
         csharp,
         reason = ExclusionReason::ImplementationGap,
-        details = "A C# payload is a readonly record struct, which cannot inherit the abstract record a data enum renders as, so the backend rejects transparent variants at generate time."
+        details = "C# keeps its ordinary variant records around payload records."
     ),
     exclude(
         typescript,
         reason = ExclusionReason::ImplementationGap,
-        details = "The TypeScript backend discriminates its union on a tag field, which a transparent payload does not carry, so it rejects transparent variants at generate time."
+        details = "TypeScript keeps its tagged union variants around payload records."
     ),
     exclude(
         dart,
         reason = ExclusionReason::ImplementationGap,
-        details = "The Dart backend rejects transparent variants at generate time."
+        details = "Dart keeps its ordinary variant classes around payload records."
+    ),
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "The Ruby backend does not support transparent enum variants."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -107,27 +113,32 @@ pub enum Anchor {
     exclude(
         swift,
         reason = ExclusionReason::ImplementationGap,
-        details = "The Swift backend renders a data enum as a Swift enum, whose cases a payload struct cannot be, so it rejects transparent variants at generate time."
+        details = "Swift keeps its native enum cases around payload records."
     ),
     exclude(
         java,
         reason = ExclusionReason::ImplementationGap,
-        details = "The Java backend rejects transparent variants at generate time."
+        details = "Java keeps its ordinary variant classes around payload records."
     ),
     exclude(
         csharp,
         reason = ExclusionReason::ImplementationGap,
-        details = "A C# payload is a readonly record struct, which cannot inherit the abstract record a data enum renders as, so the backend rejects transparent variants at generate time."
+        details = "C# keeps its ordinary variant records around payload records."
     ),
     exclude(
         typescript,
         reason = ExclusionReason::ImplementationGap,
-        details = "The TypeScript backend discriminates its union on a tag field, which a transparent payload does not carry, so it rejects transparent variants at generate time."
+        details = "TypeScript keeps its tagged union variants around payload records."
     ),
     exclude(
         dart,
         reason = ExclusionReason::ImplementationGap,
-        details = "The Dart backend rejects transparent variants at generate time."
+        details = "Dart keeps its ordinary variant classes around payload records."
+    ),
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "The Ruby backend does not support transparent enum variants."
     )
 )]
 pub fn echo_waypoint(waypoint: Waypoint) -> Waypoint {
@@ -143,27 +154,32 @@ pub fn echo_waypoint(waypoint: Waypoint) -> Waypoint {
     exclude(
         swift,
         reason = ExclusionReason::ImplementationGap,
-        details = "The Swift backend renders a data enum as a Swift enum, whose cases a payload struct cannot be, so it rejects transparent variants at generate time."
+        details = "Swift keeps its native enum cases around payload records."
     ),
     exclude(
         java,
         reason = ExclusionReason::ImplementationGap,
-        details = "The Java backend rejects transparent variants at generate time."
+        details = "Java keeps its ordinary variant classes around payload records."
     ),
     exclude(
         csharp,
         reason = ExclusionReason::ImplementationGap,
-        details = "A C# payload is a readonly record struct, which cannot inherit the abstract record a data enum renders as, so the backend rejects transparent variants at generate time."
+        details = "C# keeps its ordinary variant records around payload records."
     ),
     exclude(
         typescript,
         reason = ExclusionReason::ImplementationGap,
-        details = "The TypeScript backend discriminates its union on a tag field, which a transparent payload does not carry, so it rejects transparent variants at generate time."
+        details = "TypeScript keeps its tagged union variants around payload records."
     ),
     exclude(
         dart,
         reason = ExclusionReason::ImplementationGap,
-        details = "The Dart backend rejects transparent variants at generate time."
+        details = "Dart keeps its ordinary variant classes around payload records."
+    ),
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "The Ruby backend does not support transparent enum variants."
     )
 )]
 pub fn echo_anchor(anchor: Anchor) -> Anchor {
@@ -201,27 +217,32 @@ pub enum Course {
     exclude(
         swift,
         reason = ExclusionReason::ImplementationGap,
-        details = "The Swift backend renders a data enum as a Swift enum, whose cases a payload struct cannot be, so it rejects transparent variants at generate time."
+        details = "Swift keeps its native enum cases around C-style enum payloads."
     ),
     exclude(
         java,
         reason = ExclusionReason::ImplementationGap,
-        details = "The Java backend rejects transparent variants at generate time."
+        details = "Java keeps its ordinary variant classes around C-style enum payloads."
     ),
     exclude(
         csharp,
         reason = ExclusionReason::ImplementationGap,
-        details = "A C# payload is a readonly record struct, which cannot inherit the abstract record a data enum renders as, so the backend rejects transparent variants at generate time."
+        details = "C# keeps its ordinary variant records around C-style enum payloads."
     ),
     exclude(
         typescript,
         reason = ExclusionReason::ImplementationGap,
-        details = "The TypeScript backend discriminates its union on a tag field, which a transparent payload does not carry, so it rejects transparent variants at generate time."
+        details = "TypeScript keeps its tagged union variants around C-style enum payloads."
     ),
     exclude(
         dart,
         reason = ExclusionReason::ImplementationGap,
-        details = "The Dart backend rejects transparent variants at generate time."
+        details = "Dart keeps its ordinary variant classes around C-style enum payloads."
+    ),
+    exclude(
+        ruby,
+        reason = ExclusionReason::ImplementationGap,
+        details = "The Ruby backend does not support transparent enum variants."
     )
 )]
 pub fn echo_course(course: Course) -> Course {

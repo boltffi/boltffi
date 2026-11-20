@@ -33,21 +33,21 @@ impl<'source> SymbolOwner<'source> {
 
     pub fn method_symbol_name(self, member: &SourceName) -> String {
         format!(
-            "{}_method_{}_{}_{}",
+            "{}_method_{}_{}{}",
             FFI_PREFIX,
             self.family(),
             symbol_path(self.source_id()),
-            source_member_name(member)
+            member_segment(member)
         )
     }
 
     pub fn initializer_symbol_name(self, initializer: &SourceName) -> String {
         format!(
-            "{}_init_{}_{}_{}",
+            "{}_init_{}_{}{}",
             FFI_PREFIX,
             self.family(),
             symbol_path(self.source_id()),
-            source_member_name(initializer)
+            member_segment(initializer)
         )
     }
 
@@ -72,11 +72,42 @@ impl<'source> SymbolOwner<'source> {
 
 pub struct SymbolAllocator {
     next: u32,
+    closure_owner: Option<ClosureOwner>,
+}
+
+struct ClosureOwner {
+    stem: String,
+    next_closure: u32,
 }
 
 impl SymbolAllocator {
     pub fn new() -> Self {
-        Self { next: 0 }
+        Self {
+            next: 0,
+            closure_owner: None,
+        }
+    }
+
+    pub fn enter_callable(&mut self, symbol_name: &str) {
+        let stem = symbol_name
+            .trim_start_matches('_')
+            .strip_prefix(&format!("{FFI_PREFIX}_"))
+            .unwrap_or(symbol_name)
+            .to_owned();
+        self.closure_owner = Some(ClosureOwner {
+            stem,
+            next_closure: 0,
+        });
+    }
+
+    pub fn next_closure_stem(&mut self) -> String {
+        let owner = self
+            .closure_owner
+            .as_mut()
+            .expect("outgoing closures are lowered inside a callable that named its owner");
+        let stem = format!("{}_{}", owner.stem, owner.next_closure);
+        owner.next_closure += 1;
+        stem
     }
 
     pub fn mint(&mut self, name: String) -> Result<NativeSymbol, LowerError> {
@@ -152,10 +183,10 @@ impl SymbolAllocator {
         slot: &CallbackSlot,
     ) -> Result<NativeSymbol, LowerError> {
         self.mint(format!(
-            "{}_callback_{}_{}_complete",
+            "{}_callback_{}{}_complete",
             FFI_PREFIX,
             symbol_path(callback_id),
-            slot.as_str()
+            slot.symbol_segment()
         ))
     }
 
@@ -188,15 +219,15 @@ impl SymbolAllocator {
         ))
     }
 
-    pub const fn next_group_id(&self) -> u32 {
-        self.next
-    }
-
     fn next_id(&mut self) -> SymbolId {
         let id = SymbolId::from_raw(self.next);
         self.next += 1;
         id
     }
+}
+
+fn member_segment(name: &SourceName) -> String {
+    length_prefixed(name.spelling())
 }
 
 fn source_member_name(name: &SourceName) -> String {
@@ -300,23 +331,36 @@ impl CallbackSlot {
 
     pub fn local_method_name(&self, callback_id: &str) -> String {
         format!(
-            "__{}_local_{}_{}",
+            "__{}_local_{}{}",
             FFI_PREFIX,
             symbol_path(callback_id),
-            self.as_str()
+            self.symbol_segment()
         )
     }
 
     pub fn wasm_import_method_name(&self, callback_id: &str) -> String {
-        wasm_callback_import_name("method", &symbol_path(callback_id), self.as_str())
+        wasm_callback_member_import_name("method", callback_id, self)
     }
 
     pub fn wasm_import_start_name(&self, callback_id: &str) -> String {
-        wasm_callback_import_name("async_start", &symbol_path(callback_id), self.as_str())
+        wasm_callback_member_import_name("async_start", callback_id, self)
+    }
+
+    pub fn imported_method_name(&self, callback_id: &str) -> String {
+        format!(
+            "{}_method_callback_{}{}",
+            FFI_PREFIX,
+            symbol_path(callback_id),
+            self.symbol_segment()
+        )
     }
 
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+
+    fn symbol_segment(&self) -> String {
+        length_prefixed(&self.0)
     }
 }
 
@@ -330,20 +374,46 @@ fn symbol_path(source_id: &str) -> String {
     source_id
         .split("::")
         .filter(|segment| !segment.is_empty())
-        .map(to_snake_case)
-        .collect::<Vec<_>>()
-        .join("_")
+        .map(length_prefixed)
+        .collect()
+}
+
+fn length_prefixed(segment: &str) -> String {
+    let segment = segment
+        .strip_prefix("r#")
+        .unwrap_or(segment)
+        .replace('-', "_");
+    format!("{}{segment}", segment.len())
+}
+
+/// Returns the symbol a records build exports from a crate's scaffolding.
+///
+/// A library exports it exactly when the crate is linked into the library, so
+/// generation can tell an unlinked dependency apart without building wrappers.
+///
+/// # Example
+///
+/// The crate `shapes` exports `boltffi_linked_6shapes`.
+pub fn linkage_anchor(crate_name: &str) -> String {
+    format!("{FFI_PREFIX}_linked_{}", symbol_path(crate_name))
 }
 
 pub fn wasm_callback_import_name(lane: &str, owner: &str, action: &str) -> String {
     format!("__{}_callback_{}_{}_{}", FFI_PREFIX, lane, owner, action)
 }
 
-pub fn wasm_closure_export_name(group_id: u32, signature: &str, action: &str) -> String {
+fn wasm_callback_member_import_name(lane: &str, callback_id: &str, slot: &CallbackSlot) -> String {
     format!(
-        "{}_closure_{}_{}_{}",
-        FFI_PREFIX, group_id, signature, action
+        "__{}_callback_{}_{}{}",
+        FFI_PREFIX,
+        lane,
+        symbol_path(callback_id),
+        slot.symbol_segment()
     )
+}
+
+pub fn wasm_closure_export_name(closure_stem: &str, action: &str) -> String {
+    format!("{}_closure_{}_{}", FFI_PREFIX, closure_stem, action)
 }
 
 pub fn to_snake_case(name: &str) -> String {
@@ -375,6 +445,15 @@ pub fn to_snake_case(name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn linkage_anchor_names_the_crate_like_every_other_symbol() {
+        assert_eq!(linkage_anchor("shapes"), "boltffi_linked_6shapes");
+        assert_eq!(
+            linkage_anchor("metadata_fixture"),
+            "boltffi_linked_16metadata_fixture"
+        );
+    }
 
     #[test]
     fn snake_case_lowercases_camel_words() {
@@ -411,7 +490,7 @@ mod tests {
     fn callback_local_handle_name_uses_local_callback_namespace() {
         assert_eq!(
             CallbackLocalLifecycle::Handle.function_name("demo::progress::ProgressListener"),
-            "__boltffi_local_demo_progress_progress_listener_handle"
+            "__boltffi_local_4demo8progress16ProgressListener_handle"
         );
     }
 
@@ -423,7 +502,7 @@ mod tests {
 
         assert_eq!(
             SymbolOwner::record("demo::MyRecord").method_symbol_name(&member),
-            "boltffi_method_record_demo_my_record_translate"
+            "boltffi_method_record_4demo8MyRecord9translate"
         );
     }
 
@@ -445,7 +524,7 @@ mod tests {
 
         assert_eq!(
             SymbolOwner::record("demo::Point").initializer_symbol_name(&initializer),
-            "boltffi_init_record_demo_point_new"
+            "boltffi_init_record_4demo5Point3new"
         );
     }
 
@@ -456,7 +535,7 @@ mod tests {
             .mint_constant_accessor("demo::MAGIC")
             .expect("valid symbol");
 
-        assert_eq!(symbol.name().as_str(), "boltffi_const_demo_magic");
+        assert_eq!(symbol.name().as_str(), "boltffi_const_4demo5MAGIC");
     }
 
     #[test]
@@ -466,7 +545,7 @@ mod tests {
             .mint_class_release("demo::Engine")
             .expect("valid symbol");
 
-        assert_eq!(symbol.name().as_str(), "boltffi_release_class_demo_engine");
+        assert_eq!(symbol.name().as_str(), "boltffi_release_class_4demo6Engine");
     }
 
     #[test]
@@ -477,7 +556,70 @@ mod tests {
 
         assert_eq!(
             SymbolOwner::class("demo::nested::HTTPClient").method_symbol_name(&member),
-            "boltffi_method_class_demo_nested_http_client_fetch"
+            "boltffi_method_class_4demo6nested10HTTPClient5fetch"
+        );
+    }
+
+    #[test]
+    fn paths_that_join_to_the_same_words_mint_distinct_symbols() {
+        let mut allocator = SymbolAllocator::new();
+        let names = [
+            "foo_bar::baz",
+            "foo::bar_baz",
+            "demo::HTTPClient",
+            "demo::HttpClient",
+        ]
+        .map(|id| {
+            allocator
+                .mint_function(id)
+                .expect("valid symbol")
+                .name()
+                .as_str()
+                .to_owned()
+        });
+
+        assert_eq!(
+            names,
+            [
+                "boltffi_function_7foo_bar3baz",
+                "boltffi_function_3foo7bar_baz",
+                "boltffi_function_4demo10HTTPClient",
+                "boltffi_function_4demo10HttpClient",
+            ]
+        );
+    }
+
+    #[test]
+    fn members_that_differ_only_by_case_mint_distinct_symbols() {
+        let member =
+            |spelling: &str| SourceName::new(spelling, boltffi_ast::CanonicalName::from(spelling));
+        let owner = SymbolOwner::class("demo::Client");
+
+        assert_eq!(
+            owner.method_symbol_name(&member("get_url")),
+            "boltffi_method_class_4demo6Client7get_url"
+        );
+        assert_eq!(
+            owner.method_symbol_name(&member("get_URL")),
+            "boltffi_method_class_4demo6Client7get_URL"
+        );
+        assert_eq!(
+            SymbolOwner::class("demo::Http").method_symbol_name(&member("client_get")),
+            "boltffi_method_class_4demo4Http10client_get"
+        );
+        assert_eq!(
+            SymbolOwner::class("demo::HttpClient").method_symbol_name(&member("get")),
+            "boltffi_method_class_4demo10HttpClient3get"
+        );
+    }
+
+    #[test]
+    fn raw_identifiers_drop_their_prefix() {
+        let member = SourceName::new("r#type", boltffi_ast::CanonicalName::from("type"));
+
+        assert_eq!(
+            SymbolOwner::record("demo::Token").method_symbol_name(&member),
+            "boltffi_method_record_4demo5Token4type"
         );
     }
 
@@ -509,27 +651,27 @@ mod tests {
 
         assert_eq!(
             allocator
-                .mint_async_lifecycle("boltffi_function_demo_spin", AsyncLifecycle::Poll)
+                .mint_async_lifecycle("boltffi_function_4demo4spin", AsyncLifecycle::Poll)
                 .expect("valid symbol")
                 .name()
                 .as_str(),
-            "boltffi_async_function_demo_spin_poll"
+            "boltffi_async_function_4demo4spin_poll"
         );
         assert_eq!(
             allocator
-                .mint_async_lifecycle("boltffi_function_demo_spin", AsyncLifecycle::PollSync)
+                .mint_async_lifecycle("boltffi_function_4demo4spin", AsyncLifecycle::PollSync)
                 .expect("valid symbol")
                 .name()
                 .as_str(),
-            "boltffi_async_function_demo_spin_poll_sync"
+            "boltffi_async_function_4demo4spin_poll_sync"
         );
         assert_eq!(
             allocator
-                .mint_async_lifecycle("boltffi_function_demo_spin", AsyncLifecycle::Complete)
+                .mint_async_lifecycle("boltffi_function_4demo4spin", AsyncLifecycle::Complete)
                 .expect("valid symbol")
                 .name()
                 .as_str(),
-            "boltffi_async_function_demo_spin_complete"
+            "boltffi_async_function_4demo4spin_complete"
         );
     }
 
@@ -540,7 +682,7 @@ mod tests {
 
         assert_eq!(
             slot.wasm_import_start_name("demo::Listener"),
-            "__boltffi_callback_async_start_demo_listener_on_event"
+            "__boltffi_callback_async_start_4demo8Listener8on_event"
         );
         assert_eq!(
             allocator
@@ -548,7 +690,7 @@ mod tests {
                 .expect("valid symbol")
                 .name()
                 .as_str(),
-            "boltffi_callback_demo_listener_on_event_complete"
+            "boltffi_callback_4demo8Listener8on_event_complete"
         );
     }
 }

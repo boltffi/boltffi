@@ -26,7 +26,7 @@ target/<lang>/
 └── runtime/        (handwritten support code shipped with the generated source)
 ```
 
-Add `pub mod <lang>;` to `boltffi_backend/src/target/mod.rs` so the new folder is actually part of the crate. Right now that file is just `pub mod python;`, and a target that is not listed there does not exist as far as the rest of the backend is concerned.
+Register the target with `pub mod <lang>;` in `boltffi_backend/src/target/mod.rs`. The backend compiles a target folder only when `mod.rs` declares that target.
 
 The only required flow is `Bindings + BridgeContract -> templates -> Emitted`. `codec/` is where the language's primitive read and write live, the six codec leaves plus its op rendering, while the shared walkers handle composition. `runtime/` is the handwritten support code that ships alongside the generated source.
 
@@ -54,7 +54,22 @@ Each `decl` already carries every crossing decision, so the method reads it and 
 
 `HostBackend` carries three associated types the host has to pin down before any method compiles. There is `Surface`, the binding surface this target consumes, and `Bridge`, the bridge contract it accepts, and `Syntax`, the language's syntax fragments. The surface decides which IR the host reads. A target that calls the C ABI directly consumes `Native`, and a target that goes through Wasm consumes `Wasm32`. Pick it once, because it threads through every `Decl<Self::Surface>` the host receives.
 
-The render code builds up the generated source as typed fragments instead of plain `String`s. `LanguageSyntax` in `boltffi_backend/src/core/syntax.rs` gives each language its own small set of fragment types for identifiers, types, expressions, statements, literals, and argument lists, and it holds the reserved `KEYWORDS` too. A field that wants an identifier will not take an expression, so the mistake never reaches the template. The host builds these fragments and the template just prints them, and the casing and escaping stay correct because each fragment already knows how to render itself.
+The render code builds generated source from typed fragments, not plain `String`s.
+`LanguageSyntax` in `boltffi_backend/src/core/syntax.rs` defines fragments for identifiers, types, expressions, statements, literals, and argument lists.
+An identifier field cannot accept an expression.
+Each fragment owns its casing and escaping, and the template prints the fragment.
+`LanguageSyntax::keyword` checks reserved names against the `KEYWORDS` table.
+Each language owns one static table in its `syntax.rs` file.
+A language can also override `keyword` to ask a parser.
+
+Ruby asks Prism through `ruby_prism::StringQuery::is_keyword`, which Prism 2.0 added.
+The keyword set then follows the `ruby-prism` version that the backend pins.
+One check takes about 26 nanoseconds and parses no program.
+`ruby-prism-sys` ships pregenerated bindings, so the build needs no `bindgen` or `libclang`.
+The build compiles Prism's vendored C sources with `cc`, which the CLI already uses for `zstd`.
+The Ruby `KEYWORDS` table holds only `__END__`.
+Prism does not call `__END__` a keyword, but Ruby treats the marker as the end of the source.
+Update `ruby-prism` when BoltFFI raises the supported Ruby version.
 
 `HostBackend`, `BridgeBackend`, `BridgeContract`, and `LanguageSyntax` are all sealed inside `boltffi_backend`. An in-crate target implements the matching `sealed` marker alongside the public trait, otherwise the first build fails with a private-bound error that reads like the trait does not exist. One line per impl settles it.
 

@@ -520,10 +520,6 @@ impl<'bindings> KmpAdmission<'bindings> {
     ) -> Vec<KmpCapability> {
         match enumeration {
             EnumDecl::CStyle(_) => vec![KmpCapability::CStyleEnums],
-            // Transparent variants are outside the KMP capability set for now.
-            EnumDecl::Data(enumeration) if enumeration.has_transparent_variants() => {
-                vec![KmpCapability::UnknownBindingShapes]
-            }
             EnumDecl::Data(enumeration) => {
                 self.data_enum_capabilities(enumeration.variants().iter().collect(), visiting)
             }

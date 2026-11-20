@@ -300,7 +300,7 @@ internal class WireReader(private val bytes: ByteArray) {
         return List(length) { read(this) }
     }
 
-    fun <K, V> readMap(readKey: (WireReader) -> K, readValue: (WireReader) -> V): Map<K, V> {
+    fun <K, V> readMap(readKey: (WireReader) -> K, readValue: (WireReader) -> V): kotlin.collections.Map<K, V> {
         val length = readU32().toInt()
         val values = LinkedHashMap<K, V>(length)
         repeat(length) {
@@ -539,7 +539,7 @@ internal class WireWriter(initialCapacity: Int) {
     }
 
     fun <K, V> writeMap(
-        value: Map<K, V>,
+        value: kotlin.collections.Map<K, V>,
         writeKey: (WireWriter, K) -> Unit,
         writeValue: (WireWriter, V) -> Unit,
     ) {
@@ -634,7 +634,7 @@ private object WireWriterPool {
     }
 }
 
-private inline fun <K, V> Map<K, V>.wireSize(
+private inline fun <K, V> kotlin.collections.Map<K, V>.wireSize(
     keySize: (K) -> Int,
     valueSize: (V) -> Int,
 ): Int = 4 + entries.sumOf { entry -> keySize(entry.key) + valueSize(entry.value) }
@@ -777,22 +777,22 @@ private object Native {
             else -> emptyList()
         }
     }
-    @JvmStatic external fun boltffi_function_demo_add(left: Int, right: Int): Int
-    @JvmStatic external fun boltffi_function_demo_enabled(flag: Boolean): Boolean
-    @JvmStatic external fun boltffi_function_demo_refresh(): Unit
-    @JvmStatic external fun boltffi_function_demo_echo_bytes(bytes: java.nio.ByteBuffer, __boltffi_bytes_len: Int): ByteArray?
+    @JvmStatic external fun boltffi_function_4demo3add(left: Int, right: Int): Int
+    @JvmStatic external fun boltffi_function_4demo7enabled(flag: Boolean): Boolean
+    @JvmStatic external fun boltffi_function_4demo7refresh(): Unit
+    @JvmStatic external fun boltffi_function_4demo10echo_bytes(bytes: java.nio.ByteBuffer, __boltffi_bytes_len: Int): ByteArray?
 }
 
 fun add(left: Int, right: Int): Int {
-    return Native.boltffi_function_demo_add(left, right)
+    return Native.boltffi_function_4demo3add(left, right)
 }
 
 fun enabled(flag: Boolean): Boolean {
-    return Native.boltffi_function_demo_enabled(flag)
+    return Native.boltffi_function_4demo7enabled(flag)
 }
 
 fun refresh() {
-    Native.boltffi_function_demo_refresh()
+    Native.boltffi_function_4demo7refresh()
 }
 
 fun echoBytes(bytes: ByteArray): ByteArray {
@@ -800,7 +800,7 @@ fun echoBytes(bytes: ByteArray): ByteArray {
     val __boltffi_bytes_writer = __boltffi_bytes_wire.writer
     __boltffi_bytes_writer.writeBytes(bytes)
     try {
-        val __boltffi_result = Native.boltffi_function_demo_echo_bytes(__boltffi_bytes_wire.directBuffer(), __boltffi_bytes_wire.size()) ?: throw IllegalStateException("null buffer returned")
+        val __boltffi_result = Native.boltffi_function_4demo10echo_bytes(__boltffi_bytes_wire.directBuffer(), __boltffi_bytes_wire.size()) ?: throw IllegalStateException("null buffer returned")
         val __boltffi_reader = WireReader(__boltffi_result)
         return __boltffi_reader.readBytes()
     } finally {

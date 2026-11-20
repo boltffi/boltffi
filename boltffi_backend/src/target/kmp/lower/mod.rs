@@ -722,7 +722,7 @@ mod tests {
 
         assert_eq!(
             function_plan.native_symbol(),
-            "boltffi_function_my_crate_add"
+            "boltffi_function_8my_crate3add"
         );
     }
 
