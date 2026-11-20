@@ -1,6 +1,6 @@
 {%- import "target/kotlin/function.kt" as functions %}
 {%- if record.empty() %}
-{{ record.documentation() }}object {{ record.name() }}{% if record.error() %} : Exception(){% endif %} {
+{{ record.documentation() }}object {{ record.name() }}{{ record.supertypes() }} {
 {%- if record.encoded() %}
     internal fun wireSize(): Int = 0
 
@@ -50,7 +50,7 @@
 {%- for field in record.fields() %}
 {{ field.documentation().indented("    ") }}    {% if record.overrides_message(field.name()) %}override {% endif %}val {{ field.name() }}: {{ field.ty() }}{% if let Some(default) = field.default() %} = {{ default }}{% endif %}{% if !loop.last %},{% endif %}
 {%- endfor %}
-){% if record.error() %} : Exception({% if let Some(message) = record.error_message() %}{{ message }}{% endif %}){% endif %} {
+){{ record.supertypes() }} {
 {%- if let Some(wire_size) = record.wire_size() %}
     internal fun wireSize(): Int {
         return {{ wire_size }}
@@ -110,7 +110,7 @@
 {%- for field in record.fields() %}
 {{ field.documentation().indented("    ") }}    {% if record.overrides_message(field.name()) %}override {% endif %}val {{ field.name() }}: {{ field.ty() }}{% if let Some(default) = field.default() %} = {{ default }}{% endif %}{% if !loop.last %},{% endif %}
 {%- endfor %}
-){% if record.error() %} : Exception({% if let Some(message) = record.error_message() %}{{ message }}{% endif %}){% endif %} {
+){{ record.supertypes() }} {
 {%- if let Some(wire_size) = record.wire_size() %}
     internal fun wireSize(): Int {
         return {{ wire_size }}
