@@ -1,8 +1,8 @@
-error[E0433]: cannot find `Rc` in `rc`
- --> tests/diagnostics/unsupported_signatures/rc_by_full_path.rs:3:22
+error: BoltFFI: `std::rc::Rc<String>` cannot cross the boundary; pass the value itself, or keep shared state in an exported class
+ --> tests/diagnostics/unsupported_signatures/rc_by_full_path.rs:3:13
   |
 3 | pub fn f(a: std::rc::Rc<String>) {}
-  |                      ^^ could not find `Rc` in `rc`
+  |             ^^^^^^^^^^^^^^^^^^^
 
 warning: unused variable: `a`
  --> tests/diagnostics/unsupported_signatures/rc_by_full_path.rs:3:10

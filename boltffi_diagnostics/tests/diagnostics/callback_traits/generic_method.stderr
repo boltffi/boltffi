@@ -1,7 +1,5 @@
-error: BoltFFI: `method $self::T::f` cannot use generics
- --> tests/diagnostics/callback_traits/generic_method.rs:2:1
+error: BoltFFI: `method f` cannot be generic; export a separate non-generic item for each type you need
+ --> tests/diagnostics/callback_traits/generic_method.rs:3:19
   |
-2 | #[boltffi::export]
-  | ^^^^^^^^^^^^^^^^^^
-  |
-  = note: this error originates in the attribute macro `boltffi::export` (in Nightly builds, run with -Z macro-backtrace for more info)
+3 | pub trait T { fn f<A>(&self, a: A); }
+  |                   ^^^

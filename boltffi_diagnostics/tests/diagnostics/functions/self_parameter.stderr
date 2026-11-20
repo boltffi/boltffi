@@ -1,10 +1,8 @@
 error: BoltFFI: free function cannot have a receiver
- --> tests/diagnostics/functions/self_parameter.rs:3:1
+ --> tests/diagnostics/functions/self_parameter.rs:4:10
   |
-3 | #[boltffi::export]
-  | ^^^^^^^^^^^^^^^^^^
-  |
-  = note: this error originates in the attribute macro `boltffi::export` (in Nightly builds, run with -Z macro-backtrace for more info)
+4 | pub fn f(self) {}
+  |          ^^^^
 
 error: `self` parameter is only allowed in associated functions
  --> tests/diagnostics/functions/self_parameter.rs:4:10

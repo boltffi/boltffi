@@ -90,4 +90,5 @@ pub struct PackCOptions {
 pub struct PackRubyOptions {
     pub execution: PackExecutionOptions,
     pub experimental: bool,
+    pub allow_external_path_dependencies: bool,
 }

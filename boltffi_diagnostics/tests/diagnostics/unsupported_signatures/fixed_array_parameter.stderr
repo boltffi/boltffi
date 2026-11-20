@@ -1,7 +1,5 @@
-error: BoltFFI: unsupported source type `unrecognized type`
- --> tests/diagnostics/unsupported_signatures/fixed_array_parameter.rs:2:1
+error: BoltFFI: `[u8; 4]` cannot cross the boundary; use `Vec<u8>`
+ --> tests/diagnostics/unsupported_signatures/fixed_array_parameter.rs:3:13
   |
-2 | #[boltffi::export]
-  | ^^^^^^^^^^^^^^^^^^
-  |
-  = note: this error originates in the attribute macro `boltffi::export` (in Nightly builds, run with -Z macro-backtrace for more info)
+3 | pub fn f(a: [u8; 4]) -> u8 {
+  |             ^^^^^^^

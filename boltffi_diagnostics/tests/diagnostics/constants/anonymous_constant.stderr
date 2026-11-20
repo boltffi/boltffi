@@ -1,7 +1,5 @@
 error: BoltFFI: exported constant cannot be anonymous
- --> tests/diagnostics/constants/anonymous_constant.rs:2:1
+ --> tests/diagnostics/constants/anonymous_constant.rs:3:7
   |
-2 | #[boltffi::export]
-  | ^^^^^^^^^^^^^^^^^^
-  |
-  = note: this error originates in the attribute macro `boltffi::export` (in Nightly builds, run with -Z macro-backtrace for more info)
+3 | const _: u32 = 1;
+  |       ^

@@ -1,10 +1,8 @@
-error: BoltFFI: unsupported source type `&str`
- --> tests/diagnostics/unsupported_signatures/optional_str_reference.rs:2:1
+error: BoltFFI: `&str` cannot cross the boundary; use the owned type `String`
+ --> tests/diagnostics/unsupported_signatures/optional_str_reference.rs:3:20
   |
-2 | #[boltffi::export]
-  | ^^^^^^^^^^^^^^^^^^
-  |
-  = note: this error originates in the attribute macro `boltffi::export` (in Nightly builds, run with -Z macro-backtrace for more info)
+3 | pub fn f(a: Option<&str>) {}
+  |                    ^^^^
 
 warning: unused variable: `a`
  --> tests/diagnostics/unsupported_signatures/optional_str_reference.rs:3:10

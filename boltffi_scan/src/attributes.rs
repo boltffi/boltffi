@@ -54,7 +54,8 @@ impl<'a, 'types> Attributes<'a, 'types> {
                 if found.is_some() {
                     return Err(ScanError::InvalidDefault {
                         attribute: spelling::attr(attr),
-                    });
+                    }
+                    .at(attr));
                 }
                 self.default_attr(attr).map(Some)
             })
@@ -99,13 +100,18 @@ impl<'a, 'types> Attributes<'a, 'types> {
             syn::Meta::NameValue(value) => Ok(value.value.clone()),
             syn::Meta::Path(_) => Err(syn::Error::new_spanned(attr, "missing default value")),
         }
-        .map_err(|_| ScanError::InvalidDefault {
-            attribute: spelling::attr(attr),
-        })?;
-        self.default_expr(&expr)
-            .ok_or_else(|| ScanError::InvalidDefault {
+        .map_err(|_| {
+            ScanError::InvalidDefault {
                 attribute: spelling::attr(attr),
-            })
+            }
+            .at(attr)
+        })?;
+        self.default_expr(&expr).ok_or_else(|| {
+            ScanError::InvalidDefault {
+                attribute: spelling::attr(attr),
+            }
+            .at(attr)
+        })
     }
 
     fn default_expr(&self, expr: &syn::Expr) -> Option<DefaultValue> {
@@ -220,6 +226,7 @@ fn invalid_attribute(attr: &syn::Attribute) -> ScanError {
     ScanError::InvalidAttribute {
         attribute: spelling::attr(attr),
     }
+    .at(attr)
 }
 
 pub fn owned_name(attribute: &syn::Attribute) -> Option<&'static str> {
@@ -412,7 +419,7 @@ mod tests {
         let attrs = attrs("#[default([1, 2])] struct Point;");
 
         assert_eq!(
-            with_attrs(&attrs, |scanned| scanned.default()),
+            crate::error::unlocated(with_attrs(&attrs, |scanned| scanned.default())),
             Err(ScanError::InvalidDefault {
                 attribute: "default([1 , 2])".to_owned()
             })

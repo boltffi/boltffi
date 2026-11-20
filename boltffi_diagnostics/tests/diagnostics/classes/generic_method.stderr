@@ -1,10 +1,8 @@
-error: BoltFFI: `method $slot:0::g` cannot use generics
- --> tests/diagnostics/classes/generic_method.rs:6:1
+error: BoltFFI: `method g` cannot be generic; export a separate non-generic item for each type you need
+ --> tests/diagnostics/classes/generic_method.rs:8:13
   |
-6 | #[boltffi::export]
-  | ^^^^^^^^^^^^^^^^^^
-  |
-  = note: this error originates in the attribute macro `boltffi::export` (in Nightly builds, run with -Z macro-backtrace for more info)
+8 |     pub fn g<T>(&self, t: T) {}
+  |             ^^^
 
 warning: unused variable: `t`
  --> tests/diagnostics/classes/generic_method.rs:8:24

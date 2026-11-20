@@ -61,7 +61,7 @@ pub(crate) fn item_tokens(
     let described =
         fragments(&item, &capture, error).map_err(|reason| SourceFragment::Unsupported {
             name: name.clone(),
-            reason,
+            reason: reason.to_string(),
         });
     let fingerprint = match &described {
         Ok(fragments) => fingerprint(fragments.iter().map(|(fragment, _)| fragment)),
@@ -135,42 +135,32 @@ pub(crate) fn fragments(
     item: &syn::Item,
     capture: &Capture,
     error: bool,
-) -> Result<Fragments, String> {
-    let failed = |error: boltffi_scan::ScanError| error.to_string();
+) -> Result<Fragments, boltffi_scan::ScanError> {
     if let (Some(declaration), Capture::Class(marker_args)) = (ClassDeclaration::of(item), capture)
     {
         return capture_class(declaration, marker_args.clone())
-            .map(|captured| vec![(SourceFragment::Class(captured.def), captured.slots)])
-            .map_err(failed);
+            .map(|captured| vec![(SourceFragment::Class(captured.def), captured.slots)]);
     }
     match item {
         syn::Item::Struct(item) if error => capture_error_struct(item)
-            .map(|captured| vec![(SourceFragment::Record(captured.def), captured.slots)])
-            .map_err(failed),
+            .map(|captured| vec![(SourceFragment::Record(captured.def), captured.slots)]),
         syn::Item::Enum(item) if error => capture_error_enum(item)
-            .map(|captured| vec![(SourceFragment::Enum(captured.def), captured.slots)])
-            .map_err(failed),
+            .map(|captured| vec![(SourceFragment::Enum(captured.def), captured.slots)]),
         syn::Item::Struct(item) => capture_struct(item)
-            .map(|captured| vec![(SourceFragment::Record(captured.def), captured.slots)])
-            .map_err(failed),
+            .map(|captured| vec![(SourceFragment::Record(captured.def), captured.slots)]),
         syn::Item::Enum(item) => capture_enum(item)
-            .map(|captured| vec![(SourceFragment::Enum(captured.def), captured.slots)])
-            .map_err(failed),
+            .map(|captured| vec![(SourceFragment::Enum(captured.def), captured.slots)]),
         syn::Item::Fn(item) => capture_function(item)
-            .map(|captured| vec![(SourceFragment::Function(captured.def), captured.slots)])
-            .map_err(failed),
+            .map(|captured| vec![(SourceFragment::Function(captured.def), captured.slots)]),
         syn::Item::Trait(item) => capture_trait(item)
-            .map(|captured| vec![(SourceFragment::Trait(captured.def), captured.slots)])
-            .map_err(failed),
+            .map(|captured| vec![(SourceFragment::Trait(captured.def), captured.slots)]),
         syn::Item::Const(item) => capture_constant(item)
-            .map(|captured| vec![(SourceFragment::Constant(captured.def), captured.slots)])
-            .map_err(failed),
+            .map(|captured| vec![(SourceFragment::Constant(captured.def), captured.slots)]),
         syn::Item::Impl(item) => {
             let captured = match capture {
                 Capture::ClassMethods => capture_class_methods(item),
                 _ => capture_methods(item),
-            }
-            .map_err(failed)?;
+            }?;
             Ok(vec![(
                 SourceFragment::Methods {
                     target: captured.target,
@@ -246,7 +236,7 @@ pub(crate) fn scaffolding_tokens() -> TokenStream {
     });
     quote! {
         #[doc(hidden)]
-        pub enum __BoltffiTag {}
+        pub enum BoltffiScaffolding {}
         #linkage
         #store
     }
@@ -420,12 +410,12 @@ pub(crate) fn custom_type_tokens(item: proc_macro::TokenStream) -> TokenStream {
     quote! {
         #[allow(deprecated)]
         const _: () = {
-            impl #facade::__private::capture::TypeInfo<crate::__BoltffiTag> for #remote {
+            impl #facade::__private::capture::TypeInfo<crate::BoltffiScaffolding> for #remote {
                 const MODULE: &'static str = ::core::module_path!();
                 const NAME: &'static str = #name;
             }
 
-            impl #facade::__private::capture::TypeDesc<crate::__BoltffiTag> for #remote {
+            impl #facade::__private::capture::TypeDesc<crate::BoltffiScaffolding> for #remote {
                 const DESC: #facade::__private::capture::DescBuf = #desc;
             }
         };
@@ -445,7 +435,7 @@ pub(crate) fn trait_identity_tokens(item: &syn::ItemTrait) -> TokenStream {
         Ok(fragments) => fingerprint(fragments.iter().map(|(fragment, _)| fragment)),
         Err(reason) => fingerprint([&SourceFragment::Unsupported {
             name: name.clone(),
-            reason,
+            reason: reason.to_string(),
         }]),
     };
     let facade = facade();
