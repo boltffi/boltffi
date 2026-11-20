@@ -87,6 +87,9 @@ pub use boltffi_core::{
 /// ```
 pub use boltffi_core::interned_string_pool;
 
+#[cfg(feature = "getrandom")]
+pub use boltffi_core::wasm_getrandom_backend;
+
 /// Keeps a source record in bindgen's metadata build and drops it from every other build,
 /// so records never reach a shipped binary.
 #[cfg(boltffi_source_records)]

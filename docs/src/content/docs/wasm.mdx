@@ -1,0 +1,78 @@
+---
+title: "WebAssembly"
+description: "Set up a Rust library for wasm32-unknown-unknown, including randomness through getrandom, and instantiate the module with the BoltFFI runtime."
+---
+
+# WebAssembly
+
+A WASM package is a `wasm32-unknown-unknown` module plus TypeScript bindings that load it through `@boltffi/runtime`. Build and publish it with [Packaging](/docs/packaging#wasm-packaging); this page covers what the Rust side needs beyond that.
+
+## Randomness
+
+`getrandom`, which `rand`, `uuid`'s `v4` and most other crates draw entropy from, has no default backend on `wasm32-unknown-unknown`: it refuses to compile until one is selected. Its own `wasm_js` backend needs `wasm-bindgen`'s generated glue, which a BoltFFI package does not have. BoltFFI provides the entropy instead: the runtime fills wasm memory straight from `crypto.getRandomValues`, and the `getrandom` feature connects `getrandom` 0.4 to it.
+
+### Setup
+
+Three pieces, all in the crate you pack.
+
+Enable the feature, for every target rather than only wasm32: the macro below is invoked on all of them.
+
+```toml
+# Cargo.toml
+[dependencies]
+boltffi = { version = "...", features = ["getrandom"] }
+```
+
+Install the backend once, at the root of that crate. It defines `getrandom`'s custom backend, which must exist exactly once in the final module, so it does not belong in a library crate other packages depend on:
+
+```rust
+// src/lib.rs
+boltffi::wasm_getrandom_backend!();
+```
+
+Select the custom backend for the wasm target. It is a `--cfg` flag rather than a feature, so it goes in Cargo configuration beside the crate:
+
+```toml
+# .cargo/config.toml
+[target.wasm32-unknown-unknown]
+rustflags = ["--cfg", 'getrandom_backend="custom"']
+```
+
+Cargo ignores `rustflags` from configuration files when the `RUSTFLAGS` environment variable is set, which many CI setups do. There, add the flag to `RUSTFLAGS` itself.
+
+The macro expands to nothing on other targets, which keep their usual source, so none of this needs a `cfg` of its own. Selecting the backend without invoking the macro fails the wasm link on an undefined `__getrandom_v03_custom`.
+
+### UUIDs
+
+`uuid`'s `v4` needs a randomness source named explicitly on wasm32. Enable `rng-getrandom` alongside it, on a `uuid` release that uses `getrandom` 0.4 (1.21 or later):
+
+```toml
+[dependencies]
+uuid = { version = "1.21", features = ["v4", "rng-getrandom"] }
+```
+
+### How the runtime supplies it
+
+The module asks for entropy through one import, `env.__boltffi_getrandom`. `instantiateBoltFFI` and `instantiateBoltFFISync` always provide it, because the runtime cannot tell whether a module was built with the feature. A module without it never declares the import, and WebAssembly ignores imports a module does not declare, so the extra entry costs nothing there. A module built with the feature fails to instantiate with a `LinkError` against a runtime older than this import.
+
+`crypto.getRandomValues` exists in browsers, workers and Node.js 19+. Where it is missing, `getrandom` returns `Error::UNSUPPORTED` rather than trapping.
+
+The runtime can only reach the module's memory once instantiation has finished. Randomness requested before then, from a wasm start function, returns unavailable (`Error::UNSUPPORTED` in Rust). Exported functions are unaffected.
+
+Code that needs a lot of randomness should seed a userspace generator such as `rand`'s `StdRng` from `getrandom` once rather than calling it per value, as it would on any other platform.
+
+### Instantiating the module yourself
+
+The generated bindings instantiate the module through the runtime, so they need nothing extra. Code that calls `WebAssembly.instantiate` directly has to provide the import itself. `createRandomFillImport` builds it from a function returning the module's memory:
+
+```typescript
+import { createRandomFillImport } from "@boltffi/runtime";
+
+let memory: WebAssembly.Memory | undefined;
+const { instance } = await WebAssembly.instantiate(bytes, {
+  env: { __boltffi_getrandom: createRandomFillImport(() => memory) },
+});
+memory = instance.exports.memory as WebAssembly.Memory;
+```
+
+To draw from a different source, pass your own `env.__boltffi_getrandom` in the `imports` argument of `instantiateBoltFFI`; it replaces the runtime's. It receives a pointer and a length into the module's memory and returns `RandomFillStatus.Filled`, `Unavailable` or `Failed`.
