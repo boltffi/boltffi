@@ -963,6 +963,82 @@ fwrite(description.ptr, 1, description.len, stdout);
 demo_string_free(&description);`}
 />
 
+### Transparent variants
+
+Mark a variant with `#[boltffi::transparent]` when its only payload is a
+record to let Kotlin and Python use that record as the variant without a
+separate wrapper
+
+```rust
+#[data]
+pub struct Ping {
+    pub sequence: u32,
+    pub label: String,
+}
+
+#[data]
+pub enum Envelope {
+    Unset,
+    #[boltffi::transparent]
+    Ping(Ping),
+    Raw(String),
+}
+```
+
+In Kotlin the enum becomes a sealed interface and the payload record
+implements it
+
+```kotlin
+sealed interface Envelope {
+    object Unset : Envelope
+    data class Raw(val field0: String) : Envelope
+}
+
+data class Ping(
+    val sequence: UInt,
+    val label: String
+) : Envelope
+
+when (val message = envelope) {
+    is Ping -> message.label
+    is Envelope.Raw -> message.field0
+    Envelope.Unset -> ""
+}
+```
+
+In Python the payload record inherits the enum class, so `isinstance` and
+`match` work against the record directly
+
+```python
+match envelope:
+    case Ping(sequence=sequence, label=label): ...
+    case EnvelopeRaw(value): ...
+    case EnvelopeUnset(): ...
+```
+
+The same record can represent a variant in more than one enum because each
+enum keeps its own variant tag
+
+Two rules apply to the annotation
+
+- A marked variant must have exactly one payload field and that field must
+  be a record
+- Each transparent variant in one enum must use a different record so its
+  type identifies a single variant
+
+Unmarked variants keep their normal representation, so an enum can mix
+transparent and wrapped variants
+
+Kotlin and Python keep ordinary variants for error enums and for enums
+whose inherited members would conflict with the record or another enum,
+while allowing the record to remain transparent in other enums that do
+not conflict
+
+Swift, Java, C#, Dart and TypeScript accept the annotation and keep their
+usual enum representation
+
+The attribute does not change the Rust type or the FFI encoding
+
 ## Methods and constructors
 
 Use `#[data(impl)]` on an `impl` block to expose constructors, instance methods, and static methods on records and enums. The generated bindings use each language's native idiom for value-type members.

@@ -59,7 +59,7 @@ pub use boltffi_core::{
     ArcFromCallbackHandle, BoxFromCallbackHandle, CallbackForeignType, CallbackHandle,
     CustomFfiConvertible, CustomTypeConversionError, EventSubscription, FfiType, InternedString,
     InternedStringPool, InternedStringRepr, StreamProducer, UnexpectedFfiCallbackError, custom_ffi,
-    custom_type, data, default, error, export, ffi_stream, name, scaffolding, skip,
+    custom_type, data, default, error, export, ffi_stream, name, scaffolding, skip, transparent,
 };
 
 /// Defines a static interned-string pool.
