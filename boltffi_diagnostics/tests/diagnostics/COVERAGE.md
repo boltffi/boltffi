@@ -6,9 +6,9 @@ The findings come from `main` at f0da5b12 on rustc 1.97.1. Each "Today" entry is
 
 ## How the suite works
 
-Each case in `diagnostics/<rule>/<what_the_user_did>.rs` must fail to compile, and its `.stderr` file records the output. There are 113 of these, and many record bad messages on purpose, so a fix shows up as a `.stderr` diff.
+Each case in `diagnostics/<rule>/<what_the_user_did>.rs` must fail to compile, and its `.stderr` file records the output. There are 116 of these, and many record bad messages on purpose, so a fix shows up as a `.stderr` diff.
 
-The 8 cases in `tests/accepted/` compile today and should not. When a rule lands, move its case to `diagnostics/` and record the error.
+The 7 cases in `tests/accepted/` compile today and should not. When a rule lands, move its case to `diagnostics/` and record the error.
 
 Re-record with `TRYBUILD=overwrite cargo test -p boltffi_diagnostics --test diagnostics`, and re-record after a toolchain bump.
 
@@ -57,7 +57,6 @@ These compile, so users find out late or never.
 | Same `#[export] fn` name in two modules | `check` passes, `build` fails with ``symbol ... is already defined`` | Medium | High | Detect it in the macro |
 | `#[boltffi::default("x")] a: i32` | Swift gets `a: Int32 = "x"`, Python gets `a: int = "x"`, Kotlin skips the function | Medium | High | Reject |
 | `#[export(fast)]`, `#[data(compact)]` | Ignored, although `#[export(single_thread)]` on a struct is rejected | Medium | High | Reject unknown arguments |
-| `&mut` class parameter on a thread-safe class | Accepted, although `&mut self` on the same class is rejected | Medium | High | Apply the same rule, scheduled for later |
 | Private method in `#[export] impl` | Left out of the bindings with no message | High | Medium | Document it |
 | `#[data(impl)] impl Default for Point` | Method missing on every host | Medium | Medium | Reject |
 | `#[ffi_stream]` on a free function | Ignored | Low | Medium | Reject |

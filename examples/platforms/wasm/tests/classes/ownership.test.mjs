@@ -16,10 +16,15 @@ export async function run() {
   assert.equal(drops.count(), 3);
   const borrowed = make();
   assert.equal(demo.borrowMessage(borrowed), 5);
-  demo.mutateMessage(borrowed);
-  assert.equal(borrowed.length(), 6);
   borrowed.dispose();
   assert.equal(drops.count(), 4);
+  const mutableDrops = demo.MessageDrops.new();
+  const mutable = demo.MutableOwnedMessage.new("hello", mutableDrops);
+  demo.mutateMessage(mutable);
+  assert.equal(mutable.length(), 6);
+  mutable.dispose();
+  assert.equal(mutableDrops.count(), 1);
+  mutableDrops.dispose();
   const returned = demo.returnMessage(make());
   assert.equal(returned.length(), 5);
   returned.dispose();
