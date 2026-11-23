@@ -93,6 +93,27 @@ data class CollectionSizes(
             return fromReader(reader)
         }
     }
+
+    override fun equals(other: kotlin.Any?): kotlin.Boolean {
+        if (this === other) return true
+        if (other !is CollectionSizes) return false
+        return this.strings == other.strings &&
+            this.states == other.states &&
+            this.nested == other.nested &&
+            this.optional == other.optional &&
+            this.records == other.records &&
+            this.numbers.contentEquals(other.numbers)
+    }
+
+    override fun hashCode(): kotlin.Int {
+        var result = this.strings.hashCode()
+        result = 31 * result + this.states.hashCode()
+        result = 31 * result + this.nested.hashCode()
+        result = 31 * result + this.optional.hashCode()
+        result = 31 * result + this.records.hashCode()
+        result = 31 * result + this.numbers.contentHashCode()
+        return result
+    }
 }
 
 
