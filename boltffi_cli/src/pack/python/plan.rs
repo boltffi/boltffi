@@ -340,7 +340,7 @@ mod tests {
                         ]),
                     },
                     enabled: true,
-                    cargo_args: Vec::new(),
+                    ..PythonConfig::default()
                 },
                 ..TargetsConfig::default()
             },
