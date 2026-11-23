@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 
 use boltffi_backend::target::jvm::{LibraryName, NativeLibraries};
 
-use crate::build::native_link::{NativeLinkMetadata, parse_native_static_libraries};
+use crate::build::native_link::{NativeLinkMetadata, NativeLinkMetadataCollector};
 use crate::build::{BindingExpansion, CargoBuildProfile, OutputCallback, run_command_streaming};
 use crate::cargo::SelectedLibrary;
 use crate::cli::{CliError, Result};
@@ -692,26 +692,78 @@ pub(crate) fn build_jvm_native_library(
         binding_expansion.prepare_record_store()?;
     }
     let cargo_context = &packaging_target.cargo_context;
-    let native_static_libraries = Arc::new(Mutex::new(Vec::<String>::new()));
-    let captured_static_libraries = Arc::clone(&native_static_libraries);
+    let link_metadata = Arc::new(Mutex::new(NativeLinkMetadataCollector::default()));
+    let collected_link_metadata = Arc::clone(&link_metadata);
     let verbose = step.is_verbose();
     let on_output: Option<OutputCallback> = Some(Box::new(move |line: &str| {
-        if verbose {
+        let is_cargo_message = collected_link_metadata
+            .lock()
+            .expect("native link metadata lock poisoned")
+            .observe(line);
+        if verbose && !is_cargo_message {
             print_cargo_line(line);
-        }
-
-        if let Some(flags) = parse_native_static_libraries(line) {
-            let mut libraries = captured_static_libraries
-                .lock()
-                .expect("native static libraries lock poisoned");
-            *libraries = flags;
         }
     }));
 
+    let mut command = jvm_native_build_command(cargo_context, release, binding_expansion)?;
+    packaging_target
+        .toolchain
+        .configure_cargo_build(&mut command);
+
+    if !run_command_streaming(&mut command, on_output.as_ref()) {
+        return Err(PackError::BuildFailed {
+            targets: vec![cargo_context.host_target.canonical_name().to_string()],
+        }
+        .into());
+    }
+
+    let static_library_filename = if cargo_context.library.builds_staticlib() {
+        resolve_static_library_filename(cargo_context)?
+    } else {
+        None
+    };
+    let links_built_staticlib = static_library_filename
+        .as_ref()
+        .is_some_and(|filename| cargo_context.artifact_directory().join(filename).exists());
+    let link_metadata = std::mem::take(
+        &mut *link_metadata
+            .lock()
+            .expect("native link metadata lock poisoned"),
+    );
+    let NativeLinkMetadata {
+        native_static_libraries,
+        native_link_search_paths,
+    } = if links_built_staticlib {
+        link_metadata.finish()?
+    } else {
+        NativeLinkMetadata::default()
+    };
+
+    Ok(JvmBuildArtifacts {
+        native_static_libraries,
+        native_link_search_paths,
+        static_library_filename,
+    })
+}
+
+/// The cargo invocation that builds the JVM native library of `cargo_context`.
+///
+/// A static library is linked into the JNI library along with the native
+/// libraries it depends on, which rustc reports only when asked, so a build that
+/// produces one asks for them as well. A second `cargo rustc` that only added
+/// the `--print` would differ in its rustc arguments and recompile the crate.
+fn jvm_native_build_command(
+    cargo_context: &JvmCargoContext,
+    release: bool,
+    binding_expansion: Option<&BindingExpansion>,
+) -> Result<Command> {
     let crate_directory = std::env::current_dir().map_err(|source| CliError::CommandFailed {
         command: format!("current_dir: {source}"),
         status: None,
     })?;
+    let links_staticlib = cargo_context.library.builds_staticlib();
+    let uses_rustc = binding_expansion.is_some() || links_staticlib;
+
     let mut command = Command::new("cargo");
     command.current_dir(crate_directory);
 
@@ -720,11 +772,7 @@ pub(crate) fn build_jvm_native_library(
     }
 
     command
-        .arg(if binding_expansion.is_some() {
-            "rustc"
-        } else {
-            "build"
-        })
+        .arg(if uses_rustc { "rustc" } else { "build" })
         .arg("--target")
         .arg(&cargo_context.rust_target_triple);
     apply_jvm_cargo_package_selection(&mut command, cargo_context);
@@ -734,80 +782,17 @@ pub(crate) fn build_jvm_native_library(
     }
 
     command.args(&cargo_context.cargo_command_args);
-    packaging_target
-        .toolchain
-        .configure_cargo_build(&mut command);
-    if binding_expansion.is_some() {
+    if uses_rustc {
         command.arg("--lib");
     }
-
-    if !run_command_streaming(&mut command, on_output.as_ref()) {
-        return Err(PackError::BuildFailed {
-            targets: vec![cargo_context.host_target.canonical_name().to_string()],
-        }
-        .into());
+    if links_staticlib {
+        command
+            .arg("--message-format=json-render-diagnostics")
+            .arg("--")
+            .arg("--print=native-static-libs");
     }
 
-    let native_static_libraries = native_static_libraries
-        .lock()
-        .expect("native static libraries lock poisoned")
-        .clone();
-    let mut native_link_search_paths = Vec::new();
-
-    let native_static_libraries = if native_static_libraries.is_empty() {
-        let static_library_filename = if cargo_context.library.builds_staticlib() {
-            resolve_static_library_filename(cargo_context)?
-        } else {
-            None
-        };
-        let staticlib_path = static_library_filename
-            .as_ref()
-            .map(|filename| cargo_context.artifact_directory().join(filename));
-
-        if cargo_context.library.builds_staticlib()
-            && staticlib_path
-                .as_ref()
-                .is_some_and(|staticlib_path| staticlib_path.exists())
-        {
-            let link_metadata = query_native_link_metadata(packaging_target, release)?;
-            native_link_search_paths = link_metadata.native_link_search_paths;
-            link_metadata.native_static_libraries
-        } else {
-            native_static_libraries
-        }
-    } else {
-        let static_library_filename = if cargo_context.library.builds_staticlib() {
-            resolve_static_library_filename(cargo_context)?
-        } else {
-            None
-        };
-        let staticlib_path = static_library_filename
-            .as_ref()
-            .map(|filename| cargo_context.artifact_directory().join(filename));
-
-        if cargo_context.library.builds_staticlib()
-            && staticlib_path
-                .as_ref()
-                .is_some_and(|staticlib_path| staticlib_path.exists())
-        {
-            native_link_search_paths =
-                query_native_link_metadata(packaging_target, release)?.native_link_search_paths;
-        }
-
-        native_static_libraries
-    };
-
-    let static_library_filename = if cargo_context.library.builds_staticlib() {
-        resolve_static_library_filename(cargo_context)?
-    } else {
-        None
-    };
-
-    Ok(JvmBuildArtifacts {
-        native_static_libraries,
-        native_link_search_paths,
-        static_library_filename,
-    })
+    Ok(command)
 }
 
 pub(crate) fn resolve_jvm_native_link_input(
@@ -1365,57 +1350,6 @@ pub(crate) fn target_specific_java_include_env_key(rust_target_triple: &str) -> 
     )
 }
 
-pub(crate) fn query_native_link_metadata(
-    packaging_target: &JvmPackagingTarget,
-    release: bool,
-) -> Result<NativeLinkMetadata> {
-    let cargo_context = &packaging_target.cargo_context;
-    let crate_directory = std::env::current_dir().map_err(|source| CliError::CommandFailed {
-        command: format!("current_dir: {source}"),
-        status: None,
-    })?;
-
-    let mut command = Command::new("cargo");
-    command.current_dir(crate_directory);
-
-    if let Some(toolchain_selector) = cargo_context.toolchain_selector.as_deref() {
-        command.arg(toolchain_selector);
-    }
-
-    command
-        .arg("rustc")
-        .arg("--target")
-        .arg(&cargo_context.rust_target_triple);
-    apply_jvm_cargo_package_selection(&mut command, cargo_context);
-
-    if release {
-        command.arg("--release");
-    }
-
-    command
-        .args(&cargo_context.cargo_command_args)
-        .arg("--message-format=json-render-diagnostics")
-        .arg("--lib");
-    packaging_target
-        .toolchain
-        .configure_cargo_build(&mut command);
-    command.arg("--").arg("--print=native-static-libs");
-
-    let output = command.output().map_err(|source| CliError::CommandFailed {
-        command: format!("cargo rustc --print=native-static-libs: {source}"),
-        status: None,
-    })?;
-
-    if !output.status.success() {
-        return Err(CliError::CommandFailed {
-            command: "cargo rustc --print=native-static-libs".to_string(),
-            status: output.status.code(),
-        });
-    }
-
-    NativeLinkMetadata::from_output(&output)
-}
-
 fn resolve_static_library_filename(cargo_context: &JvmCargoContext) -> Result<Option<String>> {
     let artifact_name = cargo_context.library.artifact_name();
 
@@ -1520,14 +1454,14 @@ mod tests {
         clang_release_optimization_flags, clang_style_jni_linker_args,
         clang_undefined_symbol_policy_flags, compiler_tool_version_suffix, desktop_jni_strip_mode,
         existing_jvm_shared_library_path, extract_library_filenames,
-        handle_missing_linux_strip_program, link_search_path_flags, linux_strip_program_candidates,
-        msvc_link_search_path_flags, msvc_native_static_library_flags, msvc_rustflag_linker_args,
-        msvc_style_jni_linker_args, resolve_jni_include_directories_with_overrides,
-        resolve_jvm_native_link_input, select_windows_static_library_filename,
-        should_generate_apple_dsym_sidecars, target_prefixed_binutils_prefix,
-        target_prefixed_strip_tool_candidates, target_specific_java_home_env_key,
-        target_specific_java_include_env_key, validate_desktop_jni_symbol_stripping,
-        vendorless_linux_target_triple,
+        handle_missing_linux_strip_program, jvm_native_build_command, link_search_path_flags,
+        linux_strip_program_candidates, msvc_link_search_path_flags,
+        msvc_native_static_library_flags, msvc_rustflag_linker_args, msvc_style_jni_linker_args,
+        resolve_jni_include_directories_with_overrides, resolve_jvm_native_link_input,
+        select_windows_static_library_filename, should_generate_apple_dsym_sidecars,
+        target_prefixed_binutils_prefix, target_prefixed_strip_tool_candidates,
+        target_specific_java_home_env_key, target_specific_java_include_env_key,
+        validate_desktop_jni_symbol_stripping, vendorless_linux_target_triple,
     };
     use boltffi_bindgen::cargo::LibraryCargoArgs;
 
@@ -1602,6 +1536,64 @@ mod tests {
         assert_eq!(
             command.get_args().collect::<Vec<_>>(),
             vec![
+                "--manifest-path",
+                cargo_context
+                    .library
+                    .cargo_manifest_path()
+                    .to_str()
+                    .unwrap(),
+                "-p",
+                cargo_context.library.package_id(),
+            ]
+        );
+    }
+
+    #[test]
+    fn staticlib_build_reports_its_link_metadata_in_the_same_invocation() {
+        let root = Path::new("/tmp/workspace");
+        let cargo_context = cargo_context(root, JavaHostTarget::LinuxX86_64);
+
+        let command = jvm_native_build_command(&cargo_context, true, None).unwrap();
+
+        assert_eq!(
+            command.get_args().collect::<Vec<_>>(),
+            vec![
+                "rustc",
+                "--target",
+                "x86_64-unknown-linux-gnu",
+                "--manifest-path",
+                cargo_context
+                    .library
+                    .cargo_manifest_path()
+                    .to_str()
+                    .unwrap(),
+                "-p",
+                cargo_context.library.package_id(),
+                "--release",
+                "--lib",
+                "--message-format=json-render-diagnostics",
+                "--",
+                "--print=native-static-libs",
+            ]
+        );
+    }
+
+    #[test]
+    fn cdylib_build_needs_no_link_metadata() {
+        let root = Path::new("/tmp/workspace");
+        let cargo_context = JvmCargoContext {
+            library: selected_library(false, true),
+            ..cargo_context(root, JavaHostTarget::LinuxX86_64)
+        };
+
+        let command = jvm_native_build_command(&cargo_context, false, None).unwrap();
+
+        assert_eq!(
+            command.get_args().collect::<Vec<_>>(),
+            vec![
+                "build",
+                "--target",
+                "x86_64-unknown-linux-gnu",
                 "--manifest-path",
                 cargo_context
                     .library
