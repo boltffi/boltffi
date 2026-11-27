@@ -1,0 +1,7 @@
+error: boltffi::scaffolding! takes no arguments
+ --> tests/diagnostics/scaffolding/scaffolding_with_arguments.rs:1:1
+  |
+1 | boltffi::scaffolding!("geo");
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the macro `boltffi::scaffolding` (in Nightly builds, run with -Z macro-backtrace for more info)

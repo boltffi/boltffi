@@ -1,0 +1,5 @@
+error: BoltFFI: exported class impl `Counter` cannot implement a trait
+ --> tests/diagnostics/classes/trait_impl_as_class.rs:9:6
+  |
+9 | impl Default for Counter {
+  |      ^^^^^^^

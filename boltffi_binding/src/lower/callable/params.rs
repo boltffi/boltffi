@@ -1,4 +1,4 @@
-use boltffi_ast::{ParameterDef, ParameterPassing, TypeExpr};
+use boltffi_ast::{ClassThreadSafety, ParameterDef, ParameterPassing, TypeExpr};
 
 use crate::{
     CanonicalName, ClosureParameter, ClosureReturn, DirectValueType, Direction, ElementMeta,
@@ -7,8 +7,14 @@ use crate::{
 };
 
 use super::super::{
-    LowerError, codecs, enums, error::UnsupportedType, ids::DeclarationIds, index::Index, metadata,
-    records, surface::SurfaceLower, symbol::SymbolAllocator, types,
+    LowerError, codecs, enums,
+    error::{SourcePosition, UnsupportedType},
+    ids::DeclarationIds,
+    index::Index,
+    metadata, records,
+    surface::SurfaceLower,
+    symbol::SymbolAllocator,
+    types,
 };
 
 use super::{
@@ -46,7 +52,11 @@ where
 {
     parameters
         .iter()
-        .map(|parameter| lower_one::<S, D>(index, ids, allocator, owner, root_encoding, parameter))
+        .enumerate()
+        .map(|(position, parameter)| {
+            lower_one::<S, D>(index, ids, allocator, owner, root_encoding, parameter)
+                .map_err(|error| error.at(SourcePosition::Parameter(position)))
+        })
         .collect()
 }
 
@@ -134,8 +144,18 @@ fn lower_plan<S: SurfaceLower, D: Direction>(
     receive: Receive,
 ) -> Result<ParamPlan<S, D>, LowerError> {
     if let Some(handle) = ClassHandleSource::from_type_expr(type_expr) {
+        let target = ids.class(handle.id)?;
+        if matches!(receive, Receive::ByMutRef)
+            && !index
+                .class(handle.id)
+                .is_some_and(|class| class.thread_safety == ClassThreadSafety::UnsafeSingleThreaded)
+        {
+            return Err(LowerError::unsupported_type(
+                UnsupportedType::MutableClassParameterRequiresUnsafeSingleThreaded,
+            ));
+        }
         return Ok(ParamPlan::Handle {
-            target: HandleTarget::Class(ids.class(handle.id)?),
+            target: HandleTarget::Class(target),
             carrier: S::class_handle_carrier(),
             presence: handle.presence,
             receive: D::receive_from(receive),

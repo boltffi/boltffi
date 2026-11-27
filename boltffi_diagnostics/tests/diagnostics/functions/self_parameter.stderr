@@ -1,0 +1,13 @@
+error: BoltFFI: free function cannot have a receiver
+ --> tests/diagnostics/functions/self_parameter.rs:4:10
+  |
+4 | pub fn f(self) {}
+  |          ^^^^
+
+error: `self` parameter is only allowed in associated functions
+ --> tests/diagnostics/functions/self_parameter.rs:4:10
+  |
+4 | pub fn f(self) {}
+  |          ^^^^ not semantically valid as function parameter
+  |
+  = note: associated functions are those in `impl` or `trait` definitions

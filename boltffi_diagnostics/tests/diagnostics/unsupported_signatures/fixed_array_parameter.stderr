@@ -1,0 +1,5 @@
+error: BoltFFI: `[u8; 4]` cannot cross the boundary; use `Vec<u8>`
+ --> tests/diagnostics/unsupported_signatures/fixed_array_parameter.rs:3:13
+  |
+3 | pub fn f(a: [u8; 4]) -> u8 {
+  |             ^^^^^^^

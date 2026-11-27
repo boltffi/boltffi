@@ -1,5 +1,5 @@
 mod codec;
-mod name_style;
+pub(crate) mod name_style;
 mod primitive;
 mod render;
 mod syntax;

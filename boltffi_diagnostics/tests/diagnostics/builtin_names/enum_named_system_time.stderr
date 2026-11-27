@@ -1,0 +1,5 @@
+error: BoltFFI: a declared type named `SystemTime` shadows the builtin `SystemTime`, which every signature spelling `SystemTime` crosses as; rename the type
+ --> tests/diagnostics/builtin_names/enum_named_system_time.rs:5:10
+  |
+5 | pub enum SystemTime {
+  |          ^^^^^^^^^^

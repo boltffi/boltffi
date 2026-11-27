@@ -86,7 +86,9 @@ where
             .iter()
             .map(|initializer| {
                 let source_method = declarations.resolve(initializer.name())?;
-                Export::initializer(initializer, source_method).render(&self.owner, self.expansion)
+                Export::initializer(initializer, source_method)
+                    .render(&self.owner, self.expansion)
+                    .map_err(|error| error.in_member(source_method.name.spelling()))
             })
             .collect::<Result<Vec<_>, _>>()?;
         let methods = self
@@ -94,7 +96,9 @@ where
             .iter()
             .map(|method| {
                 let source_method = declarations.resolve(method.name())?;
-                Export::method(method, source_method).render(&self.owner, self.expansion)
+                Export::method(method, source_method)
+                    .render(&self.owner, self.expansion)
+                    .map_err(|error| error.in_member(source_method.name.spelling()))
             })
             .collect::<Result<Vec<_>, _>>()?;
         Ok(quote::quote! {
@@ -115,7 +119,9 @@ where
             .iter()
             .map(|initializer| {
                 let source_method = declarations.resolve(initializer.name())?;
-                Export::initializer(initializer, source_method).render(&self.owner, self.expansion)
+                Export::initializer(initializer, source_method)
+                    .render(&self.owner, self.expansion)
+                    .map_err(|error| error.in_member(source_method.name.spelling()))
             })
             .collect::<Result<Vec<_>, _>>()?;
         let methods = self
@@ -123,7 +129,9 @@ where
             .iter()
             .map(|method| {
                 let source_method = declarations.resolve(method.name())?;
-                Export::method(method, source_method).render(&self.owner, self.expansion)
+                Export::method(method, source_method)
+                    .render(&self.owner, self.expansion)
+                    .map_err(|error| error.in_member(source_method.name.spelling()))
             })
             .collect::<Result<Vec<_>, _>>()?;
         Ok(quote::quote! {

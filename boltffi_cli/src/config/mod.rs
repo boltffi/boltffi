@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use boltffi_backend::{
     CustomTypeMapping,
-    target::{csharp::CSharpProfile, python::PackageModule},
+    target::{csharp::CSharpProfile, python::PackageModule, ruby::RubyCExtHost},
 };
 use boltffi_bindgen::target::Target;
 use serde::{Deserialize, Serialize};
@@ -21,9 +21,9 @@ pub use experimental::Experimental;
 pub use symbols::{DebugSymbolsBundle, DebugSymbolsConfig, DebugSymbolsFormat};
 pub use targets::{
     AndroidConfig, AndroidLinkConfig, AndroidPackConfig, AppleConfig, CConfig, CSharpConfig,
-    DartConfig, HeaderConfig, JavaConfig, KotlinApiStyle, KotlinConfig, KotlinDesktopLoader,
-    KotlinFactoryStyle, KotlinMultiplatformConfig, PythonConfig, RubyConfig, SpmConfig,
-    SpmDistribution, SpmLayout, SwiftConfig, TargetSection, TargetsConfig, WasmConfig,
+    DartConfig, DartWebConfig, HeaderConfig, JavaConfig, KotlinApiStyle, KotlinConfig,
+    KotlinDesktopLoader, KotlinFactoryStyle, KotlinMultiplatformConfig, PythonConfig, RubyConfig,
+    SpmConfig, SpmDistribution, SpmLayout, SwiftConfig, TargetSection, TargetsConfig, WasmConfig,
     WasmNpmTarget, WasmOptimizeLevel, WasmOptimizeOnMissing, WasmProfile, XcframeworkConfig,
 };
 #[cfg(test)]
@@ -250,6 +250,18 @@ impl Config {
             )));
         }
 
+        if self.is_ruby_enabled() {
+            RubyCExtHost::new()
+                .gem_name(self.ruby_gem_name())
+                .map_err(|error| {
+                    ConfigError::Validation(format!("targets.ruby.gem_name: {error}"))
+                })?
+                .module_name(self.targets.ruby.module_name.as_deref())
+                .map_err(|error| {
+                    ConfigError::Validation(format!("targets.ruby.module_name: {error}"))
+                })?;
+        }
+
         if self.is_csharp_enabled() {
             if let Some(runtime_identifiers) = self.targets.csharp.runtime_identifiers.as_ref() {
                 if runtime_identifiers.is_empty() {
@@ -436,6 +448,10 @@ impl Config {
 
     pub fn is_dart_enabled(&self) -> bool {
         self.targets.dart.enabled
+    }
+
+    pub fn is_dart_web_enabled(&self) -> bool {
+        self.targets.dart_web.enabled
     }
 
     pub fn is_python_enabled(&self) -> bool {
@@ -822,6 +838,7 @@ impl Config {
             Target::TypeScript => self.is_wasm_enabled(),
             Target::Header => self.is_apple_enabled() || self.is_android_enabled(),
             Target::Dart => self.is_dart_enabled(),
+            Target::DartWeb => self.is_dart_web_enabled(),
             Target::Python => self.is_python_enabled(),
             Target::CSharp => self.is_csharp_enabled(),
             Target::C => self.is_c_enabled(),
@@ -1257,6 +1274,27 @@ impl Config {
 
     pub fn dart_targets(&self) -> Vec<RustTarget> {
         self.dart_native_targets().to_vec()
+    }
+
+    pub fn dart_standalone(&self) -> bool {
+        self.targets.dart.standalone
+    }
+
+    pub fn dart_web_output(&self) -> PathBuf {
+        self.targets.dart_web.output.clone()
+    }
+
+    pub fn dart_web_module_name(&self) -> String {
+        // DartWebHost::new requires a plain identifier (letters/digits/
+        // underscore), but a Cargo package name may contain hyphens --
+        // normalize the default the same way the wasm/TypeScript module
+        // name is, so a hyphenated package.name doesn't make dart_web
+        // reject every default-configured project outright.
+        self.targets
+            .dart_web
+            .module_name
+            .clone()
+            .unwrap_or_else(|| normalize_module_name(&self.package.name))
     }
 }
 
@@ -2590,6 +2628,41 @@ enabled = true
     }
 
     #[test]
+    fn dart_web_module_name_normalizes_a_hyphenated_default() {
+        // DartWebHost::new only accepts a plain identifier (letters,
+        // digits, underscore); a raw hyphenated package.name would make
+        // dart_web reject the module name for every default-configured
+        // project with a hyphenated Cargo package name.
+        let config = parse_config(
+            r#"
+[package]
+name = "my-lib"
+
+[targets.dart_web]
+enabled = true
+"#,
+        );
+
+        assert_eq!(config.dart_web_module_name(), "my_lib");
+    }
+
+    #[test]
+    fn dart_web_module_name_uses_the_configured_override_unnormalized() {
+        let config = parse_config(
+            r#"
+[package]
+name = "my-lib"
+
+[targets.dart_web]
+enabled = true
+module_name = "custom_module"
+"#,
+        );
+
+        assert_eq!(config.dart_web_module_name(), "custom_module");
+    }
+
+    #[test]
     fn swift_bindings_file_stem_normalizes_package_name() {
         let config = parse_config(
             r#"
@@ -2694,6 +2767,35 @@ module_name = "demo-runtime"
             Err(ConfigError::Validation(message))
                 if message.contains("targets.python.module_name must be a valid Python identifier")
         ));
+    }
+
+    #[test]
+    fn rejects_invalid_ruby_names_on_load() {
+        for (key, value) in [("gem_name", "../evil"), ("module_name", "my_lib")] {
+            let parsed: Config = toml::from_str(&format!(
+                "[package]\nname = \"my-lib\"\n\n[targets.ruby]\nenabled = true\n{key} = \"{value}\"\n"
+            ))
+            .expect("toml parse failed");
+
+            assert!(
+                matches!(
+                    parsed.validate(),
+                    Err(ConfigError::Validation(message))
+                        if message.starts_with(&format!("targets.ruby.{key}: "))
+                ),
+                "{key}"
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_the_removed_ruby_version_key() {
+        let error = toml::from_str::<Config>(
+            "[package]\nname = \"my-lib\"\n\n[targets.ruby]\nenabled = true\nversion = \"1.0.0\"\n",
+        )
+        .expect_err("the removed targets.ruby.version key fails");
+
+        assert!(error.to_string().contains("version"), "{error}");
     }
 
     #[test]

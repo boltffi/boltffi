@@ -26,7 +26,10 @@ pub fn lower<S: SurfaceLower>(
         .functions()
         .iter()
         .filter(|function| index.lowers(function.id.as_str()))
-        .map(|function| lower_one::<S>(index, ids, allocator, function))
+        .map(|function| {
+            lower_one::<S>(index, ids, allocator, function)
+                .map_err(|error| error.in_declaration(&function.id))
+        })
         .collect()
 }
 
@@ -56,9 +59,10 @@ fn lower_one<S: SurfaceLower>(
 #[cfg(test)]
 mod tests {
     use boltffi_ast::{
-        CallableForm, CanonicalName as SourceName, DeprecationInfo as SourceDeprecationInfo,
-        DocComment as SourceDocComment, EnumDef, EnumId as SourceEnumId, ExecutionKind, FieldDef,
-        FunctionDef, FunctionId as SourceFunctionId, MethodDef, MethodId as SourceMethodId,
+        CallableForm, CanonicalName as SourceName, ClassDef, ClassThreadSafety,
+        DeprecationInfo as SourceDeprecationInfo, DocComment as SourceDocComment, EnumDef,
+        EnumId as SourceEnumId, ExecutionKind, FieldDef, FunctionDef,
+        FunctionId as SourceFunctionId, MethodDef, MethodId as SourceMethodId,
         PackageInfo as SourcePackage, ParameterDef, Path as SourcePath, Primitive, Receiver,
         RecordDef, ReprAttr, ReprItem, ReturnDef, SourceContract, TypeExpr, VariantDef,
     };
@@ -89,6 +93,11 @@ mod tests {
 
         fn with_record(mut self, record: RecordDef) -> Self {
             self.source.records.push(record);
+            self
+        }
+
+        fn with_class(mut self, class: ClassDef) -> Self {
+            self.source.classes.push(class);
             self
         }
 
@@ -599,6 +608,12 @@ mod tests {
             error.kind(),
             LowerErrorKind::UnsupportedType(UnsupportedType::SelfType)
         ));
+        assert_eq!(
+            error.location(),
+            &crate::SourceLocation::default()
+                .in_declaration("demo::weird")
+                .at(crate::SourcePosition::Parameter(0))
+        );
     }
 
     #[test]
@@ -1291,5 +1306,65 @@ mod tests {
                 receive: Receive::ByMutRef,
             }
         );
+    }
+
+    fn mutating_counter(thread_safety: ClassThreadSafety) -> TestContract {
+        let mut counter = ClassDef::new("demo::Counter".into(), name("Counter"));
+        counter.thread_safety = thread_safety;
+        let mut decl = taking(
+            "demo::bump",
+            "bump",
+            "counter",
+            TypeExpr::class("demo::Counter".into(), SourcePath::single("Counter")),
+        );
+        decl.parameters[0].passing = boltffi_ast::ParameterPassing::RefMut;
+        TestContract::new().with_class(counter).with_function(decl)
+    }
+
+    #[test]
+    fn mutable_class_param_on_thread_safe_class_is_rejected() {
+        let error = mutating_counter(ClassThreadSafety::RequireSendSync)
+            .lower::<Native>()
+            .expect_err("a thread-safe class must not be borrowed mutably");
+
+        assert!(matches!(
+            error.kind(),
+            LowerErrorKind::UnsupportedType(
+                UnsupportedType::MutableClassParameterRequiresUnsafeSingleThreaded
+            )
+        ));
+    }
+
+    #[test]
+    fn mutable_param_of_an_unknown_class_reports_the_unknown_class() {
+        let mut contract = mutating_counter(ClassThreadSafety::RequireSendSync);
+        contract.source.classes.clear();
+        let error = contract
+            .lower::<Native>()
+            .expect_err("an undeclared class must not lower");
+
+        assert!(
+            !matches!(
+                error.kind(),
+                LowerErrorKind::UnsupportedType(
+                    UnsupportedType::MutableClassParameterRequiresUnsafeSingleThreaded
+                )
+            ),
+            "an unknown class must not be blamed on thread safety: {error:?}"
+        );
+    }
+
+    #[test]
+    fn mutable_class_param_on_single_threaded_class_lowers() {
+        let bindings =
+            mutating_counter(ClassThreadSafety::UnsafeSingleThreaded).lower_ok::<Native>();
+
+        assert!(matches!(
+            first_param_lower(&bindings),
+            ParamPlan::Handle {
+                receive: Receive::ByMutRef,
+                ..
+            }
+        ));
     }
 }
