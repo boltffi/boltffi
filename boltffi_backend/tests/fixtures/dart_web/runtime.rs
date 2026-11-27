@@ -68,6 +68,12 @@ impl Counter {
     pub fn batches(&self) -> std::sync::Arc<boltffi::EventSubscription<i32>> { todo!() }
     #[ffi_stream(item = i32, mode = "callback")]
     pub fn notifications(&self) -> std::sync::Arc<boltffi::EventSubscription<i32>> { todo!() }
+    #[ffi_stream(item = i32, error = Failure)]
+    pub fn failing_values(&self) -> std::sync::Arc<boltffi::EventSubscription<i32, Failure>> { todo!() }
+    #[ffi_stream(item = i32, error = Failure, mode = "batch")]
+    pub fn failing_batches(&self) -> std::sync::Arc<boltffi::EventSubscription<i32, Failure>> { todo!() }
+    #[ffi_stream(item = i32, error = String, mode = "callback")]
+    pub fn failing_notifications(&self) -> std::sync::Arc<boltffi::EventSubscription<i32, String>> { todo!() }
 }
 
 #[export]

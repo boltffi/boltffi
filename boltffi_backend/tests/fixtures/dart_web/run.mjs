@@ -28,6 +28,17 @@ class Counter {
   }
   batches() { return this.values(); }
   notifications(callback) { return this.values().consume(callback); }
+  failing(error) {
+    const polls = new StreamPollManager();
+    let next = 1;
+    return new StreamSession(3, max => {
+      const count = Math.min(max, 3 - next);
+      return Array.from({length: count}, () => next++);
+    }, () => polls.wake(3, 1), polls, () => {}, () => {}, () => error);
+  }
+  failingValues() { return this.failing(new FailureException()); }
+  failingBatches() { return this.failing(new FailureException()); }
+  failingNotifications(callback) { return this.failing(Error('failure')).consume(callback); }
 }
 const futures = new AsyncFutureManager();
 globalThis.__boltffi_probe = {

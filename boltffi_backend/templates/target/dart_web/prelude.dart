@@ -146,14 +146,28 @@ final class $$BoltStreamPopBatchHandle<T> {
   $$BoltStreamPopBatchHandle({required this.popBatch, required this.cancel});
 }
 
-Stream<T> _boltffiStream<T>(JSObject Function(JSFunction) start, T Function(JSAny?) decode) {
+// `declaredError` is given for a fallible stream, whose `done` rejects with
+// the stream's error: it becomes the Dart exception of the error type.
+Stream<T> _boltffiStream<T>(JSObject Function(JSFunction) start, T Function(JSAny?) decode, [Object Function(JSObject)? declaredError]) {
   late final StreamController<T> controller;
   JSObject? subscription;
   controller = StreamController<T>(
     onListen: () {
       try {
         subscription = start(((JSAny? item) { controller.add(decode(item)); }).toJS);
-        (subscription!.getProperty('done'.toJS) as JSPromise).toDart.then(
+        final done = subscription!.getProperty('done'.toJS) as JSPromise<JSAny?>;
+        if (declaredError != null) {
+          _boltffiCaptureAsync(done).toDart.then((result) {
+            try {
+              _boltffiUnwrap(result, declaredError);
+            } catch (error, stack) {
+              controller.addError(error, stack);
+            }
+            controller.close();
+          });
+          return;
+        }
+        done.toDart.then(
           (_) { controller.close(); },
           onError: (Object error, StackTrace stack) { controller.addError(error, stack); controller.close(); },
         );

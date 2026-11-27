@@ -83,6 +83,23 @@ Future<void> main() async {
   await Future<void>.delayed(const Duration(milliseconds: 10));
   check(notifications.join(',') == '1,2,3', 'callback stream API');
   await callbackSubscription.cancel();
+  final failedValues = <int>[];
+  try {
+    await counter.failingValues().forEach(failedValues.add).timeout(const Duration(seconds: 1));
+    throw StateError('expected stream error');
+  } on Failure catch (error) { check(error.message == 'failure', 'stream error payload'); }
+  check(failedValues.join(',') == '1,2', 'stream error follows its items');
+  final failedBatch = counter.failingBatches();
+  check(failedBatch.popBatch(4).join(',') == '1,2', 'batch items before the error');
+  try { failedBatch.popBatch(4); throw StateError('expected batch stream error'); }
+  on Failure { }
+  failedBatch.cancel();
+  final failedNotifications = <int>[];
+  final notificationError = Completer<Object>();
+  counter.failingNotifications(failedNotifications.add, onError: notificationError.complete);
+  final error = await notificationError.future.timeout(const Duration(seconds: 1));
+  check(error is $$BoltException && error.message == 'failure', 'callback stream string error');
+  check(failedNotifications.join(',') == '1,2', 'callback stream error follows its items');
   final token = $$BoltCancellationToken();
   try {
     await pending(() => token.cancel(), cancellationToken: token).timeout(const Duration(seconds: 1));

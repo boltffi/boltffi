@@ -11,7 +11,7 @@ use crate::{
 };
 
 use super::super::{codec::Reader, name_style::Name, native::NativeType, type_name};
-use super::{Documentation, declaration_name, indent};
+use super::{Documentation, declaration_name, function::error_value, indent};
 
 #[derive(Template)]
 #[template(path = "target/dart/stream.dart", escape = "none")]
@@ -54,6 +54,7 @@ struct StreamContext {
     unsubscribe: String,
     free: String,
     item_size: Option<u64>,
+    take_failure: Option<String>,
 }
 
 enum StreamItem {
@@ -114,14 +115,16 @@ impl Stream {
                     .and_then(|owner| declaration_name(owner.name()))
             })
             .transpose()?;
-        let method = StreamMethod {
-            documentation: Documentation::new(declaration.meta().doc(), 0),
-            name: Name::new(declaration.name()).lower_camel()?,
-            item_type: item.public_type().clone(),
-            mode: DartStreamMode::from_binding(declaration.mode())?,
-            context: StreamContext::new(protocol, owner.is_some(), item.byte_size()),
-            delivery: item.delivery(protocol, bridge)?,
-        };
+        let method =
+            StreamMethod {
+                documentation: Documentation::new(declaration.meta().doc(), 0),
+                name: Name::new(declaration.name()).lower_camel()?,
+                item_type: item.public_type().clone(),
+                mode: DartStreamMode::from_binding(declaration.mode())?,
+                context: StreamContext::new(protocol, owner.is_some(), item.byte_size())
+                    .with_failure(declaration, protocol, bridge, context)?,
+                delivery: item.delivery(protocol, bridge)?,
+            };
         Ok(Self {
             owner,
             name: method.name.clone(),
@@ -211,7 +214,52 @@ impl StreamContext {
             unsubscribe: protocol.unsubscribe().name().to_owned(),
             free: protocol.free().name().to_owned(),
             item_size,
+            take_failure: None,
         }
+    }
+
+    /// Adds the `takeFailure` closure of a fallible stream: the decoded error,
+    /// or `null` for a stream that completed or was cancelled.
+    fn with_failure(
+        mut self,
+        declaration: &StreamDecl<Native>,
+        protocol: &CStream,
+        bridge: &CBridgeContract,
+        context: &RenderContext<Native>,
+    ) -> Result<Self> {
+        self.take_failure = match (protocol.take_error(), declaration.error()) {
+            (Some(take_error), Some(error)) => {
+                let error = error_value(error.ty(), error.read(), context)?;
+                let free = bridge.support().buffer_free()?.name();
+                Some(
+                    [
+                        "(handle) {".to_owned(),
+                        format!("  final _l$errorBuffer = _f${}(handle);", take_error.name()),
+                        "  if (_l$errorBuffer.ptr == $$ffi.nullptr) return null;".to_owned(),
+                        "  try {".to_owned(),
+                        "    final _l$errorReader = _$$BoltWireDecoder(_$$BoltBufReader.fromSpan(_l$errorBuffer.ptr, _l$errorBuffer.len));".to_owned(),
+                        format!("    return {error};"),
+                        "  } finally {".to_owned(),
+                        format!("    _f${free}(_l$errorBuffer);"),
+                        "  }".to_owned(),
+                        "}".to_owned(),
+                    ]
+                    .join("\n    "),
+                )
+            }
+            (None, None) => None,
+            _ => {
+                return Err(Error::BrokenBridgeContract {
+                    bridge: "c",
+                    invariant: "a stream error plan comes with a take_error function",
+                });
+            }
+        };
+        Ok(self)
+    }
+
+    fn take_failure(&self) -> Option<&str> {
+        self.take_failure.as_deref()
     }
 
     fn owned(&self) -> bool {

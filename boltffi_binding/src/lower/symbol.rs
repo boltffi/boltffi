@@ -279,6 +279,7 @@ pub enum StreamLifecycle {
     Poll,
     Unsubscribe,
     Free,
+    TakeError,
 }
 
 impl StreamLifecycle {
@@ -290,6 +291,7 @@ impl StreamLifecycle {
             Self::Poll => "poll",
             Self::Unsubscribe => "unsubscribe",
             Self::Free => "free",
+            Self::TakeError => "take_error",
         }
     }
 }

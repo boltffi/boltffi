@@ -838,6 +838,63 @@ mod tests {
     }
 
     #[test]
+    fn renders_fallible_streams_with_their_typed_error() {
+        let source = boltffi_scan::scan_file(
+            syn::parse_str(
+                r#"
+                use std::sync::Arc;
+                use boltffi::EventSubscription;
+
+                #[error]
+                pub enum JobError { Refused, Lost }
+
+                pub struct Engine;
+
+                #[export]
+                impl Engine {
+                    pub fn new() -> Self { Self }
+
+                    #[ffi_stream(item = i32, error = JobError)]
+                    pub fn progress(&self) -> Arc<EventSubscription<i32, JobError>> { todo!() }
+
+                    #[ffi_stream(item = i32, error = JobError, mode = "batch")]
+                    pub fn chunks(&self) -> Arc<EventSubscription<i32, JobError>> { todo!() }
+
+                    #[ffi_stream(item = i32, error = String, mode = "callback")]
+                    pub fn ticks(&self) -> Arc<EventSubscription<i32, String>> { todo!() }
+                }
+                "#,
+            )
+            .expect("valid source"),
+            PackageInfo::new("demo", None),
+        )
+        .expect("source scans");
+        let bindings = lower::<Wasm32>(&source).expect("source lowers");
+        let output = DartWebHost::new("demo")
+            .expect("host constructs")
+            .into_target()
+            .render(&bindings)
+            .expect("target renders");
+        let source = source_of(&output);
+
+        assert!(source.contains(
+            "(__boltffiItem) => (__boltffiItem as JSNumber).toDartInt, (error) => \
+             (error.getProperty('name'.toJS) as JSString?)?.toDart == 'JobErrorException'"
+        ));
+        assert!(source.contains(
+            "popBatch: (maxCount) => (_boltffiUnwrap(_boltffiCapture(session.getProperty('popBatch'.toJS) \
+             as JSFunction, session, <JSAny?>[maxCount.toJS].toJS), (error) =>"
+        ));
+        assert!(source.contains(
+            "StreamSubscription<int> ticks(void Function(int) callback, \
+             {required void Function(Object error) onError})"
+        ));
+        assert!(source.contains(".listen(callback, onError: onError);"));
+        assert!(source.contains("? $$BoltException("));
+        assert!(source.contains("_boltffiCaptureAsync(done).toDart.then((result) {"));
+    }
+
+    #[test]
     fn renders_records_and_enums_as_plain_js_object_shapes() {
         let output = DartWebHost::new("demo")
             .expect("host constructs")
