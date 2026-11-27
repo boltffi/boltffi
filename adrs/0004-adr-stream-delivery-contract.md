@@ -29,13 +29,18 @@ in async mode depends on the target:
 |---|---|---|---|
 | Swift | `AsyncStream`, `.unbounded` | host buffer grows without limit | at the call |
 | Dart | `StreamController`, no `onPause` | host buffer grows without limit | at the call |
-| Kotlin | `callbackFlow`, suspending `send` | ring fills, new items dropped | some time after `collect` |
+| Kotlin | `callbackFlow`, 64-slot channel | channel fills, then the ring, new items dropped | some time after `collect` |
 | C# | `IAsyncEnumerable` pull loop | ring fills, new items dropped | in the first `MoveNextAsync` |
 | TypeScript | `AsyncIterable` pull loop | ring fills, new items dropped | at the call |
 
 Swift and Dart drain the ring into a second, unbounded buffer, so the declared
 256 never applies. Before #703 Kotlin did the opposite: a hidden 64-slot channel
 dropped items while the ring still had room, and a 200-item burst delivered 65.
+Since #703 `send` suspends instead, but the channel's 64 slots still add to the
+ring's 256.
+
+The ring itself rounds the capacity up to a power of two, so
+`StreamProducer::new(100)` buffers 128.
 
 No document says which of these a stream promises. A consumer cannot write
 correct code against it, and a new backend has nothing to implement against, so
@@ -60,9 +65,14 @@ July on 0.27.5. The last one has not been reproduced yet.
 - **Closed with items buffered, in C#.** The pull loop ends as soon as `wait`
   reports the close and does not read the ring again. Items pushed just before
   the close are freed undelivered. The other targets drain first.
-- **Consumer abandoned.** A Kotlin `Flow` whose scope is leaked without
-  cancelling never reaches `awaitClose`. The native subscription stays
-  registered and every later push clones into its ring.
+- **Owner freed before registration, in C#.** A method stream passes only
+  `self.Handle` to the enumerable and subscribes in the first `MoveNextAsync`.
+  If the owner is finalized in between, subscribe reads a freed handle.
+- **Consumer abandoned.** A collection that is never cancelled keeps its
+  subscription registered, and every later push clones into its ring. A Kotlin
+  `Flow` whose scope is leaked never reaches `awaitClose`, and while it waits
+  for items its continuation sits in a global map, so the garbage collector
+  cannot release it either.
 - **Two threads pushing.** `StreamProducer` is `Sync` and `push` takes `&self`,
   but the ring is single-producer and takes no lock. Two concurrent pushes can
   write the same slot.
@@ -78,10 +88,32 @@ at the consumer's pace and follows one lifecycle.
 A host must not put a lossy or unbounded buffer of its own between the ring and
 the consumer. Delivery is a pull loop or a suspending push.
 
-Kotlin (since #703), C#, TypeScript and Java's callback mode already deliver
-this way. Swift replaces the unbounded `AsyncStream` with a generated
-`AsyncSequence` whose iterator pops a batch and awaits the existing poll when
-the ring is empty. Dart stops draining while its listener is paused.
+C#, TypeScript and Java's callback mode already deliver this way. Kotlin
+replaces `callbackFlow` with a `flow { }` pull loop, which has no channel:
+
+```kotlin
+fun EventBus.events(): Flow<Event> = flow {
+    val subscription = Native.subscribe(boltffiHandle())
+    try {
+        var closed = false
+        while (true) {
+            val items = popBatch(subscription, 16)
+            items.forEach { emit(it) }
+            if (items.isNotEmpty()) continue
+            if (closed) break
+            closed = awaitPoll(subscription) == CLOSED
+        }
+    } finally {
+        unsubscribe(subscription)
+        free(subscription)
+    }
+}
+```
+
+On close the loop drains the ring before it ends. Swift replaces the unbounded
+`AsyncStream` with a generated `AsyncSequence` whose iterator pops a batch and
+awaits the existing poll when the ring is empty. Dart stops draining while its
+listener is paused.
 
 ### 2.2 Capacity and overflow are declared in Rust
 
@@ -118,10 +150,15 @@ The consumer receives every item pushed before the overflow and then
 without `error = E` has no `fail_on_overflow`, so it cannot be configured to
 fail in a way the host would show as a normal end.
 
+The ring holds exactly the declared number of items. It may still allocate a
+power of two, but a push into a ring holding `capacity` items overflows.
+
 `push` returns how many subscribers took the item and how many dropped it. Each
-subscription counts `delivered` and `dropped`, and the generated subscription
-type exposes both. `push` never waits for a consumer, and it is safe to call
-from several threads.
+`EventSubscription` counts `delivered` and `dropped` on the Rust side. Async
+host types (`Flow`, `IAsyncEnumerable`, `Stream`, `AsyncIterable`) have no
+place to show them, so a crate that wants consumers to see loss exports the
+counters itself or uses `fail_on_overflow`. `push` never waits for a consumer,
+and it is safe to call from several threads.
 
 ### 2.3 Lifecycle
 
@@ -132,7 +169,8 @@ These rules go into `streaming.mdx` as the contract.
    when the generated stream function is called. On a cold host type (Kotlin
    `Flow`, C# `IAsyncEnumerable`) each collection is its own subscription, and
    it is registered inside the call that starts the collection (`collect`, the
-   first `MoveNextAsync`), before that call first suspends. An item pushed
+   first `MoveNextAsync`), before that call first suspends. A cold stream
+   keeps its owning object alive until it has registered. An item pushed
    after registration is delivered or counted as dropped.
 2. **Order.** Items arrive in push order, per subscription.
 3. **Completeness.** An unbounded stream and a stream with `fail_on_overflow`
@@ -144,11 +182,12 @@ These rules go into `streaming.mdx` as the contract.
 5. **Slot limit.** `subscribe()` on a producer with no free slot returns a
    subscription that has already ended. `try_subscribe()` returns `Err`, so the
    crate can report it another way.
-6. **Abandonment.** A consumer that drops the stream without cancelling is a
-   bug in the consumer, but the subscription is still released: by `deinit` in
+6. **Abandonment.** A stream object that becomes unreachable, never iterated
+   or dropped between pulls, still releases its subscription: by `deinit` in
    Swift, a `Cleaner` on the JVM, a finalizer in C#, a `NativeFinalizer` in
-   Dart, a `FinalizationRegistry` in TypeScript. Explicit cancellation stays
-   the deterministic path.
+   Dart, a `FinalizationRegistry` in TypeScript. A collection suspended while
+   it waits for items is reachable through its pending poll. It is live, and
+   only cancellation ends it.
 
 Rule 1 keeps a Kotlin `Flow` cold, so `repeatOnLifecycle`, `retry` and
 `shareIn` keep working. A consumer that needs "collect, then emit" without a
@@ -166,12 +205,15 @@ job already makes every target either pass each case or record an
 
 ## 3. Rollout
 
-1. Loss that is already a bug: the counters and the `push` result, ending
-   subscribers when the producer drops, `try_subscribe` and the ended
-   subscription on a full producer, draining on close in C#, and concurrent
-   `push`. The contract text lands here with a table of which targets meet
-   which rule, and each later step updates the table.
-2. Kotlin registers inside `collect`. The demo tests drop `delay(100)`.
+1. Loss that is already a bug: the counters and the `push` result, exact ring
+   capacity, ending subscribers when the producer drops, `try_subscribe` and
+   the ended subscription on a full producer, draining on close and keeping
+   the owner alive until registration in C#, and concurrent `push`. The
+   contract text lands here with a table of which targets meet which rule, and
+   each later step updates the table.
+2. Kotlin moves from `callbackFlow` to the `flow { }` pull loop, so it
+   registers inside `collect` and holds no channel. The demo tests drop
+   `delay(100)`.
 3. Swift and Dart deliver at the consumer's pace, and `unbounded()` lands in the
    same PR. This breaks Swift source: the return type is no longer
    `AsyncStream<T>`, and a stream that relied on the unbounded host buffer must
@@ -240,6 +282,8 @@ is free can follow if a use case needs it.
   `unbounded()` to keep the old behavior.
 - The Swift return type of an async stream changes, which breaks code that
   names `AsyncStream<T>`.
+- `StreamProducer::push` returns counts instead of `()`, which breaks Rust code
+  that uses it as the tail expression of a function returning `()`.
 - The ring needs new work. Today it is fixed-size, single-producer, and only the
   consumer moves the read index. `DropOldest` needs the producer to evict,
   `unbounded()` needs a queue that grows, and concurrent `push` needs more than
