@@ -1306,7 +1306,14 @@ fn csharp_polyfills_are_emitted_when_the_framework_needs_them() {
 
 #[test]
 fn csharp_rejects_unsupported_target_frameworks() {
-    for framework in ["net40", "net453", "netcoreapp2.1", "monoandroid13.0"] {
+    for framework in [
+        "net40",
+        "net453",
+        "net8.1",
+        "net10.1",
+        "netcoreapp2.1",
+        "monoandroid13.0",
+    ] {
         let error = CSharpHost::new().target_framework(framework).unwrap_err();
         assert!(
             matches!(error, boltffi_backend::BackendError::CSharpTargetFramework { framework: ref name, .. } if name == framework)
@@ -1317,6 +1324,38 @@ fn csharp_rejects_unsupported_target_frameworks() {
                 .contains("targets.csharp.target_framework")
         );
     }
+}
+
+#[test]
+fn csharp_reserves_conditional_runtime_helpers_only_when_emitted() {
+    let bindings = bindings(
+        r#"
+        #[export]
+        pub async fn fetch(value: i32) -> i32 { value }
+        "#,
+    );
+    let modern = target(
+        CSharpHost::new()
+            .module_class("BoltFFICompletionSource")
+            .expect("valid module class")
+            .native_library("demo_native"),
+    )
+    .render(&bindings);
+    assert!(modern.is_ok());
+
+    let legacy = target(
+        CSharpHost::new()
+            .module_class("BoltFFICompletionSource")
+            .expect("valid module class")
+            .target_framework("net45")
+            .expect("net45 profile")
+            .native_library("demo_native"),
+    )
+    .render(&bindings);
+    assert!(matches!(
+        legacy,
+        Err(boltffi_backend::BackendError::CSharpModuleClassCollision { .. })
+    ));
 }
 
 fn compile_csharp_with_dotnet_when_available(output: &GeneratedOutput, prefix: &str) {

@@ -165,7 +165,10 @@ impl CSharpProfile {
         let version = moniker.strip_prefix("net").ok_or_else(unsupported)?;
         let (major, minor) = version.split_once('.').ok_or_else(unsupported)?;
         let major = major.parse::<u32>().map_err(|_| unsupported())?;
-        minor.parse::<u32>().map_err(|_| unsupported())?;
+        let minor = minor.parse::<u32>().map_err(|_| unsupported())?;
+        if minor != 0 {
+            return Err(unsupported());
+        }
         match major {
             9.. => Ok(Self::Modern),
             8 => Ok(Self::Net8),
@@ -379,6 +382,8 @@ mod tests {
             "netcoreapp3",
             "netstandard1.6",
             "net8",
+            "net8.1",
+            "net10.1",
             "net8.x",
             "uap10.0",
             "monoandroid13.0",

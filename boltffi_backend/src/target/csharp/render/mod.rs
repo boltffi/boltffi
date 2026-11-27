@@ -2415,23 +2415,21 @@ impl<'module> Module<'module> {
         }
 
         let native_functions = native_functions.into_values().collect::<Vec<_>>();
+        let mut wire_names = vec!["FfiBuf", "WireReader", "WireWriter", "BoltException"];
+        if !self.features.bit_converter_single_bits {
+            wire_names.push("BoltFFISingleBits");
+        }
+        if !self.features.array_empty {
+            wire_names.push("BoltFFIEmptyArray");
+        }
+        let mut async_names = vec!["BoltFFIAsync"];
+        if !self.features.run_continuations_asynchronously {
+            async_names.push("BoltFFICompletionSource");
+        }
         for (source, names) in [
             (Runtime::Status, &["FfiStatus"][..]),
-            (
-                Runtime::Wire,
-                &[
-                    "FfiBuf",
-                    "WireReader",
-                    "WireWriter",
-                    "BoltException",
-                    "BoltFFISingleBits",
-                    "BoltFFIEmptyArray",
-                ][..],
-            ),
-            (
-                Runtime::Async,
-                &["BoltFFIAsync", "BoltFFICompletionSource"][..],
-            ),
+            (Runtime::Wire, wire_names.as_slice()),
+            (Runtime::Async, async_names.as_slice()),
             (Runtime::Callback, &["BoltFFICallbackHandle"][..]),
             (Runtime::OwnedClosure, &["BoltFFIOwnedClosure"][..]),
         ] {
