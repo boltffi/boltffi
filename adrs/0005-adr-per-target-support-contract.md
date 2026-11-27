@@ -165,18 +165,26 @@ The names are illustrative. The rules for a variant:
   target.
 - A target supports it fully or not at all. Swift renders a tuple parameter but
   not a tuple inside a `Vec` (§1.1), so those are two variants.
-- `gap(capability, issue, reason)` is today's `Unsupported` status plus an issue
-  number. The other statuses keep their meaning.
+- Its entry is `stable` or `gap(capability, issue, reason)`, which is today's
+  `Unsupported` status plus an issue number. `Experimental` and `InProgress`
+  stay for declaration kinds only.
 - Every host lists every shape variant, and a test enforces it. A variant added
   for one target's gap cannot switch the shape off on another by omission.
 
-The check changes in three ways:
+The check changes in four ways:
 
 - **It runs before the bridge is built.** Today the bridge comes first, which
   is why the Kotlin closure return fails. Under `--allow-skipped`, the bridge
   and the host see only what remains.
 - **Requirements propagate for every shape.** `f(a: N)` requires what `N`
   requires, so nothing is emitted without the types it names (§1.2).
+- **Requirements are kept per member.** Today the analysis is keyed by
+  `DeclarationId`, and a class requires whatever any of its methods requires.
+  It gains a second key, owner plus member name, for the methods and
+  initializers of a class, record or enum. A shape in a member is that member's
+  requirement. A shape in fields or payloads is the owner's. Under
+  `--allow-skipped` the bindings handed to the bridge have the unsupported
+  members removed.
 - **It is the only place that decides.** Bridges, `preflight_coverage` and
   `assemble` stop raising shape errors, and their checks move into the variant
   tests. If a host method still returns `UnsupportedTarget` for a declaration
@@ -218,8 +226,9 @@ What is left out depends on where the shape sits:
 Swift and Dart are strict already and gain `--allow-skipped`. KMP is strict
 unless `preview_prune_unsupported` is set. That setting stays, as the
 configuration spelling of `--allow-skipped`, because `pack kmp` checks the
-support report against it. Experimental targets follow the same rule, and
-`just demo-generate` passes `--allow-skipped`.
+support report against it. Experimental targets follow the same rule. Bring-up
+passes the flag through the recipe, `just demo-generate <lang> --allow-skipped`,
+so the recipe itself stays strict.
 
 **Migration.** A crate that has a skip today fails on upgrade. The error lists
 the declarations and names the flag. The default flips in one minor release,
@@ -271,10 +280,11 @@ for steps 1 to 3.
 
 1. Core removes the dependents of every skipped declaration (§1.2). This does
    not depend on the rest.
-2. Flip the default: `--allow-skipped`, the full table on failure, the
-   deprecated `--deny-skipped`, and the docs. The demo then runs strict on GA
-   targets, which means resolving the tuple constants Java and Kotlin skip. The
-   scripts that pack Ruby or C pass `--allow-skipped`.
+2. Flip the default: `--allow-skipped`, the deprecated `--deny-skipped`, and
+   the docs. A failure prints the table `--deny-skipped` prints today.
+   `verify-platform-demos.sh` then runs strict on GA targets, which means
+   resolving the tuple constants Java and Kotlin skip. The scripts that pack
+   Ruby or C pass `--allow-skipped`.
 3. The shape variants, the check ahead of the bridge, the corpus, every
    target's table for the known gaps, and an issue per gap. Steps 4 and 11 of
    `adding-a-target.md` are rewritten: gaps are table entries, and the GA bar
@@ -284,8 +294,10 @@ for steps 1 to 3.
    filter.
 5. The generated support page.
 
-Step 2 protects users before the table exists. Until step 4, some shapes still
-fail even with `--allow-skipped`, as the Java tuple does today.
+Step 2 protects users before the table exists. Until step 4, a shape that the
+bridge, the preflight or `assemble` rejects still stops at the first error. It
+is not in the failure table and `--allow-skipped` cannot leave it out, as with
+the Java tuple today.
 
 ## 4. Alternatives considered
 
