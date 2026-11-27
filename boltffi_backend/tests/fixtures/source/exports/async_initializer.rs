@@ -1,8 +1,9 @@
+#[export(single_threaded)]
 pub struct Client {
     port: u32,
 }
 
-#[export(single_threaded)]
+#[export]
 impl Client {
     pub fn new() -> Self {
         Self { port: 0 }

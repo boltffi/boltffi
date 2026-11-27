@@ -1,3 +1,4 @@
+#[export]
 pub struct Calculator;
 
 #[export]

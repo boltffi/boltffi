@@ -8,9 +8,10 @@ pub struct Point {
     pub y: f64,
 }
 
+#[export(single_threaded)]
 pub struct Engine;
 
-#[export(single_threaded)]
+#[export]
 impl Engine {
     #[ffi_stream(item = Point, mode = "batch")]
     pub fn points(&self) -> Arc<EventSubscription<Point>> {

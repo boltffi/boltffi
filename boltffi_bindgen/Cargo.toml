@@ -22,7 +22,7 @@ object.workspace = true
 dunce = "1.0"
 
 [dev-dependencies]
-boltffi_scan.workspace = true
+boltffi_test_source.workspace = true
 
 [lints]
 workspace = true

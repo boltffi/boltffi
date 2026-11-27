@@ -1,8 +1,9 @@
+/// A counter owned by Rust.
+#[export]
 pub struct Counter {
     value: i64,
 }
 
-/// A counter owned by Rust.
 #[export]
 impl Counter {
     /// Creates a counter starting at `start`.

@@ -51,7 +51,7 @@ mod tests {
 
     fn bindings(source: &str) -> boltffi_binding::Bindings<Native> {
         let file = syn::parse_str(source).expect("valid source fixture");
-        let source = boltffi_scan::scan_file(file, PackageInfo::new("demo", None))
+        let source = boltffi_test_source::scan_file(file, PackageInfo::new("demo", None))
             .expect("fixture should scan");
         lower::<Native>(&source).expect("fixture should lower")
     }
@@ -125,9 +125,10 @@ mod tests {
                 async fn try_load(&self, key: u32) -> Result<String, Mode>;
             }
 
+            #[export(single_threaded)]
             pub struct Engine;
 
-            #[export(single_threaded)]
+            #[export]
             impl Engine {
                 pub fn new(seed: u64) -> Self { todo!() }
                 pub fn version() -> u32 { 1 }

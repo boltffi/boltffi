@@ -174,7 +174,7 @@ mod tests {
     use super::TypeScriptHost;
 
     fn bindings() -> Bindings<Wasm32> {
-        let source = boltffi_scan::scan_file(
+        let source = boltffi_test_source::scan_file(
             syn::parse_str(
                 r#"
                 #[export]
@@ -263,7 +263,7 @@ mod tests {
     }
 
     fn custom_type_default_bindings() -> Bindings<Wasm32> {
-        let source = boltffi_scan::scan_file(
+        let source = boltffi_test_source::scan_file(
             syn::parse_str(include_str!(
                 "../../../tests/fixtures/source/records/custom_type_default.rs"
             ))
@@ -275,7 +275,7 @@ mod tests {
     }
 
     fn constant_bindings() -> Bindings<Wasm32> {
-        let source = boltffi_scan::scan_file(
+        let source = boltffi_test_source::scan_file(
             syn::parse_str(
                 r#"
                 #[export]
@@ -336,7 +336,7 @@ mod tests {
     }
 
     fn associated_constant_bindings() -> Bindings<Wasm32> {
-        let source = boltffi_scan::scan_file(
+        let source = boltffi_test_source::scan_file(
             syn::parse_str(include_str!(
                 "../../../tests/fixtures/source/constant/associated.rs"
             ))
@@ -348,7 +348,7 @@ mod tests {
     }
 
     fn partially_supported_constant_bindings() -> Bindings<Wasm32> {
-        let source = boltffi_scan::scan_file(
+        let source = boltffi_test_source::scan_file(
             syn::parse_str(
                 r#"
                 #[export]
@@ -371,7 +371,7 @@ mod tests {
     }
 
     fn byte_return_bindings() -> Bindings<Wasm32> {
-        let source = boltffi_scan::scan_file(
+        let source = boltffi_test_source::scan_file(
             syn::parse_str(
                 r#"
                 #[export]
@@ -392,7 +392,7 @@ mod tests {
     }
 
     fn record_bindings() -> Bindings<Wasm32> {
-        let source = boltffi_scan::scan_file(
+        let source = boltffi_test_source::scan_file(
             syn::parse_str(
                 r#"
                 #[data]
@@ -498,9 +498,10 @@ mod tests {
     }
 
     fn class_bindings() -> Bindings<Wasm32> {
-        let source = boltffi_scan::scan_file(
+        let source = boltffi_test_source::scan_file(
             syn::parse_str(
                 r#"
+                #[export]
                 pub struct Counter(i32);
 
                 #[export]
@@ -530,7 +531,7 @@ mod tests {
     }
 
     fn custom_bindings() -> Bindings<Wasm32> {
-        let source = boltffi_scan::scan_file(
+        let source = boltffi_test_source::scan_file(
             syn::parse_str(
                 r#"
                 custom_type!(
@@ -553,7 +554,7 @@ mod tests {
     }
 
     fn async_bindings() -> Bindings<Wasm32> {
-        let source = boltffi_scan::scan_file(
+        let source = boltffi_test_source::scan_file(
             syn::parse_str(
                 r#"
                 #[export]
@@ -578,6 +579,7 @@ mod tests {
                 #[export]
                 pub async fn async_point(value: AsyncPoint) -> AsyncPoint { value }
 
+                #[export]
                 pub struct Worker(i32);
 
                 #[export]
@@ -598,7 +600,7 @@ mod tests {
     }
 
     fn fallible_bindings() -> Bindings<Wasm32> {
-        let source = boltffi_scan::scan_file(
+        let source = boltffi_test_source::scan_file(
             syn::parse_str(
                 r#"
                 #[data]
@@ -620,6 +622,7 @@ mod tests {
                     pub code: i32,
                 }
 
+                #[export]
                 pub struct FallibleCounter(i32);
 
                 #[export]
@@ -662,7 +665,7 @@ mod tests {
     }
 
     fn reserved_member_bindings() -> Bindings<Wasm32> {
-        let source = boltffi_scan::scan_file(
+        let source = boltffi_test_source::scan_file(
             syn::parse_str(
                 r#"
                 #[export]
@@ -684,7 +687,7 @@ mod tests {
     }
 
     fn stream_bindings() -> Bindings<Wasm32> {
-        let source = boltffi_scan::scan_file(
+        let source = boltffi_test_source::scan_file(
             syn::parse_str(
                 r#"
                 use std::sync::Arc;
@@ -703,6 +706,7 @@ mod tests {
                     pub values: Vec<i32>,
                 }
 
+                #[export]
                 pub struct EventBus;
 
                 #[export]
@@ -1474,7 +1478,7 @@ mod tests {
     }
 
     fn async_bindings_with_options_param() -> Bindings<Wasm32> {
-        let source = boltffi_scan::scan_file(
+        let source = boltffi_test_source::scan_file(
             syn::parse_str(
                 r#"
                 #[export]
@@ -1493,7 +1497,7 @@ mod tests {
         // A callable declaring both `options` and `boltffi_options` would
         // make a plain `boltffiOptions` fallback collide too -- the
         // generated name must stay collision-free either way.
-        let source = boltffi_scan::scan_file(
+        let source = boltffi_test_source::scan_file(
             syn::parse_str(
                 r#"
                 #[export]
@@ -1627,7 +1631,7 @@ mod tests {
 
     #[test]
     fn renders_callable_defaults_from_shared_fixture() {
-        let source = boltffi_scan::scan_file(
+        let source = boltffi_test_source::scan_file(
             syn::parse_str(include_str!(
                 "../../../tests/fixtures/source/exports/parameter_defaults.rs"
             ))

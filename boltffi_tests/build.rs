@@ -13,7 +13,6 @@ use boltffi_binding::{
     Bindings, Decl, EnumDecl, ExportedCallable, HandlePresence, IncomingParam, Native, RecordDecl,
     lower,
 };
-use boltffi_scan::{crate_scoped, scan_source};
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
@@ -2966,7 +2965,7 @@ fn source_contract(paths: &BuildPaths) -> SourceContract {
         env::var("CARGO_PKG_NAME").expect("package name"),
         env::var("CARGO_PKG_VERSION").ok(),
     );
-    crate_scoped(scan_source(&paths.source, package).expect("scan test package"))
+    boltffi_test_source::scan_source(&paths.source, package).expect("scan test package")
 }
 
 fn rust_type_name(name: &boltffi_binding::CanonicalName) -> String {

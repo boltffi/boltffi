@@ -63,7 +63,7 @@ mod tests {
     use super::WasmBridge;
 
     fn bindings() -> Bindings<Wasm32> {
-        let source = boltffi_scan::scan_file(
+        let source = boltffi_test_source::scan_file(
             syn::parse_str(
                 r#"
                 #[export]

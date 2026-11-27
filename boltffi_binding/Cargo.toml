@@ -15,7 +15,7 @@ serde.workspace = true
 serde_json.workspace = true
 
 [dev-dependencies]
-boltffi_scan.workspace = true
+boltffi_test_source.workspace = true
 syn.workspace = true
 
 [lints]

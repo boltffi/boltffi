@@ -1,6 +1,7 @@
 use boltffi_ast::PackageInfo;
 use boltffi_binding::{LowerErrorKind, Native, UnsupportedType, lower};
-use boltffi_scan::{ScanError, UnsupportedFeature, scan_file};
+use boltffi_scan::{ScanError, UnsupportedFeature};
+use boltffi_test_source::scan_file;
 
 #[derive(Clone, Copy)]
 enum ExpectedError {
@@ -42,7 +43,10 @@ impl Fixture {
 }
 
 impl ExpectedError {
-    fn assert_scan_error(self, name: &str, error: ScanError) {
+    fn assert_scan_error(self, name: &str, error: boltffi_test_source::Error) {
+        let boltffi_test_source::Error::Capture { error, .. } = error else {
+            panic!("{name} should reject while capturing, got {error}");
+        };
         let error = error.unlocated().clone();
         match self {
             Self::UnsupportedFeature(expected) => assert_eq!(

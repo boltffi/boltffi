@@ -52,7 +52,7 @@ fn generated_web_bindings_execute() {
             .as_nanos()
     ));
     fs::create_dir_all(&directory).unwrap();
-    let ast = boltffi_scan::scan_file(
+    let ast = boltffi_test_source::scan_file(
         syn::parse_str(include_str!("fixtures/dart_web/runtime.rs")).unwrap(),
         PackageInfo::new("probe", None),
     )

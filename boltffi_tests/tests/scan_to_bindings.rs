@@ -4,7 +4,7 @@ use boltffi_binding::{
     HandlePresence, HandleTarget, IncomingParam, IntegerValue, Native, ParamPlan, Primitive,
     Receive, RecordDecl, ReturnPlan, TypeRef, lower,
 };
-use boltffi_scan::scan_file;
+use boltffi_test_source::scan_file;
 
 const SOURCE: &str = "
     #[data]
@@ -53,9 +53,10 @@ const SOURCE: &str = "
         }
     }
 
+    #[export(single_threaded)]
     pub struct Engine;
 
-    #[export(single_threaded)]
+    #[export]
     impl Engine {
         pub fn new(seed: u64) -> Self {
             todo!()
@@ -68,9 +69,10 @@ const SOURCE: &str = "
         }
     }
 
+    #[export(single_threaded)]
     pub struct Marker;
 
-    #[export(single_threaded)]
+    #[export]
     impl Marker {
         pub fn id(&self) -> u64 {
             todo!()
@@ -177,10 +179,12 @@ fn scans_and_lowers_point_contract_to_bindings() {
         .decls()
         .iter()
         .find_map(|decl| match decl {
-            Decl::Record(record) => Some(record.as_ref()),
+            Decl::Record(record) if record.name().as_path_string() == "point" => {
+                Some(record.as_ref())
+            }
             _ => None,
         })
-        .expect("record declaration");
+        .expect("point record");
 
     assert_eq!(record_method_counts(record), (1, 1));
 

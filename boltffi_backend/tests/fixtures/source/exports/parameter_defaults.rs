@@ -26,6 +26,7 @@ pub fn greet(
     name
 }
 
+#[export]
 pub struct Server {
     port: u16,
 }
@@ -113,6 +114,7 @@ pub fn apply_optional_closure(
     callback.map_or(value, |callback| callback(value))
 }
 
+#[export]
 pub struct DefaultCounter {
     start: i32,
 }

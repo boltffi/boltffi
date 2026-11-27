@@ -306,7 +306,7 @@ mod tests {
     use super::{CSharpCustomMapping, CSharpHost};
 
     fn bindings(source: &str) -> Bindings<Native> {
-        let source = boltffi_scan::scan_file(
+        let source = boltffi_test_source::scan_file(
             syn::parse_str(source).expect("valid source"),
             PackageInfo::new("demo", None),
         )
@@ -899,6 +899,7 @@ mod tests {
             #[data]
             pub struct Message { pub text: String }
 
+            #[export]
             pub struct Engine;
 
             #[export]
@@ -950,7 +951,9 @@ mod tests {
             use boltffi::EventSubscription;
             use std::sync::Arc;
 
+            #[export]
             pub struct Store;
+            #[export]
             pub struct Draft;
 
             #[export]
@@ -1077,6 +1080,7 @@ mod tests {
                 pub const VARIANT_COUNT: u8 = 2;
             }
 
+            #[export]
             pub struct Palette;
 
             #[export]
@@ -1220,6 +1224,7 @@ mod tests {
     fn csharp_target_renders_class_handles_and_methods() {
         let bindings = bindings(
             r#"
+            #[export]
             pub struct Counter {
                 value: i32,
             }
@@ -1265,6 +1270,7 @@ mod tests {
     fn csharp_target_renders_async_class_new_as_static_factory() {
         let bindings = bindings(
             r#"
+            #[export]
             pub struct AsyncClient {
                 endpoint: String,
             }
@@ -1477,6 +1483,7 @@ mod tests {
                 },
             }
 
+            #[export]
             pub struct Counter { value: i32 }
 
             /// Mutable counter held over FFI.

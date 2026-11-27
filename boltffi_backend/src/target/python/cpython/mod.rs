@@ -257,7 +257,7 @@ mod tests {
     };
 
     fn empty_bindings() -> Bindings<Native> {
-        let source = boltffi_scan::scan_file(
+        let source = boltffi_test_source::scan_file(
             syn::parse_str("").expect("valid empty source"),
             PackageInfo::new("demo", None),
         )
@@ -266,7 +266,7 @@ mod tests {
     }
 
     fn bindings(source: &str) -> Bindings<Native> {
-        let source = boltffi_scan::scan_file(
+        let source = boltffi_test_source::scan_file(
             syn::parse_str(source).expect("valid source"),
             PackageInfo::new("demo", None),
         )
@@ -1210,22 +1210,24 @@ mod tests {
         let output = target()
             .render(&bindings(
                 r#"
+                #[export(single_threaded)]
                 pub struct Marker {
                     value: u32,
                 }
 
-                #[export(single_threaded)]
+                #[export]
                 impl Marker {
                     pub fn value(&self) -> u32 {
                         self.value
                     }
                 }
 
+                #[export(single_threaded)]
                 pub struct Engine {
                     value: u32,
                 }
 
-                #[export(single_threaded)]
+                #[export]
                 impl Engine {
                     pub fn new(value: u32) -> Self {
                         Self { value }
@@ -1308,6 +1310,7 @@ mod tests {
         let output = target()
             .render(&bindings(
                 r#"
+                #[export]
                 pub struct GPSSimulator {
                     enabled: bool,
                 }
@@ -1495,9 +1498,10 @@ mod tests {
                 use std::sync::Arc;
                 use boltffi::EventSubscription;
 
+                #[export(single_threaded)]
                 pub struct EventBus;
 
-                #[export(single_threaded)]
+                #[export]
                 impl EventBus {
                     pub fn new() -> Self {
                         Self
@@ -1552,10 +1556,12 @@ mod tests {
                 use std::sync::Arc;
                 use boltffi::EventSubscription;
 
+                #[export(single_threaded)]
                 pub struct Ints;
+                #[export(single_threaded)]
                 pub struct Floats;
 
-                #[export(single_threaded)]
+                #[export]
                 impl Ints {
                     pub fn new() -> Self {
                         Self
@@ -1567,7 +1573,7 @@ mod tests {
                     }
                 }
 
-                #[export(single_threaded)]
+                #[export]
                 impl Floats {
                     pub fn new() -> Self {
                         Self
@@ -1718,12 +1724,13 @@ mod tests {
                     pub text: String,
                 }
 
+                /// A counter that lives in Rust.
+                #[export(single_threaded)]
                 pub struct Counter {
                     value: u32,
                 }
 
-                /// A counter that lives in Rust.
-                #[export(single_threaded)]
+                #[export]
                 impl Counter {
                     /// Creates a counter starting at `value`.
                     pub fn new(value: u32) -> Self {
@@ -2208,6 +2215,7 @@ Coordinates are plain `f64`.
                     pub const VARIANT_COUNT: u8 = 2;
                 }
 
+                #[export]
                 pub struct Palette;
 
                 #[export]

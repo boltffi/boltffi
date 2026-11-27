@@ -327,7 +327,7 @@ mod tests {
     impl syntax_sealed::LanguageSyntax for TestSyntax {}
 
     fn function_bindings() -> Bindings<Native> {
-        let source = boltffi_scan::scan_file(
+        let source = boltffi_test_source::scan_file(
             syn::parse_str(
                 r#"
                 #[export]
@@ -531,7 +531,7 @@ mod tests {
     }
 
     fn interned_function_bindings() -> Bindings<Native> {
-        let source = boltffi_scan::scan_file(
+        let source = boltffi_test_source::scan_file(
             syn::parse_str(
                 r#"
                 use boltffi::InternedString;
@@ -556,7 +556,7 @@ mod tests {
     }
 
     fn interned_named_type_bindings() -> Bindings<Native> {
-        let source = boltffi_scan::scan_file(
+        let source = boltffi_test_source::scan_file(
             syn::parse_str(
                 r#"
                 use boltffi::InternedString;
@@ -817,11 +817,11 @@ mod tests {
                 "interned::record",
                 "record::envelope",
                 "interned::enum",
-                "record::parameter",
-                "record::return",
                 "enum::parameter",
                 "enum::return",
                 "record::envelope::return",
+                "record::parameter",
+                "record::return",
             ]
         );
         assert!(

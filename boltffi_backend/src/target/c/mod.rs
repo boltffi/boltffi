@@ -254,7 +254,7 @@ mod tests {
     }
 
     fn bindings_for_package(package: &str, source: &str) -> Bindings<Native> {
-        let source = boltffi_scan::scan_file(
+        let source = boltffi_test_source::scan_file(
             syn::parse_str(source).expect("valid source"),
             PackageInfo::new(package, None),
         )
@@ -350,7 +350,7 @@ mod tests {
     }
 
     fn empty_bindings() -> Bindings<Native> {
-        let source = boltffi_scan::scan_file(
+        let source = boltffi_test_source::scan_file(
             syn::parse_str("").expect("valid empty source"),
             PackageInfo::new("demo", None),
         )
@@ -603,6 +603,7 @@ mod tests {
     fn nullable_class_handles_accept_null_and_owned_handles_are_cleared() {
         let bindings = bindings(
             r#"
+            #[export(single_threaded)]
             pub struct Engine;
 
             #[export]
@@ -762,9 +763,10 @@ mod tests {
                 if b == 0 { Err(DivisionError::DivideByZero) } else { Ok(value / b) }
             }
 
+            #[export(single_threaded)]
             pub struct Engine;
 
-            #[export(single_threaded)]
+            #[export]
             impl Engine {
                 pub fn new(seed: u64) -> Self { todo!() }
                 pub fn score(&self, point: crate::Point) -> u32 { 0 }
@@ -844,9 +846,10 @@ mod tests {
     fn renders_class_handle_and_wrappers() {
         let bindings = bindings(
             r#"
+            #[export(single_threaded)]
             pub struct Engine;
 
-            #[export(single_threaded)]
+            #[export]
             impl Engine {
                 pub fn new(seed: u64) -> Self { todo!() }
                 pub fn score(&self, point: crate::Point) -> u32 { 0 }
@@ -1080,9 +1083,10 @@ int main(void) {
     fn renders_fallible_class_initializers_with_owned_string_errors() {
         let bindings = bindings(
             r#"
+            #[export(single_threaded)]
             pub struct Engine;
 
-            #[export(single_threaded)]
+            #[export]
             impl Engine {
                 pub fn new(seed: u32) -> Result<Self, String> {
                     if seed == 0 { Err("zero".to_owned()) } else { Ok(Self) }
@@ -1287,9 +1291,10 @@ int main(void) {
     fn c_target_snapshot_class() {
         let bindings = bindings(
             r#"
+            #[export(single_threaded)]
             pub struct Engine;
 
-            #[export(single_threaded)]
+            #[export]
             impl Engine {
                 pub fn new(seed: u64) -> Self { todo!() }
                 pub fn score(&self, point: crate::Point) -> u32 { 0 }

@@ -83,6 +83,7 @@ The main crates are:
 - `boltffi_backend`: IR-based bridge and target renderers.
 - `boltffi_bindgen`: metadata extraction and generation driver for the new backend path.
 - `boltffi_cli`: the `boltffi` command, packaging, and user-facing configuration.
+- `boltffi_test_source`: builds a source contract from Rust source text through the capture path, for tests.
 - `boltffi_tests`: integration tests that tie scanner, binding, and generated behavior together.
 
 There is still old rendering code in the repository. Do not copy it into new work. The new path is `fragments -> ast -> bindings -> backend`: each macro invocation describes its own item, and bindgen reads those descriptions from the compiled artifact. New targets use `boltffi_backend`, not `boltffi_bindgen/src/render/<lang>/`.

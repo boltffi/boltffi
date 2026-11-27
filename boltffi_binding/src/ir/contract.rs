@@ -820,7 +820,7 @@ mod tests {
 
     fn lower_bindings(source: &str) -> Bindings<Native> {
         let file = syn::parse_str(source).expect("valid source fixture");
-        let source = boltffi_scan::scan_file(file, SourcePackageInfo::new("demo", None))
+        let source = boltffi_test_source::scan_file(file, SourcePackageInfo::new("demo", None))
             .expect("source fixture scans");
         lower::<Native>(&source).expect("source fixture lowers")
     }

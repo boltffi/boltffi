@@ -833,6 +833,7 @@ mod tests {
                 fn receive(&self, point: Point);
             }
 
+            #[export]
             pub struct Engine;
 
             #[export]
@@ -898,7 +899,7 @@ mod tests {
 
     fn bindings(source: &str) -> Bindings<Native> {
         let file = syn::parse_str(source).expect("valid source fixture");
-        let source = boltffi_scan::scan_file(file, PackageInfo::new("demo", None))
+        let source = boltffi_test_source::scan_file(file, PackageInfo::new("demo", None))
             .expect("source fixture scans");
         lower::<Native>(&source).expect("source fixture lowers")
     }

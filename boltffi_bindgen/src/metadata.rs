@@ -1981,7 +1981,7 @@ pub fn captured_value() -> u32 { 42 }
     }
 
     #[test]
-    fn cargo_build_source_records_lower_equivalently_to_the_legacy_scan() {
+    fn cargo_build_source_records_lower_equivalently_to_the_test_source_harness() {
         if cfg!(miri) {
             return;
         }
@@ -2002,24 +2002,14 @@ pub fn captured_value() -> u32 { 42 }
             .parent()
             .expect("fixture manifest has a directory")
             .join("src/lib.rs");
-        let mut scanned = boltffi_scan::crate_scoped(
-            boltffi_scan::scan_source(&lib_rs, source.package.clone())
-                .expect("legacy scan reads the fixture source"),
-        );
-        scanned.records.sort_by(|a, b| a.id.cmp(&b.id));
-        scanned.enums.sort_by(|a, b| a.id.cmp(&b.id));
-        scanned.functions.sort_by(|a, b| a.id.cmp(&b.id));
-        scanned.classes.sort_by(|a, b| a.id.cmp(&b.id));
-        scanned.traits.sort_by(|a, b| a.id.cmp(&b.id));
-        scanned.streams.sort_by(|a, b| a.id.cmp(&b.id));
-        scanned.constants.sort_by(|a, b| a.id.cmp(&b.id));
-        scanned.customs.sort_by(|a, b| a.id.cmp(&b.id));
+        let scanned = boltffi_test_source::scan_source(&lib_rs, source.package.clone())
+            .expect("the test source harness reads the fixture source");
         let expected = boltffi_binding::lower::<Native>(&scanned).expect("scanned contract lowers");
 
         assert_eq!(
             actual.decls(),
             expected.decls(),
-            "records-fed lowering matches the legacy scanner's declarations"
+            "compiled records lower to what the test source harness predicts"
         );
 
         let actual_wasm = boltffi_binding::lower::<Wasm32>(&contract)

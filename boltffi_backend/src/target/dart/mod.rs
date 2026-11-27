@@ -229,7 +229,7 @@ mod tests {
     use super::DartHost;
 
     fn bindings(source: &str) -> Bindings<Native> {
-        let scanned = boltffi_scan::scan_file(
+        let scanned = boltffi_test_source::scan_file(
             syn::parse_str(source).expect("valid Rust source"),
             PackageInfo::new("demo_api", None),
         )
@@ -689,6 +689,7 @@ mod tests {
             #[export]
             pub async fn ping() {}
 
+            #[export]
             pub struct Counter(i32);
 
             #[export]
@@ -1156,6 +1157,7 @@ mod tests {
                 Values { items: Vec<i32> },
             }
 
+            #[export]
             pub struct Counter;
 
             #[export]
@@ -1244,6 +1246,7 @@ mod tests {
             #[data]
             pub struct Message { pub text: String }
 
+            #[export]
             pub struct Engine;
 
             #[export]

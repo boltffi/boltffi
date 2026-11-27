@@ -21,8 +21,8 @@ use source::SourceFixture;
 
 fn bindings(source: &str) -> boltffi_binding::Bindings<Native> {
     let file = syn::parse_str(source).expect("valid source fixture");
-    let source =
-        boltffi_scan::scan_file(file, PackageInfo::new("demo", None)).expect("fixture should scan");
+    let source = boltffi_test_source::scan_file(file, PackageInfo::new("demo", None))
+        .expect("fixture should scan");
     lower::<Native>(&source).expect("fixture should lower")
 }
 
