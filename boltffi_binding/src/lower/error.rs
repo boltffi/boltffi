@@ -201,6 +201,12 @@ impl fmt::Display for LowerError {
                 "a `&mut self` method needs `#[export(single_threaded)]` on its class's struct or \
                  enum, since a thread-safe class can be borrowed from many threads at once",
             ),
+            LowerErrorKind::UnsupportedType(
+                UnsupportedType::MutableClassParameterRequiresUnsafeSingleThreaded,
+            ) => formatter.write_str(
+                "a `&mut` class parameter needs `#[export(single_threaded)]` on the class's struct \
+                 or enum, since a thread-safe class can be borrowed from many threads at once",
+            ),
             LowerErrorKind::UnsupportedType(UnsupportedType::InvalidCallbackReceiver) => formatter
                 .write_str(
                     "a callback trait method must take `&self`, the only receiver a foreign \
@@ -464,6 +470,9 @@ pub enum UnsupportedType {
     /// single-threaded because `Send + Sync` does not make concurrent mutable
     /// borrows sound.
     MutableClassReceiverRequiresUnsafeSingleThreaded,
+    /// A `&mut` class parameter needs the class to be exported as unsafe
+    /// single-threaded for the same reason as a mutable receiver.
+    MutableClassParameterRequiresUnsafeSingleThreaded,
     /// An inline closure appeared inside a value-shaped position
     /// (record field, vec element, tuple element, map key or value,
     /// `Option` inner, ...). Closures cross at callable parameter
@@ -500,6 +509,9 @@ impl fmt::Display for UnsupportedType {
             Self::OwnedClassReceiver => "owned class receiver",
             Self::MutableClassReceiverRequiresUnsafeSingleThreaded => {
                 "mutable class receiver without unsafe single-threaded export"
+            }
+            Self::MutableClassParameterRequiresUnsafeSingleThreaded => {
+                "mutable class parameter without unsafe single-threaded export"
             }
             Self::ClosureInValuePosition => "closure in a value-shaped position",
             Self::OpaqueRustContainer => "opaque Rust pointer container",

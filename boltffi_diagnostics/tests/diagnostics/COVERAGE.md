@@ -6,9 +6,9 @@ The findings come from `main` at f0da5b12 on rustc 1.97.1. Each "Today" entry is
 
 ## How the suite works
 
-Each case in `diagnostics/<rule>/<what_the_user_did>.rs` must fail to compile, and its `.stderr` file records the output. There are 130 of these, and many record bad messages on purpose, so a fix shows up as a `.stderr` diff.
+Each case in `diagnostics/<rule>/<what_the_user_did>.rs` must fail to compile, and its `.stderr` file records the output. There are 131 of these, and many record bad messages on purpose, so a fix shows up as a `.stderr` diff.
 
-The 2 cases in `tests/accepted/` compile today and should not. When a rule lands, move its case to `diagnostics/` and record the error.
+The case in `tests/accepted/` compiles today and should not. When a rule lands, move it to `diagnostics/` and record the error.
 
 Re-record with `TRYBUILD=overwrite cargo test -p boltffi_diagnostics --test diagnostics`, and re-record after a toolchain bump.
 
@@ -53,7 +53,6 @@ These compile, so users find out late or never.
 |---|---|---|---|---|
 | Private `fn` with `#[export]` | Public on every host | High | High | Reject, scheduled for later |
 | Same `#[export] fn` name in two modules | `check` passes, `build` fails with ``symbol ... is already defined`` | Medium | High | Detect it in the macro |
-| `&mut` class parameter on a thread-safe class | Accepted, although `&mut self` on the same class is rejected | Medium | High | Apply the same rule, scheduled for later |
 | Private method in `#[export] impl` | Left out of the bindings with no message | High | Medium | Document it |
 
 ## Other messages to improve

@@ -27,6 +27,7 @@ internal static class ClassOwnershipTests
         RustErrorDropsMessage();
         ReturnedMessageStaysAlive();
         BorrowingPreservesMessage();
+        MutableBorrowPreservesMessage();
         PreparationFailureReleasesDetachedMessages();
         EncodingFailurePreservesMessage();
         NativeEntryFailureReleasesMessage();
@@ -100,11 +101,19 @@ internal static class ClassOwnershipTests
     {
         using var drops = new MessageDrops();
         var message = new OwnedMessage("borrowed", drops);
-        Require(BorrowMessage(message) == 8, "shared borrow reads the message");
+        Require(BorrowMessage(message) == 8 && drops.Count() == 0, "shared borrow preserves ownership");
+        message.Dispose();
+        Require(drops.Count() == 1, "caller releases a borrowed message");
+    }
+
+    private static void MutableBorrowPreservesMessage()
+    {
+        using var drops = new MessageDrops();
+        var message = new MutableOwnedMessage("borrowed", drops);
         MutateMessage(message);
         Require(message.Length() == 9 && drops.Count() == 0, "mutable borrow preserves ownership");
         message.Dispose();
-        Require(drops.Count() == 1, "caller releases a borrowed message");
+        Require(drops.Count() == 1, "caller releases a mutably borrowed message");
     }
 
     private static void PreparationFailureReleasesDetachedMessages()
