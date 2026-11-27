@@ -1,14 +1,11 @@
 use boltffi_ast::{ConstantDef, ConstantId, ConstantOwner, Primitive, TypeExpr};
-use syn::spanned::Spanned;
 
 use crate::attributes::Attributes;
 use crate::const_expr;
-use crate::declared_types::{DeclaredType, DeclaredTypes};
-use crate::impl_target;
-use crate::marked::Marked;
+use crate::declared_types::DeclaredTypes;
 use crate::marker::{self, Disposition};
 use crate::type_expr;
-use crate::{ModuleScope, ScanError, attributes, name};
+use crate::{ScanError, attributes, name};
 
 struct DeclarationSyntax<'syntax> {
     attrs: &'syntax [syn::Attribute],
@@ -16,47 +13,29 @@ struct DeclarationSyntax<'syntax> {
     ident: &'syntax syn::Ident,
     ty: &'syntax syn::Type,
     expr: &'syntax syn::Expr,
-    span: proc_macro2::Span,
-}
-
-pub fn scan(
-    marked: &Marked<'_, syn::ItemConst>,
-    declared_types: &DeclaredTypes,
-) -> Result<ConstantDef, ScanError> {
-    build_item(marked.item(), marked.scope(), declared_types)
 }
 
 pub(crate) fn scan_item(
     item: &syn::ItemConst,
-    scope: &ModuleScope,
     declared_types: &DeclaredTypes,
 ) -> Result<ConstantDef, ScanError> {
-    build_item(item, scope, declared_types)
-}
-
-fn build_item(
-    item: &syn::ItemConst,
-    scope: &ModuleScope,
-    declared_types: &DeclaredTypes,
-) -> Result<ConstantDef, ScanError> {
-    DeclarationSyntax::from(item).scan(scope, declared_types, None)
+    DeclarationSyntax::from(item).scan(declared_types, None)
 }
 
 impl<'syntax> DeclarationSyntax<'syntax> {
     fn scan(
         self,
-        scope: &ModuleScope,
         declared_types: &DeclaredTypes,
         owner: Option<ConstantOwner>,
     ) -> Result<ConstantDef, ScanError> {
         if self.ident == "_" {
             return Err(ScanError::AnonymousConstant.at(self.ident));
         }
-        let types = type_expr::Scanner::new(declared_types, scope);
+        let types = type_expr::Scanner::new(declared_types);
         let type_expr = constant_type(&types, self.ty)?;
         let value = const_expr::Scanner::new(&types).scan(self.expr);
         let id = owner.as_ref().map_or_else(
-            || scope.path().qualified(&self.ident.to_string()),
+            || name::self_id(self.ident),
             |owner| format!("{}::{}", owner.as_str(), self.ident),
         );
         let mut constant = ConstantDef::new(
@@ -67,8 +46,7 @@ impl<'syntax> DeclarationSyntax<'syntax> {
         );
         let scanned_attrs = Attributes::new(self.attrs, &types);
         constant.owner = owner;
-        constant.source = attributes::source(self.visibility, scope, self.span);
-        constant.source_span = constant.source.span.clone();
+        constant.source = attributes::source(self.visibility);
         constant.doc = scanned_attrs.doc();
         constant.deprecated = scanned_attrs.deprecated()?;
         constant.user_attrs = scanned_attrs.user_attrs();
@@ -84,7 +62,6 @@ impl<'syntax> From<&'syntax syn::ItemConst> for DeclarationSyntax<'syntax> {
             ident: &item.ident,
             ty: &item.ty,
             expr: &item.expr,
-            span: item.span(),
         }
     }
 }
@@ -97,55 +74,20 @@ impl<'syntax> From<&'syntax syn::ImplItemConst> for DeclarationSyntax<'syntax> {
             ident: &item.ident,
             ty: &item.ty,
             expr: &item.expr,
-            span: item.span(),
         }
     }
-}
-
-pub fn scan_associated<'marked, 'source>(
-    impls: impl IntoIterator<Item = &'marked Marked<'source, syn::ItemImpl>>,
-    declared_types: &DeclaredTypes,
-) -> Result<Vec<ConstantDef>, ScanError>
-where
-    'source: 'marked,
-{
-    impls
-        .into_iter()
-        .try_fold(Vec::new(), |mut constants, marked| {
-            let Some(owner) = resolve_owner(marked.item(), marked.scope(), declared_types)? else {
-                return Ok(constants);
-            };
-            let associated = marked
-                .item()
-                .items
-                .iter()
-                .filter_map(|item| match item {
-                    syn::ImplItem::Const(constant) => scan_associated_constant(
-                        constant,
-                        owner.clone(),
-                        marked.scope(),
-                        declared_types,
-                    )
-                    .transpose(),
-                    _ => None,
-                })
-                .collect::<Result<Vec<_>, ScanError>>()?;
-            constants.extend(associated);
-            Ok(constants)
-        })
 }
 
 pub(crate) fn scan_associated_in_impl(
     item: &syn::ItemImpl,
     owner: &ConstantOwner,
-    scope: &ModuleScope,
     declared_types: &DeclaredTypes,
 ) -> Result<Vec<ConstantDef>, ScanError> {
     item.items
         .iter()
         .filter_map(|item| match item {
             syn::ImplItem::Const(constant) => {
-                scan_associated_constant(constant, owner.clone(), scope, declared_types).transpose()
+                scan_associated_constant(constant, owner.clone(), declared_types).transpose()
             }
             _ => None,
         })
@@ -155,7 +97,6 @@ pub(crate) fn scan_associated_in_impl(
 fn scan_associated_constant(
     constant: &syn::ImplItemConst,
     owner: ConstantOwner,
-    scope: &ModuleScope,
     declared_types: &DeclaredTypes,
 ) -> Result<Option<ConstantDef>, ScanError> {
     match marker::disposition(&constant.attrs)? {
@@ -172,25 +113,8 @@ fn scan_associated_constant(
         return Err(error);
     }
     DeclarationSyntax::from(constant)
-        .scan(scope, declared_types, Some(owner))
+        .scan(declared_types, Some(owner))
         .map(Some)
-}
-
-fn resolve_owner(
-    item: &syn::ItemImpl,
-    scope: &ModuleScope,
-    declared_types: &DeclaredTypes,
-) -> Result<Option<ConstantOwner>, ScanError> {
-    let target = impl_target::Target::scan(item);
-    let Some(path) = declared_types.resolve_impl_target(scope, &target)? else {
-        return Ok(None);
-    };
-    Ok(match declared_types.resolve(&path) {
-        Some(DeclaredType::Record(id)) => Some(ConstantOwner::Record(id.clone())),
-        Some(DeclaredType::Enum(id)) => Some(ConstantOwner::Enum(id.clone())),
-        Some(DeclaredType::Class(id)) => Some(ConstantOwner::Class(id.clone())),
-        _ => None,
-    })
 }
 
 fn constant_type(types: &type_expr::Scanner<'_>, ty: &syn::Type) -> Result<TypeExpr, ScanError> {
@@ -220,8 +144,8 @@ fn borrowed_constant_type(
 mod tests {
     use super::*;
     use boltffi_ast::{
-        CanonicalName, ConstExpr, EnumId, FloatLiteral, IntegerLiteral, Literal, NamePart, Path,
-        PathRoot, PathSegment, Primitive, RecordId, Source, SourceName, TypeExpr, Visibility,
+        CanonicalName, ConstExpr, FloatLiteral, IntegerLiteral, Literal, NamePart, Path, PathRoot,
+        PathSegment, Primitive, RecordId, Source, SourceName, TypeExpr, Visibility,
     };
 
     fn parse(source: &str) -> syn::ItemConst {
@@ -229,11 +153,7 @@ mod tests {
     }
 
     fn scan(source: &str) -> Result<ConstantDef, ScanError> {
-        super::build_item(
-            &parse(source),
-            &ModuleScope::root("demo"),
-            &DeclaredTypes::new(),
-        )
+        super::scan_item(&parse(source), &DeclaredTypes::new())
     }
 
     fn name(parts: &[&str]) -> CanonicalName {
@@ -244,7 +164,7 @@ mod tests {
     fn scans_complete_integer_constant_contract() {
         let constant = scan("pub const ANSWER: u32 = 42;").expect("scan");
         let mut expected = ConstantDef::new(
-            ConstantId::new("demo::ANSWER"),
+            ConstantId::new("$self::ANSWER"),
             SourceName::new("ANSWER", name(&["answer"])),
             TypeExpr::Primitive(Primitive::U32),
             ConstExpr::Literal(Literal::Integer(IntegerLiteral::new(42, "42"))),
@@ -312,19 +232,17 @@ mod tests {
     }
 
     #[test]
-    fn scans_enum_path_constant_against_declared_type() {
-        let mut declared_types = DeclaredTypes::new();
-        declared_types.register_enum(EnumId::new("demo::Mode"));
-        let constant = super::build_item(
+    fn scans_enum_path_constant_with_a_deferred_type() {
+        let declared_types = DeclaredTypes::new();
+        let constant = super::scan_item(
             &parse("pub const DEFAULT_MODE: Mode = Mode::Fast;"),
-            &ModuleScope::root("demo"),
             &declared_types,
         )
         .expect("scan");
 
         assert_eq!(
             constant.type_expr,
-            TypeExpr::enumeration(EnumId::new("demo::Mode"), Path::single("Mode"))
+            TypeExpr::record(RecordId::new("$slot:0"), Path::single("Mode"))
         );
         assert_eq!(
             constant.value,
@@ -337,27 +255,24 @@ mod tests {
 
     #[test]
     fn scans_accessor_backed_enum_constant_expressions() {
-        let mut declared_types = DeclaredTypes::new();
-        declared_types.register_enum(EnumId::new("demo::Shape"));
-        let accessor = super::build_item(
+        let declared_types = DeclaredTypes::new();
+        let accessor = super::scan_item(
             &parse("pub const DEFAULT: Shape = make_default_shape();"),
-            &ModuleScope::root("demo"),
             &declared_types,
         )
         .expect("scan accessor-backed enum constant");
 
         assert_eq!(
             accessor.type_expr,
-            TypeExpr::enumeration(EnumId::new("demo::Shape"), Path::single("Shape"))
+            TypeExpr::record(RecordId::new("$slot:0"), Path::single("Shape"))
         );
         assert_eq!(
             accessor.value,
             ConstExpr::Raw("make_default_shape ()".to_owned())
         );
 
-        let payload_literal = super::build_item(
+        let payload_literal = super::scan_item(
             &parse("pub const CIRCLE: Shape = Shape::Circle { radius: 1.0 };"),
-            &ModuleScope::root("demo"),
             &declared_types,
         )
         .expect("scan payload enum constant as accessor-backed raw");
@@ -372,7 +287,7 @@ mod tests {
     fn scans_multi_word_name_and_restricted_visibility() {
         let constant = scan("pub(crate) const DEFAULT_LIMIT: u32 = 8;").expect("scan");
 
-        assert_eq!(constant.id, ConstantId::new("demo::DEFAULT_LIMIT"));
+        assert_eq!(constant.id, ConstantId::new("$self::DEFAULT_LIMIT"));
         assert_eq!(constant.name.canonical(), &name(&["default", "limit"]));
         assert_eq!(
             constant.source.visibility,
@@ -381,22 +296,10 @@ mod tests {
     }
 
     #[test]
-    fn rejects_unknown_constant_type_before_losing_the_declaration() {
-        let error = scan("pub const ORIGIN: Point = Point::ORIGIN;").expect_err("type rejects");
-
-        assert!(matches!(
-            error.unlocated(),
-            ScanError::UnsupportedType { spelling } if spelling == "Point"
-        ));
-    }
-
-    #[test]
     fn rejects_non_string_and_non_byte_reference_constants() {
-        let mut declared_types = DeclaredTypes::new();
-        declared_types.register_record(RecordId::new("demo::Point"));
-        let error = super::build_item(
+        let declared_types = DeclaredTypes::new();
+        let error = super::scan_item(
             &parse("pub const ORIGIN: &Point = &Point::ORIGIN;"),
-            &ModuleScope::root("demo"),
             &declared_types,
         )
         .expect_err("borrowed record constant rejects");

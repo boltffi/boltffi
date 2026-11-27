@@ -1,45 +1,26 @@
 use std::num::NonZeroUsize;
 
 use boltffi_ast::{
-    AdditionalBound, BaseTrait, BuiltinType, ConstExpr, CustomTypeId, FnSig, FnTrait, FnTraitKind,
-    GenericArgument, MapKind, NamePart, Path, PathRoot, PathSegment, Primitive, RecordId,
-    ReturnDef, TraitBounds, TraitId, TypeExpr,
+    AdditionalBound, BaseTrait, BuiltinType, FnSig, FnTrait, FnTraitKind, MapKind, NamePart, Path,
+    PathRoot, PathSegment, Primitive, RecordId, ReturnDef, TraitBounds, TraitId, TypeExpr,
 };
 use quote::ToTokens;
 
-use crate::declared_types::{DeclaredType, DeclaredTypes, SourceType};
+use crate::ScanError;
+use crate::declared_types::DeclaredTypes;
 use crate::unsupported::UnsupportedFeature;
-use crate::{ModuleScope, ScanError};
 
 pub struct Scanner<'a> {
     declared_types: &'a DeclaredTypes,
-    scope: &'a ModuleScope,
 }
 
 impl<'a> Scanner<'a> {
-    pub fn new(declared_types: &'a DeclaredTypes, scope: &'a ModuleScope) -> Self {
-        Self {
-            declared_types,
-            scope,
-        }
-    }
-
-    pub fn scope(&self) -> &'a ModuleScope {
-        self.scope
-    }
-
-    pub(crate) fn is_deferred(&self) -> bool {
-        self.declared_types.is_deferred()
+    pub fn new(declared_types: &'a DeclaredTypes) -> Self {
+        Self { declared_types }
     }
 
     pub fn scan(&self, ty: &syn::Type) -> Result<TypeExpr, ScanError> {
         let unwrapped = unwrapped(ty);
-        if let Some(custom) = self.custom_remote(unwrapped)? {
-            return Ok(TypeExpr::custom(
-                custom.clone(),
-                self.path_for_custom_remote(unwrapped, custom.as_str()),
-            ));
-        }
         match unwrapped {
             syn::Type::FnPtr(fn_ptr) => self.fn_ptr(fn_ptr),
             syn::Type::ImplTrait(impl_trait) => self.impl_trait(impl_trait, ty),
@@ -206,32 +187,9 @@ impl<'a> Scanner<'a> {
                 ),
             ));
         }
-        if self.declared_types.is_deferred() {
-            return Ok(standard_type
-                .accepts_path(&path_without_arguments(&type_path.path))
-                .then_some(standard_type));
-        }
-        match self
-            .declared_types
-            .resolve_type_in_scope(self.scope, &type_path.path)?
-        {
-            SourceType::Declared(_) if matches!(standard_type, StandardType::Builtin(_)) => {
-                Ok(None)
-            }
-            SourceType::Declared(DeclaredType::Record(_))
-            | SourceType::Declared(DeclaredType::Enum(_))
-            | SourceType::Declared(DeclaredType::Trait(_))
-            | SourceType::Declared(DeclaredType::Class(_))
-            | SourceType::Declared(DeclaredType::InternedStringPool(_))
-            | SourceType::Unregistered => Err(ScanError::unsupported_type(source)),
-            SourceType::Declared(DeclaredType::Custom(_)) => Ok(None),
-            SourceType::External(path) => {
-                Ok(standard_type.accepts_path(&path).then_some(standard_type))
-            }
-            SourceType::Unknown => Ok(standard_type
-                .accepts_path(&path_without_arguments(&type_path.path))
-                .then_some(standard_type)),
-        }
+        Ok(standard_type
+            .accepts_path(&path_without_arguments(&type_path.path))
+            .then_some(standard_type))
     }
 
     fn named(&self, type_path: &syn::TypePath, source: &syn::Type) -> Result<TypeExpr, ScanError> {
@@ -244,13 +202,11 @@ impl<'a> Scanner<'a> {
             .iter()
             .any(|segment| !matches!(segment.arguments, syn::PathArguments::None))
         {
-            if let Some(index) = self.declared_types.defer_slot(&type_path.path) {
-                return Ok(TypeExpr::record(
-                    RecordId::new(format!("$slot:{index}")),
-                    ast_path_without_arguments(&type_path.path),
-                ));
-            }
-            return Err(ScanError::unsupported_type(source));
+            let index = self.declared_types.defer_slot(&type_path.path);
+            return Ok(TypeExpr::record(
+                RecordId::new(format!("$slot:{index}")),
+                ast_path_without_arguments(&type_path.path),
+            ));
         }
         let Some(segment) = type_path.path.segments.last() else {
             return Err(ScanError::unsupported_type(source));
@@ -265,33 +221,11 @@ impl<'a> Scanner<'a> {
         if let Some(primitive) = primitive_path(&type_path.path) {
             return Ok(TypeExpr::Primitive(primitive));
         }
-        let path = ast_path(&type_path.path, self)?;
-        if let Some(index) = self.declared_types.defer_slot(&type_path.path) {
-            return Ok(TypeExpr::record(
-                RecordId::new(format!("$slot:{index}")),
-                path,
-            ));
-        }
-        match self
-            .declared_types
-            .resolve_type_in_scope(self.scope, &type_path.path)?
-        {
-            SourceType::Declared(DeclaredType::Record(id)) => {
-                Ok(TypeExpr::record(id.clone(), path))
-            }
-            SourceType::Declared(DeclaredType::Enum(id)) => {
-                Ok(TypeExpr::enumeration(id.clone(), path))
-            }
-            SourceType::Declared(DeclaredType::Class(id)) => Ok(TypeExpr::class(id.clone(), path)),
-            SourceType::Declared(DeclaredType::Custom(id)) => {
-                Ok(TypeExpr::custom(id.clone(), path))
-            }
-            SourceType::Declared(DeclaredType::Trait(_))
-            | SourceType::Declared(DeclaredType::InternedStringPool(_))
-            | SourceType::Unregistered
-            | SourceType::External(_)
-            | SourceType::Unknown => Err(ScanError::unsupported_type(source)),
-        }
+        let index = self.declared_types.defer_slot(&type_path.path);
+        Ok(TypeExpr::record(
+            RecordId::new(format!("$slot:{index}")),
+            ast_path_without_arguments(&type_path.path),
+        ))
     }
 
     fn dyn_trait(
@@ -364,16 +298,13 @@ impl<'a> Scanner<'a> {
         if let Some(base) = self.base_trait(bound)? {
             return Ok(TraitBoundPart::Base(base));
         }
-        if let Some(bound) = self.additional_bound(bound)? {
+        if let Some(bound) = self.additional_bound(bound) {
             return Ok(TraitBoundPart::Additional(bound));
         }
         Err(ScanError::unsupported_type(source))
     }
 
-    fn additional_bound(
-        &self,
-        bound: &syn::TraitBound,
-    ) -> Result<Option<AdditionalBound>, ScanError> {
+    fn additional_bound(&self, bound: &syn::TraitBound) -> Option<AdditionalBound> {
         if crate::unsupported::has_bound_modifier(bound)
             || bound.lifetimes.is_some()
             || closure_bound(bound).is_some()
@@ -383,17 +314,11 @@ impl<'a> Scanner<'a> {
                 .iter()
                 .any(|segment| !matches!(segment.arguments, syn::PathArguments::None))
         {
-            return Ok(None);
+            return None;
         }
-        match self
-            .declared_types
-            .resolve_type_in_scope(self.scope, &bound.path)?
-        {
-            SourceType::Declared(_) | SourceType::Unregistered => Ok(None),
-            SourceType::External(_) | SourceType::Unknown => Ok(Some(AdditionalBound::AutoTrait(
-                ast_path(&bound.path, self)?,
-            ))),
-        }
+        Some(AdditionalBound::AutoTrait(ast_path_without_arguments(
+            &bound.path,
+        )))
     }
 
     fn base_trait(&self, bound: &syn::TraitBound) -> Result<Option<BaseTrait>, ScanError> {
@@ -415,32 +340,15 @@ impl<'a> Scanner<'a> {
         {
             return Ok(None);
         }
-        let path = ast_path(&bound.path, self)?;
-        if self.declared_types.is_deferred() {
-            if is_auto_trait_path(&bound.path) {
-                return Ok(None);
-            }
-            let Some(index) = self.declared_types.defer_trait_slot(&bound.path) else {
-                return Ok(None);
-            };
-            return Ok(Some(BaseTrait::Named {
-                id: TraitId::new(format!("$slot:{index}")),
-                path,
-            }));
+        let path = ast_path_without_arguments(&bound.path);
+        if is_auto_trait_path(&bound.path) {
+            return Ok(None);
         }
-        match self
-            .declared_types
-            .resolve_type_in_scope(self.scope, &bound.path)?
-        {
-            SourceType::Declared(DeclaredType::Trait(id)) => Ok(Some(BaseTrait::Named {
-                id: id.clone(),
-                path,
-            })),
-            SourceType::Declared(_)
-            | SourceType::Unregistered
-            | SourceType::External(_)
-            | SourceType::Unknown => Ok(None),
-        }
+        let index = self.declared_types.defer_trait_slot(&bound.path);
+        Ok(Some(BaseTrait::Named {
+            id: TraitId::new(format!("$slot:{index}")),
+            path,
+        }))
     }
 
     fn fn_ptr(&self, fn_ptr: &syn::TypeFnPtr) -> Result<TypeExpr, ScanError> {
@@ -523,23 +431,12 @@ impl<'a> Scanner<'a> {
         {
             return Err(ScanError::unsupported_type(source));
         }
-        if let Some(index) = self.declared_types.defer_slot(&pool_path.path) {
-            return Ok(TypeExpr::interned_string(
-                interned_string_base_path(&type_path.path),
-                format!("$slot:{index}"),
-                ast_path_without_arguments(&pool_path.path),
-                Vec::new(),
-            ));
-        }
-        let (pool_canonical_path, static_values) = self
-            .declared_types
-            .resolve_interned_string_pool_entry(self.scope, &pool_path.path)?
-            .ok_or_else(|| ScanError::unsupported_type(source))?;
+        let index = self.declared_types.defer_slot(&pool_path.path);
         Ok(TypeExpr::interned_string(
-            interned_string_base_path(&type_path.path),
-            pool_canonical_path,
+            ast_path_without_arguments(&type_path.path),
+            format!("$slot:{index}"),
             ast_path_without_arguments(&pool_path.path),
-            static_values.to_vec(),
+            Vec::new(),
         ))
     }
 
@@ -562,41 +459,6 @@ impl<'a> Scanner<'a> {
         match type_arguments(segment).as_slice() {
             [first, second] => Ok((first, second)),
             _ => Err(ScanError::unsupported_type(source)),
-        }
-    }
-
-    fn path_for_custom_remote(&self, ty: &syn::Type, fallback: &str) -> Path {
-        match unwrapped(ty) {
-            syn::Type::Path(type_path) => ast_path(&type_path.path, self)
-                .unwrap_or_else(|_| ast_path_without_arguments(&type_path.path)),
-            _ => Path::single(fallback),
-        }
-    }
-
-    fn can_resolve_custom_remote(&self, ty: &syn::Type) -> Result<bool, ScanError> {
-        let syn::Type::Path(type_path) = ty else {
-            return Ok(true);
-        };
-        match self
-            .declared_types
-            .resolve_type_in_scope(self.scope, &type_path.path)?
-        {
-            SourceType::Declared(_) => Ok(false),
-            SourceType::Unregistered => self
-                .declared_types
-                .resolves_type_alias(self.scope, &type_path.path),
-            SourceType::External(_) | SourceType::Unknown => Ok(true),
-        }
-    }
-
-    fn custom_remote(&self, ty: &syn::Type) -> Result<Option<&CustomTypeId>, ScanError> {
-        if self.declared_types.is_deferred() {
-            return Ok(None);
-        }
-        if self.can_resolve_custom_remote(ty)? {
-            self.declared_types.resolve_custom_remote(self.scope, ty)
-        } else {
-            Ok(None)
         }
     }
 }
@@ -701,25 +563,10 @@ fn is_auto_trait_path(path: &syn::Path) -> bool {
     })
 }
 
-fn ast_path(path: &syn::Path, scanner: &Scanner<'_>) -> Result<Path, ScanError> {
-    Ok(Path::new(
-        path_root(path),
-        path_segments(path, scanner)?.collect(),
-    ))
-}
-
 fn ast_path_without_arguments(path: &syn::Path) -> Path {
     Path::new(
         path_root(path),
         path_segments_without_arguments(path).collect(),
-    )
-}
-
-/// Returns the bare path to `InternedString` without pool generic arguments.
-fn interned_string_base_path(type_path: &syn::Path) -> Path {
-    Path::new(
-        path_root(type_path),
-        path_segments_without_arguments(type_path).collect(),
     )
 }
 
@@ -746,23 +593,6 @@ fn path_root(path: &syn::Path) -> PathRoot {
     }
 }
 
-fn path_segments<'path>(
-    path: &'path syn::Path,
-    scanner: &'path Scanner<'_>,
-) -> Result<impl Iterator<Item = PathSegment> + 'path, ScanError> {
-    let skipped_root_segments = match path_root(path) {
-        PathRoot::Relative | PathRoot::Absolute => 0,
-        PathRoot::Crate | PathRoot::Self_ => 1,
-        PathRoot::Super(count) => count.get(),
-    };
-    path.segments
-        .iter()
-        .skip(skipped_root_segments)
-        .map(|segment| ast_segment(segment, scanner))
-        .collect::<Result<Vec<_>, _>>()
-        .map(IntoIterator::into_iter)
-}
-
 fn path_segments_without_arguments(path: &syn::Path) -> impl Iterator<Item = PathSegment> + '_ {
     let skipped_root_segments = match path_root(path) {
         PathRoot::Relative | PathRoot::Absolute => 0,
@@ -773,47 +603,6 @@ fn path_segments_without_arguments(path: &syn::Path) -> impl Iterator<Item = Pat
         .iter()
         .skip(skipped_root_segments)
         .map(|segment| PathSegment::new(NamePart::new(segment.ident.to_string())))
-}
-
-fn ast_segment(
-    segment: &syn::PathSegment,
-    scanner: &Scanner<'_>,
-) -> Result<PathSegment, ScanError> {
-    let arguments = match &segment.arguments {
-        syn::PathArguments::None | syn::PathArguments::Parenthesized(_) => Vec::new(),
-        syn::PathArguments::AngleBracketed(arguments) => arguments
-            .args
-            .iter()
-            .map(|argument| ast_generic_argument(argument, scanner))
-            .collect::<Result<Vec<_>, _>>()?,
-    };
-    Ok(PathSegment::with_arguments(
-        NamePart::new(segment.ident.to_string()),
-        arguments,
-    ))
-}
-
-fn ast_generic_argument(
-    argument: &syn::GenericArgument,
-    scanner: &Scanner<'_>,
-) -> Result<GenericArgument, ScanError> {
-    match argument {
-        syn::GenericArgument::Type(ty) => scanner.scan(ty).map(GenericArgument::Type),
-        syn::GenericArgument::Const(expr) => Ok(GenericArgument::Const(ConstExpr::Raw(
-            expr.to_token_stream().to_string(),
-        ))),
-        syn::GenericArgument::AssocType(associated) => {
-            scanner
-                .scan(&associated.ty)
-                .map(|type_expr| GenericArgument::AssociatedType {
-                    name: NamePart::new(associated.ident.to_string()),
-                    type_expr,
-                })
-        }
-        _ => Ok(GenericArgument::Const(ConstExpr::Raw(
-            argument.to_token_stream().to_string(),
-        ))),
-    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -932,14 +721,11 @@ enum TraitBoundPart {
 
 #[cfg(test)]
 mod tests {
-    use boltffi_ast::{
-        AdditionalBound, BaseTrait, BuiltinType, ClassId, Primitive, RecordId, TraitBounds, TraitId,
-    };
+    use boltffi_ast::{AdditionalBound, BaseTrait, BuiltinType, Primitive, TraitBounds};
 
     use super::*;
-    use crate::ModuleScope;
+
     use crate::declared_types::DeclaredTypes;
-    use crate::path::ModulePath;
 
     fn ty(source: &str) -> syn::Type {
         syn::parse_str(source).expect("valid type")
@@ -974,22 +760,8 @@ mod tests {
         assert_eq!(advice("std::string::String"), None);
     }
 
-    fn item(source: &str) -> syn::Item {
-        syn::parse_str(source).expect("valid item")
-    }
-
     fn scan(source: &str) -> Result<TypeExpr, ScanError> {
-        Scanner::new(&DeclaredTypes::new(), &ModuleScope::root("demo")).scan(&ty(source))
-    }
-
-    fn dyn_trait_with_bounds(id: &str, path: &str, bounds: Vec<AdditionalBound>) -> TypeExpr {
-        TypeExpr::Dyn(TraitBounds::new(
-            BaseTrait::Named {
-                id: TraitId::new(id),
-                path: Path::single(path),
-            },
-            bounds,
-        ))
+        Scanner::new(&DeclaredTypes::new()).scan(&ty(source))
     }
 
     fn impl_fn_with_bounds(function_trait: FnTrait, bounds: Vec<AdditionalBound>) -> TypeExpr {
@@ -1010,7 +782,7 @@ mod tests {
             Ok(TypeExpr::Primitive(Primitive::F32))
         );
         assert!(
-            scan("mymod::i64").is_err(),
+            !matches!(scan("mymod::i64"), Ok(TypeExpr::Primitive(_))),
             "a user type sharing a primitive leaf spelling must not resolve as that primitive"
         );
     }
@@ -1037,44 +809,6 @@ mod tests {
     }
 
     #[test]
-    fn scans_nested_interned_string_with_canonical_pool_identity_and_source_path() {
-        let mut declared_types = DeclaredTypes::new();
-        declared_types.register_test_interned_string_pool(
-            "demo::pools::BrowserName",
-            vec!["Chrome".to_owned()],
-        );
-        let items = [item("use crate::pools::BrowserName;")];
-        let module = ModuleScope::new(ModulePath::root("demo").child("api"), &items);
-        let scanner = Scanner::new(&declared_types, &module);
-
-        let scanned = scanner
-            .scan(&ty("boltffi::InternedString<BrowserName>"))
-            .expect("declared pool should resolve");
-        let TypeExpr::InternedString {
-            path,
-            pool_id,
-            pool,
-            static_values,
-        } = scanned
-        else {
-            panic!("expected interned string type");
-        };
-        assert_eq!(
-            path,
-            Path::new(
-                PathRoot::Relative,
-                vec![
-                    PathSegment::new("boltffi"),
-                    PathSegment::new("InternedString")
-                ],
-            )
-        );
-        assert_eq!(pool_id, "demo::pools::BrowserName");
-        assert_eq!(pool, Path::single("BrowserName"));
-        assert_eq!(static_values, vec!["Chrome"]);
-    }
-
-    #[test]
     fn scans_legacy_builtin_value_types() {
         assert_eq!(
             scan("Duration"),
@@ -1093,35 +827,6 @@ mod tests {
     }
 
     #[test]
-    fn declared_types_named_like_builtins_win_over_builtin_leaf_names() {
-        let mut declared_types = DeclaredTypes::new();
-        declared_types.register_record(RecordId::new("demo::Duration"));
-        let module = ModuleScope::root("demo");
-        let scanner = Scanner::new(&declared_types, &module);
-
-        assert_eq!(
-            scanner.scan(&ty("Duration")),
-            Ok(TypeExpr::record(
-                RecordId::new("demo::Duration"),
-                Path::single("Duration")
-            ))
-        );
-    }
-
-    #[test]
-    fn external_imports_do_not_fall_back_to_builtin_leaf_names() {
-        let items = [item("use time::Duration;")];
-        let module = ModuleScope::new(ModulePath::root("demo"), &items);
-        let declared_types = DeclaredTypes::new();
-        let scanner = Scanner::new(&declared_types, &module);
-
-        assert_eq!(
-            scanner.scan(&ty("Duration")),
-            Err(ScanError::unsupported_type(&ty("Duration")))
-        );
-    }
-
-    #[test]
     fn scans_result_tuple_and_maps_as_source_shapes() {
         assert_eq!(
             scan("Result<(u32,), String>"),
@@ -1137,65 +842,6 @@ mod tests {
                 TypeExpr::String,
                 TypeExpr::Primitive(Primitive::I32)
             ))
-        );
-    }
-
-    #[test]
-    fn scans_declared_types_with_source_paths() {
-        let mut declared_types = DeclaredTypes::new();
-        declared_types.register_record(RecordId::new("demo::Point"));
-        declared_types.register_class(ClassId::new("demo::Engine"));
-        let module = ModuleScope::root("demo");
-        let scanner = Scanner::new(&declared_types, &module);
-
-        assert_eq!(
-            scanner.scan(&ty("Point")),
-            Ok(TypeExpr::record(
-                RecordId::new("demo::Point"),
-                Path::single("Point")
-            ))
-        );
-        assert_eq!(
-            scanner.scan(&ty("Option<Engine>")),
-            Ok(TypeExpr::option(TypeExpr::class(
-                ClassId::new("demo::Engine"),
-                Path::single("Engine")
-            )))
-        );
-    }
-
-    #[test]
-    fn scans_callback_traits_only_behind_dyn_or_impl_trait() {
-        let mut declared_types = DeclaredTypes::new();
-        declared_types.register_trait(TraitId::new("demo::Listener"));
-        let module = ModuleScope::root("demo");
-        let scanner = Scanner::new(&declared_types, &module);
-
-        assert_eq!(
-            scanner.scan(&ty("Box<dyn Listener>")),
-            Ok(TypeExpr::boxed(TypeExpr::dyn_trait(
-                TraitId::new("demo::Listener"),
-                Path::single("Listener")
-            )))
-        );
-        assert_eq!(
-            scanner.scan(&ty("Box<dyn Listener + Send>")),
-            Ok(TypeExpr::boxed(dyn_trait_with_bounds(
-                "demo::Listener",
-                "Listener",
-                vec![AdditionalBound::AutoTrait(Path::single("Send"))]
-            )))
-        );
-        assert_eq!(
-            scanner.scan(&ty("impl Listener")),
-            Ok(TypeExpr::impl_trait(
-                TraitId::new("demo::Listener"),
-                Path::single("Listener")
-            ))
-        );
-        assert_eq!(
-            scanner.scan(&ty("Listener")),
-            Err(ScanError::unsupported_type(&ty("Listener")))
         );
     }
 

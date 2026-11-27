@@ -2,12 +2,11 @@ use boltffi_ast::{
     ExecutionKind, MethodDef, MethodId, ParameterDef, ParameterPassing, Receiver, ReturnDef,
     Source, SourceName,
 };
-use syn::spanned::Spanned;
 
 use crate::attributes::Attributes;
 use crate::type_expr::Scanner;
 use crate::unsupported::UnsupportedFeature;
-use crate::{ScanError, attributes, name, unsupported};
+use crate::{ScanError, name, unsupported};
 
 pub(super) fn validate(signature: &syn::Signature, item: String) -> Result<(), ScanError> {
     unsupported::generics(&signature.generics, &item)?;
@@ -43,7 +42,6 @@ pub(super) fn method(
     method.parameters = parameters(signature, scanner)?;
     method.returns = returns.scan(scanner, &signature.output)?;
     method.source = source;
-    method.source_span = method.source.span.clone();
     method.doc = metadata.doc();
     method.deprecated = metadata.deprecated()?;
     method.user_attrs = metadata.user_attrs();
@@ -74,7 +72,6 @@ pub(super) fn parameter(
     let mut parameter = ParameterDef::value(binding_name, scanner.scan(source_type)?);
     let metadata = Attributes::new(&typed.attrs, scanner);
     parameter.passing = passing;
-    parameter.source = attributes::public_source(scanner.scope(), typed.span());
     parameter.doc = metadata.doc();
     parameter.default = metadata.default()?;
     parameter.user_attrs = metadata.user_attrs();
@@ -130,15 +127,14 @@ fn parameter_name(pat: &syn::Pat) -> Result<SourceName, ScanError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ModuleScope;
+
     use crate::declared_types::DeclaredTypes;
     use boltffi_ast::{Primitive, TypeExpr};
 
     fn parameter(source: &str) -> ParameterDef {
         let typed = syn::parse_str::<syn::PatType>(source).expect("parameter");
         let declared_types = DeclaredTypes::new();
-        let module = ModuleScope::root("demo");
-        let scanner = Scanner::new(&declared_types, &module);
+        let scanner = Scanner::new(&declared_types);
         super::parameter(&typed, &scanner).expect("scan")
     }
 

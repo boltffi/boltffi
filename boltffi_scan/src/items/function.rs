@@ -1,44 +1,22 @@
 use boltffi_ast::{FunctionDef, FunctionId, ParameterDef};
-use syn::spanned::Spanned;
 
 use crate::attributes::Attributes;
 use crate::declared_types::DeclaredTypes;
-use crate::marked::Marked;
 use crate::type_expr::Scanner;
-use crate::{ModuleScope, ScanError, attributes, name};
+use crate::{ScanError, attributes, name};
 
 use super::signature;
 
-pub fn scan(
-    marked: &Marked<'_, syn::ItemFn>,
-    declared_types: &DeclaredTypes,
-) -> Result<FunctionDef, ScanError> {
-    build(marked.item(), marked.scope(), declared_types)
-}
-
 pub(crate) fn scan_item(
     item: &syn::ItemFn,
-    scope: &ModuleScope,
-    declared_types: &DeclaredTypes,
-) -> Result<FunctionDef, ScanError> {
-    build(item, scope, declared_types)
-}
-
-fn build(
-    item: &syn::ItemFn,
-    scope: &ModuleScope,
     declared_types: &DeclaredTypes,
 ) -> Result<FunctionDef, ScanError> {
     let ident = &item.sig.ident;
     signature::validate(&item.sig, format!("function {ident}"))?;
-    let mut function = FunctionDef::new(
-        FunctionId::new(scope.path().qualified(&ident.to_string())),
-        name::source(ident),
-    );
-    let scanner = Scanner::new(declared_types, scope);
+    let mut function = FunctionDef::new(FunctionId::new(name::self_id(ident)), name::source(ident));
+    let scanner = Scanner::new(declared_types);
     let attrs = Attributes::new(&item.attrs, &scanner);
-    function.source = attributes::source(&item.vis, scope, item.span());
-    function.source_span = function.source.span.clone();
+    function.source = attributes::source(&item.vis);
     function.execution = signature::execution(&item.sig);
     function.parameters = parameters(&item.sig, &scanner)?;
     function.returns = scanner.scan_export_return(&item.sig.output)?;
@@ -72,11 +50,7 @@ mod tests {
     }
 
     fn scan(source: &str) -> Result<FunctionDef, ScanError> {
-        super::build(
-            &parse(source),
-            &ModuleScope::root("demo"),
-            &DeclaredTypes::new(),
-        )
+        super::scan_item(&parse(source), &DeclaredTypes::new())
     }
 
     fn name(parts: &[&str]) -> CanonicalName {
@@ -93,7 +67,7 @@ mod tests {
     #[test]
     fn scans_complete_primitive_free_function_contract() {
         let function = scan("pub fn add(a: i32, b: i32) -> i32 { a + b }").expect("scan");
-        let mut expected = FunctionDef::new(FunctionId::new("demo::add"), name(&["add"]));
+        let mut expected = FunctionDef::new(FunctionId::new("$self::add"), name(&["add"]));
         expected.form = CallableForm::Function;
         expected.execution = ExecutionKind::Sync;
         expected.parameters = vec![
@@ -227,33 +201,21 @@ mod tests {
     }
 
     #[test]
-    fn non_primitive_parameter_is_rejected_without_registration() {
-        let error = scan("pub fn make(point: Point) {}").expect_err("unregistered type rejects");
-
-        assert!(matches!(
-            error.unlocated(),
-            ScanError::UnsupportedType { spelling } if spelling == "Point"
-        ));
-    }
-
-    #[test]
-    fn resolves_record_typed_parameter_and_return_against_registry() {
-        let mut declared_types = DeclaredTypes::new();
-        declared_types.register_record(RecordId::new("demo::Point"));
-        let function = super::build(
+    fn defers_record_typed_parameter_and_return_to_a_slot() {
+        let declared_types = DeclaredTypes::new();
+        let function = super::scan_item(
             &parse("pub fn translate(point: Point, dx: f64) -> Point { point }"),
-            &ModuleScope::root("demo"),
             &declared_types,
         )
         .expect("scan");
 
         assert_eq!(
             function.parameters[0].type_expr,
-            TypeExpr::record(RecordId::new("demo::Point"), Path::single("Point"))
+            TypeExpr::record(RecordId::new("$slot:0"), Path::single("Point"))
         );
         assert_eq!(
             value_return(&function.returns),
-            &TypeExpr::record(RecordId::new("demo::Point"), Path::single("Point"))
+            &TypeExpr::record(RecordId::new("$slot:0"), Path::single("Point"))
         );
     }
 
@@ -273,7 +235,7 @@ mod tests {
     fn scans_multi_word_function_and_parameter_names_as_parts() {
         let function = scan("pub fn make_handler(user_id: i32) -> i32 { user_id }").expect("scan");
 
-        assert_eq!(function.id, FunctionId::new("demo::make_handler"));
+        assert_eq!(function.id, FunctionId::new("$self::make_handler"));
         assert_eq!(function.name.canonical(), &name(&["make", "handler"]));
         assert_eq!(
             function.parameters[0].name.canonical(),

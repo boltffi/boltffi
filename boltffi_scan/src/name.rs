@@ -7,16 +7,13 @@ pub(super) fn source(ident: &syn::Ident) -> SourceName {
     SourceName::new(ident.to_string(), canonical(ident))
 }
 
-pub(super) fn source_segment(segment: &str) -> SourceName {
-    SourceName::new(segment, canonical_segment(segment))
-}
-
 pub(super) fn canonical(ident: &syn::Ident) -> CanonicalName {
-    canonical_segment(&ident_source(ident))
+    CanonicalName::from(ident_source(ident).as_str())
 }
 
-pub(super) fn canonical_segment(segment: &str) -> CanonicalName {
-    CanonicalName::from(segment)
+/// The placeholder id of an item the captured invocation declares.
+pub(super) fn self_id(ident: &syn::Ident) -> String {
+    format!("$self::{ident}")
 }
 
 fn ident_source(ident: &syn::Ident) -> String {

@@ -1,33 +1,15 @@
-use boltffi_ast::{MethodDef, TraitDef, TraitId};
-use syn::spanned::Spanned;
+use boltffi_ast::{MethodDef, Source, TraitDef, TraitId};
 
 use crate::attributes::Attributes;
 use crate::declared_types::DeclaredTypes;
-use crate::marked::Marked;
 use crate::marker::{self, Disposition};
 use crate::type_expr::Scanner;
-use crate::{ModuleScope, ScanError, attributes, name, unsupported};
+use crate::{ScanError, attributes, name, unsupported};
 
 use super::{signature, stream};
 
-pub fn scan(
-    marked: &Marked<'_, syn::ItemTrait>,
-    declared_types: &DeclaredTypes,
-) -> Result<TraitDef, ScanError> {
-    build(marked.item(), marked.scope(), declared_types)
-}
-
 pub(crate) fn scan_item(
     item: &syn::ItemTrait,
-    scope: &ModuleScope,
-    declared_types: &DeclaredTypes,
-) -> Result<TraitDef, ScanError> {
-    build(item, scope, declared_types)
-}
-
-fn build(
-    item: &syn::ItemTrait,
-    scope: &ModuleScope,
     declared_types: &DeclaredTypes,
 ) -> Result<TraitDef, ScanError> {
     let item_name = format!("trait {}", item.ident);
@@ -35,12 +17,11 @@ fn build(
     unsupported::unsafety(item.unsafety.as_ref(), &item_name)?;
     supertraits(&item.supertraits, &item_name)?;
 
-    let id = TraitId::new(scope.path().qualified(&item.ident.to_string()));
+    let id = TraitId::new(name::self_id(&item.ident));
     let mut callback = TraitDef::new(id, name::source(&item.ident));
-    let scanner = Scanner::new(declared_types, scope);
+    let scanner = Scanner::new(declared_types);
     let attrs = Attributes::new(&item.attrs, &scanner);
-    callback.source = attributes::source(&item.vis, scope, item.span());
-    callback.source_span = callback.source.span.clone();
+    callback.source = attributes::source(&item.vis);
     callback.doc = attrs.doc();
     callback.deprecated = attrs.deprecated()?;
     callback.user_attrs = attrs.user_attrs();
@@ -122,7 +103,7 @@ fn method_from_signature(
     signature::method(
         &method.sig,
         &method.attrs,
-        attributes::public_source(scanner.scope(), method.span()),
+        Source::exported(),
         parent,
         scanner,
         signature::MethodReturns::Trait,
@@ -154,8 +135,8 @@ fn trait_item_name(item: &syn::TraitItem) -> String {
 mod tests {
     use super::*;
     use boltffi_ast::{
-        CanonicalName, ExecutionKind, NamePart, Primitive, Receiver, ReturnDef, Source, TraitId,
-        TypeExpr, Visibility,
+        CanonicalName, ExecutionKind, NamePart, Primitive, Receiver, ReturnDef, TraitId, TypeExpr,
+        Visibility,
     };
 
     fn parse(source: &str) -> syn::ItemTrait {
@@ -163,11 +144,7 @@ mod tests {
     }
 
     fn scan(source: &str) -> Result<TraitDef, ScanError> {
-        build(
-            &parse(source),
-            &ModuleScope::root("demo"),
-            &DeclaredTypes::new(),
-        )
+        super::scan_item(&parse(source), &DeclaredTypes::new())
     }
 
     fn name(parts: &[&str]) -> CanonicalName {
@@ -179,13 +156,13 @@ mod tests {
         let callback = scan("pub trait ValueCallback { fn on_value(&self, value: i32) -> i64; }")
             .expect("scan");
 
-        assert_eq!(callback.id, TraitId::new("demo::ValueCallback"));
+        assert_eq!(callback.id, TraitId::new("$self::ValueCallback"));
         assert_eq!(callback.name.canonical(), &name(&["value", "callback"]));
         assert_eq!(callback.source, Source::new(Visibility::Public, None));
         assert_eq!(callback.methods.len(), 1);
         assert_eq!(
             callback.methods[0].id,
-            "demo::ValueCallback::on_value".into()
+            "$self::ValueCallback::on_value".into()
         );
         assert_eq!(
             callback.methods[0].name.canonical(),
@@ -221,7 +198,7 @@ mod tests {
         let callback =
             scan("trait Listener: Send + Sync + Debug { fn call(&self); }").expect("scan");
 
-        assert_eq!(callback.id, TraitId::new("demo::Listener"));
+        assert_eq!(callback.id, TraitId::new("$self::Listener"));
         assert_eq!(callback.methods.len(), 1);
     }
 

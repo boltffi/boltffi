@@ -5,14 +5,14 @@
 //! to project through the compiler at the invocation site.
 
 use boltffi_ast::{
-    ClassDef, ClassId, ConstantDef, ConstantOwner, CustomTypeDef, DocComment, EnumDef, FunctionDef,
-    MethodDef, RecordDef, RecordId, StreamDef, TraitDef, TypeExpr,
+    AttributeInput, ClassDef, ClassId, ConstantDef, ConstantOwner, CustomTypeDef, DocComment,
+    EnumDef, FunctionDef, MethodDef, Path, RecordDef, RecordId, StreamDef, TraitDef, TypeExpr,
+    UserAttr,
 };
 
 use crate::declared_types::DeclaredTypes;
 use crate::items::class::ClassDeclaration;
-use crate::path::{ModulePath, ModuleScope};
-use crate::{ScanError, items};
+use crate::{ScanError, items, unsupported};
 
 /// One deferred reference, in the form the record emitter projects it through.
 pub enum SlotSource {
@@ -42,31 +42,35 @@ pub struct CapturedItem<Def> {
 
 /// Captures a `#[data]` struct as a record definition.
 pub fn capture_struct(item: &syn::ItemStruct) -> Result<CapturedItem<RecordDef>, ScanError> {
-    captured(|scope, declared_types| items::record::scan_item(item, scope, declared_types))
+    captured(|declared_types| items::record::scan_item(item, declared_types))
 }
 
 /// Captures a `#[data]` enum as an enum definition.
 pub fn capture_enum(item: &syn::ItemEnum) -> Result<CapturedItem<EnumDef>, ScanError> {
-    captured(|scope, declared_types| items::enumeration::scan_item(item, scope, declared_types))
+    captured(|declared_types| items::enumeration::scan_item(item, declared_types))
 }
 
 /// Captures an `#[error]` struct as a record definition carrying the error marker.
 pub fn capture_error_struct(item: &syn::ItemStruct) -> Result<CapturedItem<RecordDef>, ScanError> {
     let mut captured = capture_struct(item)?;
-    crate::marker::Marker::Error.append_value_attrs(&mut captured.def.user_attrs);
+    captured.def.user_attrs.push(error_attr());
     Ok(captured)
 }
 
 /// Captures an `#[error]` enum as an enum definition carrying the error marker.
 pub fn capture_error_enum(item: &syn::ItemEnum) -> Result<CapturedItem<EnumDef>, ScanError> {
     let mut captured = capture_enum(item)?;
-    crate::marker::Marker::Error.append_value_attrs(&mut captured.def.user_attrs);
+    captured.def.user_attrs.push(error_attr());
     Ok(captured)
+}
+
+fn error_attr() -> UserAttr {
+    UserAttr::new(Path::single("error"), AttributeInput::Empty)
 }
 
 /// Captures an `#[export]` free function as a function definition.
 pub fn capture_function(item: &syn::ItemFn) -> Result<CapturedItem<FunctionDef>, ScanError> {
-    captured(|scope, declared_types| items::function::scan_item(item, scope, declared_types))
+    captured(|declared_types| items::function::scan_item(item, declared_types))
 }
 
 /// Captures an `#[export]` struct or enum as the class it declares, without members.
@@ -77,36 +81,32 @@ pub fn capture_class(
     declaration: ClassDeclaration<'_>,
     marker_args: proc_macro2::TokenStream,
 ) -> Result<CapturedItem<ClassDef>, ScanError> {
-    let thread_safety = crate::marker::export_marker_from_args(marker_args)?.class_thread_safety();
-    captured(|scope, declared_types| {
-        items::class::scan_declaration(declaration, scope, declared_types, thread_safety)
+    let thread_safety = crate::marker::class_thread_safety(marker_args)?;
+    captured(|declared_types| {
+        items::class::scan_declaration(declaration, declared_types, thread_safety)
     })
 }
 
 /// Captures an `#[export]` constant as a constant definition.
 pub fn capture_constant(item: &syn::ItemConst) -> Result<CapturedItem<ConstantDef>, ScanError> {
-    captured(|scope, declared_types| items::constant::scan_item(item, scope, declared_types))
+    captured(|declared_types| items::constant::scan_item(item, declared_types))
 }
 
 /// Captures an exported callback trait as a trait definition.
 pub fn capture_trait(item: &syn::ItemTrait) -> Result<CapturedItem<TraitDef>, ScanError> {
-    captured(|scope, declared_types| items::callback::scan_item(item, scope, declared_types))
+    captured(|declared_types| items::callback::scan_item(item, declared_types))
 }
 
 /// Captures a `custom_type!` invocation's spec tokens as a custom type definition.
 pub fn capture_custom(
     tokens: proc_macro2::TokenStream,
 ) -> Result<CapturedItem<CustomTypeDef>, ScanError> {
-    captured(|scope, declared_types| {
-        items::custom_type::scan_macro_tokens(tokens.clone(), scope, declared_types)
-    })
+    captured(|declared_types| items::custom_type::scan_macro_tokens(tokens, declared_types))
 }
 
 /// Captures a `#[custom_ffi]` trait impl as a custom type definition.
 pub fn capture_custom_ffi(item: &syn::ItemImpl) -> Result<CapturedItem<CustomTypeDef>, ScanError> {
-    captured(|scope, declared_types| {
-        items::custom_type::scan_trait_impl_item(item, scope, declared_types)
-    })
+    captured(|declared_types| items::custom_type::scan_trait_impl_item(item, declared_types))
 }
 
 /// One `interned_string_pool!` declaration, captured from its invocation tokens.
@@ -121,11 +121,7 @@ pub struct CapturedPool {
 pub fn capture_interned_string_pool(
     tokens: proc_macro2::TokenStream,
 ) -> Result<CapturedPool, ScanError> {
-    let spec = items::interned_string_pool::Spec::parse_tokens(tokens)?;
-    Ok(CapturedPool {
-        name: spec.name().to_string(),
-        values: spec.values().to_vec(),
-    })
+    items::interned_string_pool::parse_tokens(tokens)
 }
 
 /// Methods captured from one `#[data(impl)]` or `#[export] impl` block, targeting a
@@ -165,21 +161,19 @@ enum MethodsTarget {
 }
 
 fn methods_block(item: &syn::ItemImpl, kind: MethodsTarget) -> Result<CapturedMethods, ScanError> {
-    match (kind, &item.trait_) {
-        (MethodsTarget::Class, _) => {
-            crate::impl_target::Target::class(item)?;
-        }
-        (MethodsTarget::Data, Some((path, _))) => {
-            return Err(ScanError::UnsupportedDataImplShape {
-                target: crate::spelling::ty(&item.self_ty),
-            }
-            .at(path));
-        }
-        (MethodsTarget::Data, None) => {}
+    let spelled = crate::spelling::ty(&item.self_ty);
+    if let MethodsTarget::Class = kind {
+        unsupported::generics(&item.generics, &format!("class {spelled}"))?;
     }
-    let scope = ModuleScope::with_spans(ModulePath::root("$self"), &[], None);
-    let mut declared_types = DeclaredTypes::deferred();
-    let scanner = crate::type_expr::Scanner::new(&declared_types, &scope);
+    if let Some((path, _)) = &item.trait_ {
+        return Err(match kind {
+            MethodsTarget::Class => ScanError::UnsupportedClassImplShape { target: spelled },
+            MethodsTarget::Data => ScanError::UnsupportedDataImplShape { target: spelled },
+        }
+        .at(path));
+    }
+    let mut declared_types = DeclaredTypes::new();
+    let scanner = crate::type_expr::Scanner::new(&declared_types);
     let target = scanner.scan(&item.self_ty)?;
     let parent = match &target {
         TypeExpr::Record { id, .. } => id.as_str().to_owned(),
@@ -187,24 +181,18 @@ fn methods_block(item: &syn::ItemImpl, kind: MethodsTarget) -> Result<CapturedMe
     };
     let (methods, streams, doc) = match kind {
         MethodsTarget::Data => (
-            items::impl_methods::scan_value_methods(item, &parent, &scope, &declared_types)?,
+            items::impl_methods::value_methods(item, &parent, &declared_types)?,
             Vec::new(),
             None,
         ),
         MethodsTarget::Class => (
-            items::impl_methods::class_methods(item, &parent, &scope, &declared_types)?,
-            items::stream::scan_owned(
-                item,
-                &ClassId::new(parent.clone()),
-                &scope,
-                &declared_types,
-            )?,
+            items::impl_methods::class_methods(item, &parent, &declared_types)?,
+            items::stream::scan_owned(item, &ClassId::new(parent.clone()), &declared_types)?,
             crate::attributes::Attributes::new(&item.attrs, &scanner).doc(),
         ),
     };
     let owner = ConstantOwner::Record(RecordId::new(parent));
-    let constants =
-        items::constant::scan_associated_in_impl(item, &owner, &scope, &declared_types)?;
+    let constants = items::constant::scan_associated_in_impl(item, &owner, &declared_types)?;
     let spelling = crate::spelling::path(&match &*item.self_ty {
         syn::Type::Path(path) => path.path.clone(),
         _ => return Err(ScanError::unsupported_type(&item.self_ty)),
@@ -221,11 +209,10 @@ fn methods_block(item: &syn::ItemImpl, kind: MethodsTarget) -> Result<CapturedMe
 }
 
 fn captured<Def>(
-    scan: impl FnOnce(&ModuleScope, &DeclaredTypes) -> Result<Def, ScanError>,
+    scan: impl FnOnce(&DeclaredTypes) -> Result<Def, ScanError>,
 ) -> Result<CapturedItem<Def>, ScanError> {
-    let scope = ModuleScope::with_spans(ModulePath::root("$self"), &[], None);
-    let mut declared_types = DeclaredTypes::deferred();
-    let def = scan(&scope, &declared_types)?;
+    let mut declared_types = DeclaredTypes::new();
+    let def = scan(&declared_types)?;
     Ok(CapturedItem {
         def,
         slots: declared_types.take_slots(),
