@@ -66,6 +66,29 @@ final class AsyncFnsTests: DemoTestCase {
         XCTAssertEqual(createdRecord, record)
     }
 
+    func testCancellationWaitsForInFlightRustPollBeforeFreeingFuture() async {
+        let call = _Concurrency.Task {
+            try await asyncBlockingValue(milliseconds: 500)
+        }
+        let deadline = Date().addingTimeInterval(5)
+        while !asyncBlockingValueStarted() && Date() < deadline {
+            await _Concurrency.Task<Never, Never>.yield()
+        }
+        XCTAssertTrue(asyncBlockingValueStarted())
+
+        call.cancel()
+
+        do {
+            _ = try await call.value
+            XCTFail("expected cancellation")
+        } catch is CancellationError {
+            // Expected.
+        } catch {
+            XCTFail("expected CancellationError, got \(error)")
+        }
+        XCTAssertFalse(asyncBlockingValueStarted())
+    }
+
     func testAsyncCallsResumeOffTheWakingThread() async throws {
         demoCase("case:async_fns.native_wake.resumed_thread.should_not_be_the_waking_thread")
         let resumedThread = try await asyncResumedThreadName()
