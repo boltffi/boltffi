@@ -34,7 +34,45 @@ pub fn derive_ffi_type(input: TokenStream) -> TokenStream {
 /// See [Streaming](https://boltffi.dev/docs/streaming).
 #[proc_macro_attribute]
 pub fn ffi_stream(_attribute: TokenStream, item: TokenStream) -> TokenStream {
-    item
+    misplaced(STREAM_PLACEMENT, item)
+}
+
+const STREAM_PLACEMENT: &str = "`#[ffi_stream]` goes on a method of an `#[export] impl` block";
+
+const DEFAULT_PLACEMENT: &str =
+    "`#[boltffi::default]` goes on a parameter or on a field of a `#[data]` type";
+
+/// Refuses a helper attribute that expanded on its own, so no BoltFFI marker read it.
+fn misplaced(message: &str, item: TokenStream) -> TokenStream {
+    let error = syn::Error::new(proc_macro2::Span::call_site(), message).to_compile_error();
+    let item = proc_macro2::TokenStream::from(item);
+    quote! { #error #item }.into()
+}
+
+/// Errors for `#[ffi_stream]` and `#[boltffi::default]` on `item` itself, where the marker
+/// that expands first would drop them unread.
+fn misplaced_helpers(item: &syn::Item) -> proc_macro2::TokenStream {
+    let attrs = match item {
+        syn::Item::Const(item) => &item.attrs,
+        syn::Item::Enum(item) => &item.attrs,
+        syn::Item::Fn(item) => &item.attrs,
+        syn::Item::Impl(item) => &item.attrs,
+        syn::Item::Struct(item) => &item.attrs,
+        syn::Item::Trait(item) => &item.attrs,
+        _ => return proc_macro2::TokenStream::new(),
+    };
+    attrs
+        .iter()
+        .filter(|attr| is_boltffi_helper_attr(attr))
+        .filter_map(
+            |attr| match attr.path().segments.last()?.ident.to_string().as_str() {
+                "ffi_stream" => Some(syn::Error::new_spanned(attr, STREAM_PLACEMENT)),
+                "default" => Some(syn::Error::new_spanned(attr, DEFAULT_PLACEMENT)),
+                _ => None,
+            },
+        )
+        .map(|error| error.to_compile_error())
+        .collect()
 }
 
 /// Exposes a type you own through its `CustomFfiConvertible` impl; put it on that impl.
@@ -87,37 +125,94 @@ pub fn interned_string_pool(item: TokenStream) -> TokenStream {
 /// See [Records](https://boltffi.dev/docs/records) and [Types](https://boltffi.dev/docs/types).
 #[proc_macro_attribute]
 pub fn data(attribute: TokenStream, item: TokenStream) -> TokenStream {
+    let parsed = syn::parse::<syn::Item>(item.clone()).ok();
     if attribute.to_string().trim() == "impl" {
         return invocation(lane::Kind::DataImpl, attribute, item);
     }
-    syn::parse::<syn::Item>(item.clone())
-        .ok()
-        .and_then(|mut parsed| {
-            refuse_export_item(lane::Kind::Data, &parsed, &item)
-                .or_else(|| refuse_second_marker(lane::Kind::Data, &attribute, &mut parsed))
-        })
-        .unwrap_or_else(|| invocation(lane::Kind::Data, attribute, item))
+    match parsed {
+        Some(syn::Item::Impl(_)) => {
+            let message = "`#[data]` on an `impl` block is written `#[data(impl)]`";
+            let error = match attribute.is_empty() {
+                true => syn::Error::new(proc_macro2::Span::call_site(), message),
+                false => {
+                    syn::Error::new_spanned(proc_macro2::TokenStream::from(attribute), message)
+                }
+            }
+            .to_compile_error();
+            let expanded = proc_macro2::TokenStream::from(invocation(
+                lane::Kind::DataImpl,
+                quote!(impl).into(),
+                item,
+            ));
+            quote! { #error #expanded }.into()
+        }
+        Some(mut parsed) => refuse_item(lane::Kind::Data, &parsed, &item)
+            .or_else(|| refuse_second_marker(lane::Kind::Data, &attribute, &mut parsed))
+            .unwrap_or_else(|| match attribute.is_empty() {
+                true => invocation(lane::Kind::Data, attribute, item),
+                false => refuse_arguments(
+                    lane::Kind::Data,
+                    proc_macro2::TokenStream::from(attribute),
+                    TokenStream::new(),
+                    item,
+                    "`#[data]` takes no arguments; `#[data(impl)]` goes on a record's `impl` block",
+                ),
+            }),
+        None => invocation(lane::Kind::Data, attribute, item),
+    }
 }
 
-/// Refuses `#[data]` or `#[error]` on a function, trait or constant, which `#[export]` declares.
-fn refuse_export_item(
+/// Refuses arguments `kind`'s marker does not take, and expands the item with `kept` instead.
+fn refuse_arguments(
     kind: lane::Kind,
-    parsed: &syn::Item,
-    item: &TokenStream,
-) -> Option<TokenStream> {
-    let noun = match parsed {
-        syn::Item::Fn(_) => "function",
-        syn::Item::Trait(_) => "trait",
-        syn::Item::Const(_) => "constant",
-        _ => return None,
+    arguments: impl ToTokens,
+    kept: TokenStream,
+    item: TokenStream,
+    message: impl std::fmt::Display,
+) -> TokenStream {
+    let error = syn::Error::new_spanned(arguments, message).to_compile_error();
+    let expanded = proc_macro2::TokenStream::from(invocation(kind, kept, item));
+    quote! { #error #expanded }.into()
+}
+
+/// The first `#[export]` argument a class does not take, or the whole list when it is not
+/// a list of names.
+fn unknown_class_argument(attribute: &TokenStream) -> Option<proc_macro2::TokenStream> {
+    let attribute = proc_macro2::TokenStream::from(attribute.clone());
+    let parser = syn::punctuated::Punctuated::<syn::Ident, syn::Token![,]>::parse_terminated;
+    match syn::parse::Parser::parse2(parser, attribute.clone()) {
+        Ok(arguments) => arguments
+            .into_iter()
+            .find(|argument| {
+                !boltffi_scan::CLASS_EXPORT_ARGUMENTS
+                    .iter()
+                    .any(|known| argument == known)
+            })
+            .map(|argument| argument.to_token_stream()),
+        Err(_) => Some(attribute),
+    }
+}
+
+/// Refuses `#[data]` or `#[error]` on a function, trait, constant, union or empty enum.
+fn refuse_item(kind: lane::Kind, parsed: &syn::Item, item: &TokenStream) -> Option<TokenStream> {
+    let keyword = kind.keyword();
+    let misplaced = |advice: &str| {
+        syn::Error::new(
+            proc_macro2::Span::call_site(),
+            format!("`#[{keyword}]` declares a struct or enum; {advice}"),
+        )
     };
-    let error = syn::Error::new(
-        proc_macro2::Span::call_site(),
-        format!(
-            "`#[{}]` declares a struct or enum; use `#[export]` on a {noun}",
-            kind.keyword()
+    let error = match parsed {
+        syn::Item::Fn(_) => misplaced("use `#[export]` on a function"),
+        syn::Item::Trait(_) => misplaced("use `#[export]` on a trait"),
+        syn::Item::Const(_) => misplaced("use `#[export]` on a constant"),
+        syn::Item::Union(_) => misplaced("BoltFFI can't pass a union"),
+        syn::Item::Enum(enumeration) if enumeration.variants.is_empty() => syn::Error::new_spanned(
+            &enumeration.ident,
+            format!("a `#[{keyword}]` enum needs at least one variant"),
         ),
-    )
+        _ => return None,
+    }
     .to_compile_error();
     let item = proc_macro2::TokenStream::from(strip_boltffi_attrs(item.clone()));
     Some(quote! { #error #item }.into())
@@ -202,10 +297,19 @@ pub fn error(attribute: TokenStream, item: TokenStream) -> TokenStream {
     syn::parse::<syn::Item>(item.clone())
         .ok()
         .and_then(|mut parsed| {
-            refuse_export_item(lane::Kind::Error, &parsed, &item)
+            refuse_item(lane::Kind::Error, &parsed, &item)
                 .or_else(|| refuse_second_marker(lane::Kind::Error, &attribute, &mut parsed))
         })
-        .unwrap_or_else(|| invocation(lane::Kind::Error, attribute, item))
+        .unwrap_or_else(|| match attribute.is_empty() {
+            true => invocation(lane::Kind::Error, attribute, item),
+            false => refuse_arguments(
+                lane::Kind::Error,
+                proc_macro2::TokenStream::from(attribute),
+                TokenStream::new(),
+                item,
+                "`#[error]` takes no arguments",
+            ),
+        })
 }
 
 /// Exports a function, constant, class (on its struct or enum), `impl` block or callback trait.
@@ -252,11 +356,35 @@ pub fn export(attribute: TokenStream, item: TokenStream) -> TokenStream {
             .into()
         }
         syn::Item::Impl(_) => invocation(lane::Kind::ExportMethods, attribute, item),
-        syn::Item::Const(_)
-        | syn::Item::Enum(_)
-        | syn::Item::Fn(_)
-        | syn::Item::Struct(_)
-        | syn::Item::Trait(_) => invocation(lane::Kind::Export, attribute, item),
+        syn::Item::Const(_) | syn::Item::Fn(_) | syn::Item::Trait(_) if !attribute.is_empty() => {
+            let noun = match parsed {
+                syn::Item::Const(_) => "constant",
+                syn::Item::Fn(_) => "function",
+                _ => "callback trait",
+            };
+            refuse_arguments(
+                lane::Kind::Export,
+                proc_macro2::TokenStream::from(attribute),
+                TokenStream::new(),
+                item,
+                format!("`#[export]` on a {noun} takes no arguments"),
+            )
+        }
+        syn::Item::Enum(_) | syn::Item::Struct(_) => match unknown_class_argument(&attribute) {
+            Some(argument) => refuse_arguments(
+                lane::Kind::Export,
+                &argument,
+                quote!(single_threaded).into(),
+                item,
+                format!(
+                    "`{argument}` is not an `#[export]` argument; a class takes `single_threaded`"
+                ),
+            ),
+            None => invocation(lane::Kind::Export, attribute, item),
+        },
+        syn::Item::Const(_) | syn::Item::Fn(_) | syn::Item::Trait(_) => {
+            invocation(lane::Kind::Export, attribute, item)
+        }
         item => syn::Error::new_spanned(
             item,
             "export can only be applied to const, enum, fn, impl, struct, or trait",
@@ -286,10 +414,14 @@ pub fn cfg_eval(input: TokenStream) -> TokenStream {
 /// compiler has settled which of its members exist.
 fn invocation(kind: lane::Kind, attribute: TokenStream, item: TokenStream) -> TokenStream {
     let parsed = syn::parse::<syn::Item>(item.clone()).ok();
+    let misplaced = parsed.as_ref().map(misplaced_helpers).unwrap_or_default();
     let emitted = match kind {
         lane::Kind::Data | lane::Kind::Error => match data::repr::materialize(item.clone()) {
             Ok(item) => strip_boltffi_attrs(item),
-            Err(error) => return error,
+            Err(error) => {
+                let error = proc_macro2::TokenStream::from(error);
+                return quote!(#misplaced #error).into();
+            }
         },
         _ => strip_boltffi_attrs(item.clone()),
     };
@@ -309,7 +441,7 @@ fn invocation(kind: lane::Kind, attribute: TokenStream, item: TokenStream) -> To
             quote!(#records #chain)
         }
     };
-    quote!(#emitted #identity #described).into()
+    quote!(#misplaced #emitted #identity #described).into()
 }
 
 /// The source records bindgen reads for one invocation.
@@ -381,7 +513,7 @@ pub fn name(_attribute: TokenStream, item: TokenStream) -> TokenStream {
 /// [Functions](https://boltffi.dev/docs/functions).
 #[proc_macro_attribute]
 pub fn default(_attribute: TokenStream, item: TokenStream) -> TokenStream {
-    item
+    misplaced(DEFAULT_PLACEMENT, item)
 }
 
 fn strip_boltffi_attrs(item: TokenStream) -> TokenStream {

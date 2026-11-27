@@ -47,7 +47,7 @@ fn attach_impl(
 fn validate(item: &syn::ItemImpl, target: &str) -> Result<(), ScanError> {
     unsupported::generics(&item.generics, &format!("impl {target}"))?;
     if let Some((path, _)) = &item.trait_ {
-        return Err(ScanError::UnsupportedMarkedImpl {
+        return Err(ScanError::UnsupportedDataImplShape {
             target: target.to_owned(),
         }
         .at(path));
@@ -183,7 +183,7 @@ mod tests {
 
         assert_eq!(
             error.unlocated().clone(),
-            ScanError::UnsupportedMarkedImpl {
+            ScanError::UnsupportedDataImplShape {
                 target: "Point".to_owned()
             }
         );

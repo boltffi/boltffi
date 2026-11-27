@@ -165,8 +165,17 @@ enum MethodsTarget {
 }
 
 fn methods_block(item: &syn::ItemImpl, kind: MethodsTarget) -> Result<CapturedMethods, ScanError> {
-    if let MethodsTarget::Class = kind {
-        crate::impl_target::Target::class(item)?;
+    match (kind, &item.trait_) {
+        (MethodsTarget::Class, _) => {
+            crate::impl_target::Target::class(item)?;
+        }
+        (MethodsTarget::Data, Some((path, _))) => {
+            return Err(ScanError::UnsupportedDataImplShape {
+                target: crate::spelling::ty(&item.self_ty),
+            }
+            .at(path));
+        }
+        (MethodsTarget::Data, None) => {}
     }
     let scope = ModuleScope::with_spans(ModulePath::root("$self"), &[], None);
     let mut declared_types = DeclaredTypes::deferred();

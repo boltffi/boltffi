@@ -1,0 +1,5 @@
+error: BoltFFI: this default doesn't fit its type, which takes an integer literal
+ --> tests/diagnostics/default_values/default_of_the_wrong_type.rs:3:10
+  |
+3 | pub fn f(#[boltffi::default("x")] a: i32) -> i32 {
+  |          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

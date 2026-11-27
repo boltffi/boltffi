@@ -66,6 +66,9 @@ pub enum ScanError {
     UnsupportedClassImplShape {
         target: String,
     },
+    UnsupportedDataImplShape {
+        target: String,
+    },
     UnsupportedGenerics {
         item: String,
     },
@@ -269,6 +272,13 @@ impl fmt::Display for ScanError {
                 write!(
                     formatter,
                     "exported class impl `{target}` cannot implement a trait"
+                )
+            }
+            Self::UnsupportedDataImplShape { target } => {
+                write!(
+                    formatter,
+                    "a `#[data(impl)]` block cannot implement a trait; export the method from \
+                     `impl {target}` instead"
                 )
             }
             Self::UnsupportedGenerics { item } => {

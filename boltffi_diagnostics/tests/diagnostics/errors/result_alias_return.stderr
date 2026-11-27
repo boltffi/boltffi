@@ -1,0 +1,5 @@
+error: BoltFFI: `Result<i32>` cannot cross the boundary; BoltFFI can't see through a `Result` alias, so write `Result<i32, E>`
+ --> tests/diagnostics/errors/result_alias_return.rs:4:15
+  |
+4 | pub fn f() -> Result<i32> {
+  |               ^^^^^^^^^^^

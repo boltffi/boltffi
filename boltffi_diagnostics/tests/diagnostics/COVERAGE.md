@@ -6,9 +6,9 @@ The findings come from `main` at f0da5b12 on rustc 1.97.1. Each "Today" entry is
 
 ## How the suite works
 
-Each case in `diagnostics/<rule>/<what_the_user_did>.rs` must fail to compile, and its `.stderr` file records the output. There are 116 of these, and many record bad messages on purpose, so a fix shows up as a `.stderr` diff.
+Each case in `diagnostics/<rule>/<what_the_user_did>.rs` must fail to compile, and its `.stderr` file records the output. There are 131 of these, and many record bad messages on purpose, so a fix shows up as a `.stderr` diff.
 
-The 7 cases in `tests/accepted/` compile today and should not. When a rule lands, move its case to `diagnostics/` and record the error.
+The case in `tests/accepted/` compiles today and should not. When a rule lands, move it to `diagnostics/` and record the error.
 
 Re-record with `TRYBUILD=overwrite cargo test -p boltffi_diagnostics --test diagnostics`, and re-record after a toolchain bump.
 
@@ -30,7 +30,7 @@ We compiled 217 small crates, one mistake or feature each:
 
 Of the 119 rejected crates, 38 print a message that users can't act on without knowing how BoltFFI works.
 
-Errors point at the parameter, field, or method at fault. 7 of the suite's 76 `BoltFFI:` errors point at an attribute, and in 6 of those the attribute is the mistake. The exception is a constant whose value doesn't fit its type, which points at `#[export]`.
+Errors point at the code at fault: the parameter, field, or method, or the attribute when the attribute is the mistake. The exception is a constant whose value doesn't fit its type, which points at `#[export]`.
 
 ## Most common bad messages
 
@@ -39,11 +39,9 @@ Several of these rows have one cause. When a type has no BoltFFI declaration, th
 | Mistake | Today | Should say |
 |---|---|---|
 | Forgot `scaffolding!()` | ``cannot find type `BoltffiScaffolding` in the crate root``. A missing `crate::` path can't carry a custom message, so only the name hints at the fix | Add `boltffi::scaffolding!();` at the crate root |
-| Undeclared trait in a signature | ``cannot find macro `Listener` in this scope`` | `Listener` is not declared, add `#[export]` |
-| `pub type Id = u64;` in a signature | ``cannot find macro `Id` in this scope`` | BoltFFI can't follow this alias, write `u64` |
-| `type Result<T> = ...` | ``unsupported source type `Result<i32>` `` | BoltFFI can't follow this alias |
+| Undeclared trait in a signature | ``cannot find macro `Listener` in this scope``, with rustc's note that `Listener` is a trait. A trait is found through a value, so the `Declared` check can't cover it: an undeclared value gives E0423, which can't carry a custom message, and checking `dyn Listener` instead fails on async traits | `Listener` is not declared, add `#[export]` |
+| `pub type Id = u64;` in a signature | ``cannot find macro `Id` in this scope``, with rustc's note that `Id` is a type alias. To a check, `type P = Point;` and `use Point as P;` name the same type, and only the `use` brings the macro, so nothing can report the alias alone | BoltFFI can't follow this alias, write `u64` |
 | `#[data]` record that derives `Clone` but not `Copy` | Several E0277 errors naming `Blittable` | This record needs `#[derive(Clone, Copy)]` |
-| `#[data]` on an `impl` | Several E0119 errors naming `Passable` and `Blittable` | Use `#[data(impl)]` |
 
 `#[error]` from `use boltffi::*;` also conflicts with `#[derive(thiserror::Error)]`, and rustc reports ``E0659: `error` is ambiguous``. Importing names and writing `#[boltffi::error]` works. No case covers this yet because it needs `thiserror` as a dev-dependency.
 
@@ -55,13 +53,7 @@ These compile, so users find out late or never.
 |---|---|---|---|---|
 | Private `fn` with `#[export]` | Public on every host | High | High | Reject, scheduled for later |
 | Same `#[export] fn` name in two modules | `check` passes, `build` fails with ``symbol ... is already defined`` | Medium | High | Detect it in the macro |
-| `#[boltffi::default("x")] a: i32` | Swift gets `a: Int32 = "x"`, Python gets `a: int = "x"`, Kotlin skips the function | Medium | High | Reject |
-| `#[export(fast)]`, `#[data(compact)]` | Ignored, although `#[export(single_thread)]` on a struct is rejected | Medium | High | Reject unknown arguments |
 | Private method in `#[export] impl` | Left out of the bindings with no message | High | Medium | Document it |
-| `#[data(impl)] impl Default for Point` | Method missing on every host | Medium | Medium | Reject |
-| `#[ffi_stream]` on a free function | Ignored | Low | Medium | Reject |
-| `#[data] union` | Nothing exported, then `generate` reports no records | Low | Low | Reject |
-| `#[boltffi::default(1)]` on a function | Ignored | Low | Low | Reject if cheap |
 
 ## Other messages to improve
 
@@ -69,8 +61,5 @@ A case records each of these.
 
 | Input | Today | Likelihood | Relevance | Fix |
 |---|---|---|---|---|
-| `Option<&str>` | ``BoltFFI: `&str` cannot cross the boundary; use the owned type `String` ``, although `&str` works elsewhere | High | Medium | Name `Option<&str>` and suggest `Option<String>` |
 | `#[export]` on a method in a plain `impl` | Three errors about `use` and `mod` in impls | Medium | Medium | Suggest `#[export]` on the `impl` |
 | `#[export]` inside a function | `cannot find function inner in module super` | Low | Medium | Say it must be at module level |
-| Same `#[export] struct` in two modules | E0428 on `__boltffi_declared_C` | Low | Medium | Report it like same-named records |
-| Empty `#[data] enum` | E0084 and E0004 on generated code | Low | Low | Print one error |

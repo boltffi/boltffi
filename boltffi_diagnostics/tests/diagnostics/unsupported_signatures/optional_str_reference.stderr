@@ -1,8 +1,8 @@
-error: BoltFFI: `&str` cannot cross the boundary; use the owned type `String`
- --> tests/diagnostics/unsupported_signatures/optional_str_reference.rs:3:20
+error: BoltFFI: `Option<&str>` cannot cross the boundary; use `Option<String>`
+ --> tests/diagnostics/unsupported_signatures/optional_str_reference.rs:3:13
   |
 3 | pub fn f(a: Option<&str>) {}
-  |                    ^^^^
+  |             ^^^^^^^^^^^^
 
 warning: unused variable: `a`
  --> tests/diagnostics/unsupported_signatures/optional_str_reference.rs:3:10
