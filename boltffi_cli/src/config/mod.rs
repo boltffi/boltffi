@@ -1028,12 +1028,16 @@ impl Config {
     /// Target frameworks the C# project builds for, in configured order.
     pub fn csharp_target_frameworks(&self) -> Vec<String> {
         match &self.targets.csharp.target_frameworks {
-            Some(target_frameworks) => target_frameworks.clone(),
+            Some(target_frameworks) => target_frameworks
+                .iter()
+                .map(|framework| framework.trim().to_string())
+                .collect(),
             None => vec![
                 self.targets
                     .csharp
                     .target_framework
-                    .clone()
+                    .as_deref()
+                    .map(|framework| framework.trim().to_string())
                     .unwrap_or_else(|| "net10.0".to_string()),
             ],
         }

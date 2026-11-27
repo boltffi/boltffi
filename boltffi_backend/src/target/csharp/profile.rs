@@ -149,26 +149,37 @@ impl CSharpProfile {
             supported: SUPPORTED_FRAMEWORKS,
         };
         let moniker = framework.trim().to_ascii_lowercase();
-        let moniker = moniker.split('-').next().unwrap_or_default();
-        if NETFX46_FRAMEWORKS.contains(&moniker) {
+        if NETFX46_FRAMEWORKS.contains(&moniker.as_str()) {
             return Ok(Self::NetFx46);
         }
-        if NETFX45_FRAMEWORKS.contains(&moniker) {
+        if NETFX45_FRAMEWORKS.contains(&moniker.as_str()) {
             return Ok(Self::NetFx45);
         }
         if matches!(
-            moniker,
+            moniker.as_str(),
             "netcoreapp3.0" | "netcoreapp3.1" | "netstandard2.1"
         ) {
             return Ok(Self::NetStandard21);
         }
-        let version = moniker.strip_prefix("net").ok_or_else(unsupported)?;
-        let (major, minor) = version.split_once('.').ok_or_else(unsupported)?;
-        let major = major.parse::<u32>().map_err(|_| unsupported())?;
-        let minor = minor.parse::<u32>().map_err(|_| unsupported())?;
-        if minor != 0 {
+        let (base, platform) = match moniker.split_once('-') {
+            Some((base, platform)) => (base, Some(platform)),
+            None => (moniker.as_str(), None),
+        };
+        if let Some(platform) = platform
+            && !is_valid_os_platform_suffix(platform)
+        {
             return Err(unsupported());
         }
+        let version = base.strip_prefix("net").ok_or_else(unsupported)?;
+        let (major_str, minor_str) = version.split_once('.').ok_or_else(unsupported)?;
+        if minor_str != "0"
+            || major_str.is_empty()
+            || major_str.starts_with('0')
+            || !major_str.bytes().all(|byte| byte.is_ascii_digit())
+        {
+            return Err(unsupported());
+        }
+        let major = major_str.parse::<u32>().map_err(|_| unsupported())?;
         match major {
             9.. => Ok(Self::Modern),
             8 => Ok(Self::Net8),
@@ -288,6 +299,17 @@ impl CSharpProfile {
     }
 }
 
+fn is_valid_os_platform_suffix(platform: &str) -> bool {
+    let mut chars = platform.bytes();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    first.is_ascii_lowercase()
+        && !platform.ends_with('.')
+        && !platform.contains("..")
+        && chars.all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'.')
+}
+
 #[cfg(test)]
 mod tests {
     use super::CSharpProfile;
@@ -384,6 +406,15 @@ mod tests {
             "net8",
             "net8.1",
             "net10.1",
+            "net+8.0",
+            "net08.0",
+            "net8.+0",
+            "net8.00",
+            "net8.0-",
+            "net8.0-windows.",
+            "net8.0-win;net48",
+            "net48-windows",
+            "netstandard2.0-windows",
             "net8.x",
             "uap10.0",
             "monoandroid13.0",

@@ -817,6 +817,13 @@ fn default_windows_jni_compiler_candidates(rust_target_triple: &str) -> Vec<&'st
         vec!["clang-cl", "cl", "clang"]
     } else if rust_target_triple.starts_with("aarch64-") {
         vec!["aarch64-w64-mingw32-clang", "clang"]
+    } else if rust_target_triple.starts_with("i686-") {
+        vec![
+            "i686-w64-mingw32-gcc",
+            "i686-w64-mingw32-clang",
+            "gcc",
+            "clang",
+        ]
     } else {
         vec![
             "x86_64-w64-mingw32-gcc",
@@ -2829,6 +2836,19 @@ unix
                 "gcc",
                 "clang"
             ]
+        );
+        assert_eq!(
+            default_windows_jni_compiler_candidates("i686-pc-windows-gnu"),
+            vec![
+                "i686-w64-mingw32-gcc",
+                "i686-w64-mingw32-clang",
+                "gcc",
+                "clang"
+            ]
+        );
+        assert_eq!(
+            default_windows_jni_compiler_candidates("i686-pc-windows-msvc"),
+            vec!["clang-cl", "cl", "clang"]
         );
     }
 
