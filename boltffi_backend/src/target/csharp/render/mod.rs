@@ -2458,7 +2458,7 @@ impl<'module> Module<'module> {
         files.push(GeneratedFile::new(path, source));
         if self.features.needs_polyfills() {
             files.push(GeneratedFile::new(
-                FilePath::new("Polyfills.cs")?,
+                FilePath::new(super::POLYFILLS_FILE)?,
                 PolyfillTemplate {
                     features: self.features,
                 }

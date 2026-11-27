@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use askama::Template;
-use boltffi_backend::target::csharp::CSharpProfile;
+use boltffi_backend::target::csharp::{CSharpProfile, POLYFILLS_FILE};
 use boltffi_bindgen::cargo::LibraryCargoArgs;
 
 use crate::build::{
@@ -453,7 +453,7 @@ fn sync_csharp_project(config: &Config, plan: &CSharpPackagingPlan) -> Result<()
     })?;
 
     if !plan.profile.features().needs_polyfills() {
-        let polyfills = plan.layout.source_directory.join("Polyfills.cs");
+        let polyfills = plan.layout.source_directory.join(POLYFILLS_FILE);
         match std::fs::remove_file(&polyfills) {
             Ok(()) => {}
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
@@ -639,7 +639,7 @@ fn render_csharp_project(config: &Config, plan: &CSharpPackagingPlan) -> Result<
             .iter()
             .filter(|target_framework| {
                 CSharpProfile::from_target_framework(target_framework)
-                    .is_ok_and(|profile| profile != CSharpProfile::Modern)
+                    .is_ok_and(|profile| !csharp_package_references(profile).is_empty())
             })
             .map(|target_framework| (target_framework.as_str(), package_references))
             .filter(|(_, references)| !references.is_empty())
@@ -782,7 +782,7 @@ mod tests {
     };
     use crate::reporter::{Reporter, Verbosity};
     use crate::target::{CSharpRuntimeIdentifier, NativeHostPlatform};
-    use boltffi_backend::target::csharp::CSharpProfile;
+    use boltffi_backend::target::csharp::{CSharpProfile, POLYFILLS_FILE};
     use std::path::{Path, PathBuf};
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -1158,10 +1158,22 @@ mod tests {
     }
 
     #[test]
+    fn csharp_project_multi_targets_without_packages_for_modern_or_netstandard21() {
+        let mut plan = csharp_packaging_plan(PathBuf::from("/tmp/dist/csharp"));
+        plan.target_frameworks = vec!["netstandard2.1".to_string(), "net8.0".to_string()];
+        plan.profile = CSharpProfile::NetStandard21;
+
+        let project = render_csharp_project(&config(), &plan).expect("C# project should render");
+
+        assert!(project.contains("<TargetFrameworks>netstandard2.1;net8.0</TargetFrameworks>"));
+        assert!(!project.contains("<PackageReference"));
+    }
+
+    #[test]
     fn syncing_the_project_removes_stale_polyfills_for_the_modern_profile() {
         let root = unique_temp_dir("boltffi-csharp-polyfill-test");
         let mut plan = csharp_packaging_plan(root.clone());
-        let polyfills = plan.layout.source_directory.join("Polyfills.cs");
+        let polyfills = plan.layout.source_directory.join(POLYFILLS_FILE);
 
         plan.target_frameworks = vec!["net48".to_string()];
         plan.profile = CSharpProfile::NetFx46;

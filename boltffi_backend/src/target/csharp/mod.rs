@@ -31,6 +31,12 @@ pub use crate::core::{
 pub use profile::{CSharpFeatures, CSharpProfile};
 pub use syntax::{ArgumentList, Expression, Identifier, Statement, Syntax, TypeFragment};
 
+/// Filename used for generated C# compiler/runtime polyfills.
+///
+/// The dotted name cannot collide with any generated module class or exported
+/// type filename, which are always single C# identifiers.
+pub const POLYFILLS_FILE: &str = "BoltFFI.Polyfills.cs";
+
 /// C# host renderer for direct P/Invoke calls into the BoltFFI C ABI.
 #[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
 #[non_exhaustive]

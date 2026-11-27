@@ -19,9 +19,16 @@ const NETFX46_FRAMEWORKS: &[&str] = &[
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 #[non_exhaustive]
 pub enum CSharpProfile {
-    /// .NET 5 and newer, .NET Core 3.x and .NET Standard 2.1.
+    /// .NET 9 and newer.
     #[default]
     Modern,
+    /// .NET 8. Needs a polyfill for `OverloadResolutionPriorityAttribute`.
+    Net8,
+    /// .NET 5 through .NET 7. Also avoids the big-endian `Guid` overloads added in .NET 8.
+    Net5,
+    /// .NET Core 3.x and .NET Standard 2.1. Also needs `IsExternalInit` and avoids
+    /// `Interlocked.Exchange(ref ulong)`.
+    NetStandard21,
     /// .NET Framework 4.6.1 and newer, and .NET Standard 2.0, with the
     /// `System.Memory`, `System.Threading.Tasks.Extensions` and
     /// `Microsoft.Bcl.AsyncInterfaces` packages.
@@ -153,16 +160,17 @@ impl CSharpProfile {
             moniker,
             "netcoreapp3.0" | "netcoreapp3.1" | "netstandard2.1"
         ) {
-            return Ok(Self::Modern);
+            return Ok(Self::NetStandard21);
         }
         let version = moniker.strip_prefix("net").ok_or_else(unsupported)?;
         let (major, minor) = version.split_once('.').ok_or_else(unsupported)?;
         let major = major.parse::<u32>().map_err(|_| unsupported())?;
         minor.parse::<u32>().map_err(|_| unsupported())?;
-        if major >= 5 {
-            Ok(Self::Modern)
-        } else {
-            Err(unsupported())
+        match major {
+            9.. => Ok(Self::Modern),
+            8 => Ok(Self::Net8),
+            5..=7 => Ok(Self::Net5),
+            _ => Err(unsupported()),
         }
     }
 
@@ -179,7 +187,10 @@ impl CSharpProfile {
         match self {
             Self::NetFx45 => 0,
             Self::NetFx46 => 1,
-            Self::Modern => 2,
+            Self::NetStandard21 => 2,
+            Self::Net5 => 3,
+            Self::Net8 => 4,
+            Self::Modern => 5,
         }
     }
 
@@ -194,6 +205,48 @@ impl CSharpProfile {
                 interlocked_ulong: true,
                 is_external_init: true,
                 overload_resolution_priority: true,
+                system_memory: true,
+                generic_marshal: true,
+                run_continuations_asynchronously: true,
+                async_streams: true,
+                array_empty: true,
+            },
+            Self::Net8 => CSharpFeatures {
+                marshal_utf8_strings: true,
+                bit_converter_single_bits: true,
+                unix_epoch: true,
+                guid_big_endian: true,
+                interlocked_ulong: true,
+                is_external_init: true,
+                overload_resolution_priority: false,
+                system_memory: true,
+                generic_marshal: true,
+                run_continuations_asynchronously: true,
+                async_streams: true,
+                array_empty: true,
+            },
+            Self::Net5 => CSharpFeatures {
+                marshal_utf8_strings: true,
+                bit_converter_single_bits: true,
+                unix_epoch: true,
+                guid_big_endian: false,
+                interlocked_ulong: true,
+                is_external_init: true,
+                overload_resolution_priority: false,
+                system_memory: true,
+                generic_marshal: true,
+                run_continuations_asynchronously: true,
+                async_streams: true,
+                array_empty: true,
+            },
+            Self::NetStandard21 => CSharpFeatures {
+                marshal_utf8_strings: true,
+                bit_converter_single_bits: true,
+                unix_epoch: true,
+                guid_big_endian: false,
+                interlocked_ulong: false,
+                is_external_init: false,
+                overload_resolution_priority: false,
                 system_memory: true,
                 generic_marshal: true,
                 run_continuations_asynchronously: true,
@@ -237,22 +290,26 @@ mod tests {
     use super::CSharpProfile;
 
     #[test]
-    fn modern_frameworks_select_the_modern_profile() {
-        for framework in [
-            "net5.0",
-            "net8.0",
-            "net10.0",
-            "net11.0",
-            "net8.0-windows",
-            "net8.0-windows10.0.19041",
-            "NET8.0",
-            "netcoreapp3.0",
-            "netcoreapp3.1",
-            "netstandard2.1",
+    fn modern_and_intermediate_dotnet_frameworks_select_matching_profiles() {
+        for (framework, expected) in [
+            ("net9.0", CSharpProfile::Modern),
+            ("net10.0", CSharpProfile::Modern),
+            ("net11.0", CSharpProfile::Modern),
+            ("net9.0-windows", CSharpProfile::Modern),
+            ("net8.0", CSharpProfile::Net8),
+            ("net8.0-windows", CSharpProfile::Net8),
+            ("net8.0-windows10.0.19041", CSharpProfile::Net8),
+            ("NET8.0", CSharpProfile::Net8),
+            ("net5.0", CSharpProfile::Net5),
+            ("net6.0", CSharpProfile::Net5),
+            ("net7.0", CSharpProfile::Net5),
+            ("netcoreapp3.0", CSharpProfile::NetStandard21),
+            ("netcoreapp3.1", CSharpProfile::NetStandard21),
+            ("netstandard2.1", CSharpProfile::NetStandard21),
         ] {
             assert_eq!(
                 CSharpProfile::from_target_framework(framework),
-                Ok(CSharpProfile::Modern),
+                Ok(expected),
                 "{framework}"
             );
         }
@@ -292,8 +349,12 @@ mod tests {
 
     #[test]
     fn min_picks_the_more_restrictive_profile() {
-        use CSharpProfile::{Modern, NetFx45, NetFx46};
+        use CSharpProfile::{Modern, Net5, Net8, NetFx45, NetFx46, NetStandard21};
         for (left, right, expected) in [
+            (Modern, Net8, Net8),
+            (Net8, Net5, Net5),
+            (Net5, NetStandard21, NetStandard21),
+            (NetStandard21, NetFx46, NetFx46),
             (Modern, NetFx46, NetFx46),
             (NetFx46, Modern, NetFx46),
             (NetFx46, NetFx45, NetFx45),
@@ -390,10 +451,26 @@ mod tests {
     #[test]
     fn only_the_modern_profile_has_modern_apis() {
         let modern = CSharpProfile::Modern.features();
+        let net8 = CSharpProfile::Net8.features();
+        let net5 = CSharpProfile::Net5.features();
+        let netstandard21 = CSharpProfile::NetStandard21.features();
         let legacy = CSharpProfile::NetFx46.features();
+
+        assert!(modern.overload_resolution_priority && !modern.needs_polyfills());
+        assert!(!net8.overload_resolution_priority && net8.needs_polyfills());
+        assert!(net8.guid_big_endian && net8.is_external_init && net8.interlocked_ulong);
+        assert!(!net5.guid_big_endian && net5.is_external_init && net5.interlocked_ulong);
+        assert!(
+            netstandard21.marshal_utf8_strings
+                && netstandard21.bit_converter_single_bits
+                && netstandard21.unix_epoch
+                && !netstandard21.is_external_init
+                && !netstandard21.interlocked_ulong
+                && !netstandard21.guid_big_endian
+        );
         assert!(modern.marshal_utf8_strings && modern.bit_converter_single_bits);
         assert!(modern.is_external_init && !legacy.is_external_init);
-        assert!(modern.overload_resolution_priority && !legacy.overload_resolution_priority);
+        assert!(!legacy.overload_resolution_priority);
         assert!(!legacy.marshal_utf8_strings && !legacy.bit_converter_single_bits);
         assert!(modern.unix_epoch && modern.guid_big_endian && modern.interlocked_ulong);
         assert!(!legacy.unix_epoch && !legacy.guid_big_endian && !legacy.interlocked_ulong);

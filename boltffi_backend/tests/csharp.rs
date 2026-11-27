@@ -4,7 +4,7 @@ use boltffi_ast::PackageInfo;
 use boltffi_backend::{
     FilePath, GeneratedFile, GeneratedOutput, Target,
     bridge::c::CBridge,
-    target::csharp::{CSharpHost, CSharpProfile},
+    target::csharp::{CSharpHost, CSharpProfile, POLYFILLS_FILE},
 };
 use boltffi_binding::{Bindings, Native, lower};
 
@@ -1164,8 +1164,83 @@ fn csharp_modern_profile_keeps_modern_runtime_apis() {
     ] {
         assert!(sources.contains(api), "modern output lost {api}");
     }
-    assert!(file(&modern, "Polyfills.cs").is_none());
+    assert!(file(&modern, POLYFILLS_FILE).is_none());
     compile_csharp_with_dotnet_when_available(&modern, "csharp-modern-runtime");
+}
+
+#[test]
+fn csharp_intermediate_modern_frameworks_match_their_api_surface() {
+    let bindings = bindings(LEGACY_RUNTIME_VALUES);
+
+    let netstandard21 = target(net_framework_host("netstandard2.1"))
+        .render(&bindings)
+        .expect("netstandard2.1 renders");
+    let ns21_sources = all_sources(&netstandard21);
+    assert!(ns21_sources.contains("Marshal.PtrToStringUTF8"));
+    assert!(ns21_sources.contains("BitConverter.SingleToInt32Bits"));
+    assert!(ns21_sources.contains("DateTime.UnixEpoch"));
+    assert!(!ns21_sources.contains("bigEndian: true"));
+    let ns21_polyfills = file(&netstandard21, POLYFILLS_FILE).expect("netstandard2.1 polyfills");
+    assert!(ns21_polyfills.contains("internal static class IsExternalInit { }"));
+    assert!(ns21_polyfills.contains("internal sealed class OverloadResolutionPriorityAttribute"));
+
+    let net6 = target(net_framework_host("net6.0"))
+        .render(&bindings)
+        .expect("net6.0 renders");
+    assert!(!all_sources(&net6).contains("bigEndian: true"));
+    let net6_polyfills = file(&net6, POLYFILLS_FILE).expect("net6.0 polyfills");
+    assert!(!net6_polyfills.contains("IsExternalInit"));
+    assert!(net6_polyfills.contains("internal sealed class OverloadResolutionPriorityAttribute"));
+
+    let net8 = target(net_framework_host("net8.0"))
+        .render(&bindings)
+        .expect("net8.0 renders");
+    assert!(all_sources(&net8).contains("TryWriteBytes(bytes, bigEndian: true"));
+    let net8_polyfills = file(&net8, POLYFILLS_FILE).expect("net8.0 polyfills");
+    assert!(!net8_polyfills.contains("IsExternalInit"));
+    assert!(net8_polyfills.contains("internal sealed class OverloadResolutionPriorityAttribute"));
+}
+
+#[test]
+fn csharp_polyfills_file_does_not_collide_with_crate_or_type_named_polyfills() {
+    let source = boltffi_scan::scan_file(
+        syn::parse_str(
+            r#"
+            #[data]
+            pub struct Item {
+                pub value: i32,
+            }
+
+            #[export]
+            pub fn echo(item: Item) -> Item { item }
+            "#,
+        )
+        .expect("valid source"),
+        PackageInfo::new("polyfills", None),
+    )
+    .expect("source should scan");
+    let bindings = lower::<Native>(&source).expect("source should lower");
+    let output = target(
+        CSharpHost::new()
+            .native_library("polyfills_native")
+            .target_framework("net48")
+            .expect("net48 profile"),
+    )
+    .render(&bindings)
+    .expect("polyfills crate renders");
+
+    let module = file(&output, "Polyfills.cs").expect("module file preserved");
+    assert!(module.contains("public static class Polyfills"));
+    let polyfills = file(&output, POLYFILLS_FILE).expect("support polyfills emitted");
+    assert!(polyfills.contains("namespace System.Runtime.CompilerServices"));
+    assert_eq!(
+        output
+            .files()
+            .iter()
+            .filter(|file| file.path().as_path() == Path::new("Polyfills.cs"))
+            .count(),
+        1
+    );
 }
 
 #[test]
@@ -1190,21 +1265,42 @@ fn csharp_batch_stream_handles_follow_the_profile() {
 }
 
 #[test]
-fn csharp_polyfills_are_emitted_only_for_legacy_profiles() {
+fn csharp_polyfills_are_emitted_when_the_framework_needs_them() {
     let bindings = bindings(LEGACY_RUNTIME_VALUES);
-    for framework in ["net5.0", "net10.0", "netcoreapp3.1", "netstandard2.1"] {
+    for framework in ["net9.0", "net10.0"] {
         let output = target(net_framework_host(framework))
             .render(&bindings)
             .expect("modern profile renders");
-        assert!(file(&output, "Polyfills.cs").is_none(), "{framework}");
+        assert!(file(&output, POLYFILLS_FILE).is_none(), "{framework}");
     }
-    for framework in ["net45", "net452", "net461", "net48", "netstandard2.0"] {
+    for framework in ["net5.0", "net8.0"] {
         let output = target(net_framework_host(framework))
             .render(&bindings)
-            .expect("legacy profile renders");
-        let polyfills = file(&output, "Polyfills.cs").expect("legacy polyfills");
+            .expect("intermediate modern profile renders");
+        let polyfills = file(&output, POLYFILLS_FILE).expect("overload resolution polyfill");
+        assert!(polyfills.contains("namespace System.Runtime.CompilerServices"));
+        assert!(!polyfills.contains("IsExternalInit"), "{framework}");
+        assert!(
+            polyfills.contains("OverloadResolutionPriorityAttribute"),
+            "{framework}"
+        );
+    }
+    for framework in [
+        "net45",
+        "net452",
+        "net461",
+        "net48",
+        "netstandard2.0",
+        "netstandard2.1",
+        "netcoreapp3.1",
+    ] {
+        let output = target(net_framework_host(framework))
+            .render(&bindings)
+            .expect("legacy or pre-net5 profile renders");
+        let polyfills = file(&output, POLYFILLS_FILE).expect("polyfills");
         assert!(polyfills.contains("namespace System.Runtime.CompilerServices"));
         assert!(polyfills.contains("internal static class IsExternalInit { }"));
+        assert!(polyfills.contains("OverloadResolutionPriorityAttribute"));
     }
 }
 

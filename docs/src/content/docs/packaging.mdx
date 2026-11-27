@@ -632,10 +632,11 @@ runtime_identifiers = ["win-x86", "win-x64"]
 
 Other values are rejected when the configuration is loaded.
 
-For the .NET Framework profiles the generated code avoids APIs that only exist on modern .NET, and
-the package gains a `Polyfills.cs` with the compiler attributes that records rely on. The public API
-is the same as on modern .NET, apart from streams before 4.6.1. Output for modern target frameworks
-is unaffected by these profiles.
+For the .NET Framework profiles (and pre-.NET 9 frameworks that lack specific compiler attributes),
+the generated code avoids APIs missing from that runtime, and the package gains a
+`BoltFFI.Polyfills.cs` with the compiler attributes that records and default-parameter overloads
+rely on. The public API is the same as on modern .NET, apart from streams before 4.6.1. Output for
+.NET 9+ target frameworks is unaffected by these profiles.
 
 Before 4.6.1 there is no `IAsyncEnumerable<T>`: the package that provides it starts at 4.6.1, so
 stream methods are skipped. They are listed in the generation coverage summary, and
