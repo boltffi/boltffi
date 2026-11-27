@@ -3,6 +3,7 @@
 mod codec;
 mod lexical;
 mod name_style;
+mod profile;
 mod render;
 mod syntax;
 mod type_name;
@@ -27,7 +28,14 @@ use syntax::Literal;
 pub use crate::core::{
     CustomTypeConversion as CSharpCustomConversion, CustomTypeMapping as CSharpCustomMapping,
 };
+pub use profile::{CSharpFeatures, CSharpProfile};
 pub use syntax::{ArgumentList, Expression, Identifier, Statement, Syntax, TypeFragment};
+
+/// Filename used for generated C# compiler/runtime polyfills.
+///
+/// The dotted name cannot collide with any generated module class or exported
+/// type filename, which are always single C# identifiers.
+pub const POLYFILLS_FILE: &str = "BoltFFI.Polyfills.cs";
 
 /// C# host renderer for direct P/Invoke calls into the BoltFFI C ABI.
 #[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
@@ -36,6 +44,7 @@ pub struct CSharpHost {
     namespace: Option<Namespace>,
     module_class: Option<Identifier>,
     library: Option<String>,
+    profile: CSharpProfile,
     custom_mappings: crate::core::CustomTypeMappingSet,
 }
 
@@ -63,6 +72,17 @@ impl CSharpHost {
         self
     }
 
+    /// Selects the runtime profile the generated C# has to compile against.
+    pub fn profile(mut self, profile: CSharpProfile) -> Self {
+        self.profile = profile;
+        self
+    }
+
+    /// Selects the runtime profile from a target framework moniker such as `net48`.
+    pub fn target_framework(self, framework: impl AsRef<str>) -> Result<Self> {
+        Ok(self.profile(CSharpProfile::from_target_framework(framework.as_ref())?))
+    }
+
     /// Registers a C# API mapping for one custom type.
     pub fn custom_mapping(
         mut self,
@@ -76,6 +96,13 @@ impl CSharpHost {
     /// Creates the backend target stack for this C# host.
     pub fn into_target(self) -> Result<Target<Self, CBridge>> {
         Ok(Target::new(self, CBridge::default_header()?))
+    }
+
+    fn context<'context, 'bindings>(
+        &self,
+        context: &'context RenderContext<'bindings, Native>,
+    ) -> render::Context<'context, 'bindings> {
+        render::Context::new(context, self.profile.features())
     }
 
     fn namespace_for(&self, bindings: &Bindings<Native>) -> Result<Namespace> {
@@ -128,15 +155,21 @@ impl host::HostBackend for CSharpHost {
     }
 
     fn binding_capabilities(&self) -> HostCapabilities {
-        HostCapabilities::new()
+        let capabilities = HostCapabilities::new()
             .stable(BindingCapability::Records)
             .stable(BindingCapability::Enums)
             .stable(BindingCapability::Functions)
             .stable(BindingCapability::Classes)
             .stable(BindingCapability::Callbacks)
-            .stable(BindingCapability::Streams)
             .stable(BindingCapability::Constants)
-            .stable(BindingCapability::CustomTypes)
+            .stable(BindingCapability::CustomTypes);
+        match self.profile.features().async_streams {
+            true => capabilities.stable(BindingCapability::Streams),
+            false => capabilities.unsupported(
+                BindingCapability::Streams,
+                "streams need IAsyncEnumerable, which this target framework does not provide",
+            ),
+        }
     }
 
     fn bridge_capabilities(&self) -> CapabilityRequirements<BridgeCapability> {
@@ -162,11 +195,12 @@ impl host::HostBackend for CSharpHost {
         bridge: &Self::Bridge,
         context: &RenderContext<Self::Surface>,
     ) -> Result<Emitted> {
+        let context = self.context(context);
         let record = render::Record::from_declaration(
             decl,
             self.namespace_for(context.bindings())?,
             bridge,
-            context,
+            &context,
         )?;
         self.validate_module_class(context.bindings(), record.namespace_type_names()?)?;
         record.render()
@@ -178,11 +212,12 @@ impl host::HostBackend for CSharpHost {
         bridge: &Self::Bridge,
         context: &RenderContext<Self::Surface>,
     ) -> Result<Emitted> {
+        let context = self.context(context);
         let enumeration = render::Enumeration::from_declaration(
             decl,
             self.namespace_for(context.bindings())?,
             bridge,
-            context,
+            &context,
         )?;
         self.validate_module_class(context.bindings(), enumeration.namespace_type_names()?)?;
         enumeration.render()
@@ -194,8 +229,9 @@ impl host::HostBackend for CSharpHost {
         bridge: &Self::Bridge,
         context: &RenderContext<Self::Surface>,
     ) -> Result<Emitted> {
+        let context = self.context(context);
         let namespace = self.namespace_for(context.bindings())?;
-        render::Function::from_declaration(decl, Some(&namespace), bridge, context)?.render()
+        render::Function::from_declaration(decl, Some(&namespace), bridge, &context)?.render()
     }
 
     fn class(
@@ -204,11 +240,12 @@ impl host::HostBackend for CSharpHost {
         bridge: &Self::Bridge,
         context: &RenderContext<Self::Surface>,
     ) -> Result<Emitted> {
+        let context = self.context(context);
         render::Class::from_declaration(
             decl,
             self.namespace_for(context.bindings())?,
             bridge,
-            context,
+            &context,
         )?
         .render()
     }
@@ -219,11 +256,12 @@ impl host::HostBackend for CSharpHost {
         bridge: &Self::Bridge,
         context: &RenderContext<Self::Surface>,
     ) -> Result<Emitted> {
+        let context = self.context(context);
         let callback = render::Callback::from_declaration(
             decl,
             self.namespace_for(context.bindings())?,
             bridge,
-            context,
+            &context,
         )?;
         self.validate_module_class(context.bindings(), callback.namespace_type_names()?)?;
         callback.render()
@@ -235,7 +273,8 @@ impl host::HostBackend for CSharpHost {
         bridge: &Self::Bridge,
         context: &RenderContext<Self::Surface>,
     ) -> Result<Emitted> {
-        let stream = render::Stream::from_declaration(decl, bridge, context)?;
+        let context = self.context(context);
+        let stream = render::Stream::from_declaration(decl, bridge, &context)?;
         self.validate_module_class(context.bindings(), stream.namespace_type_names()?)?;
         stream.render()
     }
@@ -249,11 +288,12 @@ impl host::HostBackend for CSharpHost {
         if decl.owner().is_some() {
             return Ok(Emitted::primary(""));
         }
+        let context = self.context(context);
         render::Constant::from_declaration(
             decl,
             &self.namespace_for(context.bindings())?,
             bridge,
-            context,
+            &context,
         )?
         .render()
     }
@@ -280,6 +320,7 @@ impl host::HostBackend for CSharpHost {
             self.module_class_for(bindings)?,
             Literal::string(&self.library_for(bindings)),
             Literal::string(bridge.support().buffer_from_bytes()?.name()),
+            self.profile.features(),
         )
         .render(declarations)
     }
@@ -389,14 +430,14 @@ mod tests {
             {
                 internal const string LibName = "demo_native";
 
-                [DllImport(LibName, EntryPoint = "boltffi_function_4demo3add")]
+                [DllImport(LibName, EntryPoint = "boltffi_function_4demo3add", CallingConvention = global::System.Runtime.InteropServices.CallingConvention.Cdecl)]
                 internal static extern int NativeAdd(int left, int right);
 
-                [DllImport(LibName, EntryPoint = "boltffi_function_4demo6negate")]
+                [DllImport(LibName, EntryPoint = "boltffi_function_4demo6negate", CallingConvention = global::System.Runtime.InteropServices.CallingConvention.Cdecl)]
                 [return: MarshalAs(UnmanagedType.I1)]
                 internal static extern bool NativeNegate([MarshalAs(UnmanagedType.I1)] bool enabled);
 
-                [DllImport(LibName, EntryPoint = "boltffi_function_4demo6notify")]
+                [DllImport(LibName, EntryPoint = "boltffi_function_4demo6notify", CallingConvention = global::System.Runtime.InteropServices.CallingConvention.Cdecl)]
                 internal static extern FfiStatus NativeNotify(ulong value);
 
             }

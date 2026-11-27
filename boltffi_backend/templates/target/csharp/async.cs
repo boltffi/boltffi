@@ -8,7 +8,7 @@
         internal delegate void RustFutureContinuationCallback(ulong callbackData, sbyte pollResult);
 
         private static readonly RustFutureContinuationCallback Continuation = OnFutureContinuation;
-        private static readonly global::System.Collections.Concurrent.ConcurrentDictionary<ulong, global::System.Threading.Tasks.TaskCompletionSource<sbyte>> Continuations = new();
+        private static readonly global::System.Collections.Concurrent.ConcurrentDictionary<ulong, {{ features.completion_source_type("sbyte") }}> Continuations = new();
         private static long nextContinuationId;
 
         internal static async global::System.Threading.Tasks.Task<T> CallAsync<T>(
@@ -77,9 +77,10 @@
             global::System.Action<nint, ulong, RustFutureContinuationCallback> poll,
             global::System.Threading.CancellationToken cancellationToken)
         {
-            var completion = new global::System.Threading.Tasks.TaskCompletionSource<sbyte>(
+{% if features.run_continuations_asynchronously %}            var completion = new global::System.Threading.Tasks.TaskCompletionSource<sbyte>(
                 global::System.Threading.Tasks.TaskCreationOptions.RunContinuationsAsynchronously);
-            ulong callbackData = RegisterContinuation(completion);
+{% else %}            var completion = new BoltFFICompletionSource<sbyte>();
+{% endif %}            ulong callbackData = RegisterContinuation(completion);
             try
             {
                 poll(future.Handle, callbackData, Continuation);
@@ -109,15 +110,16 @@
 
         private static global::System.Threading.Tasks.Task RepollOnThreadPoolAsync()
         {
-            var completion = new global::System.Threading.Tasks.TaskCompletionSource<object?>(
+{% if features.run_continuations_asynchronously %}            var completion = new global::System.Threading.Tasks.TaskCompletionSource<object?>(
                 global::System.Threading.Tasks.TaskCreationOptions.RunContinuationsAsynchronously);
-            global::System.Threading.ThreadPool.QueueUserWorkItem(
+{% else %}            var completion = new global::System.Threading.Tasks.TaskCompletionSource<object?>();
+{% endif %}            global::System.Threading.ThreadPool.QueueUserWorkItem(
                 static state => ((global::System.Threading.Tasks.TaskCompletionSource<object?>)state!).TrySetResult(null),
                 completion);
             return completion.Task;
         }
 
-        private static ulong RegisterContinuation(global::System.Threading.Tasks.TaskCompletionSource<sbyte> completion)
+        private static ulong RegisterContinuation({{ features.completion_source_type("sbyte") }} completion)
         {
             while (true)
             {
@@ -196,4 +198,19 @@
         }
 
         private readonly struct VoidResult { }
+    }{% if !features.run_continuations_asynchronously %}
+
+    internal sealed class BoltFFICompletionSource<T>
+    {
+        private readonly global::System.Threading.Tasks.TaskCompletionSource<T> source = new global::System.Threading.Tasks.TaskCompletionSource<T>();
+
+        internal global::System.Threading.Tasks.Task<T> Task => source.Task;
+
+        internal void TrySetResult(T result) => Complete(() => source.TrySetResult(result));
+        internal void TrySetException(global::System.Exception exception) => Complete(() => source.TrySetException(exception));
+        internal void TrySetCanceled(global::System.Threading.CancellationToken cancellationToken) => Complete(() => source.TrySetCanceled());
+
+        private static void Complete(global::System.Action completion) =>
+            global::System.Threading.ThreadPool.QueueUserWorkItem(static state => ((global::System.Action)state!)(), completion);
     }
+{% endif %}

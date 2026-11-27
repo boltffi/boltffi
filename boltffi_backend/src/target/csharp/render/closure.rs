@@ -6,7 +6,7 @@ use boltffi_binding::{
 
 use crate::{
     bridge::c::{ClosureParameter as CClosureParameter, ParameterGroup},
-    core::{Error, HelperId, RenderContext, Result},
+    core::{Error, HelperId, Result},
 };
 
 use super::super::{
@@ -14,6 +14,7 @@ use super::super::{
     syntax::{Expression, Identifier, Statement, TypeFragment},
     type_name,
 };
+use super::Context;
 use super::{NativeParameter, OwnedArgument, Parameter, direct_type, direct_vector_element_type};
 
 pub(super) struct ClosureArgument {
@@ -38,7 +39,7 @@ impl ClosureArgument {
         helper_name: Identifier,
         declaration: &ClosureParameter<Native, boltffi_binding::IntoRust>,
         c_closure: &CClosureParameter,
-        context: &RenderContext<Native>,
+        context: &Context,
     ) -> Result<Self> {
         let all_groups = c_closure.parameter_groups();
         if declaration.invoke().params().len() > all_groups.len() {
@@ -112,7 +113,8 @@ impl ClosureArgument {
                             length.to_string()
                         }
                         DirectVectorElementType::Primitive(_) => format!(
-                            "checked({length} * (nuint)global::System.Runtime.CompilerServices.Unsafe.SizeOf<{element_type}>())"
+                            "checked({length} * (nuint){})",
+                            context.features().element_size(&element_type.to_string())
                         ),
                         DirectVectorElementType::Record(_) => length.to_string(),
                         _ => {
@@ -352,7 +354,7 @@ fn broken<T>(invariant: &'static str) -> Result<T> {
 fn error_exception(
     ty: &TypeRef,
     error: &Identifier,
-    context: &RenderContext<Native>,
+    context: &Context,
 ) -> Result<(TypeFragment, Expression)> {
     match ty {
         TypeRef::String => Ok((

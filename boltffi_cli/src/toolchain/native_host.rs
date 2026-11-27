@@ -183,7 +183,9 @@ impl NativeHostToolchain {
                     cargo_args,
                 )
             }
-            NativeHostPlatform::WindowsX86_64 | NativeHostPlatform::WindowsAarch64 => {
+            NativeHostPlatform::WindowsX86
+            | NativeHostPlatform::WindowsX86_64
+            | NativeHostPlatform::WindowsAarch64 => {
                 resolve_csharp_windows_no_build_rust_target_triple(cargo_args, target)
             }
         }
@@ -278,8 +280,12 @@ impl NativeHostToolchain {
                 })
             }
             (
-                NativeHostPlatform::WindowsX86_64 | NativeHostPlatform::WindowsAarch64,
-                NativeHostPlatform::WindowsX86_64 | NativeHostPlatform::WindowsAarch64,
+                NativeHostPlatform::WindowsX86
+                | NativeHostPlatform::WindowsX86_64
+                | NativeHostPlatform::WindowsAarch64,
+                NativeHostPlatform::WindowsX86
+                | NativeHostPlatform::WindowsX86_64
+                | NativeHostPlatform::WindowsAarch64,
             ) => {
                 let (linker_program, linker_args) = resolve_windows_host_linker(
                     toolchain_selector,
@@ -363,8 +369,12 @@ fn ensure_supported_native_host_pair(
             NativeHostPlatform::LinuxAarch64,
             NativeHostPlatform::LinuxAarch64
         ) | (
-            NativeHostPlatform::WindowsX86_64 | NativeHostPlatform::WindowsAarch64,
-            NativeHostPlatform::WindowsX86_64 | NativeHostPlatform::WindowsAarch64,
+            NativeHostPlatform::WindowsX86
+                | NativeHostPlatform::WindowsX86_64
+                | NativeHostPlatform::WindowsAarch64,
+            NativeHostPlatform::WindowsX86
+                | NativeHostPlatform::WindowsX86_64
+                | NativeHostPlatform::WindowsAarch64,
         )
     );
 
@@ -394,7 +404,9 @@ fn resolve_rust_target_triple(
         NativeHostPlatform::LinuxX86_64 | NativeHostPlatform::LinuxAarch64 => {
             resolve_linux_rust_target_triple(target, current_host, toolchain_selector, cargo_args)
         }
-        NativeHostPlatform::WindowsX86_64 | NativeHostPlatform::WindowsAarch64 => {
+        NativeHostPlatform::WindowsX86
+        | NativeHostPlatform::WindowsX86_64
+        | NativeHostPlatform::WindowsAarch64 => {
             resolve_windows_rust_target_triple(target, current_host, toolchain_selector, cargo_args)
         }
     }
@@ -466,6 +478,10 @@ fn validate_windows_rust_target_triple(
     target: NativeHostPlatform,
 ) -> Result<String> {
     let is_supported = match target {
+        NativeHostPlatform::WindowsX86 => matches!(
+            target_triple,
+            "i686-pc-windows-msvc" | "i686-pc-windows-gnu" | "i686-pc-windows-gnullvm"
+        ),
         NativeHostPlatform::WindowsX86_64 => matches!(
             target_triple,
             "x86_64-pc-windows-msvc" | "x86_64-pc-windows-gnu" | "x86_64-pc-windows-gnullvm"
@@ -504,6 +520,7 @@ fn resolve_csharp_windows_no_build_rust_target_triple(
 
 fn default_windows_rust_target_triple(target: NativeHostPlatform) -> &'static str {
     match target {
+        NativeHostPlatform::WindowsX86 => "i686-pc-windows-msvc",
         NativeHostPlatform::WindowsX86_64 => "x86_64-pc-windows-msvc",
         NativeHostPlatform::WindowsAarch64 => "aarch64-pc-windows-msvc",
         _ => unreachable!("Windows target required"),
@@ -800,6 +817,13 @@ fn default_windows_jni_compiler_candidates(rust_target_triple: &str) -> Vec<&'st
         vec!["clang-cl", "cl", "clang"]
     } else if rust_target_triple.starts_with("aarch64-") {
         vec!["aarch64-w64-mingw32-clang", "clang"]
+    } else if rust_target_triple.starts_with("i686-") {
+        vec![
+            "i686-w64-mingw32-gcc",
+            "i686-w64-mingw32-clang",
+            "gcc",
+            "clang",
+        ]
     } else {
         vec![
             "x86_64-w64-mingw32-gcc",
@@ -2812,6 +2836,19 @@ unix
                 "gcc",
                 "clang"
             ]
+        );
+        assert_eq!(
+            default_windows_jni_compiler_candidates("i686-pc-windows-gnu"),
+            vec![
+                "i686-w64-mingw32-gcc",
+                "i686-w64-mingw32-clang",
+                "gcc",
+                "clang"
+            ]
+        );
+        assert_eq!(
+            default_windows_jni_compiler_candidates("i686-pc-windows-msvc"),
+            vec!["clang-cl", "cl", "clang"]
         );
     }
 

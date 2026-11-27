@@ -25,6 +25,16 @@ pub enum BackendError {
         /// Declaration or runtime type occupying the name.
         declaration: String,
     },
+    /// The configured C# target framework is not one the generated code supports.
+    #[error(
+        "unsupported C# target framework `{framework}`; targets.csharp.target_framework must be {supported}"
+    )]
+    CSharpTargetFramework {
+        /// Target framework moniker as configured.
+        framework: String,
+        /// Description of the supported monikers.
+        supported: &'static str,
+    },
     /// A host cannot render a binding declaration shape present in the contract.
     #[error("backend `{target}` does not support binding capability {capability:?}: {status:?}")]
     BindingCapability {

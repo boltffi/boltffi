@@ -1,12 +1,13 @@
 use boltffi_binding::{DefaultValue, IncomingParam, IntoRust, Native, ParamDecl};
 
-use crate::core::{RenderContext, Result};
+use crate::core::Result;
 
 use super::super::{
     name_style::Namespace,
     syntax::{Expression, Identifier, TypeFragment},
     unsupported,
 };
+use super::Context;
 use super::default_value::DefaultExpression;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -26,7 +27,7 @@ impl Parameter {
     pub fn default_for(
         parameter: &ParamDecl<Native, IntoRust>,
         namespace: Option<&Namespace>,
-        context: &RenderContext<Native>,
+        context: &Context,
     ) -> Result<Option<DefaultExpression>> {
         let Some(value) = parameter.meta().default() else {
             return Ok(None);

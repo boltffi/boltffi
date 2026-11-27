@@ -7,7 +7,7 @@ use boltffi_binding::{
 
 use crate::{
     bridge::c::{CBridgeContract, CallbackSlot, ParameterGroup, Type as CBridgeType},
-    core::{AuxChunk, Emitted, Error, HelperId, RenderContext, Result},
+    core::{AuxChunk, Emitted, Error, HelperId, Result},
 };
 
 use super::super::{
@@ -16,9 +16,10 @@ use super::super::{
     syntax::{Expression, Identifier, Statement, TypeFragment},
     type_name,
 };
+use super::Context;
 use super::{
-    CallbackRuntimeTemplate, CopyBufferTemplate, FreeBufferTemplate, OwnedArgument,
-    OwnedCallTemplate, WireTemplate, direct_type, direct_vector_element_type, primitive_type,
+    CopyBufferTemplate, FreeBufferTemplate, OwnedArgument, OwnedCallTemplate, Runtime, direct_type,
+    direct_vector_element_type, primitive_type,
 };
 
 #[derive(Template)]
@@ -37,6 +38,11 @@ pub(in crate::target::csharp) struct Callback {
     create_entry: String,
     methods: Vec<CallbackMethod>,
     requires_wire_runtime: bool,
+    requires_async_runtime: bool,
+    vtable_read: String,
+    vtable_size: String,
+    clone_delegate: String,
+    free_delegate: String,
     free_buffer_entry: super::super::syntax::Literal,
     copy_buffer_entry: super::super::syntax::Literal,
 }
@@ -96,7 +102,7 @@ impl Callback {
         declaration: &CallbackDecl<Native>,
         namespace: Namespace,
         bridge: &CBridgeContract,
-        context: &RenderContext<Native>,
+        context: &Context,
     ) -> Result<Self> {
         let c_callback =
             bridge
@@ -121,9 +127,20 @@ impl Callback {
                 CallbackMethod::from_declaration(method, slot, &bridge_name, bridge, context)
             })
             .collect::<Result<Vec<_>>>()?;
+        let features = context.features();
+        let requires_async_runtime = !features.run_continuations_asynchronously
+            && methods.iter().any(|method| method.asynchronous);
         Ok(Self {
             namespace,
             proxy_name: Identifier::parse(format!("{name}Proxy"))?,
+            vtable_read: features
+                .ptr_to_structure(&format!("{bridge_name}.VTable"), "handle.vtable"),
+            vtable_size: features.marshal_size_of("VTable"),
+            clone_delegate: features
+                .delegate_for_pointer(&format!("{bridge_name}.CloneFn"), "vtable.clone"),
+            free_delegate: features
+                .delegate_for_pointer(&format!("{bridge_name}.FreeFn"), "vtable.free"),
+            requires_async_runtime,
             bridge_name,
             register_entry: declaration.protocol().register().name().as_str().to_owned(),
             create_entry: declaration
@@ -153,11 +170,13 @@ impl Callback {
     }
 
     pub(in crate::target::csharp) fn render(&self) -> Result<Emitted> {
-        let mut emitted = Emitted::primary(CallbackTemplate { callback: self }.render()?).with_aux(
-            AuxChunk::ForwardDecl(CallbackRuntimeTemplate.render()?.into()),
-        );
+        let mut emitted = Emitted::primary(CallbackTemplate { callback: self }.render()?)
+            .with_aux(Runtime::Callback.forward_decl());
         if self.requires_wire_runtime {
-            emitted = emitted.with_aux(AuxChunk::ForwardDecl(WireTemplate.render()?.into()));
+            emitted = emitted.with_aux(Runtime::Wire.forward_decl());
+        }
+        if self.requires_async_runtime {
+            emitted = emitted.with_aux(Runtime::Async.forward_decl());
         }
         emitted = emitted
             .with_aux(AuxChunk::Helper {
@@ -186,7 +205,7 @@ impl CallbackMethod {
         slot: &CallbackSlot,
         bridge_name: &Identifier,
         bridge: &CBridgeContract,
-        context: &RenderContext<Native>,
+        context: &Context,
     ) -> Result<Self> {
         let name = Name::new(declaration.name()).pascal()?;
         let asynchronous = matches!(
@@ -289,7 +308,7 @@ impl LoweredParameters {
         declaration: &ImportedMethodDecl<Native, VTableSlot>,
         slot: &CallbackSlot,
         _bridge: &CBridgeContract,
-        context: &RenderContext<Native>,
+        context: &Context,
     ) -> Result<Self> {
         let mut lowered = Self {
             received_classes: Vec::new(),
@@ -434,7 +453,8 @@ impl LoweredParameters {
                             length.to_string()
                         }
                         DirectVectorElementType::Primitive(_) => format!(
-                            "checked({length} * (nuint)global::System.Runtime.CompilerServices.Unsafe.SizeOf<{element_type}>())"
+                            "checked({length} * (nuint){})",
+                            context.features().element_size(&element_type.to_string())
                         ),
                         DirectVectorElementType::Record(_) => length.to_string(),
                         _ => return super::unsupported("callback direct-vector element type"),
@@ -468,7 +488,8 @@ impl LoweredParameters {
                         DirectVectorElementType::Record(_) => (
                             name.to_string(),
                             format!(
-                                "checked((nuint){name}.Length * (nuint)global::System.Runtime.CompilerServices.Unsafe.SizeOf<{element_type}>())"
+                                "checked((nuint){name}.Length * (nuint){})",
+                                context.features().element_size(&element_type.to_string())
                             ),
                         ),
                         _ => return super::unsupported("callback direct-vector element type"),
@@ -565,7 +586,7 @@ fn render_entry_body(
     method_name: &Identifier,
     parameters: &LoweredParameters,
     slot: &CallbackSlot,
-    context: &RenderContext<Native>,
+    context: &Context,
 ) -> Result<Statement> {
     let arguments = parameters.entry_arguments.join(", ");
     let mut body = vec![format!(
@@ -647,7 +668,7 @@ fn render_fallible_entry_body(
     method_name: &Identifier,
     parameters: &LoweredParameters,
     slot: &CallbackSlot,
-    context: &RenderContext<Native>,
+    context: &Context,
 ) -> Result<Statement> {
     let ErrorChannel::Encoded {
         placement: ErrorPlacement::ReturnSlot,
@@ -741,14 +762,18 @@ fn render_proxy_body(
     method_name: &Identifier,
     bridge_name: &Identifier,
     parameters: &LoweredParameters,
-    context: &RenderContext<Native>,
+    context: &Context,
 ) -> Result<Statement> {
     let slot_name = Name::new(declaration.name()).snake();
     let mut before = vec![
         "if (this.handle.IsNull) throw new global::System.ObjectDisposedException(GetType().Name);"
             .to_owned(),
         format!(
-            "{bridge_name}.{method_name}Fn invoke = global::System.Runtime.InteropServices.Marshal.GetDelegateForFunctionPointer<{bridge_name}.{method_name}Fn>(vtable.{slot_name});"
+            "{bridge_name}.{method_name}Fn invoke = {};",
+            context.features().delegate_for_pointer(
+                &format!("{bridge_name}.{method_name}Fn"),
+                &format!("vtable.{slot_name}")
+            )
         ),
     ];
     before.extend(parameters.proxy_setup.iter().cloned());
@@ -861,7 +886,7 @@ fn render_fallible_proxy_body(
     bridge_name: &Identifier,
     parameters: &LoweredParameters,
     slot: &CallbackSlot,
-    context: &RenderContext<Native>,
+    context: &Context,
 ) -> Result<Statement> {
     let ErrorChannel::Encoded {
         placement: ErrorPlacement::ReturnSlot,
@@ -884,7 +909,11 @@ fn render_fallible_proxy_body(
         "if (this.handle.IsNull) throw new global::System.ObjectDisposedException(GetType().Name);"
             .to_owned(),
         format!(
-            "{bridge_name}.{method_name}Fn invoke = global::System.Runtime.InteropServices.Marshal.GetDelegateForFunctionPointer<{bridge_name}.{method_name}Fn>(vtable.{slot_name});"
+            "{bridge_name}.{method_name}Fn invoke = {};",
+            context.features().delegate_for_pointer(
+                &format!("{bridge_name}.{method_name}Fn"),
+                &format!("vtable.{slot_name}")
+            )
         ),
     ];
     before.extend(parameters.proxy_setup.iter().cloned());
@@ -986,7 +1015,7 @@ fn render_fallible_proxy_body(
 fn callback_error_exception(
     ty: &TypeRef,
     error: &Identifier,
-    context: &RenderContext<Native>,
+    context: &Context,
 ) -> Result<(TypeFragment, Expression)> {
     match ty {
         TypeRef::String => Ok((
@@ -1021,7 +1050,7 @@ fn callback_group_indices(group: &ParameterGroup) -> Result<Vec<usize>> {
 fn callback_error_throw(
     ty: &TypeRef,
     decoded: Expression,
-    context: &RenderContext<Native>,
+    context: &Context,
 ) -> Result<Expression> {
     match ty {
         TypeRef::String => Ok(Expression::new(format!("new BoltException({decoded})"))),
@@ -1035,7 +1064,7 @@ fn callback_error_throw(
 
 fn public_return_type(
     plan: &ReturnPlan<Native, IntoRust>,
-    context: &RenderContext<Native>,
+    context: &Context,
 ) -> Result<TypeFragment> {
     match plan {
         ReturnPlan::Void => Ok(TypeFragment::void()),
@@ -1073,11 +1102,7 @@ fn public_return_type(
     }
 }
 
-fn c_type(
-    ty: &CBridgeType,
-    bridge: &CBridgeContract,
-    context: &RenderContext<Native>,
-) -> Result<TypeFragment> {
+fn c_type(ty: &CBridgeType, bridge: &CBridgeContract, context: &Context) -> Result<TypeFragment> {
     Ok(match ty {
         CBridgeType::Void => TypeFragment::void(),
         CBridgeType::Bool => TypeFragment::new("bool"),
@@ -1130,7 +1155,7 @@ fn native_parameter(
     ty: &CBridgeType,
     completion: Option<&Identifier>,
     bridge: &CBridgeContract,
-    context: &RenderContext<Native>,
+    context: &Context,
 ) -> Result<String> {
     let name = Identifier::escape(name)?;
     match ty {
@@ -1157,7 +1182,7 @@ fn completion_delegate(
     method: &Identifier,
     slot: &CallbackSlot,
     bridge: &CBridgeContract,
-    context: &RenderContext<Native>,
+    context: &Context,
 ) -> Result<Option<String>> {
     let Some(CBridgeType::FunctionPointer { returns, params }) =
         slot.parameters().iter().find_map(|parameter| {
@@ -1199,7 +1224,7 @@ fn render_async_entry_body(
     parameters: &LoweredParameters,
     slot: &CallbackSlot,
     bridge: &CBridgeContract,
-    context: &RenderContext<Native>,
+    context: &Context,
 ) -> Result<Statement> {
     let Some(ParameterGroup::CallbackCompletion(completion)) = slot.parameter_groups().last()
     else {
@@ -1369,7 +1394,7 @@ fn render_async_proxy_body(
     bridge_name: &Identifier,
     parameters: &LoweredParameters,
     slot: &CallbackSlot,
-    context: &RenderContext<Native>,
+    context: &Context,
 ) -> Result<Statement> {
     let Some(ParameterGroup::CallbackCompletion(completion_group)) = slot.parameter_groups().last()
     else {
@@ -1395,12 +1420,17 @@ fn render_async_proxy_body(
         "if (this.handle.IsNull) throw new global::System.ObjectDisposedException(GetType().Name);"
             .to_owned(),
         format!(
-            "{bridge_name}.{method_name}Fn invoke = global::System.Runtime.InteropServices.Marshal.GetDelegateForFunctionPointer<{bridge_name}.{method_name}Fn>(vtable.{slot_name});"
+            "{bridge_name}.{method_name}Fn invoke = {};",
+            context.features().delegate_for_pointer(
+                &format!("{bridge_name}.{method_name}Fn"),
+                &format!("vtable.{slot_name}")
+            )
         ),
     ];
     body.extend(parameters.proxy_setup.iter().cloned());
     body.push(format!(
-        "var boltffiCompletionSource = new global::System.Threading.Tasks.TaskCompletionSource<{task_type}>(global::System.Threading.Tasks.TaskCreationOptions.RunContinuationsAsynchronously);"
+        "var boltffiCompletionSource = {};",
+        context.features().completion_source(&task_type.to_string())
     ));
     body.push(
         "global::System.Runtime.InteropServices.GCHandle boltffiCompletionHandle = default;"
@@ -1592,7 +1622,7 @@ fn direct_wire_write(
     ty: &DirectValueType,
     writer: &str,
     value: &str,
-    context: &RenderContext<Native>,
+    context: &Context,
 ) -> Result<String> {
     match ty {
         DirectValueType::Primitive(primitive) => Ok(format!(
@@ -1615,11 +1645,7 @@ fn direct_wire_write(
     }
 }
 
-fn direct_wire_read(
-    ty: &DirectValueType,
-    reader: &str,
-    context: &RenderContext<Native>,
-) -> Result<String> {
+fn direct_wire_read(ty: &DirectValueType, reader: &str, context: &Context) -> Result<String> {
     match ty {
         DirectValueType::Primitive(primitive) => {
             Ok(format!("{reader}.{}()", primitive_read_method(*primitive)))

@@ -34,6 +34,7 @@ pub enum NativeHostPlatform {
     DarwinX86_64,
     LinuxX86_64,
     LinuxAarch64,
+    WindowsX86,
     WindowsX86_64,
     WindowsAarch64,
 }
@@ -45,6 +46,7 @@ impl NativeHostPlatform {
             Self::DarwinX86_64 => "darwin-x86_64",
             Self::LinuxX86_64 => "linux-x86_64",
             Self::LinuxAarch64 => "linux-aarch64",
+            Self::WindowsX86 => "windows-x86",
             Self::WindowsX86_64 => "windows-x86_64",
             Self::WindowsAarch64 => "windows-aarch64",
         }
@@ -56,6 +58,7 @@ impl NativeHostPlatform {
             ("macos", "x86_64") => Some(Self::DarwinX86_64),
             ("linux", "x86_64") => Some(Self::LinuxX86_64),
             ("linux", "aarch64") => Some(Self::LinuxAarch64),
+            ("windows", "x86") => Some(Self::WindowsX86),
             ("windows", "x86_64") => Some(Self::WindowsX86_64),
             ("windows", "aarch64") => Some(Self::WindowsAarch64),
             _ => None,
@@ -66,7 +69,9 @@ impl NativeHostPlatform {
         match self {
             Self::DarwinArm64 | Self::DarwinX86_64 => format!("lib{artifact_name}.dylib"),
             Self::LinuxX86_64 | Self::LinuxAarch64 => format!("lib{artifact_name}.so"),
-            Self::WindowsX86_64 | Self::WindowsAarch64 => format!("{artifact_name}.dll"),
+            Self::WindowsX86 | Self::WindowsX86_64 | Self::WindowsAarch64 => {
+                format!("{artifact_name}.dll")
+            }
         }
     }
 
@@ -75,7 +80,7 @@ impl NativeHostPlatform {
             Self::DarwinArm64 | Self::DarwinX86_64 | Self::LinuxX86_64 | Self::LinuxAarch64 => {
                 format!("lib{artifact_name}.a")
             }
-            Self::WindowsX86_64 | Self::WindowsAarch64 => {
+            Self::WindowsX86 | Self::WindowsX86_64 | Self::WindowsAarch64 => {
                 if cfg!(all(target_os = "windows", target_env = "gnu")) {
                     format!("lib{artifact_name}.a")
                 } else {
@@ -87,12 +92,14 @@ impl NativeHostPlatform {
 
     pub fn import_library_filename(self, artifact_name: &str) -> Option<String> {
         match self {
-            Self::WindowsX86_64 | Self::WindowsAarch64
+            Self::WindowsX86 | Self::WindowsX86_64 | Self::WindowsAarch64
                 if cfg!(all(target_os = "windows", target_env = "gnu")) =>
             {
                 Some(format!("lib{artifact_name}.dll.a"))
             }
-            Self::WindowsX86_64 | Self::WindowsAarch64 => Some(format!("{artifact_name}.dll.lib")),
+            Self::WindowsX86 | Self::WindowsX86_64 | Self::WindowsAarch64 => {
+                Some(format!("{artifact_name}.dll.lib"))
+            }
             _ => None,
         }
     }
@@ -107,7 +114,7 @@ impl NativeHostPlatform {
         match self {
             Self::DarwinArm64 | Self::DarwinX86_64 => "darwin",
             Self::LinuxX86_64 | Self::LinuxAarch64 => "linux",
-            Self::WindowsX86_64 | Self::WindowsAarch64 => "win32",
+            Self::WindowsX86 | Self::WindowsX86_64 | Self::WindowsAarch64 => "win32",
         }
     }
 
@@ -115,7 +122,7 @@ impl NativeHostPlatform {
         match self {
             Self::DarwinArm64 | Self::DarwinX86_64 => Some("-Wl,-rpath,@loader_path"),
             Self::LinuxX86_64 | Self::LinuxAarch64 => Some("-Wl,-rpath,$ORIGIN"),
-            Self::WindowsX86_64 | Self::WindowsAarch64 => None,
+            Self::WindowsX86 | Self::WindowsX86_64 | Self::WindowsAarch64 => None,
         }
     }
 }
@@ -232,7 +239,7 @@ impl NativeHostIdentifier for JavaHostTarget {
             NativeHostPlatform::LinuxX86_64 => Some(Self::LinuxX86_64),
             NativeHostPlatform::LinuxAarch64 => Some(Self::LinuxAarch64),
             NativeHostPlatform::WindowsX86_64 => Some(Self::WindowsX86_64),
-            NativeHostPlatform::WindowsAarch64 => None,
+            NativeHostPlatform::WindowsX86 | NativeHostPlatform::WindowsAarch64 => None,
         }
     }
 
@@ -264,6 +271,8 @@ pub enum CSharpRuntimeIdentifier {
     LinuxX64,
     #[serde(rename = "linux-arm64", alias = "linux-aarch64")]
     LinuxArm64,
+    #[serde(rename = "win-x86", alias = "windows-x86", alias = "win-i686")]
+    WinX86,
     #[serde(rename = "win-x64", alias = "windows-x86_64", alias = "win-x86_64")]
     WinX64,
     #[serde(
@@ -282,6 +291,7 @@ impl CSharpRuntimeIdentifier {
         Self::OsxX64,
         Self::LinuxX64,
         Self::LinuxArm64,
+        Self::WinX86,
         Self::WinX64,
         Self::WinArm64,
     ];
@@ -293,6 +303,7 @@ impl CSharpRuntimeIdentifier {
             Self::OsxX64 => "osx-x64",
             Self::LinuxX64 => "linux-x64",
             Self::LinuxArm64 => "linux-arm64",
+            Self::WinX86 => "win-x86",
             Self::WinX64 => "win-x64",
             Self::WinArm64 => "win-arm64",
         }
@@ -325,6 +336,7 @@ impl NativeHostIdentifier for CSharpRuntimeIdentifier {
             NativeHostPlatform::DarwinX86_64 => Self::OsxX64,
             NativeHostPlatform::LinuxX86_64 => Self::LinuxX64,
             NativeHostPlatform::LinuxAarch64 => Self::LinuxArm64,
+            NativeHostPlatform::WindowsX86 => Self::WinX86,
             NativeHostPlatform::WindowsX86_64 => Self::WinX64,
             NativeHostPlatform::WindowsAarch64 => Self::WinArm64,
         })
@@ -337,13 +349,14 @@ impl NativeHostIdentifier for CSharpRuntimeIdentifier {
             Self::OsxX64 => Some(NativeHostPlatform::DarwinX86_64),
             Self::LinuxX64 => Some(NativeHostPlatform::LinuxX86_64),
             Self::LinuxArm64 => Some(NativeHostPlatform::LinuxAarch64),
+            Self::WinX86 => Some(NativeHostPlatform::WindowsX86),
             Self::WinX64 => Some(NativeHostPlatform::WindowsX86_64),
             Self::WinArm64 => Some(NativeHostPlatform::WindowsAarch64),
         }
     }
 
     fn unsupported_host_message() -> String {
-        "C# packaging is only supported on osx-arm64, osx-x64, linux-x64, linux-arm64, win-x64, and win-arm64 hosts".to_string()
+        "C# packaging is only supported on osx-arm64, osx-x64, linux-x64, linux-arm64, win-x86, win-x64, and win-arm64 hosts".to_string()
     }
 }
 
@@ -776,6 +789,19 @@ mod tests {
             <JavaHostTarget as NativeHostIdentifier>::from_platform(
                 NativeHostPlatform::WindowsAarch64
             ),
+            None
+        );
+    }
+
+    #[test]
+    fn windows_x86_is_exposed_to_csharp_but_not_java() {
+        assert_eq!(
+            CSharpRuntimeIdentifier::from(NativeHostPlatform::WindowsX86),
+            CSharpRuntimeIdentifier::WinX86
+        );
+        assert_eq!(CSharpRuntimeIdentifier::WinX86.canonical_name(), "win-x86");
+        assert_eq!(
+            <JavaHostTarget as NativeHostIdentifier>::from_platform(NativeHostPlatform::WindowsX86),
             None
         );
     }

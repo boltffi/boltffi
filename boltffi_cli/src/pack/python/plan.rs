@@ -79,7 +79,12 @@ impl PythonPackagingPlan {
         cli_python_interpreters: &[String],
     ) -> Result<Self> {
         let host_platform = NativeHostPlatform::current()
-            .filter(|platform| *platform != NativeHostPlatform::WindowsAarch64)
+            .filter(|platform| {
+                !matches!(
+                    platform,
+                    NativeHostPlatform::WindowsX86 | NativeHostPlatform::WindowsAarch64
+                )
+            })
             .ok_or_else(|| CliError::CommandFailed {
                 command:
                     "python packaging is only supported on darwin-arm64, darwin-x86_64, linux-x86_64, linux-aarch64, and windows-x86_64 hosts".to_string(),
