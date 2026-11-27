@@ -5,9 +5,9 @@ expression: "rendered_fixture(\"exports/primitive_functions\")"
 ===== jni/demo.h =====
 <c abi support declarations>
 int32_t boltffi_function_4demo3add(int32_t left, int32_t right);
+FfiBuf_u8 boltffi_function_4demo10echo_bytes(const uint8_t *bytes_ptr, uintptr_t bytes_len);
 bool boltffi_function_4demo7enabled(bool flag);
 void boltffi_function_4demo7refresh(void);
-FfiBuf_u8 boltffi_function_4demo10echo_bytes(const uint8_t *bytes_ptr, uintptr_t bytes_len);
 
 ===== jni/jni_glue.c =====
 <jni source includes>
@@ -48,6 +48,23 @@ JNIEXPORT jint JNICALL Java_com_boltffi_demo_Native_boltffi_1function_14demo3add
     return (jint)__boltffi_result;
 }
 
+JNIEXPORT jbyteArray JNICALL Java_com_boltffi_demo_Native_boltffi_1function_14demo10echo_1bytes(JNIEnv *env, jclass cls, jobject bytes, jint __boltffi_bytes_len) {
+    (void)cls;
+
+    void *__boltffi_bytes_ptr = NULL;
+
+    if (!boltffi_jni_direct_buffer_address(env, bytes, (jlong)__boltffi_bytes_len, &__boltffi_bytes_ptr)) {
+        goto __boltffi_error;
+    }
+
+    (void)env;
+    FfiBuf_u8 __boltffi_result = boltffi_function_4demo10echo_bytes((const uint8_t *)__boltffi_bytes_ptr, (uintptr_t)__boltffi_bytes_len);
+
+    return boltffi_jni_buffer_to_byte_array(env, __boltffi_result);
+__boltffi_error:
+    return NULL;
+}
+
 JNIEXPORT jboolean JNICALL Java_com_boltffi_demo_Native_boltffi_1function_14demo7enabled(JNIEnv *env, jclass cls, jboolean flag) {
     (void)cls;
 
@@ -64,21 +81,4 @@ JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1function_14demo7ref
     boltffi_function_4demo7refresh();
 
     return;
-}
-
-JNIEXPORT jbyteArray JNICALL Java_com_boltffi_demo_Native_boltffi_1function_14demo10echo_1bytes(JNIEnv *env, jclass cls, jobject bytes, jint __boltffi_bytes_len) {
-    (void)cls;
-
-    void *__boltffi_bytes_ptr = NULL;
-
-    if (!boltffi_jni_direct_buffer_address(env, bytes, (jlong)__boltffi_bytes_len, &__boltffi_bytes_ptr)) {
-        goto __boltffi_error;
-    }
-
-    (void)env;
-    FfiBuf_u8 __boltffi_result = boltffi_function_4demo10echo_bytes((const uint8_t *)__boltffi_bytes_ptr, (uintptr_t)__boltffi_bytes_len);
-
-    return boltffi_jni_buffer_to_byte_array(env, __boltffi_result);
-__boltffi_error:
-    return NULL;
 }

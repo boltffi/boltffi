@@ -13,6 +13,53 @@ private object Native {
 }
 
 
+sealed class Int {
+    internal abstract fun wireSize(): kotlin.Int
+
+    internal abstract fun writeTo(writer: WireWriter)
+
+    internal fun toByteArray(): ByteArray {
+        val buffer = WireWriterPool.acquire(wireSize())
+        val writer = buffer.writer
+        try {
+            writeTo(writer)
+            return buffer.bytes()
+        } finally {
+            buffer.close()
+        }
+    }
+
+
+    data class Value(
+        val field0: Long
+    ) : Int() {
+        internal override fun wireSize(): kotlin.Int {
+            return 4 + 8
+        }
+
+        internal override fun writeTo(writer: WireWriter) {
+            writer.writeU32(0u)
+            writer.writeI64(this.field0)
+        }
+    }
+
+    companion object {
+        internal fun fromReader(reader: WireReader): Int {
+            val tag = reader.readU32()
+            return when (tag) {
+                0u -> Value(reader.readI64())
+                else -> throw IllegalArgumentException("unknown Int tag: $tag")
+            }
+        }
+
+        internal fun fromByteArray(bytes: ByteArray): Int {
+            val reader = WireReader(bytes)
+            return fromReader(reader)
+        }
+    }
+}
+
+
 sealed class PrimitiveValue {
     internal abstract fun wireSize(): kotlin.Int
 
@@ -134,53 +181,6 @@ sealed class PrimitiveValue {
             return Native.boltffi_method_enum_4demo14PrimitiveValue6scaled(__boltffi_primitiveValue_wire.directBuffer(), __boltffi_primitiveValue_wire.size(), factor)
         } finally {
             __boltffi_primitiveValue_wire.close()
-        }
-    }
-}
-
-
-sealed class Int {
-    internal abstract fun wireSize(): kotlin.Int
-
-    internal abstract fun writeTo(writer: WireWriter)
-
-    internal fun toByteArray(): ByteArray {
-        val buffer = WireWriterPool.acquire(wireSize())
-        val writer = buffer.writer
-        try {
-            writeTo(writer)
-            return buffer.bytes()
-        } finally {
-            buffer.close()
-        }
-    }
-
-
-    data class Value(
-        val field0: Long
-    ) : Int() {
-        internal override fun wireSize(): kotlin.Int {
-            return 4 + 8
-        }
-
-        internal override fun writeTo(writer: WireWriter) {
-            writer.writeU32(0u)
-            writer.writeI64(this.field0)
-        }
-    }
-
-    companion object {
-        internal fun fromReader(reader: WireReader): Int {
-            val tag = reader.readU32()
-            return when (tag) {
-                0u -> Value(reader.readI64())
-                else -> throw IllegalArgumentException("unknown Int tag: $tag")
-            }
-        }
-
-        internal fun fromByteArray(bytes: ByteArray): Int {
-            val reader = WireReader(bytes)
-            return fromReader(reader)
         }
     }
 }

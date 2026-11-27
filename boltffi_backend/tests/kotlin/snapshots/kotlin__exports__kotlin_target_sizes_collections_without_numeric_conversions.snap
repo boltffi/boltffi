@@ -7,43 +7,6 @@ expression: rendered
 
 package com.boltffi.demo
 
-data class Label(
-    val text: String
-) {
-    internal fun wireSize(): Int {
-        return 4 + Utf8Codec.maxBytes(this.text)
-    }
-
-    internal fun writeTo(writer: WireWriter) {
-        writer.writeString(this.text)
-    }
-
-    internal fun toByteArray(): ByteArray {
-        val buffer = WireWriterPool.acquire(wireSize())
-        val writer = buffer.writer
-        try {
-            writeTo(writer)
-            return buffer.bytes()
-        } finally {
-            buffer.close()
-        }
-    }
-
-    companion object {
-        internal fun fromReader(reader: WireReader): Label {
-            return Label(
-                reader.readString()
-            )
-        }
-
-        internal fun fromByteArray(bytes: ByteArray): Label {
-            val reader = WireReader(bytes)
-            return fromReader(reader)
-        }
-    }
-}
-
-
 data class CollectionSizes(
     val strings: List<String>,
     val states: List<State>,
@@ -96,13 +59,39 @@ data class CollectionSizes(
 }
 
 
-enum class State(val value: Int) {
-    READY(0),
-    COMPLETE(1);
+data class Label(
+    val text: String
+) {
+    internal fun wireSize(): Int {
+        return 4 + Utf8Codec.maxBytes(this.text)
+    }
+
+    internal fun writeTo(writer: WireWriter) {
+        writer.writeString(this.text)
+    }
+
+    internal fun toByteArray(): ByteArray {
+        val buffer = WireWriterPool.acquire(wireSize())
+        val writer = buffer.writer
+        try {
+            writeTo(writer)
+            return buffer.bytes()
+        } finally {
+            buffer.close()
+        }
+    }
 
     companion object {
-        fun fromValue(value: Int): State =
-            entries.first { it.value == value }
+        internal fun fromReader(reader: WireReader): Label {
+            return Label(
+                reader.readString()
+            )
+        }
+
+        internal fun fromByteArray(bytes: ByteArray): Label {
+            val reader = WireReader(bytes)
+            return fromReader(reader)
+        }
     }
 }
 
@@ -150,5 +139,16 @@ sealed class CollectionEvent {
             val reader = WireReader(bytes)
             return fromReader(reader)
         }
+    }
+}
+
+
+enum class State(val value: Int) {
+    READY(0),
+    COMPLETE(1);
+
+    companion object {
+        fun fromValue(value: Int): State =
+            entries.first { it.value == value }
     }
 }

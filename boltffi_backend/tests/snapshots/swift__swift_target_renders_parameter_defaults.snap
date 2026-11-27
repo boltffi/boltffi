@@ -26,6 +26,28 @@ private final class BoltFFIClosureBox<Invoke> {
     }
 }
 
+public struct ContactDefaults: Hashable, Equatable, Sendable {
+    public var email: Email
+    public var identifier: Identifier
+    public var optionalEmail: Email?
+
+    public init(email: Email = "mailto:ada@example.com", identifier: Identifier = "01234567-89ab-cdef-0123-456789abcdef", optionalEmail: Email? = nil) {
+        self.email = email
+        self.identifier = identifier
+        self.optionalEmail = optionalEmail
+    }
+
+    @inlinable static func decode(from reader: inout WireReader) -> ContactDefaults {
+        ContactDefaults(email: reader.readString(), identifier: reader.readString(), optionalEmail: reader.readOptional { reader in reader.readString() })
+    }
+
+    @inlinable func encode(to writer: inout WireWriter) {
+        writer.writeString(self.email)
+        writer.writeString(self.identifier)
+        writer.writeOptional(self.optionalEmail) { writer, boltffiValue0 in writer.writeString(boltffiValue0) }
+    }
+}
+
 public struct DefaultAmount: Hashable, Equatable, Sendable {
     public var value: Int32
 
@@ -61,6 +83,25 @@ public struct DefaultAmount: Hashable, Equatable, Sendable {
 
     public func offset(step: Int32 = 2) -> Int32 {
         return boltffi_method_record_4demo13DefaultAmount6offset(self.cValue, step)
+    }
+}
+
+public struct FloatDefaults: Hashable, Equatable, Sendable {
+    public var single: Float
+    public var double: Double
+
+    public init(single: Float = Float(bitPattern: 0x80000000), double: Double = Double(bitPattern: 0x8000000000000000)) {
+        self.single = single
+        self.double = double
+    }
+
+    @inlinable static func decode(from reader: inout WireReader) -> FloatDefaults {
+        FloatDefaults(single: reader.readF32(), double: reader.readF64())
+    }
+
+    @inlinable func encode(to writer: inout WireWriter) {
+        writer.writeF32(self.single)
+        writer.writeF64(self.double)
     }
 }
 
@@ -105,24 +146,6 @@ public struct NamedAmount: Hashable, Equatable, Sendable {
     }
 }
 
-public struct Range: Hashable, Equatable, Sendable {
-    public var start: Int64
-    public var end: UInt64
-
-    public init(start: Int64 = -9223372036854775808, end: UInt64 = 18446744073709551615) {
-        self.start = start
-        self.end = end
-    }
-
-    @usableFromInline init(fromC c: ___Range) {
-        self.init(start: c.start, end: c.end)
-    }
-
-    @usableFromInline var cValue: ___Range {
-        ___Range(start: start, end: end)
-    }
-}
-
 public struct Quota: Hashable, Equatable, Sendable {
     public var limit: Limit
 
@@ -139,57 +162,21 @@ public struct Quota: Hashable, Equatable, Sendable {
     }
 }
 
-public struct FloatDefaults: Hashable, Equatable, Sendable {
-    public var single: Float
-    public var double: Double
+public struct Range: Hashable, Equatable, Sendable {
+    public var start: Int64
+    public var end: UInt64
 
-    public init(single: Float = Float(bitPattern: 0x80000000), double: Double = Double(bitPattern: 0x8000000000000000)) {
-        self.single = single
-        self.double = double
+    public init(start: Int64 = -9223372036854775808, end: UInt64 = 18446744073709551615) {
+        self.start = start
+        self.end = end
     }
 
-    @inlinable static func decode(from reader: inout WireReader) -> FloatDefaults {
-        FloatDefaults(single: reader.readF32(), double: reader.readF64())
+    @usableFromInline init(fromC c: ___Range) {
+        self.init(start: c.start, end: c.end)
     }
 
-    @inlinable func encode(to writer: inout WireWriter) {
-        writer.writeF32(self.single)
-        writer.writeF64(self.double)
-    }
-}
-
-public struct ContactDefaults: Hashable, Equatable, Sendable {
-    public var email: Email
-    public var identifier: Identifier
-    public var optionalEmail: Email?
-
-    public init(email: Email = "mailto:ada@example.com", identifier: Identifier = "01234567-89ab-cdef-0123-456789abcdef", optionalEmail: Email? = nil) {
-        self.email = email
-        self.identifier = identifier
-        self.optionalEmail = optionalEmail
-    }
-
-    @inlinable static func decode(from reader: inout WireReader) -> ContactDefaults {
-        ContactDefaults(email: reader.readString(), identifier: reader.readString(), optionalEmail: reader.readOptional { reader in reader.readString() })
-    }
-
-    @inlinable func encode(to writer: inout WireWriter) {
-        writer.writeString(self.email)
-        writer.writeString(self.identifier)
-        writer.writeOptional(self.optionalEmail) { writer, boltffiValue0 in writer.writeString(boltffiValue0) }
-    }
-}
-
-public enum Mode: UInt8, Hashable, Sendable, CaseIterable {
-    case fast = 1
-    case slow = 2
-
-    @usableFromInline init(fromC c: UInt8) {
-        self = Mode(rawValue: c)!
-    }
-
-    @usableFromInline var cValue: UInt8 {
-        rawValue
+    @usableFromInline var cValue: ___Range {
+        ___Range(start: start, end: end)
     }
 }
 
@@ -235,50 +222,16 @@ public enum DefaultMode: UInt8, Hashable, Sendable, CaseIterable {
     }
 }
 
-public final class Server {
-    private var __boltffiHandle: UInt64 = 0
+public enum Mode: UInt8, Hashable, Sendable, CaseIterable {
+    case fast = 1
+    case slow = 2
 
-    @usableFromInline var handle: UInt64 {
-        get { withUnsafeMutablePointer(to: &__boltffiHandle) { UInt64(boltffi_atomic_u64_load($0)) } }
-        set { __boltffiHandle = UInt64(newValue) }
+    @usableFromInline init(fromC c: UInt8) {
+        self = Mode(rawValue: c)!
     }
 
-    @usableFromInline init(handle: UInt64) {
-        self.handle = handle
-    }
-
-    @usableFromInline func __boltffiTakeHandle() -> UInt64 {
-        withUnsafeMutablePointer(to: &__boltffiHandle) { UInt64(boltffi_atomic_u64_exchange($0, 0)) }
-    }
-
-    deinit {
-        let handle = __boltffiTakeHandle()
-        if handle != 0 { boltffi_release_class_4demo6Server(handle) }
-    }
-
-    public init(port: UInt16 = 8080) {
-        self.handle = boltffi_init_class_4demo6Server3new(port)
-    }
-
-    public static func start(port: UInt16, first: Handler? = nil, second: Handler? = nil) async throws -> Server {
-        let boltffiFuture = boltffi_init_class_4demo6Server5start(port, first.map { boltffiCallback in HandlerBridge.create(boltffiCallback) } ?? BoltFFICallbackHandle(handle: 0, vtable: nil), second.map { boltffiCallback in HandlerBridge.create(boltffiCallback) } ?? BoltFFICallbackHandle(handle: 0, vtable: nil))
-        return try await boltffiAsyncCall(
-            futureHandle: boltffiFuture,
-            poll: boltffi_async_init_class_4demo6Server5start_poll,
-            cancel: boltffi_async_init_class_4demo6Server5start_cancel,
-            free: boltffi_async_init_class_4demo6Server5start_free
-        ) { boltffiFuture, boltffiStatus in
-            let boltffiResult = boltffi_async_init_class_4demo6Server5start_complete(boltffiFuture, boltffiStatus)
-            let boltffiStatusCode = boltffiStatus!.pointee.code
-            guard boltffiStatusCode == 0 else {
-                throw FfiError(message: "FFI failed in async completion with code \(boltffiStatusCode)")
-            }
-            return Server(handle: boltffiResult)
-        }
-    }
-
-    public func port(mapped: Bool = false) -> UInt16 {
-        return boltffi_method_class_4demo6Server4port(self.handle, mapped)
+    @usableFromInline var cValue: UInt8 {
+        rawValue
     }
 }
 
@@ -344,48 +297,50 @@ public final class DefaultCounter {
     }
 }
 
-public protocol Handler: AnyObject {
-    func process(value: UInt32) -> UInt32
-}
+public final class Server {
+    private var __boltffiHandle: UInt64 = 0
 
-private final class HandlerWrapper {
-    let impl: Handler
-
-    init(_ impl: Handler) {
-        self.impl = impl
+    @usableFromInline var handle: UInt64 {
+        get { withUnsafeMutablePointer(to: &__boltffiHandle) { UInt64(boltffi_atomic_u64_load($0)) } }
+        set { __boltffiHandle = UInt64(newValue) }
     }
-}
 
-private var boltffiHandlerVtable: ___HandlerVTable = {
-    ___HandlerVTable(
-        free: { handle in
-            guard handle != 0 else { return }
-            Unmanaged<HandlerWrapper>.fromOpaque(UnsafeRawPointer(bitPattern: UInt(handle))!).release()
-        },
-        clone: { handle in
-            guard handle != 0 else { return 0 }
-            let wrapper = Unmanaged<HandlerWrapper>.fromOpaque(UnsafeRawPointer(bitPattern: UInt(handle))!)
-            _ = wrapper.retain()
-            return handle
-        },
-        process: { handle, value in
-            guard handle != 0 else { fatalError("invalid callback handle") }
-            let wrapper = Unmanaged<HandlerWrapper>.fromOpaque(UnsafeRawPointer(bitPattern: UInt(handle))!).takeUnretainedValue()
-            return wrapper.impl.process(value: value)
+    @usableFromInline init(handle: UInt64) {
+        self.handle = handle
+    }
+
+    @usableFromInline func __boltffiTakeHandle() -> UInt64 {
+        withUnsafeMutablePointer(to: &__boltffiHandle) { UInt64(boltffi_atomic_u64_exchange($0, 0)) }
+    }
+
+    deinit {
+        let handle = __boltffiTakeHandle()
+        if handle != 0 { boltffi_release_class_4demo6Server(handle) }
+    }
+
+    public init(port: UInt16 = 8080) {
+        self.handle = boltffi_init_class_4demo6Server3new(port)
+    }
+
+    public static func start(port: UInt16, first: Handler? = nil, second: Handler? = nil) async throws -> Server {
+        let boltffiFuture = boltffi_init_class_4demo6Server5start(port, first.map { boltffiCallback in HandlerBridge.create(boltffiCallback) } ?? BoltFFICallbackHandle(handle: 0, vtable: nil), second.map { boltffiCallback in HandlerBridge.create(boltffiCallback) } ?? BoltFFICallbackHandle(handle: 0, vtable: nil))
+        return try await boltffiAsyncCall(
+            futureHandle: boltffiFuture,
+            poll: boltffi_async_init_class_4demo6Server5start_poll,
+            cancel: boltffi_async_init_class_4demo6Server5start_cancel,
+            free: boltffi_async_init_class_4demo6Server5start_free
+        ) { boltffiFuture, boltffiStatus in
+            let boltffiResult = boltffi_async_init_class_4demo6Server5start_complete(boltffiFuture, boltffiStatus)
+            let boltffiStatusCode = boltffiStatus!.pointee.code
+            guard boltffiStatusCode == 0 else {
+                throw FfiError(message: "FFI failed in async completion with code \(boltffiStatusCode)")
+            }
+            return Server(handle: boltffiResult)
         }
-    )
-}()
+    }
 
-private enum HandlerBridge {
-    private static let register: Void = {
-        boltffi_register_callback_4demo7Handler(&boltffiHandlerVtable)
-    }()
-
-    static func create(_ impl: Handler) -> BoltFFICallbackHandle {
-        _ = register
-        let wrapper = HandlerWrapper(impl)
-        let handle = UInt64(UInt(bitPattern: Unmanaged.passRetained(wrapper).toOpaque()))
-        return boltffi_create_callback_4demo7Handler(handle)
+    public func port(mapped: Bool = false) -> UInt16 {
+        return boltffi_method_class_4demo6Server4port(self.handle, mapped)
     }
 }
 
@@ -434,6 +389,164 @@ private enum DefaultHandlerBridge {
     }
 }
 
+public protocol Handler: AnyObject {
+    func process(value: UInt32) -> UInt32
+}
+
+private final class HandlerWrapper {
+    let impl: Handler
+
+    init(_ impl: Handler) {
+        self.impl = impl
+    }
+}
+
+private var boltffiHandlerVtable: ___HandlerVTable = {
+    ___HandlerVTable(
+        free: { handle in
+            guard handle != 0 else { return }
+            Unmanaged<HandlerWrapper>.fromOpaque(UnsafeRawPointer(bitPattern: UInt(handle))!).release()
+        },
+        clone: { handle in
+            guard handle != 0 else { return 0 }
+            let wrapper = Unmanaged<HandlerWrapper>.fromOpaque(UnsafeRawPointer(bitPattern: UInt(handle))!)
+            _ = wrapper.retain()
+            return handle
+        },
+        process: { handle, value in
+            guard handle != 0 else { fatalError("invalid callback handle") }
+            let wrapper = Unmanaged<HandlerWrapper>.fromOpaque(UnsafeRawPointer(bitPattern: UInt(handle))!).takeUnretainedValue()
+            return wrapper.impl.process(value: value)
+        }
+    )
+}()
+
+private enum HandlerBridge {
+    private static let register: Void = {
+        boltffi_register_callback_4demo7Handler(&boltffiHandlerVtable)
+    }()
+
+    static func create(_ impl: Handler) -> BoltFFICallbackHandle {
+        _ = register
+        let wrapper = HandlerWrapper(impl)
+        let handle = UInt64(UInt(bitPattern: Unmanaged.passRetained(wrapper).toOpaque()))
+        return boltffi_create_callback_4demo7Handler(handle)
+    }
+}
+
+public func applyOptionalClosure(value: Int32, callback: ((Int32) -> Int32)? = nil) -> Int32 {
+    let boltffiCallbackBox = callback.map { implementation in BoltFFIClosureBox<(Int32) -> Int32>(implementation) }
+    let boltffiCallbackContext = boltffiCallbackBox.map { closureBox in Unmanaged.passRetained(closureBox).toOpaque() }
+    let boltffiCallbackCall: @convention(c) (UnsafeMutableRawPointer?, Int32) -> Int32 = { context, arg0 in
+        return Unmanaged<BoltFFIClosureBox<(Int32) -> Int32>>.fromOpaque(context!).takeUnretainedValue().invoke(arg0)
+    }
+    let boltffiCallbackRelease: @convention(c) (UnsafeMutableRawPointer?) -> Void = { context in
+        guard let context = context else { return }
+        Unmanaged<BoltFFIClosureBox<(Int32) -> Int32>>.fromOpaque(context).release()
+    }
+    return boltffi_function_4demo22apply_optional_closure(
+        value,
+        boltffiCallbackContext != nil ? boltffiCallbackCall : nil,
+        boltffiCallbackContext,
+        boltffiCallbackContext != nil ? boltffiCallbackRelease : nil
+    )
+}
+
+public func asyncDefault(value: UInt32 = 9) async throws -> UInt32 {
+    let boltffiFuture = boltffi_function_4demo13async_default(value)
+    return try await boltffiAsyncCall(
+        futureHandle: boltffiFuture,
+        poll: boltffi_async_function_4demo13async_default_poll,
+        cancel: boltffi_async_function_4demo13async_default_cancel,
+        free: boltffi_async_function_4demo13async_default_free
+    ) { boltffiFuture, boltffiStatus in
+        let boltffiResult = boltffi_async_function_4demo13async_default_complete(boltffiFuture, boltffiStatus)
+        let boltffiStatusCode = boltffiStatus!.pointee.code
+        guard boltffiStatusCode == 0 else {
+            throw FfiError(message: "FFI failed in async completion with code \(boltffiStatusCode)")
+        }
+        return boltffiResult
+    }
+}
+
+public func defaultAmount(amount: Amount = DefaultAmount(value: 5)) -> Amount {
+    let boltffiAmountBytes = boltffiEncode { boltffiAmountWriter in amount.encode(to: &boltffiAmountWriter) }
+    return boltffiAmountBytes.withUnsafeBufferPointer { boltffiAmountBuffer in
+        let boltffiResult = boltffi_function_4demo14default_amount(boltffiAmountBuffer.baseAddress!, UInt(boltffiAmountBuffer.count))
+        defer { boltffi_free_buf(boltffiResult) }
+        return boltffiDecodeOwnedBuf(boltffiResult.ptr, Int(boltffiResult.len)) { boltffiReader in DefaultAmount.decode(from: &boltffiReader) }
+    }
+}
+
+public func defaultDoubleBits(value: Double = Double(bitPattern: 0x8000000000000000)) -> UInt64 {
+    return boltffi_function_4demo19default_double_bits(value)
+}
+
+public func defaultEmail(email: Email = "mailto:ada@example.com") -> Email {
+    let boltffiEmailBytes = boltffiEncode { boltffiEmailWriter in boltffiEmailWriter.writeString(email) }
+    return boltffiEmailBytes.withUnsafeBufferPointer { boltffiEmailBuffer in
+        let boltffiResult = boltffi_function_4demo13default_email(boltffiEmailBuffer.baseAddress!, UInt(boltffiEmailBuffer.count))
+        defer { boltffi_free_buf(boltffiResult) }
+        return boltffiDecodeOwnedBuf(boltffiResult.ptr, Int(boltffiResult.len)) { boltffiReader in boltffiReader.readString() }
+    }
+}
+
+public func defaultFloatBits(value: Float = Float(bitPattern: 0x80000000)) -> UInt32 {
+    return boltffi_function_4demo18default_float_bits(value)
+}
+
+public func defaultIdentifier(identifier: Identifier = "01234567-89ab-cdef-0123-456789abcdef") -> Identifier {
+    let boltffiIdentifierBytes = boltffiEncode { boltffiIdentifierWriter in boltffiIdentifierWriter.writeString(identifier) }
+    return boltffiIdentifierBytes.withUnsafeBufferPointer { boltffiIdentifierBuffer in
+        let boltffiResult = boltffi_function_4demo18default_identifier(boltffiIdentifierBuffer.baseAddress!, UInt(boltffiIdentifierBuffer.count))
+        defer { boltffi_free_buf(boltffiResult) }
+        return boltffiDecodeOwnedBuf(boltffiResult.ptr, Int(boltffiResult.len)) { boltffiReader in boltffiReader.readString() }
+    }
+}
+
+public func defaultOptionalEmail(email: Email? = "mailto:ada@example.com") -> Email? {
+    let boltffiEmailBytes = boltffiEncode { boltffiEmailWriter in boltffiEmailWriter.writeOptional(email) { boltffiEmailWriter, boltffiValue0 in boltffiEmailWriter.writeString(boltffiValue0) } }
+    return boltffiEmailBytes.withUnsafeBufferPointer { boltffiEmailBuffer in
+        let boltffiResult = boltffi_function_4demo22default_optional_email(boltffiEmailBuffer.baseAddress!, UInt(boltffiEmailBuffer.count))
+        defer { boltffi_free_buf(boltffiResult) }
+        return boltffiDecodeOwnedBuf(boltffiResult.ptr, Int(boltffiResult.len)) { boltffiReader in boltffiReader.readOptional { boltffiReader in boltffiReader.readString() } }
+    }
+}
+
+public func formatDefaults(
+    name: String,
+    greeting: String = "hello",
+    enabled: Bool = true,
+    ratio: Float = 0.5,
+    mode: DefaultMode = DefaultMode.quiet,
+    weight: Double? = 1.5,
+    handler: DefaultHandler? = nil
+) -> String {
+    let boltffiNameBytes = boltffiEncode { boltffiNameWriter in boltffiNameWriter.writeString(name) }
+    return boltffiNameBytes.withUnsafeBufferPointer { boltffiNameBuffer in
+        let boltffiGreetingBytes = boltffiEncode { boltffiGreetingWriter in boltffiGreetingWriter.writeString(greeting) }
+        return boltffiGreetingBytes.withUnsafeBufferPointer { boltffiGreetingBuffer in
+            let boltffiWeightBytes = boltffiEncode { boltffiWeightWriter in boltffiWeightWriter.writeOptional(weight) { writer, value in writer.writeF64(value) } }
+            return boltffiWeightBytes.withUnsafeBufferPointer { boltffiWeightBuffer in
+                let boltffiResult = boltffi_function_4demo15format_defaults(
+                    boltffiNameBuffer.baseAddress!,
+                    UInt(boltffiNameBuffer.count),
+                    boltffiGreetingBuffer.baseAddress!,
+                    UInt(boltffiGreetingBuffer.count),
+                    enabled,
+                    ratio,
+                    mode.cValue,
+                    boltffiWeightBuffer.baseAddress!,
+                    UInt(boltffiWeightBuffer.count),
+                    handler.map { boltffiCallback in DefaultHandlerBridge.create(boltffiCallback) } ?? BoltFFICallbackHandle(handle: 0, vtable: nil)
+                )
+                defer { boltffi_free_buf(boltffiResult) }
+                return boltffiDecodeOwnedBuf(boltffiResult.ptr, Int(boltffiResult.len)) { boltffiReader in boltffiReader.readString() }
+            }
+        }
+    }
+}
+
 public func greet(
     name: String,
     greeting: String = "world",
@@ -476,84 +589,6 @@ public func greet(
     }
 }
 
-public func formatDefaults(
-    name: String,
-    greeting: String = "hello",
-    enabled: Bool = true,
-    ratio: Float = 0.5,
-    mode: DefaultMode = DefaultMode.quiet,
-    weight: Double? = 1.5,
-    handler: DefaultHandler? = nil
-) -> String {
-    let boltffiNameBytes = boltffiEncode { boltffiNameWriter in boltffiNameWriter.writeString(name) }
-    return boltffiNameBytes.withUnsafeBufferPointer { boltffiNameBuffer in
-        let boltffiGreetingBytes = boltffiEncode { boltffiGreetingWriter in boltffiGreetingWriter.writeString(greeting) }
-        return boltffiGreetingBytes.withUnsafeBufferPointer { boltffiGreetingBuffer in
-            let boltffiWeightBytes = boltffiEncode { boltffiWeightWriter in boltffiWeightWriter.writeOptional(weight) { writer, value in writer.writeF64(value) } }
-            return boltffiWeightBytes.withUnsafeBufferPointer { boltffiWeightBuffer in
-                let boltffiResult = boltffi_function_4demo15format_defaults(
-                    boltffiNameBuffer.baseAddress!,
-                    UInt(boltffiNameBuffer.count),
-                    boltffiGreetingBuffer.baseAddress!,
-                    UInt(boltffiGreetingBuffer.count),
-                    enabled,
-                    ratio,
-                    mode.cValue,
-                    boltffiWeightBuffer.baseAddress!,
-                    UInt(boltffiWeightBuffer.count),
-                    handler.map { boltffiCallback in DefaultHandlerBridge.create(boltffiCallback) } ?? BoltFFICallbackHandle(handle: 0, vtable: nil)
-                )
-                defer { boltffi_free_buf(boltffiResult) }
-                return boltffiDecodeOwnedBuf(boltffiResult.ptr, Int(boltffiResult.len)) { boltffiReader in boltffiReader.readString() }
-            }
-        }
-    }
-}
-
-public func asyncDefault(value: UInt32 = 9) async throws -> UInt32 {
-    let boltffiFuture = boltffi_function_4demo13async_default(value)
-    return try await boltffiAsyncCall(
-        futureHandle: boltffiFuture,
-        poll: boltffi_async_function_4demo13async_default_poll,
-        cancel: boltffi_async_function_4demo13async_default_cancel,
-        free: boltffi_async_function_4demo13async_default_free
-    ) { boltffiFuture, boltffiStatus in
-        let boltffiResult = boltffi_async_function_4demo13async_default_complete(boltffiFuture, boltffiStatus)
-        let boltffiStatusCode = boltffiStatus!.pointee.code
-        guard boltffiStatusCode == 0 else {
-            throw FfiError(message: "FFI failed in async completion with code \(boltffiStatusCode)")
-        }
-        return boltffiResult
-    }
-}
-
-public func applyOptionalClosure(value: Int32, callback: ((Int32) -> Int32)? = nil) -> Int32 {
-    let boltffiCallbackBox = callback.map { implementation in BoltFFIClosureBox<(Int32) -> Int32>(implementation) }
-    let boltffiCallbackContext = boltffiCallbackBox.map { closureBox in Unmanaged.passRetained(closureBox).toOpaque() }
-    let boltffiCallbackCall: @convention(c) (UnsafeMutableRawPointer?, Int32) -> Int32 = { context, arg0 in
-        return Unmanaged<BoltFFIClosureBox<(Int32) -> Int32>>.fromOpaque(context!).takeUnretainedValue().invoke(arg0)
-    }
-    let boltffiCallbackRelease: @convention(c) (UnsafeMutableRawPointer?) -> Void = { context in
-        guard let context = context else { return }
-        Unmanaged<BoltFFIClosureBox<(Int32) -> Int32>>.fromOpaque(context).release()
-    }
-    return boltffi_function_4demo22apply_optional_closure(
-        value,
-        boltffiCallbackContext != nil ? boltffiCallbackCall : nil,
-        boltffiCallbackContext,
-        boltffiCallbackContext != nil ? boltffiCallbackRelease : nil
-    )
-}
-
-public func defaultAmount(amount: Amount = DefaultAmount(value: 5)) -> Amount {
-    let boltffiAmountBytes = boltffiEncode { boltffiAmountWriter in amount.encode(to: &boltffiAmountWriter) }
-    return boltffiAmountBytes.withUnsafeBufferPointer { boltffiAmountBuffer in
-        let boltffiResult = boltffi_function_4demo14default_amount(boltffiAmountBuffer.baseAddress!, UInt(boltffiAmountBuffer.count))
-        defer { boltffi_free_buf(boltffiResult) }
-        return boltffiDecodeOwnedBuf(boltffiResult.ptr, Int(boltffiResult.len)) { boltffiReader in DefaultAmount.decode(from: &boltffiReader) }
-    }
-}
-
 public func span(start: Int64 = -9223372036854775808, end: UInt64 = 18446744073709551615) -> UInt64 {
     return boltffi_function_4demo4span(start, end)
 }
@@ -567,49 +602,14 @@ public func throttle(limit: Limit = nil) -> Limit {
     }
 }
 
-public func defaultFloatBits(value: Float = Float(bitPattern: 0x80000000)) -> UInt32 {
-    return boltffi_function_4demo18default_float_bits(value)
-}
-
-public func defaultDoubleBits(value: Double = Double(bitPattern: 0x8000000000000000)) -> UInt64 {
-    return boltffi_function_4demo19default_double_bits(value)
-}
-
-public func defaultEmail(email: Email = "mailto:ada@example.com") -> Email {
-    let boltffiEmailBytes = boltffiEncode { boltffiEmailWriter in boltffiEmailWriter.writeString(email) }
-    return boltffiEmailBytes.withUnsafeBufferPointer { boltffiEmailBuffer in
-        let boltffiResult = boltffi_function_4demo13default_email(boltffiEmailBuffer.baseAddress!, UInt(boltffiEmailBuffer.count))
-        defer { boltffi_free_buf(boltffiResult) }
-        return boltffiDecodeOwnedBuf(boltffiResult.ptr, Int(boltffiResult.len)) { boltffiReader in boltffiReader.readString() }
-    }
-}
-
-public func defaultIdentifier(identifier: Identifier = "01234567-89ab-cdef-0123-456789abcdef") -> Identifier {
-    let boltffiIdentifierBytes = boltffiEncode { boltffiIdentifierWriter in boltffiIdentifierWriter.writeString(identifier) }
-    return boltffiIdentifierBytes.withUnsafeBufferPointer { boltffiIdentifierBuffer in
-        let boltffiResult = boltffi_function_4demo18default_identifier(boltffiIdentifierBuffer.baseAddress!, UInt(boltffiIdentifierBuffer.count))
-        defer { boltffi_free_buf(boltffiResult) }
-        return boltffiDecodeOwnedBuf(boltffiResult.ptr, Int(boltffiResult.len)) { boltffiReader in boltffiReader.readString() }
-    }
-}
-
-public func defaultOptionalEmail(email: Email? = "mailto:ada@example.com") -> Email? {
-    let boltffiEmailBytes = boltffiEncode { boltffiEmailWriter in boltffiEmailWriter.writeOptional(email) { boltffiEmailWriter, boltffiValue0 in boltffiEmailWriter.writeString(boltffiValue0) } }
-    return boltffiEmailBytes.withUnsafeBufferPointer { boltffiEmailBuffer in
-        let boltffiResult = boltffi_function_4demo22default_optional_email(boltffiEmailBuffer.baseAddress!, UInt(boltffiEmailBuffer.count))
-        defer { boltffi_free_buf(boltffiResult) }
-        return boltffiDecodeOwnedBuf(boltffiResult.ptr, Int(boltffiResult.len)) { boltffiReader in boltffiReader.readOptional { boltffiReader in boltffiReader.readString() } }
-    }
-}
-
 public typealias Amount = DefaultAmount
-
-public typealias Limit = UInt32?
 
 public typealias Email = String
 
 public typealias Identifier = String
 
-public let floor: Int64 = -9223372036854775808
+public typealias Limit = UInt32?
 
 public let ceiling: UInt64 = 18446744073709551615
+
+public let floor: Int64 = -9223372036854775808

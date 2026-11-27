@@ -4,16 +4,16 @@ expression: "rendered_source(SourceFixture::many([\"records/person\", \"enums/sh
 ---
 ===== jni/demo.h =====
 <c abi support declarations>
-typedef uint32_t ___Shape;
-#define SHAPE_LABEL ((___Shape)0)
 typedef uint32_t ___Message;
 #define MESSAGE_EMPTY ((___Message)0)
 #define MESSAGE_TEXT ((___Message)1)
 #define MESSAGE_NAMED ((___Message)2)
+typedef uint32_t ___Shape;
+#define SHAPE_LABEL ((___Shape)0)
 FfiBuf_u8 boltffi_function_4demo10echo_bytes(const uint8_t *bytes_ptr, uintptr_t bytes_len);
+FfiBuf_u8 boltffi_function_4demo12echo_message(const uint8_t *message_ptr, uintptr_t message_len);
 FfiBuf_u8 boltffi_function_4demo11keep_person(const uint8_t *person_ptr, uintptr_t person_len);
 FfiBuf_u8 boltffi_function_4demo10keep_shape(const uint8_t *shape_ptr, uintptr_t shape_len);
-FfiBuf_u8 boltffi_function_4demo12echo_message(const uint8_t *message_ptr, uintptr_t message_len);
 
 ===== jni/jni_glue.c =====
 <jni source includes>
@@ -62,6 +62,23 @@ __boltffi_error:
     return NULL;
 }
 
+JNIEXPORT jbyteArray JNICALL Java_com_boltffi_demo_Native_boltffi_1function_14demo12echo_1message(JNIEnv *env, jclass cls, jobject message, jint __boltffi_message_len) {
+    (void)cls;
+
+    void *__boltffi_message_ptr = NULL;
+
+    if (!boltffi_jni_direct_buffer_address(env, message, (jlong)__boltffi_message_len, &__boltffi_message_ptr)) {
+        goto __boltffi_error;
+    }
+
+    (void)env;
+    FfiBuf_u8 __boltffi_result = boltffi_function_4demo12echo_message((const uint8_t *)__boltffi_message_ptr, (uintptr_t)__boltffi_message_len);
+
+    return boltffi_jni_buffer_to_byte_array(env, __boltffi_result);
+__boltffi_error:
+    return NULL;
+}
+
 JNIEXPORT jbyteArray JNICALL Java_com_boltffi_demo_Native_boltffi_1function_14demo11keep_1person(JNIEnv *env, jclass cls, jobject person, jint __boltffi_person_len) {
     (void)cls;
 
@@ -90,23 +107,6 @@ JNIEXPORT jbyteArray JNICALL Java_com_boltffi_demo_Native_boltffi_1function_14de
 
     (void)env;
     FfiBuf_u8 __boltffi_result = boltffi_function_4demo10keep_shape((const uint8_t *)__boltffi_shape_ptr, (uintptr_t)__boltffi_shape_len);
-
-    return boltffi_jni_buffer_to_byte_array(env, __boltffi_result);
-__boltffi_error:
-    return NULL;
-}
-
-JNIEXPORT jbyteArray JNICALL Java_com_boltffi_demo_Native_boltffi_1function_14demo12echo_1message(JNIEnv *env, jclass cls, jobject message, jint __boltffi_message_len) {
-    (void)cls;
-
-    void *__boltffi_message_ptr = NULL;
-
-    if (!boltffi_jni_direct_buffer_address(env, message, (jlong)__boltffi_message_len, &__boltffi_message_ptr)) {
-        goto __boltffi_error;
-    }
-
-    (void)env;
-    FfiBuf_u8 __boltffi_result = boltffi_function_4demo12echo_message((const uint8_t *)__boltffi_message_ptr, (uintptr_t)__boltffi_message_len);
 
     return boltffi_jni_buffer_to_byte_array(env, __boltffi_result);
 __boltffi_error:

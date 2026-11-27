@@ -22,15 +22,15 @@ enum class Mode(val value: Byte) {
     }
 }
 
+val defaultMode: Mode = Mode.FAST
+
 val enabled: Boolean = true
-
-val limit: UInt = 1024u
-
-val half: Double = 0.5
 
 val greeting: String = "hello"
 
-val defaultMode: Mode = Mode.FAST
+val half: Double = 0.5
+
+val limit: UInt = 1024u
 
 val magic: ByteArray
     get() {

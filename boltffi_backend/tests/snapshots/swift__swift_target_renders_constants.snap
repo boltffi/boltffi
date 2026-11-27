@@ -31,15 +31,15 @@ public enum Mode: UInt8, Hashable, Sendable, CaseIterable {
     }
 }
 
+public let defaultMode: Mode = Mode.fast
+
 public let enabled: Bool = true
-
-public let limit: UInt32 = 1024
-
-public let half: Double = 0.5
 
 public let greeting: String = "hello"
 
-public let defaultMode: Mode = Mode.fast
+public let half: Double = 0.5
+
+public let limit: UInt32 = 1024
 
 public var magic: Data {
     let boltffiResult = boltffi_const_4demo5MAGIC()

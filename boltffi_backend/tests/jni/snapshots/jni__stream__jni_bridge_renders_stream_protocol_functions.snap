@@ -9,18 +9,18 @@ typedef struct {
     double y;
 } ___Point;
 void boltffi_release_class_4demo6Engine(uint64_t handle);
-uint64_t boltffi_stream_4demo6Engine6points_subscribe(uint64_t receiver);
-uintptr_t boltffi_stream_4demo6Engine6points_pop_batch(uint64_t subscription, ___Point *output_ptr, uintptr_t output_capacity);
-WaitResult boltffi_stream_4demo6Engine6points_wait(uint64_t subscription, uint32_t timeout_milliseconds);
-void boltffi_stream_4demo6Engine6points_poll(uint64_t subscription, uint64_t callback_data, void (*callback)(uint64_t, StreamPollResult));
-void boltffi_stream_4demo6Engine6points_unsubscribe(uint64_t subscription);
-void boltffi_stream_4demo6Engine6points_free(uint64_t subscription);
 uint64_t boltffi_stream_4demo6Engine5names_subscribe(uint64_t receiver);
 FfiBuf_u8 boltffi_stream_4demo6Engine5names_pop_batch(uint64_t subscription, uintptr_t max_count);
 WaitResult boltffi_stream_4demo6Engine5names_wait(uint64_t subscription, uint32_t timeout_milliseconds);
 void boltffi_stream_4demo6Engine5names_poll(uint64_t subscription, uint64_t callback_data, void (*callback)(uint64_t, StreamPollResult));
 void boltffi_stream_4demo6Engine5names_unsubscribe(uint64_t subscription);
 void boltffi_stream_4demo6Engine5names_free(uint64_t subscription);
+uint64_t boltffi_stream_4demo6Engine6points_subscribe(uint64_t receiver);
+uintptr_t boltffi_stream_4demo6Engine6points_pop_batch(uint64_t subscription, ___Point *output_ptr, uintptr_t output_capacity);
+WaitResult boltffi_stream_4demo6Engine6points_wait(uint64_t subscription, uint32_t timeout_milliseconds);
+void boltffi_stream_4demo6Engine6points_poll(uint64_t subscription, uint64_t callback_data, void (*callback)(uint64_t, StreamPollResult));
+void boltffi_stream_4demo6Engine6points_unsubscribe(uint64_t subscription);
+void boltffi_stream_4demo6Engine6points_free(uint64_t subscription);
 uint64_t boltffi_stream_4demo6Engine5ticks_subscribe(uint64_t receiver);
 uintptr_t boltffi_stream_4demo6Engine5ticks_pop_batch(uint64_t subscription, int32_t *output_ptr, uintptr_t output_capacity);
 WaitResult boltffi_stream_4demo6Engine5ticks_wait(uint64_t subscription, uint32_t timeout_milliseconds);
@@ -76,51 +76,6 @@ JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1release_1class_14de
     return;
 }
 
-JNIEXPORT jlong JNICALL Java_com_boltffi_demo_Native_boltffi_1stream_14demo6Engine6points_1subscribe(JNIEnv *env, jclass cls, jlong receiver) {
-    (void)cls;
-
-    (void)env;
-    uint64_t __boltffi_result = boltffi_stream_4demo6Engine6points_subscribe(receiver);
-
-    return (jlong)__boltffi_result;
-}
-
-JNIEXPORT jint JNICALL Java_com_boltffi_demo_Native_boltffi_1stream_14demo6Engine6points_1wait(JNIEnv *env, jclass cls, jlong subscription, jint timeout_milliseconds) {
-    (void)cls;
-
-    (void)env;
-    WaitResult __boltffi_result = boltffi_stream_4demo6Engine6points_wait(subscription, timeout_milliseconds);
-
-    return (jint)__boltffi_result;
-}
-
-JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1stream_14demo6Engine6points_1poll(JNIEnv *env, jclass cls, jlong subscription, jlong callback_data) {
-    (void)cls;
-
-    (void)env;
-    boltffi_stream_4demo6Engine6points_poll(subscription, callback_data, boltffi_jni_continuation_callback);
-
-    return;
-}
-
-JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1stream_14demo6Engine6points_1unsubscribe(JNIEnv *env, jclass cls, jlong subscription) {
-    (void)cls;
-
-    (void)env;
-    boltffi_stream_4demo6Engine6points_unsubscribe(subscription);
-
-    return;
-}
-
-JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1stream_14demo6Engine6points_1free(JNIEnv *env, jclass cls, jlong subscription) {
-    (void)cls;
-
-    (void)env;
-    boltffi_stream_4demo6Engine6points_free(subscription);
-
-    return;
-}
-
 JNIEXPORT jlong JNICALL Java_com_boltffi_demo_Native_boltffi_1stream_14demo6Engine5names_1subscribe(JNIEnv *env, jclass cls, jlong receiver) {
     (void)cls;
 
@@ -171,6 +126,51 @@ JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1stream_14demo6Engin
 
     (void)env;
     boltffi_stream_4demo6Engine5names_free(subscription);
+
+    return;
+}
+
+JNIEXPORT jlong JNICALL Java_com_boltffi_demo_Native_boltffi_1stream_14demo6Engine6points_1subscribe(JNIEnv *env, jclass cls, jlong receiver) {
+    (void)cls;
+
+    (void)env;
+    uint64_t __boltffi_result = boltffi_stream_4demo6Engine6points_subscribe(receiver);
+
+    return (jlong)__boltffi_result;
+}
+
+JNIEXPORT jint JNICALL Java_com_boltffi_demo_Native_boltffi_1stream_14demo6Engine6points_1wait(JNIEnv *env, jclass cls, jlong subscription, jint timeout_milliseconds) {
+    (void)cls;
+
+    (void)env;
+    WaitResult __boltffi_result = boltffi_stream_4demo6Engine6points_wait(subscription, timeout_milliseconds);
+
+    return (jint)__boltffi_result;
+}
+
+JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1stream_14demo6Engine6points_1poll(JNIEnv *env, jclass cls, jlong subscription, jlong callback_data) {
+    (void)cls;
+
+    (void)env;
+    boltffi_stream_4demo6Engine6points_poll(subscription, callback_data, boltffi_jni_continuation_callback);
+
+    return;
+}
+
+JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1stream_14demo6Engine6points_1unsubscribe(JNIEnv *env, jclass cls, jlong subscription) {
+    (void)cls;
+
+    (void)env;
+    boltffi_stream_4demo6Engine6points_unsubscribe(subscription);
+
+    return;
+}
+
+JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1stream_14demo6Engine6points_1free(JNIEnv *env, jclass cls, jlong subscription) {
+    (void)cls;
+
+    (void)env;
+    boltffi_stream_4demo6Engine6points_free(subscription);
 
     return;
 }

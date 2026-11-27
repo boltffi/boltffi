@@ -12,8 +12,8 @@ typedef int32_t ___MathError;
 #define MATH_ERROR_INVALID_INPUT ((___MathError)0)
 FfiBuf_u8 boltffi_function_4demo11checked_add(int32_t left, int32_t right, int32_t *return_out);
 FfiBuf_u8 boltffi_function_4demo11parse_point(const uint8_t *text_ptr, uintptr_t text_len, ___Point *return_out);
-FfiBuf_u8 boltffi_function_4demo13validate_name(const uint8_t *name_ptr, uintptr_t name_len, FfiBuf_u8 *return_out);
 FfiBuf_u8 boltffi_function_4demo10store_name(const uint8_t *name_ptr, uintptr_t name_len);
+FfiBuf_u8 boltffi_function_4demo13validate_name(const uint8_t *name_ptr, uintptr_t name_len, FfiBuf_u8 *return_out);
 
 ===== jni/jni_glue.c =====
 <jni source includes>
@@ -84,6 +84,27 @@ __boltffi_error:
     return NULL;
 }
 
+JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1function_14demo10store_1name(JNIEnv *env, jclass cls, jobject name, jint __boltffi_name_len) {
+    (void)cls;
+
+    void *__boltffi_name_ptr = NULL;
+
+    if (!boltffi_jni_direct_buffer_address(env, name, (jlong)__boltffi_name_len, &__boltffi_name_ptr)) {
+        goto __boltffi_error;
+    }
+
+    FfiBuf_u8 error = boltffi_function_4demo10store_name((const uint8_t *)__boltffi_name_ptr, (uintptr_t)__boltffi_name_len);
+
+    if (error.ptr != NULL || error.len != 0) {
+        boltffi_jni_throw_error_buffer(env, error);
+        return;
+    }
+
+    return;
+__boltffi_error:
+    return;
+}
+
 JNIEXPORT jbyteArray JNICALL Java_com_boltffi_demo_Native_boltffi_1function_14demo13validate_1name(JNIEnv *env, jclass cls, jobject name, jint __boltffi_name_len) {
     (void)cls;
 
@@ -104,25 +125,4 @@ JNIEXPORT jbyteArray JNICALL Java_com_boltffi_demo_Native_boltffi_1function_14de
     return boltffi_jni_buffer_to_byte_array(env, __boltffi_return);
 __boltffi_error:
     return NULL;
-}
-
-JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1function_14demo10store_1name(JNIEnv *env, jclass cls, jobject name, jint __boltffi_name_len) {
-    (void)cls;
-
-    void *__boltffi_name_ptr = NULL;
-
-    if (!boltffi_jni_direct_buffer_address(env, name, (jlong)__boltffi_name_len, &__boltffi_name_ptr)) {
-        goto __boltffi_error;
-    }
-
-    FfiBuf_u8 error = boltffi_function_4demo10store_name((const uint8_t *)__boltffi_name_ptr, (uintptr_t)__boltffi_name_len);
-
-    if (error.ptr != NULL || error.len != 0) {
-        boltffi_jni_throw_error_buffer(env, error);
-        return;
-    }
-
-    return;
-__boltffi_error:
-    return;
 }

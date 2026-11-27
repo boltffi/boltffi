@@ -70,56 +70,6 @@ object ChildBridge {
     }
 }
 
-fun interface Sibling {
-    fun onName(name: String)
-}
-
-private object SiblingMap {
-    private val map = java.util.concurrent.ConcurrentHashMap<Long, Sibling>()
-    private val counter = java.util.concurrent.atomic.AtomicLong(1L)
-
-    fun insert(value: Sibling): Long {
-        val handle = counter.getAndAdd(2L)
-        map[handle] = value
-        return handle
-    }
-
-    fun get(handle: Long): Sibling? = map[handle]
-
-    fun remove(handle: Long): Sibling? = map.remove(handle)
-
-    fun clone(handle: Long): Long {
-        val value = map[handle] ?: return 0L
-        return insert(value)
-    }
-}
-
-object SiblingCallbacks {
-    @JvmStatic
-    fun free(handle: Long) {
-        SiblingMap.remove(handle)
-    }
-
-    @JvmStatic
-    fun clone(handle: Long): Long {
-        return SiblingMap.clone(handle)
-    }
-
-    @JvmStatic
-    fun on_name(handle: Long, name: ByteArray) {
-        val impl = SiblingMap.get(handle) ?: error("SiblingMap: invalid handle $handle")
-        val __boltffi_name_reader = WireReader(name)
-        val __boltffi_name_value = __boltffi_name_reader.readString()
-        impl.onName(__boltffi_name_value)
-    }
-}
-
-object SiblingBridge {
-    fun create(value: Sibling): Long {
-        return SiblingMap.insert(value)
-    }
-}
-
 interface Listener {
     suspend fun child(): Child
     suspend fun sibling(): Sibling
@@ -186,5 +136,55 @@ object ListenerCallbacks {
 object ListenerBridge {
     fun create(value: Listener): Long {
         return ListenerMap.insert(value)
+    }
+}
+
+fun interface Sibling {
+    fun onName(name: String)
+}
+
+private object SiblingMap {
+    private val map = java.util.concurrent.ConcurrentHashMap<Long, Sibling>()
+    private val counter = java.util.concurrent.atomic.AtomicLong(1L)
+
+    fun insert(value: Sibling): Long {
+        val handle = counter.getAndAdd(2L)
+        map[handle] = value
+        return handle
+    }
+
+    fun get(handle: Long): Sibling? = map[handle]
+
+    fun remove(handle: Long): Sibling? = map.remove(handle)
+
+    fun clone(handle: Long): Long {
+        val value = map[handle] ?: return 0L
+        return insert(value)
+    }
+}
+
+object SiblingCallbacks {
+    @JvmStatic
+    fun free(handle: Long) {
+        SiblingMap.remove(handle)
+    }
+
+    @JvmStatic
+    fun clone(handle: Long): Long {
+        return SiblingMap.clone(handle)
+    }
+
+    @JvmStatic
+    fun on_name(handle: Long, name: ByteArray) {
+        val impl = SiblingMap.get(handle) ?: error("SiblingMap: invalid handle $handle")
+        val __boltffi_name_reader = WireReader(name)
+        val __boltffi_name_value = __boltffi_name_reader.readString()
+        impl.onName(__boltffi_name_value)
+    }
+}
+
+object SiblingBridge {
+    fun create(value: Sibling): Long {
+        return SiblingMap.insert(value)
     }
 }

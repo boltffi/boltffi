@@ -18,6 +18,22 @@ public struct FfiError: Error {
     }
 }
 
+public struct DeviationConfig: Hashable, Equatable, Sendable {
+    public var maxRejoinDistance: Length
+
+    public init(maxRejoinDistance: Length = LengthFFI(meters: 1500)) {
+        self.maxRejoinDistance = maxRejoinDistance
+    }
+
+    @inlinable static func decode(from reader: inout WireReader) -> DeviationConfig {
+        DeviationConfig(maxRejoinDistance: LengthFFI.decode(from: &reader))
+    }
+
+    @inlinable func encode(to writer: inout WireWriter) {
+        self.maxRejoinDistance.encode(to: &writer)
+    }
+}
+
 public struct LengthFFI: Hashable, Equatable, Sendable {
     public var meters: Double
 
@@ -39,22 +55,6 @@ public struct LengthFFI: Hashable, Equatable, Sendable {
 
     @inlinable func encode(to writer: inout WireWriter) {
         writer.writeF64(self.meters)
-    }
-}
-
-public struct DeviationConfig: Hashable, Equatable, Sendable {
-    public var maxRejoinDistance: Length
-
-    public init(maxRejoinDistance: Length = LengthFFI(meters: 1500)) {
-        self.maxRejoinDistance = maxRejoinDistance
-    }
-
-    @inlinable static func decode(from reader: inout WireReader) -> DeviationConfig {
-        DeviationConfig(maxRejoinDistance: LengthFFI.decode(from: &reader))
-    }
-
-    @inlinable func encode(to writer: inout WireWriter) {
-        self.maxRejoinDistance.encode(to: &writer)
     }
 }
 

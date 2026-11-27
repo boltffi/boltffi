@@ -10,18 +10,18 @@ package com.boltffi.demo
 import kotlinx.coroutines.launch
 @Suppress("FunctionName")
 private object Native {
-    @JvmStatic external fun boltffi_method_record_4demo6Marker5fetch(`receiver`: java.nio.ByteBuffer, __boltffi_receiver_len: Int): Long
-    @JvmStatic external fun boltffi_async_method_record_4demo6Marker5fetch_poll(handle: Long, callback_data: Long): Byte
-    @JvmStatic external fun boltffi_async_method_record_4demo6Marker5fetch_complete(handle: Long): Int
-    @JvmStatic external fun boltffi_async_method_record_4demo6Marker5fetch_cancel(handle: Long): Unit
-    @JvmStatic external fun boltffi_async_method_record_4demo6Marker5fetch_free(handle: Long): Unit
-    @JvmStatic external fun boltffi_async_method_record_4demo6Marker5fetch_panic_message(handle: Long): ByteArray?
     @JvmStatic external fun boltffi_method_record_4demo5Label7measure(`receiver`: java.nio.ByteBuffer, __boltffi_receiver_len: Int): Long
     @JvmStatic external fun boltffi_async_method_record_4demo5Label7measure_poll(handle: Long, callback_data: Long): Byte
     @JvmStatic external fun boltffi_async_method_record_4demo5Label7measure_complete(handle: Long): Int
     @JvmStatic external fun boltffi_async_method_record_4demo5Label7measure_cancel(handle: Long): Unit
     @JvmStatic external fun boltffi_async_method_record_4demo5Label7measure_free(handle: Long): Unit
     @JvmStatic external fun boltffi_async_method_record_4demo5Label7measure_panic_message(handle: Long): ByteArray?
+    @JvmStatic external fun boltffi_method_record_4demo6Marker5fetch(`receiver`: java.nio.ByteBuffer, __boltffi_receiver_len: Int): Long
+    @JvmStatic external fun boltffi_async_method_record_4demo6Marker5fetch_poll(handle: Long, callback_data: Long): Byte
+    @JvmStatic external fun boltffi_async_method_record_4demo6Marker5fetch_complete(handle: Long): Int
+    @JvmStatic external fun boltffi_async_method_record_4demo6Marker5fetch_cancel(handle: Long): Unit
+    @JvmStatic external fun boltffi_async_method_record_4demo6Marker5fetch_free(handle: Long): Unit
+    @JvmStatic external fun boltffi_async_method_record_4demo6Marker5fetch_panic_message(handle: Long): ByteArray?
     @JvmStatic external fun boltffi_method_record_4demo5Point6length(`receiver`: java.nio.ByteBuffer): Long
     @JvmStatic external fun boltffi_async_method_record_4demo5Point6length_poll(handle: Long, callback_data: Long): Byte
     @JvmStatic external fun boltffi_async_method_record_4demo5Point6length_complete(handle: Long): Double
@@ -31,46 +31,6 @@ private object Native {
 
     @JvmStatic fun boltffiFutureContinuationCallback(handle: Long, pollResult: Byte) {
         BoltFfiAsync.resume(handle, pollResult)
-    }
-}
-
-
-object Marker {
-    internal fun wireSize(): Int = 0
-
-    internal fun writeTo(writer: WireWriter) {
-    }
-
-    internal fun toByteArray(): ByteArray = ByteArray(0)
-
-    internal fun fromReader(reader: WireReader): Marker {
-        return Marker
-    }
-
-    internal fun fromByteArray(bytes: ByteArray): Marker {
-        require(bytes.size == 0)
-        return Marker
-    }
-
-    suspend fun fetch(): UInt {
-        return boltffiCallAsync(
-            createFuture = {
-                val __boltffi_marker_wire = WireWriterPool.acquire(this.wireSize())
-                val __boltffi_marker_writer = __boltffi_marker_wire.writer
-                this.writeTo(__boltffi_marker_writer)
-                try {
-                    Native.boltffi_method_record_4demo6Marker5fetch(__boltffi_marker_wire.directBuffer(), __boltffi_marker_wire.size())
-                } finally {
-                    __boltffi_marker_wire.close()
-                }
-            },
-            poll = { future, contHandle -> Native.boltffi_async_method_record_4demo6Marker5fetch_poll(future, contHandle) },
-            complete = { future ->
-                Native.boltffi_async_method_record_4demo6Marker5fetch_complete(future).toUInt()
-            },
-            free = { future -> Native.boltffi_async_method_record_4demo6Marker5fetch_free(future) },
-            cancel = { future -> Native.boltffi_async_method_record_4demo6Marker5fetch_cancel(future) },
-        )
     }
 }
 
@@ -128,6 +88,46 @@ data class Label(
             },
             free = { future -> Native.boltffi_async_method_record_4demo5Label7measure_free(future) },
             cancel = { future -> Native.boltffi_async_method_record_4demo5Label7measure_cancel(future) },
+        )
+    }
+}
+
+
+object Marker {
+    internal fun wireSize(): Int = 0
+
+    internal fun writeTo(writer: WireWriter) {
+    }
+
+    internal fun toByteArray(): ByteArray = ByteArray(0)
+
+    internal fun fromReader(reader: WireReader): Marker {
+        return Marker
+    }
+
+    internal fun fromByteArray(bytes: ByteArray): Marker {
+        require(bytes.size == 0)
+        return Marker
+    }
+
+    suspend fun fetch(): UInt {
+        return boltffiCallAsync(
+            createFuture = {
+                val __boltffi_marker_wire = WireWriterPool.acquire(this.wireSize())
+                val __boltffi_marker_writer = __boltffi_marker_wire.writer
+                this.writeTo(__boltffi_marker_writer)
+                try {
+                    Native.boltffi_method_record_4demo6Marker5fetch(__boltffi_marker_wire.directBuffer(), __boltffi_marker_wire.size())
+                } finally {
+                    __boltffi_marker_wire.close()
+                }
+            },
+            poll = { future, contHandle -> Native.boltffi_async_method_record_4demo6Marker5fetch_poll(future, contHandle) },
+            complete = { future ->
+                Native.boltffi_async_method_record_4demo6Marker5fetch_complete(future).toUInt()
+            },
+            free = { future -> Native.boltffi_async_method_record_4demo6Marker5fetch_free(future) },
+            cancel = { future -> Native.boltffi_async_method_record_4demo6Marker5fetch_cancel(future) },
         )
     }
 }

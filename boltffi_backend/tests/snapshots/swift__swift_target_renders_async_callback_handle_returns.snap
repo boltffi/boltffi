@@ -63,52 +63,6 @@ private enum ChildBridge {
     }
 }
 
-public protocol Sibling: AnyObject {
-    func onName(name: String)
-}
-
-private final class SiblingWrapper {
-    let impl: Sibling
-
-    init(_ impl: Sibling) {
-        self.impl = impl
-    }
-}
-
-private var boltffiSiblingVtable: ___SiblingVTable = {
-    ___SiblingVTable(
-        free: { handle in
-            guard handle != 0 else { return }
-            Unmanaged<SiblingWrapper>.fromOpaque(UnsafeRawPointer(bitPattern: UInt(handle))!).release()
-        },
-        clone: { handle in
-            guard handle != 0 else { return 0 }
-            let wrapper = Unmanaged<SiblingWrapper>.fromOpaque(UnsafeRawPointer(bitPattern: UInt(handle))!)
-            _ = wrapper.retain()
-            return handle
-        },
-        on_name: { handle, name_ptr, name_len in
-            guard handle != 0 else { fatalError("invalid callback handle") }
-            let wrapper = Unmanaged<SiblingWrapper>.fromOpaque(UnsafeRawPointer(bitPattern: UInt(handle))!).takeUnretainedValue()
-            var boltffiNameReader: WireReader = WireReader(ptr: name_ptr!, len: Int(name_len))
-            wrapper.impl.onName(name: boltffiNameReader.readString())
-        }
-    )
-}()
-
-private enum SiblingBridge {
-    private static let register: Void = {
-        boltffi_register_callback_4demo7Sibling(&boltffiSiblingVtable)
-    }()
-
-    static func create(_ impl: Sibling) -> BoltFFICallbackHandle {
-        _ = register
-        let wrapper = SiblingWrapper(impl)
-        let handle = UInt64(UInt(bitPattern: Unmanaged.passRetained(wrapper).toOpaque()))
-        return boltffi_create_callback_4demo7Sibling(handle)
-    }
-}
-
 public protocol Listener: AnyObject {
     func child() async -> Child
     func sibling() async -> Sibling
@@ -163,5 +117,51 @@ private enum ListenerBridge {
         let wrapper = ListenerWrapper(impl)
         let handle = UInt64(UInt(bitPattern: Unmanaged.passRetained(wrapper).toOpaque()))
         return boltffi_create_callback_4demo8Listener(handle)
+    }
+}
+
+public protocol Sibling: AnyObject {
+    func onName(name: String)
+}
+
+private final class SiblingWrapper {
+    let impl: Sibling
+
+    init(_ impl: Sibling) {
+        self.impl = impl
+    }
+}
+
+private var boltffiSiblingVtable: ___SiblingVTable = {
+    ___SiblingVTable(
+        free: { handle in
+            guard handle != 0 else { return }
+            Unmanaged<SiblingWrapper>.fromOpaque(UnsafeRawPointer(bitPattern: UInt(handle))!).release()
+        },
+        clone: { handle in
+            guard handle != 0 else { return 0 }
+            let wrapper = Unmanaged<SiblingWrapper>.fromOpaque(UnsafeRawPointer(bitPattern: UInt(handle))!)
+            _ = wrapper.retain()
+            return handle
+        },
+        on_name: { handle, name_ptr, name_len in
+            guard handle != 0 else { fatalError("invalid callback handle") }
+            let wrapper = Unmanaged<SiblingWrapper>.fromOpaque(UnsafeRawPointer(bitPattern: UInt(handle))!).takeUnretainedValue()
+            var boltffiNameReader: WireReader = WireReader(ptr: name_ptr!, len: Int(name_len))
+            wrapper.impl.onName(name: boltffiNameReader.readString())
+        }
+    )
+}()
+
+private enum SiblingBridge {
+    private static let register: Void = {
+        boltffi_register_callback_4demo7Sibling(&boltffiSiblingVtable)
+    }()
+
+    static func create(_ impl: Sibling) -> BoltFFICallbackHandle {
+        _ = register
+        let wrapper = SiblingWrapper(impl)
+        let handle = UInt64(UInt(bitPattern: Unmanaged.passRetained(wrapper).toOpaque()))
+        return boltffi_create_callback_4demo7Sibling(handle)
     }
 }
