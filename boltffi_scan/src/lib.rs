@@ -18,6 +18,7 @@ pub(crate) mod type_expr;
 mod unsupported;
 mod visibility;
 
+pub use attributes::owned_name;
 pub use capture::{
     CapturedItem, CapturedMethods, CapturedPool, SlotSource, capture_class, capture_class_methods,
     capture_constant, capture_custom, capture_custom_ffi, capture_enum, capture_error_enum,

@@ -229,6 +229,8 @@ fn invalid_attribute(attr: &syn::Attribute) -> ScanError {
     .at(attr)
 }
 
+/// The BoltFFI attribute `attribute` is, written bare or as `boltffi::name`. thiserror's
+/// `#[error("...")]` is not one.
 pub fn owned_name(attribute: &syn::Attribute) -> Option<&'static str> {
     let path = attribute.path();
     let mut segments = path.segments.iter();
