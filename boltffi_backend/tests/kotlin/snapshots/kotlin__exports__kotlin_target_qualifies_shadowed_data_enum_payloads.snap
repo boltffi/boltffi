@@ -7,63 +7,6 @@ expression: "rendered_fixture(\"enums/error_payload_shadow\")"
 
 package com.boltffi.demo
 
-sealed class StorageError {
-    internal abstract fun wireSize(): Int
-
-    internal abstract fun writeTo(writer: WireWriter)
-
-    internal fun toByteArray(): ByteArray {
-        val buffer = WireWriterPool.acquire(wireSize())
-        val writer = buffer.writer
-        try {
-            writeTo(writer)
-            return buffer.bytes()
-        } finally {
-            buffer.close()
-        }
-    }
-
-
-    object InvalidPath : StorageError() {
-        internal override fun wireSize(): Int {
-            return 4
-        }
-
-        internal override fun writeTo(writer: WireWriter) {
-            writer.writeU32(0u)
-        }
-    }
-    data class Io(
-        val field0: String
-    ) : StorageError() {
-        internal override fun wireSize(): Int {
-            return 4 + 4 + Utf8Codec.maxBytes(this.field0)
-        }
-
-        internal override fun writeTo(writer: WireWriter) {
-            writer.writeU32(1u)
-            writer.writeString(this.field0)
-        }
-    }
-
-    companion object {
-        internal fun fromReader(reader: WireReader): StorageError {
-            val tag = reader.readU32()
-            return when (tag) {
-                0u -> InvalidPath
-                1u -> Io(reader.readString())
-                else -> throw IllegalArgumentException("unknown StorageError tag: $tag")
-            }
-        }
-
-        internal fun fromByteArray(bytes: ByteArray): StorageError {
-            val reader = WireReader(bytes)
-            return fromReader(reader)
-        }
-    }
-}
-
-
 sealed class RecorderError {
     internal abstract fun wireSize(): Int
 
@@ -124,6 +67,63 @@ sealed class RecorderError {
         }
 
         internal fun fromByteArray(bytes: ByteArray): RecorderError {
+            val reader = WireReader(bytes)
+            return fromReader(reader)
+        }
+    }
+}
+
+
+sealed class StorageError {
+    internal abstract fun wireSize(): Int
+
+    internal abstract fun writeTo(writer: WireWriter)
+
+    internal fun toByteArray(): ByteArray {
+        val buffer = WireWriterPool.acquire(wireSize())
+        val writer = buffer.writer
+        try {
+            writeTo(writer)
+            return buffer.bytes()
+        } finally {
+            buffer.close()
+        }
+    }
+
+
+    object InvalidPath : StorageError() {
+        internal override fun wireSize(): Int {
+            return 4
+        }
+
+        internal override fun writeTo(writer: WireWriter) {
+            writer.writeU32(0u)
+        }
+    }
+    data class Io(
+        val field0: String
+    ) : StorageError() {
+        internal override fun wireSize(): Int {
+            return 4 + 4 + Utf8Codec.maxBytes(this.field0)
+        }
+
+        internal override fun writeTo(writer: WireWriter) {
+            writer.writeU32(1u)
+            writer.writeString(this.field0)
+        }
+    }
+
+    companion object {
+        internal fun fromReader(reader: WireReader): StorageError {
+            val tag = reader.readU32()
+            return when (tag) {
+                0u -> InvalidPath
+                1u -> Io(reader.readString())
+                else -> throw IllegalArgumentException("unknown StorageError tag: $tag")
+            }
+        }
+
+        internal fun fromByteArray(bytes: ByteArray): StorageError {
             val reader = WireReader(bytes)
             return fromReader(reader)
         }

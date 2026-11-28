@@ -944,18 +944,18 @@ private object Native {
         }
     }
     @JvmStatic external fun boltffi_release_class_4demo6Engine(handle: Long): Unit
-    @JvmStatic external fun boltffi_stream_4demo6Engine6points_subscribe(`receiver`: Long): Long
-    @JvmStatic external fun boltffi_stream_4demo6Engine6points_pop_batch(subscription: Long, maxCount: Long): ByteArray?
-    @JvmStatic external fun boltffi_stream_4demo6Engine6points_wait(subscription: Long, timeout_milliseconds: Int): Int
-    @JvmStatic external fun boltffi_stream_4demo6Engine6points_poll(subscription: Long, callback_data: Long): Unit
-    @JvmStatic external fun boltffi_stream_4demo6Engine6points_unsubscribe(subscription: Long): Unit
-    @JvmStatic external fun boltffi_stream_4demo6Engine6points_free(subscription: Long): Unit
     @JvmStatic external fun boltffi_stream_4demo6Engine5names_subscribe(`receiver`: Long): Long
     @JvmStatic external fun boltffi_stream_4demo6Engine5names_pop_batch(subscription: Long, max_count: Long): ByteArray?
     @JvmStatic external fun boltffi_stream_4demo6Engine5names_wait(subscription: Long, timeout_milliseconds: Int): Int
     @JvmStatic external fun boltffi_stream_4demo6Engine5names_poll(subscription: Long, callback_data: Long): Unit
     @JvmStatic external fun boltffi_stream_4demo6Engine5names_unsubscribe(subscription: Long): Unit
     @JvmStatic external fun boltffi_stream_4demo6Engine5names_free(subscription: Long): Unit
+    @JvmStatic external fun boltffi_stream_4demo6Engine6points_subscribe(`receiver`: Long): Long
+    @JvmStatic external fun boltffi_stream_4demo6Engine6points_pop_batch(subscription: Long, maxCount: Long): ByteArray?
+    @JvmStatic external fun boltffi_stream_4demo6Engine6points_wait(subscription: Long, timeout_milliseconds: Int): Int
+    @JvmStatic external fun boltffi_stream_4demo6Engine6points_poll(subscription: Long, callback_data: Long): Unit
+    @JvmStatic external fun boltffi_stream_4demo6Engine6points_unsubscribe(subscription: Long): Unit
+    @JvmStatic external fun boltffi_stream_4demo6Engine6points_free(subscription: Long): Unit
     @JvmStatic external fun boltffi_stream_4demo6Engine5ticks_subscribe(`receiver`: Long): Long
     @JvmStatic external fun boltffi_stream_4demo6Engine5ticks_pop_batch(subscription: Long, maxCount: Long): ByteArray?
     @JvmStatic external fun boltffi_stream_4demo6Engine5ticks_wait(subscription: Long, timeout_milliseconds: Int): Int
@@ -1036,6 +1036,34 @@ class Engine internal constructor(private val __boltffi_handle: java.util.concur
     }
 }
 
+fun Engine.names(): kotlinx.coroutines.flow.Flow<String> = kotlinx.coroutines.flow.callbackFlow {
+    val subscription = Native.boltffi_stream_4demo6Engine5names_subscribe(boltffiHandle())
+    if (subscription == 0L) {
+        close()
+        return@callbackFlow
+    }
+    val context = BoltFfiStreamContext(
+        scope = this,
+        subscription = subscription,
+        batchSize = 16L,
+        popBatch = Native::boltffi_stream_4demo6Engine5names_pop_batch,
+        poll = Native::boltffi_stream_4demo6Engine5names_poll,
+        unsubscribe = Native::boltffi_stream_4demo6Engine5names_unsubscribe,
+        free = Native::boltffi_stream_4demo6Engine5names_free,
+        processItems = { bytes ->
+            val reader = WireReader(bytes)
+            val count = reader.readU32().toInt()
+            val items = List(count) { reader.readString() }
+            items.forEach { item ->
+                send(item)
+            }
+        },
+        finish = { close() }
+    )
+    context.start()
+    awaitClose { context.requestTermination() }
+}
+
 fun Engine.points(): PointsSubscription =
     PointsSubscription(
         handle = Native.boltffi_stream_4demo6Engine6points_subscribe(boltffiHandle()),
@@ -1078,34 +1106,6 @@ class PointsSubscription(
         if (handle == 0L) return
         unsubscribe(handle)
     }
-}
-
-fun Engine.names(): kotlinx.coroutines.flow.Flow<String> = kotlinx.coroutines.flow.callbackFlow {
-    val subscription = Native.boltffi_stream_4demo6Engine5names_subscribe(boltffiHandle())
-    if (subscription == 0L) {
-        close()
-        return@callbackFlow
-    }
-    val context = BoltFfiStreamContext(
-        scope = this,
-        subscription = subscription,
-        batchSize = 16L,
-        popBatch = Native::boltffi_stream_4demo6Engine5names_pop_batch,
-        poll = Native::boltffi_stream_4demo6Engine5names_poll,
-        unsubscribe = Native::boltffi_stream_4demo6Engine5names_unsubscribe,
-        free = Native::boltffi_stream_4demo6Engine5names_free,
-        processItems = { bytes ->
-            val reader = WireReader(bytes)
-            val count = reader.readU32().toInt()
-            val items = List(count) { reader.readString() }
-            items.forEach { item ->
-                send(item)
-            }
-        },
-        finish = { close() }
-    )
-    context.start()
-    awaitClose { context.requestTermination() }
 }
 
 fun Engine.ticks(callback: (Int) -> Unit): TicksCancellable {

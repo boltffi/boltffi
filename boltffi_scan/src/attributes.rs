@@ -1,11 +1,11 @@
 use boltffi_ast::{
     AttributeInput, ConstExpr, DefaultValue, DeprecationInfo, DocComment, Literal, Path, PathRoot,
-    PathSegment, Source, UserAttr, Visibility,
+    PathSegment, Source, UserAttr,
 };
 
 use crate::const_expr;
 use crate::type_expr;
-use crate::{ModuleScope, ScanError, spelling, visibility};
+use crate::{ScanError, spelling, visibility};
 
 pub(super) struct Attributes<'a, 'types> {
     attrs: &'a [syn::Attribute],
@@ -136,16 +136,8 @@ impl<'a, 'types> Attributes<'a, 'types> {
     }
 }
 
-pub(super) fn source(
-    visibility: &syn::Visibility,
-    scope: &ModuleScope,
-    span: proc_macro2::Span,
-) -> Source {
-    Source::new(visibility::kind(visibility), scope.source_span(span))
-}
-
-pub(super) fn public_source(scope: &ModuleScope, span: proc_macro2::Span) -> Source {
-    Source::new(Visibility::Public, scope.source_span(span))
+pub(super) fn source(visibility: &syn::Visibility) -> Source {
+    Source::new(visibility::kind(visibility), None)
 }
 
 #[derive(Default)]
@@ -229,6 +221,8 @@ fn invalid_attribute(attr: &syn::Attribute) -> ScanError {
     .at(attr)
 }
 
+/// The BoltFFI attribute `attribute` is, written bare or as `boltffi::name`. thiserror's
+/// `#[error("...")]` is not one.
 pub fn owned_name(attribute: &syn::Attribute) -> Option<&'static str> {
     let path = attribute.path();
     let mut segments = path.segments.iter();
@@ -261,7 +255,7 @@ pub fn owned_name(attribute: &syn::Attribute) -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ModuleScope;
+
     use crate::declared_types::DeclaredTypes;
     use boltffi_ast::{FloatLiteral, IntegerLiteral};
 
@@ -273,8 +267,7 @@ mod tests {
 
     fn with_attrs<T>(attrs: &[syn::Attribute], scan: impl FnOnce(Attributes<'_, '_>) -> T) -> T {
         let declared = DeclaredTypes::new();
-        let scope = ModuleScope::root("demo");
-        let scanner = type_expr::Scanner::new(&declared, &scope);
+        let scanner = type_expr::Scanner::new(&declared);
         scan(Attributes::new(attrs, &scanner))
     }
 

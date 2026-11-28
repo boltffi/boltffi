@@ -585,8 +585,9 @@ mod tests {
 
     #[test]
     fn asynchronous_owned_class_callback_requires_a_supported_lifetime_protocol() {
-        let source = boltffi_scan::scan_file(
+        let source = boltffi_test_source::scan_file(
             syn::parse_quote! {
+                #[export]
                 pub struct RustHandle;
                 #[export]
                 impl RustHandle {
@@ -678,7 +679,7 @@ mod tests {
     /// spelling to disagree about.
     #[test]
     fn scans_and_expands_a_hyphenated_package() {
-        let source = boltffi_scan::scan_file(
+        let source = boltffi_test_source::scan_file(
             syn::parse_str("#[data]\n#[repr(C)]\npub struct Point { pub x: u8 }\n")
                 .expect("valid source"),
             PackageInfo::new("my-root", None),
@@ -755,9 +756,10 @@ mod tests {
 
     #[test]
     fn unmarked_associated_constants_do_not_reach_macro_expansion() {
-        let source = boltffi_scan::scan_file(
+        let source = boltffi_test_source::scan_file(
             syn::parse_str(
                 r#"
+                #[export]
                 pub struct Engine;
 
                 #[export]

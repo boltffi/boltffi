@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+#[export]
 pub struct Map {
     scores: HashMap<String, i32>,
 }

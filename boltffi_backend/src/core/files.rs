@@ -823,7 +823,7 @@ mod tests {
             "#,
         )
         .expect("valid source fixture");
-        let source = boltffi_scan::scan_file(file, PackageInfo::new("demo", None))
+        let source = boltffi_test_source::scan_file(file, PackageInfo::new("demo", None))
             .expect("source should scan");
         lower::<Native>(&source).expect("source should lower")
     }

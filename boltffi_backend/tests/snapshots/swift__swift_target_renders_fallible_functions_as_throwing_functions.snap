@@ -71,6 +71,17 @@ public func parsePoint(text: String) throws -> Point {
     }
 }
 
+public func storeName(name: String) throws {
+    let boltffiNameBytes = boltffiEncode { boltffiNameWriter in boltffiNameWriter.writeString(name) }
+    try boltffiNameBytes.withUnsafeBufferPointer { boltffiNameBuffer -> Void in
+        let boltffiError = boltffi_function_4demo10store_name(boltffiNameBuffer.baseAddress!, UInt(boltffiNameBuffer.count))
+        if boltffiError.ptr != nil || Int(boltffiError.len) != 0 {
+            defer { boltffi_free_buf(boltffiError) }
+            throw boltffiDecodeOwnedBuf(boltffiError.ptr, Int(boltffiError.len)) { boltffiErrorReader in MathError(rawValue: boltffiErrorReader.readI32())! }
+        }
+    }
+}
+
 public func validateName(name: String) throws -> String {
     let boltffiNameBytes = boltffiEncode { boltffiNameWriter in boltffiNameWriter.writeString(name) }
     return try boltffiNameBytes.withUnsafeBufferPointer { boltffiNameBuffer in
@@ -82,16 +93,5 @@ public func validateName(name: String) throws -> String {
         }
         defer { boltffi_free_buf(boltffiResult) }
         return boltffiDecodeOwnedBuf(boltffiResult.ptr, Int(boltffiResult.len)) { boltffiReader in boltffiReader.readString() }
-    }
-}
-
-public func storeName(name: String) throws {
-    let boltffiNameBytes = boltffiEncode { boltffiNameWriter in boltffiNameWriter.writeString(name) }
-    try boltffiNameBytes.withUnsafeBufferPointer { boltffiNameBuffer -> Void in
-        let boltffiError = boltffi_function_4demo10store_name(boltffiNameBuffer.baseAddress!, UInt(boltffiNameBuffer.count))
-        if boltffiError.ptr != nil || Int(boltffiError.len) != 0 {
-            defer { boltffi_free_buf(boltffiError) }
-            throw boltffiDecodeOwnedBuf(boltffiError.ptr, Int(boltffiError.len)) { boltffiErrorReader in MathError(rawValue: boltffiErrorReader.readI32())! }
-        }
     }
 }

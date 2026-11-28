@@ -12,8 +12,8 @@ private object Native {
     @JvmStatic external fun boltffi_init_class_4demo7Counter3new(start: Long): Long
     @JvmStatic external fun boltffi_init_class_4demo7Counter6zeroed(): Long
     @JvmStatic external fun boltffi_method_class_4demo7Counter5value(`receiver`: Long): Long
-    @JvmStatic external fun boltffi_function_4demo12echo_profile(profile: java.nio.ByteBuffer, __boltffi_profile_len: Int): ByteArray?
     @JvmStatic external fun boltffi_function_4demo12echo_outline(outline: java.nio.ByteBuffer, __boltffi_outline_len: Int): ByteArray?
+    @JvmStatic external fun boltffi_function_4demo12echo_profile(profile: java.nio.ByteBuffer, __boltffi_profile_len: Int): ByteArray?
 }
 
 
@@ -197,22 +197,6 @@ class Counter internal constructor(private val __boltffi_handle: java.util.concu
 val protocolRevision: UInt = 3u
 
 /**
- * Returns the profile unchanged.
- */
-fun echoProfile(profile: Profile): Profile {
-    val __boltffi_profile_wire = WireWriterPool.acquire(profile.wireSize())
-    val __boltffi_profile_writer = __boltffi_profile_wire.writer
-    profile.writeTo(__boltffi_profile_writer)
-    try {
-        val __boltffi_result = Native.boltffi_function_4demo12echo_profile(__boltffi_profile_wire.directBuffer(), __boltffi_profile_wire.size()) ?: throw IllegalStateException("null buffer returned")
-        val __boltffi_reader = WireReader(__boltffi_result)
-        return Profile.fromReader(__boltffi_reader)
-    } finally {
-        __boltffi_profile_wire.close()
-    }
-}
-
-/**
  * Returns the outline unchanged.
  */
 fun echoOutline(outline: Outline): Outline {
@@ -225,5 +209,21 @@ fun echoOutline(outline: Outline): Outline {
         return Outline.fromReader(__boltffi_reader)
     } finally {
         __boltffi_outline_wire.close()
+    }
+}
+
+/**
+ * Returns the profile unchanged.
+ */
+fun echoProfile(profile: Profile): Profile {
+    val __boltffi_profile_wire = WireWriterPool.acquire(profile.wireSize())
+    val __boltffi_profile_writer = __boltffi_profile_wire.writer
+    profile.writeTo(__boltffi_profile_writer)
+    try {
+        val __boltffi_result = Native.boltffi_function_4demo12echo_profile(__boltffi_profile_wire.directBuffer(), __boltffi_profile_wire.size()) ?: throw IllegalStateException("null buffer returned")
+        val __boltffi_reader = WireReader(__boltffi_result)
+        return Profile.fromReader(__boltffi_reader)
+    } finally {
+        __boltffi_profile_wire.close()
     }
 }

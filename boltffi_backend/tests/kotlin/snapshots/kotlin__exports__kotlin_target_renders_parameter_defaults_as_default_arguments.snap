@@ -30,15 +30,6 @@ private object Native {
     @JvmStatic external fun boltffi_async_init_enum_4demo11DefaultMode4load_free(handle: Long): Unit
     @JvmStatic external fun boltffi_async_init_enum_4demo11DefaultMode4load_panic_message(handle: Long): ByteArray?
     @JvmStatic external fun boltffi_method_enum_4demo11DefaultMode7matches(`receiver`: Byte, mode: Byte): Boolean
-    @JvmStatic external fun boltffi_release_class_4demo6Server(handle: Long): Unit
-    @JvmStatic external fun boltffi_init_class_4demo6Server3new(port: Short): Long
-    @JvmStatic external fun boltffi_init_class_4demo6Server5start(port: Short, first: Long, second: Long): Long
-    @JvmStatic external fun boltffi_async_init_class_4demo6Server5start_poll(handle: Long, callback_data: Long): Byte
-    @JvmStatic external fun boltffi_async_init_class_4demo6Server5start_complete(handle: Long): Long
-    @JvmStatic external fun boltffi_async_init_class_4demo6Server5start_cancel(handle: Long): Unit
-    @JvmStatic external fun boltffi_async_init_class_4demo6Server5start_free(handle: Long): Unit
-    @JvmStatic external fun boltffi_async_init_class_4demo6Server5start_panic_message(handle: Long): ByteArray?
-    @JvmStatic external fun boltffi_method_class_4demo6Server4port(`receiver`: Long, mapped: Boolean): Short
     @JvmStatic external fun boltffi_release_class_4demo14DefaultCounter(handle: Long): Unit
     @JvmStatic external fun boltffi_init_class_4demo14DefaultCounter9from_text(value: java.nio.ByteBuffer, __boltffi_value_len: Int): Long
     @JvmStatic external fun boltffi_init_class_4demo14DefaultCounter3new(start: Int): Long
@@ -51,23 +42,32 @@ private object Native {
     @JvmStatic external fun boltffi_async_method_class_4demo14DefaultCounter12async_offset_cancel(handle: Long): Unit
     @JvmStatic external fun boltffi_async_method_class_4demo14DefaultCounter12async_offset_free(handle: Long): Unit
     @JvmStatic external fun boltffi_async_method_class_4demo14DefaultCounter12async_offset_panic_message(handle: Long): ByteArray?
-    @JvmStatic external fun boltffi_function_4demo5greet(name: java.nio.ByteBuffer, __boltffi_name_len: Int, greeting: java.nio.ByteBuffer, __boltffi_greeting_len: Int, times: Int, offset: Long, shout: Boolean, ratio: Float, mode: Byte, suffix: java.nio.ByteBuffer, __boltffi_suffix_len: Int, limit: java.nio.ByteBuffer, __boltffi_limit_len: Int): ByteArray?
-    @JvmStatic external fun boltffi_function_4demo15format_defaults(name: java.nio.ByteBuffer, __boltffi_name_len: Int, greeting: java.nio.ByteBuffer, __boltffi_greeting_len: Int, enabled: Boolean, ratio: Float, mode: Byte, weight: java.nio.ByteBuffer, __boltffi_weight_len: Int, handler: Long): ByteArray?
+    @JvmStatic external fun boltffi_release_class_4demo6Server(handle: Long): Unit
+    @JvmStatic external fun boltffi_init_class_4demo6Server3new(port: Short): Long
+    @JvmStatic external fun boltffi_init_class_4demo6Server5start(port: Short, first: Long, second: Long): Long
+    @JvmStatic external fun boltffi_async_init_class_4demo6Server5start_poll(handle: Long, callback_data: Long): Byte
+    @JvmStatic external fun boltffi_async_init_class_4demo6Server5start_complete(handle: Long): Long
+    @JvmStatic external fun boltffi_async_init_class_4demo6Server5start_cancel(handle: Long): Unit
+    @JvmStatic external fun boltffi_async_init_class_4demo6Server5start_free(handle: Long): Unit
+    @JvmStatic external fun boltffi_async_init_class_4demo6Server5start_panic_message(handle: Long): ByteArray?
+    @JvmStatic external fun boltffi_method_class_4demo6Server4port(`receiver`: Long, mapped: Boolean): Short
+    @JvmStatic external fun boltffi_function_4demo22apply_optional_closure(value: Int, callback: Long): Int
     @JvmStatic external fun boltffi_function_4demo13async_default(value: Int): Long
     @JvmStatic external fun boltffi_async_function_4demo13async_default_poll(handle: Long, callback_data: Long): Byte
     @JvmStatic external fun boltffi_async_function_4demo13async_default_complete(handle: Long): Int
     @JvmStatic external fun boltffi_async_function_4demo13async_default_cancel(handle: Long): Unit
     @JvmStatic external fun boltffi_async_function_4demo13async_default_free(handle: Long): Unit
     @JvmStatic external fun boltffi_async_function_4demo13async_default_panic_message(handle: Long): ByteArray?
-    @JvmStatic external fun boltffi_function_4demo22apply_optional_closure(value: Int, callback: Long): Int
     @JvmStatic external fun boltffi_function_4demo14default_amount(amount: java.nio.ByteBuffer, __boltffi_amount_len: Int): ByteArray?
-    @JvmStatic external fun boltffi_function_4demo4span(start: Long, end: Long): Long
-    @JvmStatic external fun boltffi_function_4demo8throttle(limit: java.nio.ByteBuffer, __boltffi_limit_len: Int): ByteArray?
-    @JvmStatic external fun boltffi_function_4demo18default_float_bits(value: Float): Int
     @JvmStatic external fun boltffi_function_4demo19default_double_bits(value: Double): Long
     @JvmStatic external fun boltffi_function_4demo13default_email(email: java.nio.ByteBuffer, __boltffi_email_len: Int): ByteArray?
+    @JvmStatic external fun boltffi_function_4demo18default_float_bits(value: Float): Int
     @JvmStatic external fun boltffi_function_4demo18default_identifier(identifier: java.nio.ByteBuffer, __boltffi_identifier_len: Int): ByteArray?
     @JvmStatic external fun boltffi_function_4demo22default_optional_email(email: java.nio.ByteBuffer, __boltffi_email_len: Int): ByteArray?
+    @JvmStatic external fun boltffi_function_4demo15format_defaults(name: java.nio.ByteBuffer, __boltffi_name_len: Int, greeting: java.nio.ByteBuffer, __boltffi_greeting_len: Int, enabled: Boolean, ratio: Float, mode: Byte, weight: java.nio.ByteBuffer, __boltffi_weight_len: Int, handler: Long): ByteArray?
+    @JvmStatic external fun boltffi_function_4demo5greet(name: java.nio.ByteBuffer, __boltffi_name_len: Int, greeting: java.nio.ByteBuffer, __boltffi_greeting_len: Int, times: Int, offset: Long, shout: Boolean, ratio: Float, mode: Byte, suffix: java.nio.ByteBuffer, __boltffi_suffix_len: Int, limit: java.nio.ByteBuffer, __boltffi_limit_len: Int): ByteArray?
+    @JvmStatic external fun boltffi_function_4demo4span(start: Long, end: Long): Long
+    @JvmStatic external fun boltffi_function_4demo8throttle(limit: java.nio.ByteBuffer, __boltffi_limit_len: Int): ByteArray?
 
     @JvmStatic fun boltffiFutureContinuationCallback(handle: Long, pollResult: Byte) {
         BoltFfiAsync.resume(handle, pollResult)
@@ -102,11 +102,54 @@ private object ClosureI32ToI32Callbacks {
 
 typealias Amount = DefaultAmount
 
-typealias Limit = UInt?
-
 typealias Email = String
 
 typealias Identifier = String
+
+typealias Limit = UInt?
+
+
+data class ContactDefaults(
+    val email: String = "mailto:ada@example.com",
+    val identifier: String = "01234567-89ab-cdef-0123-456789abcdef",
+    val optionalEmail: String? = null
+) {
+    internal fun wireSize(): Int {
+        return 4 + Utf8Codec.maxBytes(this.email) + 4 + Utf8Codec.maxBytes(this.identifier) + 1 + (this.optionalEmail?.let { __boltffi_value_0 -> 4 + Utf8Codec.maxBytes(__boltffi_value_0) } ?: 0)
+    }
+
+    internal fun writeTo(writer: WireWriter) {
+        writer.writeString(this.email)
+        writer.writeString(this.identifier)
+        writer.writeOptionalValue(this.optionalEmail, { writer, __boltffi_value_0 -> writer.writeString(__boltffi_value_0) })
+    }
+
+    internal fun toByteArray(): ByteArray {
+        val buffer = WireWriterPool.acquire(wireSize())
+        val writer = buffer.writer
+        try {
+            writeTo(writer)
+            return buffer.bytes()
+        } finally {
+            buffer.close()
+        }
+    }
+
+    companion object {
+        internal fun fromReader(reader: WireReader): ContactDefaults {
+            return ContactDefaults(
+                reader.readString(),
+                reader.readString(),
+                reader.readOptionalValue({ reader -> reader.readString() })
+            )
+        }
+
+        internal fun fromByteArray(bytes: ByteArray): ContactDefaults {
+            val reader = WireReader(bytes)
+            return fromReader(reader)
+        }
+    }
+}
 
 
 data class DefaultAmount(
@@ -180,6 +223,46 @@ data class DefaultAmount(
 }
 
 
+data class FloatDefaults(
+    val single: Float = -0.0f,
+    val double: Double = -0.0
+) {
+    internal fun wireSize(): Int {
+        return 4 + 8
+    }
+
+    internal fun writeTo(writer: WireWriter) {
+        writer.writeF32(this.single)
+        writer.writeF64(this.double)
+    }
+
+    internal fun toByteArray(): ByteArray {
+        val buffer = WireWriterPool.acquire(wireSize())
+        val writer = buffer.writer
+        try {
+            writeTo(writer)
+            return buffer.bytes()
+        } finally {
+            buffer.close()
+        }
+    }
+
+    companion object {
+        internal fun fromReader(reader: WireReader): FloatDefaults {
+            return FloatDefaults(
+                reader.readF32(),
+                reader.readF64()
+            )
+        }
+
+        internal fun fromByteArray(bytes: ByteArray): FloatDefaults {
+            val reader = WireReader(bytes)
+            return fromReader(reader)
+        }
+    }
+}
+
+
 data class NamedAmount(
     val value: Int
 ) {
@@ -248,6 +331,43 @@ data class NamedAmount(
 }
 
 
+data class Quota(
+    val limit: UInt? = null
+) {
+    internal fun wireSize(): Int {
+        return 1 + (this.limit?.let { __boltffi_value_0 -> 4 } ?: 0)
+    }
+
+    internal fun writeTo(writer: WireWriter) {
+        writer.writeOptionalValue(this.limit, { writer, __boltffi_value_0 -> writer.writeU32(__boltffi_value_0) })
+    }
+
+    internal fun toByteArray(): ByteArray {
+        val buffer = WireWriterPool.acquire(wireSize())
+        val writer = buffer.writer
+        try {
+            writeTo(writer)
+            return buffer.bytes()
+        } finally {
+            buffer.close()
+        }
+    }
+
+    companion object {
+        internal fun fromReader(reader: WireReader): Quota {
+            return Quota(
+                reader.readOptionalValue({ reader -> reader.readU32() })
+            )
+        }
+
+        internal fun fromByteArray(bytes: ByteArray): Quota {
+            val reader = WireReader(bytes)
+            return fromReader(reader)
+        }
+    }
+}
+
+
 data class Range(
     val start: Long = Long.MIN_VALUE,
     val end: ULong = 18446744073709551615uL
@@ -294,137 +414,6 @@ data class Range(
 }
 
 
-data class Quota(
-    val limit: UInt? = null
-) {
-    internal fun wireSize(): Int {
-        return 1 + (this.limit?.let { __boltffi_value_0 -> 4 } ?: 0)
-    }
-
-    internal fun writeTo(writer: WireWriter) {
-        writer.writeOptionalValue(this.limit, { writer, __boltffi_value_0 -> writer.writeU32(__boltffi_value_0) })
-    }
-
-    internal fun toByteArray(): ByteArray {
-        val buffer = WireWriterPool.acquire(wireSize())
-        val writer = buffer.writer
-        try {
-            writeTo(writer)
-            return buffer.bytes()
-        } finally {
-            buffer.close()
-        }
-    }
-
-    companion object {
-        internal fun fromReader(reader: WireReader): Quota {
-            return Quota(
-                reader.readOptionalValue({ reader -> reader.readU32() })
-            )
-        }
-
-        internal fun fromByteArray(bytes: ByteArray): Quota {
-            val reader = WireReader(bytes)
-            return fromReader(reader)
-        }
-    }
-}
-
-
-data class FloatDefaults(
-    val single: Float = -0.0f,
-    val double: Double = -0.0
-) {
-    internal fun wireSize(): Int {
-        return 4 + 8
-    }
-
-    internal fun writeTo(writer: WireWriter) {
-        writer.writeF32(this.single)
-        writer.writeF64(this.double)
-    }
-
-    internal fun toByteArray(): ByteArray {
-        val buffer = WireWriterPool.acquire(wireSize())
-        val writer = buffer.writer
-        try {
-            writeTo(writer)
-            return buffer.bytes()
-        } finally {
-            buffer.close()
-        }
-    }
-
-    companion object {
-        internal fun fromReader(reader: WireReader): FloatDefaults {
-            return FloatDefaults(
-                reader.readF32(),
-                reader.readF64()
-            )
-        }
-
-        internal fun fromByteArray(bytes: ByteArray): FloatDefaults {
-            val reader = WireReader(bytes)
-            return fromReader(reader)
-        }
-    }
-}
-
-
-data class ContactDefaults(
-    val email: String = "mailto:ada@example.com",
-    val identifier: String = "01234567-89ab-cdef-0123-456789abcdef",
-    val optionalEmail: String? = null
-) {
-    internal fun wireSize(): Int {
-        return 4 + Utf8Codec.maxBytes(this.email) + 4 + Utf8Codec.maxBytes(this.identifier) + 1 + (this.optionalEmail?.let { __boltffi_value_0 -> 4 + Utf8Codec.maxBytes(__boltffi_value_0) } ?: 0)
-    }
-
-    internal fun writeTo(writer: WireWriter) {
-        writer.writeString(this.email)
-        writer.writeString(this.identifier)
-        writer.writeOptionalValue(this.optionalEmail, { writer, __boltffi_value_0 -> writer.writeString(__boltffi_value_0) })
-    }
-
-    internal fun toByteArray(): ByteArray {
-        val buffer = WireWriterPool.acquire(wireSize())
-        val writer = buffer.writer
-        try {
-            writeTo(writer)
-            return buffer.bytes()
-        } finally {
-            buffer.close()
-        }
-    }
-
-    companion object {
-        internal fun fromReader(reader: WireReader): ContactDefaults {
-            return ContactDefaults(
-                reader.readString(),
-                reader.readString(),
-                reader.readOptionalValue({ reader -> reader.readString() })
-            )
-        }
-
-        internal fun fromByteArray(bytes: ByteArray): ContactDefaults {
-            val reader = WireReader(bytes)
-            return fromReader(reader)
-        }
-    }
-}
-
-
-enum class Mode(val value: Byte) {
-    FAST(1.toByte()),
-    SLOW(2.toByte());
-
-    companion object {
-        fun fromValue(value: Byte): Mode =
-            entries.first { it.value == value }
-    }
-}
-
-
 enum class DefaultMode(val value: Byte) {
     QUIET(1.toByte()),
     LOUD(2.toByte());
@@ -461,51 +450,14 @@ enum class DefaultMode(val value: Byte) {
     }
 }
 
-fun interface Handler {
-    fun process(value: UInt): UInt
-}
 
-private object HandlerMap {
-    private val map = java.util.concurrent.ConcurrentHashMap<Long, Handler>()
-    private val counter = java.util.concurrent.atomic.AtomicLong(1L)
+enum class Mode(val value: Byte) {
+    FAST(1.toByte()),
+    SLOW(2.toByte());
 
-    fun insert(value: Handler): Long {
-        val handle = counter.getAndAdd(2L)
-        map[handle] = value
-        return handle
-    }
-
-    fun get(handle: Long): Handler? = map[handle]
-
-    fun remove(handle: Long): Handler? = map.remove(handle)
-
-    fun clone(handle: Long): Long {
-        val value = map[handle] ?: return 0L
-        return insert(value)
-    }
-}
-
-object HandlerCallbacks {
-    @JvmStatic
-    fun free(handle: Long) {
-        HandlerMap.remove(handle)
-    }
-
-    @JvmStatic
-    fun clone(handle: Long): Long {
-        return HandlerMap.clone(handle)
-    }
-
-    @JvmStatic
-    fun process(handle: Long, value: Int): Int {
-        val impl = HandlerMap.get(handle) ?: error("HandlerMap: invalid handle $handle")
-        return impl.process(value.toUInt()).toInt()
-    }
-}
-
-object HandlerBridge {
-    fun create(value: Handler): Long {
-        return HandlerMap.insert(value)
+    companion object {
+        fun fromValue(value: Byte): Mode =
+            entries.first { it.value == value }
     }
 }
 
@@ -557,50 +509,51 @@ object DefaultHandlerBridge {
     }
 }
 
-class Server internal constructor(private val __boltffi_handle: java.util.concurrent.atomic.AtomicLong) : AutoCloseable {
+fun interface Handler {
+    fun process(value: UInt): UInt
+}
 
-    override fun close() {
-        val handle = __boltffi_handle.getAndSet(0L)
-        if (handle != 0L) {
-            Native.boltffi_release_class_4demo6Server(handle)
-        }
-    }
+private object HandlerMap {
+    private val map = java.util.concurrent.ConcurrentHashMap<Long, Handler>()
+    private val counter = java.util.concurrent.atomic.AtomicLong(1L)
 
-    internal fun __boltffiTakeHandle(): Long {
-        val handle = __boltffi_handle.getAndSet(0L)
-        check(handle != 0L) { "Server is closed" }
+    fun insert(value: Handler): Long {
+        val handle = counter.getAndAdd(2L)
+        map[handle] = value
         return handle
     }
 
-    internal fun boltffiHandle(): Long {
-        val handle = __boltffi_handle.get()
-        check(handle != 0L) { "Server is closed" }
-        return handle
+    fun get(handle: Long): Handler? = map[handle]
+
+    fun remove(handle: Long): Handler? = map.remove(handle)
+
+    fun clone(handle: Long): Long {
+        val value = map[handle] ?: return 0L
+        return insert(value)
+    }
+}
+
+object HandlerCallbacks {
+    @JvmStatic
+    fun free(handle: Long) {
+        HandlerMap.remove(handle)
     }
 
-    constructor(port: UShort = 8080u) : this(new(port).__boltffi_handle)
-
-    companion object {
-        private fun new(port: UShort): Server {
-            return Server(java.util.concurrent.atomic.AtomicLong(Native.boltffi_init_class_4demo6Server3new(port.toShort())))
-        }
-        suspend fun start(port: UShort, first: Handler? = null, second: Handler? = null): Server {
-            return boltffiCallAsync(
-                createFuture = {
-                    Native.boltffi_init_class_4demo6Server5start(port.toShort(), first?.let { __boltffi_callback -> HandlerBridge.create(__boltffi_callback) } ?: 0L, second?.let { __boltffi_callback -> HandlerBridge.create(__boltffi_callback) } ?: 0L)
-                },
-                poll = { future, contHandle -> Native.boltffi_async_init_class_4demo6Server5start_poll(future, contHandle) },
-                complete = { future ->
-                    Server(java.util.concurrent.atomic.AtomicLong(Native.boltffi_async_init_class_4demo6Server5start_complete(future)))
-                },
-                free = { future -> Native.boltffi_async_init_class_4demo6Server5start_free(future) },
-                cancel = { future -> Native.boltffi_async_init_class_4demo6Server5start_cancel(future) },
-            )
-        }
+    @JvmStatic
+    fun clone(handle: Long): Long {
+        return HandlerMap.clone(handle)
     }
 
-    fun port(mapped: Boolean = false): UShort {
-        return Native.boltffi_method_class_4demo6Server4port(this.boltffiHandle(), mapped).toUShort()
+    @JvmStatic
+    fun process(handle: Long, value: Int): Int {
+        val impl = HandlerMap.get(handle) ?: error("HandlerMap: invalid handle $handle")
+        return impl.process(value.toUInt()).toInt()
+    }
+}
+
+object HandlerBridge {
+    fun create(value: Handler): Long {
+        return HandlerMap.insert(value)
     }
 }
 
@@ -670,9 +623,155 @@ class DefaultCounter internal constructor(private val __boltffi_handle: java.uti
     }
 }
 
-val floor: Long = Long.MIN_VALUE
+class Server internal constructor(private val __boltffi_handle: java.util.concurrent.atomic.AtomicLong) : AutoCloseable {
+
+    override fun close() {
+        val handle = __boltffi_handle.getAndSet(0L)
+        if (handle != 0L) {
+            Native.boltffi_release_class_4demo6Server(handle)
+        }
+    }
+
+    internal fun __boltffiTakeHandle(): Long {
+        val handle = __boltffi_handle.getAndSet(0L)
+        check(handle != 0L) { "Server is closed" }
+        return handle
+    }
+
+    internal fun boltffiHandle(): Long {
+        val handle = __boltffi_handle.get()
+        check(handle != 0L) { "Server is closed" }
+        return handle
+    }
+
+    constructor(port: UShort = 8080u) : this(new(port).__boltffi_handle)
+
+    companion object {
+        private fun new(port: UShort): Server {
+            return Server(java.util.concurrent.atomic.AtomicLong(Native.boltffi_init_class_4demo6Server3new(port.toShort())))
+        }
+        suspend fun start(port: UShort, first: Handler? = null, second: Handler? = null): Server {
+            return boltffiCallAsync(
+                createFuture = {
+                    Native.boltffi_init_class_4demo6Server5start(port.toShort(), first?.let { __boltffi_callback -> HandlerBridge.create(__boltffi_callback) } ?: 0L, second?.let { __boltffi_callback -> HandlerBridge.create(__boltffi_callback) } ?: 0L)
+                },
+                poll = { future, contHandle -> Native.boltffi_async_init_class_4demo6Server5start_poll(future, contHandle) },
+                complete = { future ->
+                    Server(java.util.concurrent.atomic.AtomicLong(Native.boltffi_async_init_class_4demo6Server5start_complete(future)))
+                },
+                free = { future -> Native.boltffi_async_init_class_4demo6Server5start_free(future) },
+                cancel = { future -> Native.boltffi_async_init_class_4demo6Server5start_cancel(future) },
+            )
+        }
+    }
+
+    fun port(mapped: Boolean = false): UShort {
+        return Native.boltffi_method_class_4demo6Server4port(this.boltffiHandle(), mapped).toUShort()
+    }
+}
 
 val ceiling: ULong = 18446744073709551615uL
+
+val floor: Long = Long.MIN_VALUE
+
+fun applyOptionalClosure(value: Int, callback: ClosureI32ToI32? = null): Int {
+    return Native.boltffi_function_4demo22apply_optional_closure(value, callback?.let { __boltffi_closure -> ClosureI32ToI32Callbacks.insert(__boltffi_closure) } ?: 0L)
+}
+
+suspend fun asyncDefault(value: UInt = 9u): UInt {
+    return boltffiCallAsync(
+        createFuture = {
+            Native.boltffi_function_4demo13async_default(value.toInt())
+        },
+        poll = { future, contHandle -> Native.boltffi_async_function_4demo13async_default_poll(future, contHandle) },
+        complete = { future ->
+            Native.boltffi_async_function_4demo13async_default_complete(future).toUInt()
+        },
+        free = { future -> Native.boltffi_async_function_4demo13async_default_free(future) },
+        cancel = { future -> Native.boltffi_async_function_4demo13async_default_cancel(future) },
+    )
+}
+
+fun defaultAmount(amount: DefaultAmount = DefaultAmount(5)): DefaultAmount {
+    val __boltffi_amount_wire = WireWriterPool.acquire(amount.wireSize())
+    val __boltffi_amount_writer = __boltffi_amount_wire.writer
+    amount.writeTo(__boltffi_amount_writer)
+    try {
+        val __boltffi_result = Native.boltffi_function_4demo14default_amount(__boltffi_amount_wire.directBuffer(), __boltffi_amount_wire.size()) ?: throw IllegalStateException("null buffer returned")
+        val __boltffi_reader = WireReader(__boltffi_result)
+        return DefaultAmount.fromReader(__boltffi_reader)
+    } finally {
+        __boltffi_amount_wire.close()
+    }
+}
+
+fun defaultDoubleBits(value: Double = -0.0): ULong {
+    return Native.boltffi_function_4demo19default_double_bits(value).toULong()
+}
+
+fun defaultEmail(email: String = "mailto:ada@example.com"): String {
+    val __boltffi_email_wire = WireWriterPool.acquire(4 + Utf8Codec.maxBytes(email))
+    val __boltffi_email_writer = __boltffi_email_wire.writer
+    __boltffi_email_writer.writeString(email)
+    try {
+        val __boltffi_result = Native.boltffi_function_4demo13default_email(__boltffi_email_wire.directBuffer(), __boltffi_email_wire.size()) ?: throw IllegalStateException("null buffer returned")
+        val __boltffi_reader = WireReader(__boltffi_result)
+        return __boltffi_reader.readString()
+    } finally {
+        __boltffi_email_wire.close()
+    }
+}
+
+fun defaultFloatBits(value: Float = -0.0f): UInt {
+    return Native.boltffi_function_4demo18default_float_bits(value).toUInt()
+}
+
+fun defaultIdentifier(identifier: String = "01234567-89ab-cdef-0123-456789abcdef"): String {
+    val __boltffi_identifier_wire = WireWriterPool.acquire(4 + Utf8Codec.maxBytes(identifier))
+    val __boltffi_identifier_writer = __boltffi_identifier_wire.writer
+    __boltffi_identifier_writer.writeString(identifier)
+    try {
+        val __boltffi_result = Native.boltffi_function_4demo18default_identifier(__boltffi_identifier_wire.directBuffer(), __boltffi_identifier_wire.size()) ?: throw IllegalStateException("null buffer returned")
+        val __boltffi_reader = WireReader(__boltffi_result)
+        return __boltffi_reader.readString()
+    } finally {
+        __boltffi_identifier_wire.close()
+    }
+}
+
+fun defaultOptionalEmail(email: String? = "mailto:ada@example.com"): String? {
+    val __boltffi_email_wire = WireWriterPool.acquire(1 + (email?.let { __boltffi_value_0 -> 4 + Utf8Codec.maxBytes(__boltffi_value_0) } ?: 0))
+    val __boltffi_email_writer = __boltffi_email_wire.writer
+    __boltffi_email_writer.writeOptionalValue(email, { __boltffi_email_writer, __boltffi_value_0 -> __boltffi_email_writer.writeString(__boltffi_value_0) })
+    try {
+        val __boltffi_result = Native.boltffi_function_4demo22default_optional_email(__boltffi_email_wire.directBuffer(), __boltffi_email_wire.size()) ?: throw IllegalStateException("null buffer returned")
+        val __boltffi_reader = WireReader(__boltffi_result)
+        return __boltffi_reader.readOptionalValue({ __boltffi_reader -> __boltffi_reader.readString() })
+    } finally {
+        __boltffi_email_wire.close()
+    }
+}
+
+fun formatDefaults(name: String, greeting: String = "hello", enabled: Boolean = true, ratio: Float = 0.5f, mode: DefaultMode = DefaultMode.QUIET, weight: Double? = 1.5, handler: DefaultHandler? = null): String {
+    val __boltffi_name_wire = WireWriterPool.acquire(4 + Utf8Codec.maxBytes(name))
+    val __boltffi_name_writer = __boltffi_name_wire.writer
+    __boltffi_name_writer.writeString(name)
+    val __boltffi_greeting_wire = WireWriterPool.acquire(4 + Utf8Codec.maxBytes(greeting))
+    val __boltffi_greeting_writer = __boltffi_greeting_wire.writer
+    __boltffi_greeting_writer.writeString(greeting)
+    val __boltffi_weight_wire = WireWriterPool.acquire(if (weight == null) 1 else 9)
+    val __boltffi_weight_writer = __boltffi_weight_wire.writer
+    __boltffi_weight_writer.writeOptionalF64(weight)
+    try {
+        val __boltffi_result = Native.boltffi_function_4demo15format_defaults(__boltffi_name_wire.directBuffer(), __boltffi_name_wire.size(), __boltffi_greeting_wire.directBuffer(), __boltffi_greeting_wire.size(), enabled, ratio, mode.value.toByte(), __boltffi_weight_wire.directBuffer(), __boltffi_weight_wire.size(), handler?.let { __boltffi_callback -> DefaultHandlerBridge.create(__boltffi_callback) } ?: 0L) ?: throw IllegalStateException("null buffer returned")
+        val __boltffi_reader = WireReader(__boltffi_result)
+        return __boltffi_reader.readString()
+    } finally {
+        __boltffi_name_wire.close()
+        __boltffi_greeting_wire.close()
+        __boltffi_weight_wire.close()
+    }
+}
 
 fun greet(name: String, greeting: String = "world", times: UInt = 3u, offset: Long = -1, shout: Boolean = true, ratio: Float = 0.5f, mode: Mode = Mode.SLOW, suffix: String? = null, limit: UShort? = 7u): String {
     val __boltffi_name_wire = WireWriterPool.acquire(4 + Utf8Codec.maxBytes(name))
@@ -699,58 +798,6 @@ fun greet(name: String, greeting: String = "world", times: UInt = 3u, offset: Lo
     }
 }
 
-fun formatDefaults(name: String, greeting: String = "hello", enabled: Boolean = true, ratio: Float = 0.5f, mode: DefaultMode = DefaultMode.QUIET, weight: Double? = 1.5, handler: DefaultHandler? = null): String {
-    val __boltffi_name_wire = WireWriterPool.acquire(4 + Utf8Codec.maxBytes(name))
-    val __boltffi_name_writer = __boltffi_name_wire.writer
-    __boltffi_name_writer.writeString(name)
-    val __boltffi_greeting_wire = WireWriterPool.acquire(4 + Utf8Codec.maxBytes(greeting))
-    val __boltffi_greeting_writer = __boltffi_greeting_wire.writer
-    __boltffi_greeting_writer.writeString(greeting)
-    val __boltffi_weight_wire = WireWriterPool.acquire(if (weight == null) 1 else 9)
-    val __boltffi_weight_writer = __boltffi_weight_wire.writer
-    __boltffi_weight_writer.writeOptionalF64(weight)
-    try {
-        val __boltffi_result = Native.boltffi_function_4demo15format_defaults(__boltffi_name_wire.directBuffer(), __boltffi_name_wire.size(), __boltffi_greeting_wire.directBuffer(), __boltffi_greeting_wire.size(), enabled, ratio, mode.value.toByte(), __boltffi_weight_wire.directBuffer(), __boltffi_weight_wire.size(), handler?.let { __boltffi_callback -> DefaultHandlerBridge.create(__boltffi_callback) } ?: 0L) ?: throw IllegalStateException("null buffer returned")
-        val __boltffi_reader = WireReader(__boltffi_result)
-        return __boltffi_reader.readString()
-    } finally {
-        __boltffi_name_wire.close()
-        __boltffi_greeting_wire.close()
-        __boltffi_weight_wire.close()
-    }
-}
-
-suspend fun asyncDefault(value: UInt = 9u): UInt {
-    return boltffiCallAsync(
-        createFuture = {
-            Native.boltffi_function_4demo13async_default(value.toInt())
-        },
-        poll = { future, contHandle -> Native.boltffi_async_function_4demo13async_default_poll(future, contHandle) },
-        complete = { future ->
-            Native.boltffi_async_function_4demo13async_default_complete(future).toUInt()
-        },
-        free = { future -> Native.boltffi_async_function_4demo13async_default_free(future) },
-        cancel = { future -> Native.boltffi_async_function_4demo13async_default_cancel(future) },
-    )
-}
-
-fun applyOptionalClosure(value: Int, callback: ClosureI32ToI32? = null): Int {
-    return Native.boltffi_function_4demo22apply_optional_closure(value, callback?.let { __boltffi_closure -> ClosureI32ToI32Callbacks.insert(__boltffi_closure) } ?: 0L)
-}
-
-fun defaultAmount(amount: DefaultAmount = DefaultAmount(5)): DefaultAmount {
-    val __boltffi_amount_wire = WireWriterPool.acquire(amount.wireSize())
-    val __boltffi_amount_writer = __boltffi_amount_wire.writer
-    amount.writeTo(__boltffi_amount_writer)
-    try {
-        val __boltffi_result = Native.boltffi_function_4demo14default_amount(__boltffi_amount_wire.directBuffer(), __boltffi_amount_wire.size()) ?: throw IllegalStateException("null buffer returned")
-        val __boltffi_reader = WireReader(__boltffi_result)
-        return DefaultAmount.fromReader(__boltffi_reader)
-    } finally {
-        __boltffi_amount_wire.close()
-    }
-}
-
 fun span(start: Long = Long.MIN_VALUE, end: ULong = 18446744073709551615uL): ULong {
     return Native.boltffi_function_4demo4span(start, end.toLong()).toULong()
 }
@@ -765,52 +812,5 @@ fun throttle(limit: UInt? = null): UInt? {
         return __boltffi_reader.readOptionalValue({ __boltffi_reader -> __boltffi_reader.readU32() })
     } finally {
         __boltffi_limit_wire.close()
-    }
-}
-
-fun defaultFloatBits(value: Float = -0.0f): UInt {
-    return Native.boltffi_function_4demo18default_float_bits(value).toUInt()
-}
-
-fun defaultDoubleBits(value: Double = -0.0): ULong {
-    return Native.boltffi_function_4demo19default_double_bits(value).toULong()
-}
-
-fun defaultEmail(email: String = "mailto:ada@example.com"): String {
-    val __boltffi_email_wire = WireWriterPool.acquire(4 + Utf8Codec.maxBytes(email))
-    val __boltffi_email_writer = __boltffi_email_wire.writer
-    __boltffi_email_writer.writeString(email)
-    try {
-        val __boltffi_result = Native.boltffi_function_4demo13default_email(__boltffi_email_wire.directBuffer(), __boltffi_email_wire.size()) ?: throw IllegalStateException("null buffer returned")
-        val __boltffi_reader = WireReader(__boltffi_result)
-        return __boltffi_reader.readString()
-    } finally {
-        __boltffi_email_wire.close()
-    }
-}
-
-fun defaultIdentifier(identifier: String = "01234567-89ab-cdef-0123-456789abcdef"): String {
-    val __boltffi_identifier_wire = WireWriterPool.acquire(4 + Utf8Codec.maxBytes(identifier))
-    val __boltffi_identifier_writer = __boltffi_identifier_wire.writer
-    __boltffi_identifier_writer.writeString(identifier)
-    try {
-        val __boltffi_result = Native.boltffi_function_4demo18default_identifier(__boltffi_identifier_wire.directBuffer(), __boltffi_identifier_wire.size()) ?: throw IllegalStateException("null buffer returned")
-        val __boltffi_reader = WireReader(__boltffi_result)
-        return __boltffi_reader.readString()
-    } finally {
-        __boltffi_identifier_wire.close()
-    }
-}
-
-fun defaultOptionalEmail(email: String? = "mailto:ada@example.com"): String? {
-    val __boltffi_email_wire = WireWriterPool.acquire(1 + (email?.let { __boltffi_value_0 -> 4 + Utf8Codec.maxBytes(__boltffi_value_0) } ?: 0))
-    val __boltffi_email_writer = __boltffi_email_wire.writer
-    __boltffi_email_writer.writeOptionalValue(email, { __boltffi_email_writer, __boltffi_value_0 -> __boltffi_email_writer.writeString(__boltffi_value_0) })
-    try {
-        val __boltffi_result = Native.boltffi_function_4demo22default_optional_email(__boltffi_email_wire.directBuffer(), __boltffi_email_wire.size()) ?: throw IllegalStateException("null buffer returned")
-        val __boltffi_reader = WireReader(__boltffi_result)
-        return __boltffi_reader.readOptionalValue({ __boltffi_reader -> __boltffi_reader.readString() })
-    } finally {
-        __boltffi_email_wire.close()
     }
 }

@@ -13,7 +13,7 @@ tokio = { workspace = true, features = ["rt", "rt-multi-thread", "time", "macros
 boltffi_ast.workspace = true
 boltffi_backend.workspace = true
 boltffi_binding.workspace = true
-boltffi_scan.workspace = true
+boltffi_test_source.workspace = true
 cc = "1.2"
 proc-macro2.workspace = true
 quote.workspace = true
@@ -24,6 +24,7 @@ boltffi_ast.workspace = true
 boltffi_backend.workspace = true
 boltffi_binding.workspace = true
 boltffi_scan.workspace = true
+boltffi_test_source.workspace = true
 syn.workspace = true
 
 [lints]

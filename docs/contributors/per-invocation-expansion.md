@@ -365,5 +365,6 @@ symbols the artifact exports. The fixtures cover:
 - types that refer to each other and to themselves;
 - linked, unlinked and colliding dependencies.
 
-Records lowered through this path match the legacy scanner declaration for declaration.
+Records lowered through this path match the contract `boltffi_test_source` builds from the
+same source, declaration for declaration.
 The demo passes on every platform target.

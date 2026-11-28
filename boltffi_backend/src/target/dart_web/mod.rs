@@ -205,7 +205,7 @@ mod tests {
     }
 
     fn bindings() -> Bindings<Wasm32> {
-        let source = boltffi_scan::scan_file(
+        let source = boltffi_test_source::scan_file(
             syn::parse_str(
                 r#"
                 #[export]
@@ -264,7 +264,7 @@ mod tests {
     }
 
     fn fallible_callback_bindings() -> Bindings<Wasm32> {
-        let source = boltffi_scan::scan_file(
+        let source = boltffi_test_source::scan_file(
             syn::parse_str(
                 r#"
                 #[export]
@@ -326,7 +326,7 @@ mod tests {
     }
 
     fn fallible_async_record_error_callback_bindings() -> Bindings<Wasm32> {
-        let source = boltffi_scan::scan_file(
+        let source = boltffi_test_source::scan_file(
             syn::parse_str(
                 r#"
                 #[data]
@@ -368,7 +368,7 @@ mod tests {
     }
 
     fn nullable_closure_bindings() -> Bindings<Wasm32> {
-        let source = boltffi_scan::scan_file(
+        let source = boltffi_test_source::scan_file(
             syn::parse_str(
                 r#"
                 #[export]
@@ -397,7 +397,7 @@ mod tests {
     }
 
     fn record_bindings() -> Bindings<Wasm32> {
-        let source = boltffi_scan::scan_file(
+        let source = boltffi_test_source::scan_file(
             syn::parse_str(
                 r#"
                 #[data]
@@ -452,7 +452,7 @@ mod tests {
     }
 
     fn stream_bindings() -> Bindings<Wasm32> {
-        let source = boltffi_scan::scan_file(
+        let source = boltffi_test_source::scan_file(
             syn::parse_str(
                 r#"
                 use std::sync::Arc;
@@ -463,6 +463,7 @@ mod tests {
                     pub text: String,
                 }
 
+                #[export]
                 pub struct EventBus;
 
                 #[export]
@@ -488,7 +489,7 @@ mod tests {
     }
 
     fn constant_bindings() -> Bindings<Wasm32> {
-        let source = boltffi_scan::scan_file(
+        let source = boltffi_test_source::scan_file(
             syn::parse_str(
                 r#"
                 #[export]
@@ -509,9 +510,10 @@ mod tests {
     }
 
     fn class_bindings() -> Bindings<Wasm32> {
-        let source = boltffi_scan::scan_file(
+        let source = boltffi_test_source::scan_file(
             syn::parse_str(
                 r#"
+                #[export]
                 pub struct Counter(i32);
 
                 #[export]
@@ -612,7 +614,7 @@ mod tests {
     }
 
     fn cancellation_bindings() -> Bindings<Wasm32> {
-        let source = boltffi_scan::scan_file(
+        let source = boltffi_test_source::scan_file(
             syn::parse_str(
                 r#"
                 #[export]
@@ -621,6 +623,7 @@ mod tests {
                 #[export]
                 pub fn add(a: i32, b: i32) -> i32 { a + b }
 
+                #[export]
                 pub struct Counter(i32);
 
                 #[export]
@@ -699,12 +702,13 @@ mod tests {
 
     #[test]
     fn async_optional_returns_await_outside_the_decoder_closure() {
-        let source = boltffi_scan::scan_file(
+        let source = boltffi_test_source::scan_file(
             syn::parse_str(
                 r#"
                 #[export]
                 pub async fn maybe_value(flag: bool) -> Option<i32> { None }
 
+                #[export]
                 pub struct Probe;
 
                 #[export]
@@ -900,7 +904,7 @@ mod tests {
 
     #[test]
     fn record_field_named_result_does_not_collide_with_tojs_accumulator() {
-        let source = boltffi_scan::scan_file(
+        let source = boltffi_test_source::scan_file(
             syn::parse_str(
                 r#"
                 #[data]
@@ -928,7 +932,7 @@ mod tests {
 
     #[test]
     fn renders_custom_type_call_sites_through_its_representation() {
-        let source = boltffi_scan::scan_file(
+        let source = boltffi_test_source::scan_file(
             syn::parse_str(
                 r#"
                 custom_type!(
@@ -1039,7 +1043,7 @@ mod tests {
     }
 
     fn direct_vector_bindings() -> Bindings<Wasm32> {
-        let source = boltffi_scan::scan_file(
+        let source = boltffi_test_source::scan_file(
             syn::parse_str(
                 r#"
                 #[export]
@@ -1064,9 +1068,10 @@ mod tests {
     }
 
     fn class_with_unsupported_method_bindings() -> Bindings<Wasm32> {
-        let source = boltffi_scan::scan_file(
+        let source = boltffi_test_source::scan_file(
             syn::parse_str(
                 r#"
+                #[export]
                 pub struct Counter(i32);
 
                 #[export]
@@ -1115,9 +1120,10 @@ mod tests {
     }
 
     fn associated_constant_bindings() -> Bindings<Wasm32> {
-        let source = boltffi_scan::scan_file(
+        let source = boltffi_test_source::scan_file(
             syn::parse_str(
                 r#"
+                #[export]
                 pub struct Counter(i32);
 
                 #[export]

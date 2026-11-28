@@ -169,15 +169,14 @@ impl<'scanner, 'types> Scanner<'scanner, 'types> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ModuleScope;
+
     use crate::declared_types::DeclaredTypes;
     use boltffi_ast::{Primitive, TypeExpr};
 
     fn scan(source: &str) -> ConstExpr {
         let expr = syn::parse_str(source).expect("valid expression");
         let declared_types = DeclaredTypes::new();
-        let module = ModuleScope::root("demo");
-        let types = type_expr::Scanner::new(&declared_types, &module);
+        let types = type_expr::Scanner::new(&declared_types);
         Scanner::new(&types).scan(&expr)
     }
 

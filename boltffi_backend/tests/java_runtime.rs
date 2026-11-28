@@ -956,7 +956,7 @@ impl RuntimeFixture {
 
     fn generate_bindings(&self, preferred_library: &str, fallback_library: &str) {
         let file = syn::parse_str(RUST_SOURCE).expect("valid Java runtime source fixture");
-        let scanned = boltffi_scan::scan_file(file, PackageInfo::new("demo", None))
+        let scanned = boltffi_test_source::scan_file(file, PackageInfo::new("demo", None))
             .expect("Java runtime fixture should scan");
         let bindings = lower::<Native>(&scanned).expect("Java runtime fixture should lower");
         let host = JavaHost::new(JAVA_PACKAGE, "Demo")

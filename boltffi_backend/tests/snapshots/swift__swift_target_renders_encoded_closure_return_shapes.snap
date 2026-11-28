@@ -26,22 +26,6 @@ private final class BoltFFIClosureBox<Invoke> {
     }
 }
 
-public func installVec(callback: @escaping () -> [UInt32]) {
-    let boltffiCallbackBox = BoltFFIClosureBox<() -> [UInt32]>(callback)
-    let boltffiCallbackContext = Unmanaged.passRetained(boltffiCallbackBox).toOpaque()
-    let boltffiCallbackCall: @convention(c) (UnsafeMutableRawPointer?) -> FfiBuf_u8 = { context in
-        let boltffiResult = Unmanaged<BoltFFIClosureBox<() -> [UInt32]>>.fromOpaque(context!).takeUnretainedValue().invoke()
-        return boltffiResult.withUnsafeBufferPointer { boltffiResultBuffer in
-            return boltffi_buf_from_bytes(UnsafeRawPointer(boltffiResultBuffer.baseAddress)?.assumingMemoryBound(to: UInt8.self), UInt(boltffiResultBuffer.count * MemoryLayout<UInt32>.stride))
-        }
-    }
-    let boltffiCallbackRelease: @convention(c) (UnsafeMutableRawPointer?) -> Void = { context in
-        guard let context = context else { return }
-        Unmanaged<BoltFFIClosureBox<() -> [UInt32]>>.fromOpaque(context).release()
-    }
-    boltffi_function_4demo11install_vec(boltffiCallbackCall, boltffiCallbackContext, boltffiCallbackRelease)
-}
-
 public func installOption(callback: @escaping () -> Int32?) {
     let boltffiCallbackBox = BoltFFIClosureBox<() -> Int32?>(callback)
     let boltffiCallbackContext = Unmanaged.passRetained(boltffiCallbackBox).toOpaque()
@@ -57,4 +41,20 @@ public func installOption(callback: @escaping () -> Int32?) {
         Unmanaged<BoltFFIClosureBox<() -> Int32?>>.fromOpaque(context).release()
     }
     boltffi_function_4demo14install_option(boltffiCallbackCall, boltffiCallbackContext, boltffiCallbackRelease)
+}
+
+public func installVec(callback: @escaping () -> [UInt32]) {
+    let boltffiCallbackBox = BoltFFIClosureBox<() -> [UInt32]>(callback)
+    let boltffiCallbackContext = Unmanaged.passRetained(boltffiCallbackBox).toOpaque()
+    let boltffiCallbackCall: @convention(c) (UnsafeMutableRawPointer?) -> FfiBuf_u8 = { context in
+        let boltffiResult = Unmanaged<BoltFFIClosureBox<() -> [UInt32]>>.fromOpaque(context!).takeUnretainedValue().invoke()
+        return boltffiResult.withUnsafeBufferPointer { boltffiResultBuffer in
+            return boltffi_buf_from_bytes(UnsafeRawPointer(boltffiResultBuffer.baseAddress)?.assumingMemoryBound(to: UInt8.self), UInt(boltffiResultBuffer.count * MemoryLayout<UInt32>.stride))
+        }
+    }
+    let boltffiCallbackRelease: @convention(c) (UnsafeMutableRawPointer?) -> Void = { context in
+        guard let context = context else { return }
+        Unmanaged<BoltFFIClosureBox<() -> [UInt32]>>.fromOpaque(context).release()
+    }
+    boltffi_function_4demo11install_vec(boltffiCallbackCall, boltffiCallbackContext, boltffiCallbackRelease)
 }

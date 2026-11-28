@@ -4,7 +4,6 @@ pub(super) mod constant;
 pub(crate) mod custom_type;
 pub(super) mod enumeration;
 pub(super) mod function;
-pub(super) mod impl_block;
 pub(super) mod interned_string_pool;
 pub(super) mod record;
 pub(super) mod stream;

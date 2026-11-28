@@ -314,7 +314,7 @@ mod tests {
     }
 
     fn bindings_with_version(source: &str, version: Option<&str>) -> Bindings<Native> {
-        let source = boltffi_scan::scan_file(
+        let source = boltffi_test_source::scan_file(
             syn::parse_str(source).expect("valid source"),
             PackageInfo::new("demo", version.map(str::to_owned)),
         )

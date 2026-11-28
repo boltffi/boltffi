@@ -430,6 +430,7 @@ fn kotlin_target_rejects_methods_shadowing_generated_class_members() {
 
     let error = render(
         r#"
+        #[export]
         pub struct Engine {
             value: i64,
         }
@@ -458,6 +459,7 @@ fn kotlin_target_rejects_methods_shadowing_generated_class_members() {
 
     let error = render(
         r#"
+        #[export]
         pub struct Engine {
             value: i64,
         }
@@ -484,6 +486,7 @@ fn kotlin_target_rejects_methods_shadowing_generated_class_members() {
 
     render(
         r#"
+        #[export]
         pub struct Engine {
             value: i64,
         }

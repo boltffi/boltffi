@@ -60,6 +60,47 @@ public final class Engine {
 
 
 extension Engine {
+    public func names() -> _Concurrency.AsyncStream<String> {
+        _Concurrency.AsyncStream<String>(bufferingPolicy: .unbounded) { continuation in
+            let boltffiSubscription = boltffi_stream_4demo6Engine5names_subscribe(self.handle)
+            guard boltffiSubscription != 0 else {
+                continuation.finish()
+                return
+            }
+            let context = BoltFFIStreamContext<String>(
+                subscription: boltffiSubscription,
+                batchSize: 16,
+                readBatch: { subscription, batchSize in
+                    return boltffiReadWireStreamBatch(
+                        subscription: subscription,
+                        batchSize: batchSize,
+                        popBatch: boltffi_stream_4demo6Engine5names_pop_batch,
+                        freeBuf: boltffi_free_buf
+                    ) { reader in
+                        let boltffiStreamCount = Int(reader.readU32())
+                        var boltffiStreamBatch = [String]()
+                        boltffiStreamBatch.reserveCapacity(boltffiStreamCount)
+                        for _ in 0..<boltffiStreamCount {
+                            boltffiStreamBatch.append(reader.readString())
+                        }
+                        return boltffiStreamBatch
+                    }
+                },
+                poll: boltffi_stream_4demo6Engine5names_poll,
+                unsubscribe: boltffi_stream_4demo6Engine5names_unsubscribe,
+                free: boltffi_stream_4demo6Engine5names_free,
+                atomicCompareExchange: boltffi_atomic_u8_cas,
+                yieldItem: { item in _ = continuation.yield(item) },
+                finish: { continuation.finish() }
+            )
+            continuation.onTermination = { @Sendable _ in context.requestTermination() }
+            context.start()
+        }
+    }
+}
+
+
+extension Engine {
     public func points() -> PointsSubscription {
         let boltffiSubscription = boltffi_stream_4demo6Engine6points_subscribe(self.handle)
         return PointsSubscription(
@@ -133,47 +174,6 @@ public final class PointsSubscription {
         }
         closed = true
         unsubscribeCall(handle)
-    }
-}
-
-
-extension Engine {
-    public func names() -> _Concurrency.AsyncStream<String> {
-        _Concurrency.AsyncStream<String>(bufferingPolicy: .unbounded) { continuation in
-            let boltffiSubscription = boltffi_stream_4demo6Engine5names_subscribe(self.handle)
-            guard boltffiSubscription != 0 else {
-                continuation.finish()
-                return
-            }
-            let context = BoltFFIStreamContext<String>(
-                subscription: boltffiSubscription,
-                batchSize: 16,
-                readBatch: { subscription, batchSize in
-                    return boltffiReadWireStreamBatch(
-                        subscription: subscription,
-                        batchSize: batchSize,
-                        popBatch: boltffi_stream_4demo6Engine5names_pop_batch,
-                        freeBuf: boltffi_free_buf
-                    ) { reader in
-                        let boltffiStreamCount = Int(reader.readU32())
-                        var boltffiStreamBatch = [String]()
-                        boltffiStreamBatch.reserveCapacity(boltffiStreamCount)
-                        for _ in 0..<boltffiStreamCount {
-                            boltffiStreamBatch.append(reader.readString())
-                        }
-                        return boltffiStreamBatch
-                    }
-                },
-                poll: boltffi_stream_4demo6Engine5names_poll,
-                unsubscribe: boltffi_stream_4demo6Engine5names_unsubscribe,
-                free: boltffi_stream_4demo6Engine5names_free,
-                atomicCompareExchange: boltffi_atomic_u8_cas,
-                yieldItem: { item in _ = continuation.yield(item) },
-                finish: { continuation.finish() }
-            )
-            continuation.onTermination = { @Sendable _ in context.requestTermination() }
-            context.start()
-        }
     }
 }
 

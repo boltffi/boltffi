@@ -5,9 +5,10 @@ pub struct Point {
     pub y: i32,
 }
 
+#[export(single_threaded)]
 pub struct Engine;
 
-#[export(single_threaded)]
+#[export]
 impl Engine {
     pub fn new(seed: u64) -> Self {
         Self

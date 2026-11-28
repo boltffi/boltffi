@@ -1,0 +1,21 @@
+[package]
+name = "boltffi_test_source"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Builds a source contract from Rust source through the macros' capture path, for tests"
+publish = false
+
+[dependencies]
+boltffi_ast.workspace = true
+boltffi_binding.workspace = true
+boltffi_scan.workspace = true
+proc-macro2.workspace = true
+quote.workspace = true
+serde_json.workspace = true
+syn.workspace = true
+
+[lints]
+workspace = true

@@ -42,6 +42,7 @@ impl State {
     pub const INITIAL: Self = Self::Idle;
 }
 
+#[export]
 pub struct Palette;
 
 #[export]

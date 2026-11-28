@@ -9,21 +9,13 @@ package com.boltffi.demo
 @Suppress("FunctionName")
 private object Native {
     @JvmStatic external fun boltffi_function_4demo3add(left: Int, right: Int): Int
+    @JvmStatic external fun boltffi_function_4demo10echo_bytes(bytes: java.nio.ByteBuffer, __boltffi_bytes_len: Int): ByteArray?
     @JvmStatic external fun boltffi_function_4demo7enabled(flag: Boolean): Boolean
     @JvmStatic external fun boltffi_function_4demo7refresh(): Unit
-    @JvmStatic external fun boltffi_function_4demo10echo_bytes(bytes: java.nio.ByteBuffer, __boltffi_bytes_len: Int): ByteArray?
 }
 
 fun add(left: Int, right: Int): Int {
     return Native.boltffi_function_4demo3add(left, right)
-}
-
-fun enabled(flag: Boolean): Boolean {
-    return Native.boltffi_function_4demo7enabled(flag)
-}
-
-fun refresh() {
-    Native.boltffi_function_4demo7refresh()
 }
 
 fun echoBytes(bytes: ByteArray): ByteArray {
@@ -37,4 +29,12 @@ fun echoBytes(bytes: ByteArray): ByteArray {
     } finally {
         __boltffi_bytes_wire.close()
     }
+}
+
+fun enabled(flag: Boolean): Boolean {
+    return Native.boltffi_function_4demo7enabled(flag)
+}
+
+fun refresh() {
+    Native.boltffi_function_4demo7refresh()
 }

@@ -7,18 +7,6 @@ use crate::UnsupportedFeature;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ScanError {
-    Read {
-        path: String,
-        message: String,
-    },
-    Parse {
-        path: String,
-        message: String,
-    },
-    ModuleNotFound {
-        module: String,
-        searched: Vec<String>,
-    },
     UnsupportedType {
         spelling: String,
     },
@@ -43,25 +31,11 @@ pub enum ScanError {
         first: String,
         second: String,
     },
-    ConflictingDeclarations {
-        path: String,
-        first: String,
-        second: String,
-    },
-    AmbiguousPath {
-        path: String,
-    },
     InvalidCustomType {
         message: String,
     },
     InvalidStream {
         message: String,
-    },
-    UnsupportedMarkedImpl {
-        target: String,
-    },
-    UnsupportedClassImpl {
-        target: String,
     },
     UnsupportedClassImplShape {
         target: String,
@@ -126,20 +100,6 @@ impl PartialEq for Location {
 impl Eq for Location {}
 
 impl ScanError {
-    pub(super) fn read(path: &std::path::Path, error: &std::io::Error) -> Self {
-        Self::Read {
-            path: path.display().to_string(),
-            message: error.to_string(),
-        }
-    }
-
-    pub(super) fn parse(path: &std::path::Path, error: &syn::Error) -> Self {
-        Self::Parse {
-            path: path.display().to_string(),
-            message: error.to_string(),
-        }
-    }
-
     pub(super) fn unsupported_type(ty: &syn::Type) -> Self {
         Self::UnsupportedType {
             spelling: crate::spelling::ty(ty),
@@ -194,19 +154,6 @@ impl ScanError {
 impl fmt::Display for ScanError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Read { path, message } => {
-                write!(formatter, "cannot read source file `{path}`: {message}")
-            }
-            Self::Parse { path, message } => {
-                write!(formatter, "cannot parse source file `{path}`: {message}")
-            }
-            Self::ModuleNotFound { module, searched } => {
-                write!(
-                    formatter,
-                    "cannot find module `{module}`, looked for {}",
-                    searched.join(", ")
-                )
-            }
             Self::UnsupportedType { spelling } => {
                 write!(formatter, "unsupported source type `{spelling}`")
             }
@@ -237,36 +184,11 @@ impl fmt::Display for ScanError {
                     "conflicting BoltFFI markers `{first}` and `{second}`"
                 )
             }
-            Self::ConflictingDeclarations {
-                path,
-                first,
-                second,
-            } => {
-                write!(
-                    formatter,
-                    "conflicting BoltFFI declarations `{first}` and `{second}` for `{path}`"
-                )
-            }
-            Self::AmbiguousPath { path } => {
-                write!(formatter, "ambiguous source path `{path}`")
-            }
             Self::InvalidCustomType { message } => {
                 write!(formatter, "invalid custom type declaration: {message}")
             }
             Self::InvalidStream { message } => {
                 write!(formatter, "invalid stream declaration: {message}")
-            }
-            Self::UnsupportedMarkedImpl { target } => {
-                write!(
-                    formatter,
-                    "marked impl target `{target}` is not a supported value type"
-                )
-            }
-            Self::UnsupportedClassImpl { target } => {
-                write!(
-                    formatter,
-                    "exported class impl target `{target}` is not a supported class type"
-                )
             }
             Self::UnsupportedClassImplShape { target } => {
                 write!(
@@ -430,34 +352,11 @@ mod tests {
             "conflicting BoltFFI markers `data` and `error`"
         );
         assert_eq!(
-            ScanError::ConflictingDeclarations {
-                path: "demo::Engine".to_owned(),
-                first: "record".to_owned(),
-                second: "class".to_owned()
-            }
-            .to_string(),
-            "conflicting BoltFFI declarations `record` and `class` for `demo::Engine`"
-        );
-        assert_eq!(
-            ScanError::UnsupportedMarkedImpl {
-                target: "Missing".to_owned()
-            }
-            .to_string(),
-            "marked impl target `Missing` is not a supported value type"
-        );
-        assert_eq!(
             ScanError::InvalidStream {
                 message: "ffi_stream requires item = <type>".to_owned()
             }
             .to_string(),
             "invalid stream declaration: ffi_stream requires item = <type>"
-        );
-        assert_eq!(
-            ScanError::UnsupportedClassImpl {
-                target: "Missing".to_owned()
-            }
-            .to_string(),
-            "exported class impl target `Missing` is not a supported class type"
         );
         assert_eq!(
             ScanError::UnsupportedClassImplShape {

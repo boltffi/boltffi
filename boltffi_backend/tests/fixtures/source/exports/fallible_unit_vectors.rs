@@ -78,6 +78,7 @@ pub fn discard_ids(ids: Vec<i64>) {
     drop(ids);
 }
 
+#[export]
 pub struct Validator;
 
 #[export]

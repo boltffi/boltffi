@@ -11,7 +11,7 @@ use boltffi_binding::{Bindings, Native, lower};
 static DOTNET_BUILD_LOCK: Mutex<()> = Mutex::new(());
 
 fn bindings(source: &str) -> Bindings<Native> {
-    let source = boltffi_scan::scan_file(
+    let source = boltffi_test_source::scan_file(
         syn::parse_str(source).expect("valid source"),
         PackageInfo::new("demo", None),
     )
@@ -196,6 +196,7 @@ fn csharp_non_trailing_and_constructed_defaults_compile_at_call_sites() {
             value: i32,
         ) -> i32 { value }
 
+        #[export]
         pub struct RuntimeDefaults;
 
         #[export]
@@ -610,6 +611,7 @@ fn csharp_target_qualifies_a_class_method_named_after_its_return_record() {
             pub version: String,
         }
 
+        #[export]
         pub struct ParseClient {
             id: i32,
         }

@@ -325,6 +325,7 @@ mod tests {
                 Slow = 2,
             }
 
+            #[export]
             pub struct Engine {
                 value: i32,
             }
@@ -377,7 +378,7 @@ mod tests {
             "#,
         )
         .expect("valid Java function boundary fixture");
-        let source = boltffi_scan::scan_file(file, PackageInfo::new("demo", None))
+        let source = boltffi_test_source::scan_file(file, PackageInfo::new("demo", None))
             .expect("Java function boundary fixture scans");
         let bindings = lower::<Native>(&source).expect("Java function boundary fixture lowers");
         let shapes = bindings

@@ -491,7 +491,7 @@ mod tests {
 
         // A function that returns InternedString requires both Functions AND
         // InternedString capabilities.
-        let source = boltffi_scan::scan_file(
+        let source = boltffi_test_source::scan_file(
             syn::parse_str(
                 r#"
                 use boltffi::InternedString;
@@ -533,7 +533,7 @@ mod tests {
         use boltffi_ast::PackageInfo;
         use boltffi_binding::{Native, lower};
 
-        let source = boltffi_scan::scan_file(
+        let source = boltffi_test_source::scan_file(
             syn::parse_str(
                 r#"
                 use boltffi::InternedString;

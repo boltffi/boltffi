@@ -354,7 +354,7 @@ mod tests {
     }
 
     fn bindings_for_package(package: &str, source: &str) -> Bindings<Native> {
-        let source = boltffi_scan::scan_file(
+        let source = boltffi_test_source::scan_file(
             syn::parse_str(source).expect("valid source fixture"),
             PackageInfo::new(package, None),
         )
@@ -725,9 +725,10 @@ mod tests {
             .into_target()
             .render_partial(&bindings(
                 r#"
+                #[export(single_threaded)]
                 pub struct Engine;
 
-                #[export(single_threaded)]
+                #[export]
                 impl Engine {
                     pub fn new() -> Self {
                         Engine
@@ -769,9 +770,10 @@ mod tests {
             .into_target()
             .render_partial(&bindings(
                 r#"
+                #[export(single_threaded)]
                 pub struct Engine;
 
-                #[export(single_threaded)]
+                #[export]
                 impl Engine {
                     pub async fn load(&self) -> i32 {
                         1

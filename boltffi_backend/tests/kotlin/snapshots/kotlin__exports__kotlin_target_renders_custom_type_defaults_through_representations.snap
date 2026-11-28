@@ -10,6 +10,43 @@ package com.boltffi.demo
 typealias Length = LengthFFI
 
 
+data class DeviationConfig(
+    val maxRejoinDistance: LengthFFI = LengthFFI(1500.0)
+) {
+    internal fun wireSize(): Int {
+        return this.maxRejoinDistance.wireSize()
+    }
+
+    internal fun writeTo(writer: WireWriter) {
+        this.maxRejoinDistance.writeTo(writer)
+    }
+
+    internal fun toByteArray(): ByteArray {
+        val buffer = WireWriterPool.acquire(wireSize())
+        val writer = buffer.writer
+        try {
+            writeTo(writer)
+            return buffer.bytes()
+        } finally {
+            buffer.close()
+        }
+    }
+
+    companion object {
+        internal fun fromReader(reader: WireReader): DeviationConfig {
+            return DeviationConfig(
+                LengthFFI.fromReader(reader)
+            )
+        }
+
+        internal fun fromByteArray(bytes: ByteArray): DeviationConfig {
+            val reader = WireReader(bytes)
+            return fromReader(reader)
+        }
+    }
+}
+
+
 data class LengthFFI(
     val meters: Double
 ) {
@@ -60,43 +97,6 @@ data class LengthFFI(
             return LengthFFI(
                 buffer.getDouble(offset)
             )
-        }
-    }
-}
-
-
-data class DeviationConfig(
-    val maxRejoinDistance: LengthFFI = LengthFFI(1500.0)
-) {
-    internal fun wireSize(): Int {
-        return this.maxRejoinDistance.wireSize()
-    }
-
-    internal fun writeTo(writer: WireWriter) {
-        this.maxRejoinDistance.writeTo(writer)
-    }
-
-    internal fun toByteArray(): ByteArray {
-        val buffer = WireWriterPool.acquire(wireSize())
-        val writer = buffer.writer
-        try {
-            writeTo(writer)
-            return buffer.bytes()
-        } finally {
-            buffer.close()
-        }
-    }
-
-    companion object {
-        internal fun fromReader(reader: WireReader): DeviationConfig {
-            return DeviationConfig(
-                LengthFFI.fromReader(reader)
-            )
-        }
-
-        internal fun fromByteArray(bytes: ByteArray): DeviationConfig {
-            val reader = WireReader(bytes)
-            return fromReader(reader)
         }
     }
 }

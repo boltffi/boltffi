@@ -55,6 +55,7 @@ pub trait Adder {
 }
 #[export]
 pub fn call_adder(adder: Box<dyn Adder>) -> i32 { todo!() }
+#[export]
 pub struct Counter;
 #[export]
 impl Counter {

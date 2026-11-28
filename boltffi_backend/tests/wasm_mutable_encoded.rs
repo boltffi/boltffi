@@ -4,7 +4,7 @@ use boltffi_binding::{Wasm32, lower};
 
 #[test]
 fn wasm_hosts_reject_encoded_mutation_without_a_writeback_channel() {
-    let source = boltffi_scan::scan_file(
+    let source = boltffi_test_source::scan_file(
         syn::parse_str(
             r#"
             #[data]

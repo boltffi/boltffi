@@ -5,6 +5,7 @@ pub trait Notifier {
     fn notify(&self, code: u32);
 }
 
+#[export]
 pub struct Engine;
 
 #[export]

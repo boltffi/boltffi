@@ -1,3 +1,4 @@
+#[export]
 pub struct Engine {
     value: i32,
 }

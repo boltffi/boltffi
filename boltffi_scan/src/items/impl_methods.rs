@@ -1,48 +1,35 @@
 use boltffi_ast::MethodDef;
-use syn::spanned::Spanned;
 
 use crate::declared_types::DeclaredTypes;
 use crate::marker::{self, Disposition};
 use crate::type_expr::Scanner;
-use crate::{ModuleScope, ScanError, attributes};
+use crate::{ScanError, attributes};
 
 use super::{signature, stream};
 
 pub(crate) fn class_methods(
     item: &syn::ItemImpl,
     parent: &str,
-    scope: &ModuleScope,
     declared_types: &DeclaredTypes,
 ) -> Result<Vec<MethodDef>, ScanError> {
-    scan(item, parent, scope, declared_types, StreamMethods::Separate)
+    scan(item, parent, declared_types, StreamMethods::Separate)
 }
 
-pub(crate) fn scan_value_methods(
+pub(crate) fn value_methods(
     item: &syn::ItemImpl,
     parent: &str,
-    scope: &ModuleScope,
     declared_types: &DeclaredTypes,
 ) -> Result<Vec<MethodDef>, ScanError> {
-    value_methods(item, parent, scope, declared_types)
-}
-
-pub(super) fn value_methods(
-    item: &syn::ItemImpl,
-    parent: &str,
-    scope: &ModuleScope,
-    declared_types: &DeclaredTypes,
-) -> Result<Vec<MethodDef>, ScanError> {
-    scan(item, parent, scope, declared_types, StreamMethods::Reject)
+    scan(item, parent, declared_types, StreamMethods::Reject)
 }
 
 fn scan(
     item: &syn::ItemImpl,
     parent: &str,
-    scope: &ModuleScope,
     declared_types: &DeclaredTypes,
     stream_methods: StreamMethods,
 ) -> Result<Vec<MethodDef>, ScanError> {
-    let scanner = Scanner::new(declared_types, scope);
+    let scanner = Scanner::new(declared_types);
     item.items
         .iter()
         .filter_map(|impl_item| scan_item(impl_item, parent, &scanner, stream_methods))
@@ -88,7 +75,7 @@ fn scan_item(
                 Ok(true) => Some(signature::method(
                     &method.sig,
                     &method.attrs,
-                    attributes::source(&method.vis, scanner.scope(), method.span()),
+                    attributes::source(&method.vis),
                     parent,
                     scanner,
                     signature::MethodReturns::Export,
@@ -167,7 +154,7 @@ fn non_method(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ModuleScope;
+
     use crate::declared_types::DeclaredTypes;
     use boltffi_ast::{
         CanonicalName, MethodDef, MethodId, NamePart, Path, Primitive, Receiver, RecordId,
@@ -187,12 +174,7 @@ mod tests {
         parent: &str,
         declared_types: &DeclaredTypes,
     ) -> Result<Vec<MethodDef>, ScanError> {
-        super::value_methods(
-            &parse(source),
-            parent,
-            &ModuleScope::root("demo"),
-            declared_types,
-        )
+        super::value_methods(&parse(source), parent, declared_types)
     }
 
     fn scan_class(
@@ -200,18 +182,12 @@ mod tests {
         parent: &str,
         declared_types: &DeclaredTypes,
     ) -> Result<Vec<MethodDef>, ScanError> {
-        super::class_methods(
-            &parse(source),
-            parent,
-            &ModuleScope::root("demo"),
-            declared_types,
-        )
+        super::class_methods(&parse(source), parent, declared_types)
     }
 
     #[test]
     fn scans_borrowing_method_with_resolved_param_and_return() {
-        let mut declared_types = DeclaredTypes::new();
-        declared_types.register_record(boltffi_ast::RecordId::new("demo::Point"));
+        let declared_types = DeclaredTypes::new();
         let methods = scan(
             "impl Point { pub fn distance(&self, other: Point) -> f64 { 0.0 } }",
             "demo::Point",
@@ -225,7 +201,7 @@ mod tests {
         assert_eq!(methods[0].receiver, Receiver::Shared);
         assert_eq!(
             methods[0].parameters[0].type_expr,
-            TypeExpr::record(RecordId::new("demo::Point"), Path::single("Point"))
+            TypeExpr::record(RecordId::new("$slot:0"), Path::single("Point"))
         );
         assert_eq!(
             methods[0].returns,

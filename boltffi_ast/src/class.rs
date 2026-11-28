@@ -50,16 +50,6 @@ pub enum ClassThreadSafety {
     UnsafeSingleThreaded,
 }
 
-impl ClassThreadSafety {
-    /// Merges policies collected from multiple impl blocks.
-    pub const fn merge(self, other: Self) -> Self {
-        match (self, other) {
-            (Self::UnsafeSingleThreaded, Self::UnsafeSingleThreaded) => Self::UnsafeSingleThreaded,
-            _ => Self::RequireSendSync,
-        }
-    }
-}
-
 impl ClassDef {
     /// Builds an empty class definition.
     ///

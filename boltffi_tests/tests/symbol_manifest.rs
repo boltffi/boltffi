@@ -11,8 +11,6 @@ use boltffi_binding::{
     Bindings, Decl, EnumDecl, ErrorDecl, ExportedCallable, IncomingParam, IntoRust, Native,
     OutOfRust, ParamPlan, Receive, RecordDecl, ReturnPlan, TypeRef, lower,
 };
-#[cfg(not(miri))]
-use boltffi_scan::{crate_scoped, scan_source};
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 struct PendingExpansion {
@@ -32,9 +30,8 @@ fn source_contract() -> boltffi_ast::SourceContract {
     let source = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("src")
         .join("lib.rs");
-    crate_scoped(
-        scan_source(source, PackageInfo::new("boltffi_tests", None)).expect("scan test package"),
-    )
+    boltffi_test_source::scan_source(&source, PackageInfo::new("boltffi_tests", None))
+        .expect("scan test package")
 }
 
 #[cfg(not(miri))]

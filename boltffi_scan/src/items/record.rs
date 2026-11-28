@@ -1,43 +1,22 @@
 use boltffi_ast::{FieldDef, RecordDef, RecordId};
-use syn::spanned::Spanned;
 
 use crate::attributes::Attributes;
 use crate::declared_types::DeclaredTypes;
-use crate::marked::Marked;
 use crate::type_expr::Scanner;
 use crate::unsupported::UnsupportedFeature;
-use crate::{ModuleScope, ScanError, attributes, name, repr, unsupported};
-
-pub fn scan(
-    marked: &Marked<'_, syn::ItemStruct>,
-    declared_types: &DeclaredTypes,
-) -> Result<RecordDef, ScanError> {
-    let mut record = build(marked.item(), marked.scope(), declared_types)?;
-    marked.marker().append_value_attrs(&mut record.user_attrs);
-    Ok(record)
-}
+use crate::{ScanError, attributes, name, repr, unsupported};
 
 pub(crate) fn scan_item(
     item: &syn::ItemStruct,
-    scope: &ModuleScope,
-    declared_types: &DeclaredTypes,
-) -> Result<RecordDef, ScanError> {
-    build(item, scope, declared_types)
-}
-
-fn build(
-    item: &syn::ItemStruct,
-    scope: &ModuleScope,
     declared_types: &DeclaredTypes,
 ) -> Result<RecordDef, ScanError> {
     unsupported::generics(&item.generics, &format!("record {}", item.ident))?;
-    let id = RecordId::new(scope.path().qualified(&item.ident.to_string()));
+    let id = RecordId::new(name::self_id(&item.ident));
     let mut record = RecordDef::new(id, name::source(&item.ident));
-    let scanner = Scanner::new(declared_types, scope);
+    let scanner = Scanner::new(declared_types);
     let attrs = Attributes::new(&item.attrs, &scanner);
     record.repr = repr::scan(&item.attrs);
-    record.source = attributes::source(&item.vis, scope, item.span());
-    record.source_span = record.source.span.clone();
+    record.source = attributes::source(&item.vis);
     record.doc = attrs.doc();
     record.deprecated = attrs.deprecated()?;
     record.user_attrs = attrs.user_attrs();
@@ -66,8 +45,7 @@ fn record_field(field: &syn::Field, scanner: &Scanner<'_>) -> Result<FieldDef, S
         .ok_or_else(|| unsupported::feature(UnsupportedFeature::TupleStruct))?;
     let mut scanned = FieldDef::new(name::source(ident), scanner.scan(&field.ty)?);
     let attrs = Attributes::new(&field.attrs, scanner);
-    scanned.source = attributes::source(&field.vis, scanner.scope(), field.span());
-    scanned.source_span = scanned.source.span.clone();
+    scanned.source = attributes::source(&field.vis);
     scanned.doc = attrs.doc();
     scanned.default = attrs.default()?;
     scanned.user_attrs = attrs.user_attrs();
@@ -87,11 +65,7 @@ mod tests {
     }
 
     fn scan(source: &str) -> Result<RecordDef, ScanError> {
-        super::build(
-            &parse(source),
-            &ModuleScope::root("demo"),
-            &DeclaredTypes::new(),
-        )
+        super::scan_item(&parse(source), &DeclaredTypes::new())
     }
 
     fn name(parts: &[&str]) -> CanonicalName {
@@ -102,7 +76,7 @@ mod tests {
     fn scans_complete_named_field_record_contract() {
         let record = scan("pub struct Point { pub x: f64, pub y: f64 }").expect("scan");
         let mut expected = RecordDef::new(
-            RecordId::new("demo::Point"),
+            RecordId::new("$self::Point"),
             SourceName::new("Point", name(&["point"])),
         );
         expected.source = Source::new(Visibility::Public, None);
@@ -154,19 +128,9 @@ mod tests {
     fn scans_multi_word_names_as_parts() {
         let record = scan("pub struct HTTPRequest { pub user_id: i32 }").expect("scan");
 
-        assert_eq!(record.id, RecordId::new("demo::HTTPRequest"));
+        assert_eq!(record.id, RecordId::new("$self::HTTPRequest"));
         assert_eq!(record.name.canonical(), &name(&["http", "request"]));
         assert_eq!(record.fields[0].name.canonical(), &name(&["user", "id"]));
-    }
-
-    #[test]
-    fn field_type_errors_keep_source_spelling() {
-        let error = scan("pub struct Shape { pub point: Point }").expect_err("field type rejected");
-
-        assert!(matches!(
-            error.unlocated(),
-            ScanError::UnsupportedType { spelling } if spelling == "Point"
-        ));
     }
 
     #[test]
@@ -182,19 +146,17 @@ mod tests {
     }
 
     #[test]
-    fn resolves_record_typed_field_against_registry() {
-        let mut declared_types = DeclaredTypes::new();
-        declared_types.register_record(RecordId::new("demo::Point"));
-        let record = super::build(
+    fn defers_record_typed_field_to_a_slot() {
+        let declared_types = DeclaredTypes::new();
+        let record = super::scan_item(
             &parse("pub struct Shape { pub center: Point }"),
-            &ModuleScope::root("demo"),
             &declared_types,
         )
         .expect("scan");
 
         assert_eq!(
             record.fields[0].type_expr,
-            TypeExpr::record(RecordId::new("demo::Point"), Path::single("Point"))
+            TypeExpr::record(RecordId::new("$slot:0"), Path::single("Point"))
         );
     }
 

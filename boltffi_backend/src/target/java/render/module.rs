@@ -264,7 +264,7 @@ mod tests {
     fn consumes_and_orders_every_emitted_chunk() {
         let file = syn::parse_str("#[export] pub fn value() -> i32 { 1 }")
             .expect("valid Java module fixture");
-        let source = boltffi_scan::scan_file(file, PackageInfo::new("demo", None))
+        let source = boltffi_test_source::scan_file(file, PackageInfo::new("demo", None))
             .expect("Java module fixture scans");
         let bindings = lower::<Native>(&source).expect("Java module fixture lowers");
         let declaration = DeclarationRef::from(

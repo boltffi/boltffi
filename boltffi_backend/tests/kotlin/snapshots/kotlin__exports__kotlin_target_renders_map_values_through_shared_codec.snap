@@ -8,21 +8,8 @@ expression: "rendered_fixture(\"exports/map_functions\")"
 package com.boltffi.demo
 @Suppress("FunctionName")
 private object Native {
-    @JvmStatic external fun boltffi_function_4demo11keep_scores(scores: java.nio.ByteBuffer, __boltffi_scores_len: Int): ByteArray?
     @JvmStatic external fun boltffi_function_4demo18keep_score_history(history: java.nio.ByteBuffer, __boltffi_history_len: Int): ByteArray?
-}
-
-fun keepScores(scores: kotlin.collections.Map<String, Int>): kotlin.collections.Map<String, Int> {
-    val __boltffi_scores_wire = WireWriterPool.acquire(scores.wireSize({ __boltffi_value_0 -> 4 + Utf8Codec.maxBytes(__boltffi_value_0) }, { __boltffi_value_1 -> 4 }))
-    val __boltffi_scores_writer = __boltffi_scores_wire.writer
-    __boltffi_scores_writer.writeMap(scores, { __boltffi_scores_writer, __boltffi_value_0 -> __boltffi_scores_writer.writeString(__boltffi_value_0) }, { __boltffi_scores_writer, __boltffi_value_1 -> __boltffi_scores_writer.writeI32(__boltffi_value_1) })
-    try {
-        val __boltffi_result = Native.boltffi_function_4demo11keep_scores(__boltffi_scores_wire.directBuffer(), __boltffi_scores_wire.size()) ?: throw IllegalStateException("null buffer returned")
-        val __boltffi_reader = WireReader(__boltffi_result)
-        return __boltffi_reader.readMap({ __boltffi_reader -> __boltffi_reader.readString() }, { __boltffi_reader -> __boltffi_reader.readI32() })
-    } finally {
-        __boltffi_scores_wire.close()
-    }
+    @JvmStatic external fun boltffi_function_4demo11keep_scores(scores: java.nio.ByteBuffer, __boltffi_scores_len: Int): ByteArray?
 }
 
 fun keepScoreHistory(history: kotlin.collections.Map<String, IntArray>): kotlin.collections.Map<String, IntArray> {
@@ -35,5 +22,18 @@ fun keepScoreHistory(history: kotlin.collections.Map<String, IntArray>): kotlin.
         return __boltffi_reader.readMap({ __boltffi_reader -> __boltffi_reader.readString() }, { __boltffi_reader -> __boltffi_reader.readIntArray() })
     } finally {
         __boltffi_history_wire.close()
+    }
+}
+
+fun keepScores(scores: kotlin.collections.Map<String, Int>): kotlin.collections.Map<String, Int> {
+    val __boltffi_scores_wire = WireWriterPool.acquire(scores.wireSize({ __boltffi_value_0 -> 4 + Utf8Codec.maxBytes(__boltffi_value_0) }, { __boltffi_value_1 -> 4 }))
+    val __boltffi_scores_writer = __boltffi_scores_wire.writer
+    __boltffi_scores_writer.writeMap(scores, { __boltffi_scores_writer, __boltffi_value_0 -> __boltffi_scores_writer.writeString(__boltffi_value_0) }, { __boltffi_scores_writer, __boltffi_value_1 -> __boltffi_scores_writer.writeI32(__boltffi_value_1) })
+    try {
+        val __boltffi_result = Native.boltffi_function_4demo11keep_scores(__boltffi_scores_wire.directBuffer(), __boltffi_scores_wire.size()) ?: throw IllegalStateException("null buffer returned")
+        val __boltffi_reader = WireReader(__boltffi_result)
+        return __boltffi_reader.readMap({ __boltffi_reader -> __boltffi_reader.readString() }, { __boltffi_reader -> __boltffi_reader.readI32() })
+    } finally {
+        __boltffi_scores_wire.close()
     }
 }

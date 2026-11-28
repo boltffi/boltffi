@@ -350,11 +350,12 @@ const ERROR_ENUMS: &str = r#"
 "#;
 
 const CLASSES: &str = r#"
+    #[export(single_threaded)]
     pub struct Counter {
         value: i32,
     }
 
-    #[export(single_threaded)]
+    #[export]
     impl Counter {
         pub fn new(value: i32) -> Self { Self { value } }
 
@@ -371,6 +372,7 @@ const CLASSES: &str = r#"
         pub fn set(&mut self, value: i32) { self.value = value; }
     }
 
+    #[export]
     pub struct FallibleOnly {
         name: String,
     }
@@ -388,6 +390,7 @@ const CLASSES: &str = r#"
         pub fn name(&self) -> String { self.name.clone() }
     }
 
+    #[export]
     pub struct Factory;
 
     #[export]
@@ -569,6 +572,7 @@ const ASYNC_FUNCTIONS: &str = r#"
         if available { Ok(true) } else { Err(AsyncError::Unavailable) }
     }
 
+    #[export]
     pub struct Worker;
 
     #[export]
@@ -602,9 +606,10 @@ const STREAMS: &str = r#"
         Slow = 2,
     }
 
+    #[export(single_threaded)]
     pub struct EventBus;
 
-    #[export(single_threaded)]
+    #[export]
     impl EventBus {
         pub fn new() -> Self { Self }
 
@@ -1192,7 +1197,7 @@ const ASYNC_RETURNED_CALLBACKS: &str = r#"
 
 fn bindings(source: &str) -> boltffi_binding::Bindings<Native> {
     let file = syn::parse_str(source).expect("valid Java source fixture");
-    let source = boltffi_scan::scan_file(file, PackageInfo::new("demo", None))
+    let source = boltffi_test_source::scan_file(file, PackageInfo::new("demo", None))
         .expect("Java fixture should scan");
     lower::<Native>(&source).expect("Java fixture should lower")
 }
@@ -1452,6 +1457,7 @@ fn java_target_renders_parameter_defaults_as_forwarding_overloads() {
 #[test]
 fn defaulted_long_class_constructors_compile_without_native_handle_collisions() {
     let source = r#"
+        #[export]
         pub struct SignedCounter {
             value: i64,
         }
@@ -1463,6 +1469,7 @@ fn defaulted_long_class_constructors_compile_without_native_handle_collisions() 
             }
         }
 
+        #[export]
         pub struct UnsignedCounter {
             value: u64,
         }
@@ -1474,6 +1481,7 @@ fn defaulted_long_class_constructors_compile_without_native_handle_collisions() 
             }
         }
 
+        #[export]
         pub struct SteppedCounter {
             value: i64,
         }
@@ -1485,6 +1493,7 @@ fn defaulted_long_class_constructors_compile_without_native_handle_collisions() 
             }
         }
 
+        #[export]
         pub struct ExplicitCounter {
             value: i64,
         }
@@ -1720,14 +1729,10 @@ fn generated_data_enum_defaults_compile_for_java_eight_and_seventeen_when_availa
 fn java_target_rejects_default_overloads_that_collide_with_existing_methods() {
     let bindings = bindings(
         r#"
-        pub mod first {
-            #[export]
-            pub fn format_value(#[boltffi::default(1)] value: i32) -> i32 { value }
-        }
-        pub mod second {
-            #[export]
-            pub fn format_value() -> i32 { 2 }
-        }
+        #[export]
+        pub fn format_value(#[boltffi::default(1)] value: i32) -> i32 { value }
+        #[export]
+        pub fn formatValue() -> i32 { 2 }
         "#,
     );
     assert!(matches!(
@@ -1740,14 +1745,10 @@ fn java_target_rejects_default_overloads_that_collide_with_existing_methods() {
 fn java_target_rejects_method_collisions_after_erasing_generic_parameters() {
     let bindings = bindings(
         r#"
-        pub mod first {
-            #[export]
-            pub fn select_value(value: Option<String>) -> Option<String> { value }
-        }
-        pub mod second {
-            #[export]
-            pub fn select_value(value: Option<i32>) -> Option<i32> { value }
-        }
+        #[export]
+        pub fn select_value(value: Option<String>) -> Option<String> { value }
+        #[export]
+        pub fn selectValue(value: Option<i32>) -> Option<i32> { value }
         "#,
     );
     assert!(matches!(
@@ -1864,14 +1865,10 @@ fn generated_builtin_defaults_and_overloaded_nullable_closures_compile_when_avai
             #[boltffi::default("https://example.com/?name=ada&greeting=hello%20ada")] value: url::Url,
         ) -> url::Url { value }
 
-        pub mod first {
-            #[export]
-            pub fn apply(#[boltffi::default(None)] callback: Option<Box<dyn Fn(i32) -> i32>>) -> i32 { 0 }
-        }
-        pub mod second {
-            #[export]
-            pub fn apply(callback: Option<Box<dyn Fn(i64) -> i64>>) -> i64 { 0 }
-        }
+        #[export]
+        pub fn apply(#[boltffi::default(None)] callback: Option<Box<dyn Fn(i32) -> i32>>) -> i32 { 0 }
+        #[export]
+        pub fn Apply(callback: Option<Box<dyn Fn(i64) -> i64>>) -> i64 { 0 }
     "#;
     let output = render_with_host(
         source,
@@ -2576,6 +2573,7 @@ fn java_target_renders_async_functions_and_methods_from_poll_handle_protocols() 
 #[test]
 fn java_target_rejects_class_lifecycle_signature_collisions() {
     let source = r#"
+        #[export]
         pub struct Resource;
 
         #[export]

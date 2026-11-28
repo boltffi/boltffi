@@ -37,28 +37,6 @@ public struct Person: Hashable, Equatable, Sendable {
     }
 }
 
-public enum Shape: Hashable, Equatable, Sendable {
-    case label(String)
-
-    @inlinable static func decode(from reader: inout WireReader) -> Shape {
-        let tag = reader.readU32()
-        switch tag {
-        case 0:
-            return .label(reader.readString())
-        default:
-            fatalError("Invalid Shape tag: \(tag)")
-        }
-    }
-
-    @inlinable func encode(to writer: inout WireWriter) {
-        switch self {
-        case let .label(field0):
-            writer.writeU32(0)
-            writer.writeString(field0)
-        }
-    }
-}
-
 public enum Message: Hashable, Equatable, Sendable {
     case empty
     case text(String)
@@ -92,12 +70,43 @@ public enum Message: Hashable, Equatable, Sendable {
     }
 }
 
+public enum Shape: Hashable, Equatable, Sendable {
+    case label(String)
+
+    @inlinable static func decode(from reader: inout WireReader) -> Shape {
+        let tag = reader.readU32()
+        switch tag {
+        case 0:
+            return .label(reader.readString())
+        default:
+            fatalError("Invalid Shape tag: \(tag)")
+        }
+    }
+
+    @inlinable func encode(to writer: inout WireWriter) {
+        switch self {
+        case let .label(field0):
+            writer.writeU32(0)
+            writer.writeString(field0)
+        }
+    }
+}
+
 public func echoBytes(bytes: Data) -> Data {
     let boltffiBytesBytes = boltffiEncode { boltffiBytesWriter in boltffiBytesWriter.writeBytes(bytes) }
     return boltffiBytesBytes.withUnsafeBufferPointer { boltffiBytesBuffer in
         let boltffiResult = boltffi_function_4demo10echo_bytes(boltffiBytesBuffer.baseAddress!, UInt(boltffiBytesBuffer.count))
         defer { boltffi_free_buf(boltffiResult) }
         return boltffiDecodeOwnedBuf(boltffiResult.ptr, Int(boltffiResult.len)) { boltffiReader in boltffiReader.readBytes() }
+    }
+}
+
+public func echoMessage(message: Message) -> Message {
+    let boltffiMessageBytes = boltffiEncode { boltffiMessageWriter in message.encode(to: &boltffiMessageWriter) }
+    return boltffiMessageBytes.withUnsafeBufferPointer { boltffiMessageBuffer in
+        let boltffiResult = boltffi_function_4demo12echo_message(boltffiMessageBuffer.baseAddress!, UInt(boltffiMessageBuffer.count))
+        defer { boltffi_free_buf(boltffiResult) }
+        return boltffiDecodeOwnedBuf(boltffiResult.ptr, Int(boltffiResult.len)) { boltffiReader in Message.decode(from: &boltffiReader) }
     }
 }
 
@@ -116,14 +125,5 @@ public func keepShape(shape: Shape) -> Shape {
         let boltffiResult = boltffi_function_4demo10keep_shape(boltffiShapeBuffer.baseAddress!, UInt(boltffiShapeBuffer.count))
         defer { boltffi_free_buf(boltffiResult) }
         return boltffiDecodeOwnedBuf(boltffiResult.ptr, Int(boltffiResult.len)) { boltffiReader in Shape.decode(from: &boltffiReader) }
-    }
-}
-
-public func echoMessage(message: Message) -> Message {
-    let boltffiMessageBytes = boltffiEncode { boltffiMessageWriter in message.encode(to: &boltffiMessageWriter) }
-    return boltffiMessageBytes.withUnsafeBufferPointer { boltffiMessageBuffer in
-        let boltffiResult = boltffi_function_4demo12echo_message(boltffiMessageBuffer.baseAddress!, UInt(boltffiMessageBuffer.count))
-        defer { boltffi_free_buf(boltffiResult) }
-        return boltffiDecodeOwnedBuf(boltffiResult.ptr, Int(boltffiResult.len)) { boltffiReader in Message.decode(from: &boltffiReader) }
     }
 }
